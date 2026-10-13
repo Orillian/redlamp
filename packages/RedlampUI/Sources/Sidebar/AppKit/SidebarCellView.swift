@@ -462,10 +462,7 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 menu.addItem(NSMenuItem(title: "Delete Recipe") { [model] in model.recipes.delete(recipe) })
             }
         case let .group(name) where name == FilmLookCatalog.group:
-            let item = NSMenuItem(title: "Open Film Looks") { [model] in model.onShowFilmLooks?() }
-            item.isEnabled = model.onShowFilmLooks != nil
-            menu.autoenablesItems = false
-            menu.addItem(item)
+            return Self.filmStocksMenu(model: model)
         case let .folder(row):
             return Self.folderMenu(row, model: model, anchor: self)
         case let .source(row):
@@ -475,6 +472,16 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         default:
             return nil
         }
+        return menu
+    }
+
+    /// The Film Stocks folder's menu: Open Film Looks.
+    static func filmStocksMenu(model: EditorModel) -> NSMenu {
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "Open Film Looks") { [model] in model.onShowFilmLooks?() }
+        item.isEnabled = model.onShowFilmLooks != nil
+        menu.autoenablesItems = false
+        menu.addItem(item)
         return menu
     }
 

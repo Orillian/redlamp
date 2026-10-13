@@ -211,6 +211,6 @@ struct BaseLookBrowser: View {
 
     /// The Film Stocks folder's right-click menu in the Recipes panel.
     @MainActor public static func filmStocksMenu(_ model: EditorModel) -> NSMenu? {
-        SidebarCellView(node: SidebarNode(.group(FilmLookCatalog.group)), model: model).contextMenu()
+        SidebarCellView.filmStocksMenu(model: model)
     }
 }
