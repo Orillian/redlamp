@@ -79,7 +79,7 @@ Each feature has a roadmap tag:
 - Profile corrections: automatic lens lookup, manual make, model, and profile, plus distortion and vignetting amount sliders [P2, clean-room implementation on the lensfun database]
 - Manual Distortion, and Lens Vignetting amount and midpoint [P2]
 - Defringe: Purple and Green amount and hue range, with a fringe eyedropper [P2]
-- Lens Blur (AI depth-of-field): blur amount; bokeh shapes (Circle, Bubble, 5-Blade, Cat Eye, and others); boost; focal range; subject detection; Focus and Blur refine brushes; depth visualization [Later]
+- Lens Blur (AI depth-of-field): Blur Amount; bokeh shapes (Circle, Bubble, 5-Blade, Ring, and Oval/Anamorphic since December 2024, when Cat Eye became a slider for any shape); Boost; Focus Range over a depth histogram, set by Subject Focus or Point/Area Focus; Use Device Depth for phone depth maps; Visualize Depth; Focus and Blur refinement brushes that edit the depth (desktop only); presets in Adaptive: Blur Background. Its XMP holds the settings and digests of the depth, not the depth itself ([OTH-03 note](research/notes/OTH-03-lens-blur.md#1-lightrooms-lens-blur)) [Later]
 
 ## 9. Transform (Mobile: Geometry)
 - Upright: Off, Auto, Level, Vertical, Full, and Guided (up to 4 guide lines) [P2 for Guided, Level, and Vertical; P3 for Auto and Full, which need line detection]
