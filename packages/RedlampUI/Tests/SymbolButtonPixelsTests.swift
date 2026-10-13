@@ -312,8 +312,10 @@ struct SymbolButtonPixelsTests {
 
     /// Checks a glyph against the symbol's own: the same size and shape (its spread within a tenth of a point) and
     /// the same pixels as the symbol's drawing (at 2x as AppKit draws it, at 1x that drawing averaged 2 by 2 from
-    /// whichever of its half-point offsets leaves the most of it on whole pixels); and a + with arms of equal length,
-    /// both strokes the same width and, at 1x, on whole pixels (at 2x they're where AppKit's drawing has them).
+    /// whichever of its half-point offsets leaves the most of it on whole pixels); and a + with its arms' lengths and
+    /// its strokes' widths in the proportions of the symbol's own drawing, and at 1x on whole pixels (at 2x they're
+    /// where AppKit's drawing has them). The symbol's own + is square where a screen is at 2x; where every screen is
+    /// at 1x, as on CI's runner, AppKit fits the symbol to whole points, and its + is narrower than it is tall.
     private func check(
         _ drawn: Glyph, against symbol: Glyph, label: String, plus isPlus: Bool = false,
         sourceLocation: SourceLocation = #_sourceLocation,
@@ -329,20 +331,25 @@ struct SymbolButtonPixelsTests {
         let sharpest = halves.map(\.sharpness).max() ?? 0
         let references = drawn.scale == 2
             ? [symbol] : halves.filter { $0.sharpness >= sharpest - 0.005 }.map(\.normalized)
-        let difference = references.map { drawn.difference(from: $0) }.min() ?? 1
+        let closest = references.min { drawn.difference(from: $0) < drawn.difference(from: $1) } ?? symbol
+        let difference = drawn.difference(from: closest)
         #expect(
             difference <= 0.05, "\(label): \(text([difference])) of a pixel off the symbol's own drawing",
             sourceLocation: sourceLocation,
         )
         guard isPlus else { return }
-        let plus = drawn.plus
+        let (plus, ownPlus) = (drawn.plus, closest.plus)
         let (upright, bar) = (plus.upright.reduce(0.0, +), plus.bar.reduce(0.0, +))
+        let (ownUpright, ownBar) = (ownPlus.upright.reduce(0.0, +), ownPlus.bar.reduce(0.0, +))
+        let ownArms = ownPlus.arms
         #expect(
-            abs(plus.arms.across - plus.arms.down) <= 0.3,
-            "\(label): arms \(text([plus.arms.across, plus.arms.down])) pixels long", sourceLocation: sourceLocation,
+            abs(plus.arms.across - plus.arms.down - (ownArms.across - ownArms.down)) <= 0.3,
+            "\(label): arms \(text([plus.arms.across, plus.arms.down])) pixels long, the symbol's own \(text([ownArms.across, ownArms.down]))",
+            sourceLocation: sourceLocation,
         )
         #expect(
-            abs(upright - bar) <= 0.15, "\(label): strokes \(text([upright, bar])) pixels wide",
+            abs(upright - bar - (ownUpright - ownBar)) <= 0.15,
+            "\(label): strokes \(text([upright, bar])) pixels wide, the symbol's own \(text([ownUpright, ownBar]))",
             sourceLocation: sourceLocation,
         )
         #expect(
