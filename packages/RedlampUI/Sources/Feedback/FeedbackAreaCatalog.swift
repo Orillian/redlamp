@@ -210,7 +210,10 @@ public extension FeedbackArea {
             summary: "Recipes, presets, LUTs and the Film Looks window.",
             tracker: ["TON", "EDT"],
             features: [
-                FeedbackFeature("applying", "Applying Recipes", ["apply", "amount", "hover preview", "preset"]),
+                FeedbackFeature(
+                    "applying", "Applying Recipes",
+                    ["apply", "amount", "hover preview", "preset", "apply base look only", "film icon"],
+                ),
                 FeedbackFeature(
                     "creating",
                     "Creating and Exporting Recipes",
@@ -221,7 +224,10 @@ public extension FeedbackArea {
                     ["import", "xmp", "lightroom preset", "cube", "3dl", "haldclut", "lut", "log"],
                 ),
                 FeedbackFeature("film-looks", "Film Looks Window", ["film", "film stock", "film looks"]),
-                FeedbackFeature("favorites", "Favorites and Search", ["favorite", "favourite", "search recipes"]),
+                FeedbackFeature(
+                    "favorites", "Favorites and Search",
+                    ["favorite", "favourite", "search recipes", "search base looks"],
+                ),
             ],
         ),
         FeedbackArea(

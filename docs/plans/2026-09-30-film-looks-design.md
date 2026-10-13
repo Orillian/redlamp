@@ -62,7 +62,7 @@ Grain follows each datasheet's granularity. Kodak's Print Grain Index converts a
 
 **In the app:**
 - All 11 looks ship under their stock names; the owner will take the trademark question to counsel.
-- The Base Look menu and browser list them under Film Stocks, with icons. The icons are drawn in CoreGraphics (`FilmIcon`): a canister, slide mount, reel or paper print in the stock's colours, in Redlamp's own design.
+- The Recipes panel lists them under Film Stocks, with icons; since 13 October 2026 (DEC-74, UX-45) the Base Look menu and browser no longer list them, but show the photo's film first while it's in use, and a film's right-click menu has Apply Base Look Only. The icons are drawn in CoreGraphics (`FilmIcon`): a canister, slide mount, reel or paper print in the stock's colours, in Redlamp's own design. `.cursor/skills/redlamp-look-icons/SKILL.md` says how to draw more, and new kinds of icon for other looks.
 - Window ▸ Film Looks (`⇧⌘L`, `FilmCatalogView`) shows the open photo in every film; click applies a look with its effects.
 
 ## Checking quality

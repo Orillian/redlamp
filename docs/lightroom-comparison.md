@@ -57,7 +57,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | B&W mix: brightness per colour band | Yes | Planned | | P2 | TON-41 | Today the Color Mixer's Luminance shapes a black-and-white photo |
 | Point Color | Yes | Done | | | TON-29 | Lightroom's now has a Variance slider too, which evens out similar colours; Redlamp's adds Capture One's separate hue, saturation and lightness uniformity, for skin |
 | Color Grading | Yes | Done | | | | Shadows, midtones, highlights and global wheels, with Blending and Balance |
-| Profiles | Yes | Done | Different | | EDT-04 | Profiles are Base Looks inside Recipes: six built-in looks and the film looks, each with an Amount slider (0–200) |
+| Profiles | Yes | Done | Different | | EDT-04 | Profiles are Base Looks inside Recipes: six built-in looks and 15 film styles, each with an Amount slider (0–200); film looks and LUTs are recipes, each of which can set its look alone |
 | Camera-matching looks | Yes | Done | Different | | TON-14 | Four looks measured from Fujifilm cameras' own JPEGs (one provisional), under Redlamp's own names |
 | More camera-matching looks (Eterna, Classic Negative, Acros and others) | Yes | In progress | | P3 | TON-14, TON-20, TON-35, TON-43, TON-44, TON-45 | Need more photos with the camera's JPEG beside the raw; Fujifilm's own LUTs for ten simulations, downloaded from Fujifilm, import in one step and fill the film slots |
 | DNG camera profiles | Yes | Done | | | CAM-04, TON-09 | Dual-illuminant colour and the embedded HueSatMap; a profile's look is offered as a Base Look |
