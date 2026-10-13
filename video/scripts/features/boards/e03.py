@@ -2,17 +2,22 @@
 E03, Film looks, in the series' look (boards/e01.py): looks of real film stocks, each built from its
 film's datasheet. The editor is drawn as E02's dashboard is: the owner's photo of a street-food cook in
 the photo panel as pixel art, its histogram and level under it, and the Base Look panel below, listing
-five of the 36 film looks with Redlamp's film icons. The DATASHEET card draws Portra 400's
-characteristic curves, density against exposure for its red, green and blue layers; then the pointer
-picks each film on the beat its name comes up, the photo develops into the look, and the card draws that
-film's own curves: Tri-X 400's one curve, CineStill 800T's three, Velvia 50's falling as a slide film's
-do, and HP5 Plus's. The result is the photo as opened, then from the flip the five looks across it side
-by side, a sixteenth apart, since bar 6's four beats can't give five looks a beat each. The icons are
-drawn from the app's, with CineStill 800T's band in cyan rather than red, which the series keeps for the
-lamp.
+five of the 36 film looks with Redlamp's film icons. Film names are trademarks, so none is on screen
+(the owner, 13 October 2026): each look is named by its kind and speed, as the README's table of films
+describes them. Portra 400 reads COLOUR NEG 400, Tri-X 400 B&W 400, CineStill 800T TUNGSTEN 800 and
+Velvia 50 SLIDE 50, and the fifth is Tri-X printed on Multigrade paper at grade 2, the app's Darkroom
+Print, in place of HP5 Plus, which could only have read B&W 400 a second time. The DATASHEET card draws
+Portra 400's characteristic curves, density against exposure for its red, green and blue layers; then
+the pointer picks each look on the beat its name comes up, the photo develops into it, and the card draws
+its datasheet's own curves: Tri-X 400's one curve, CineStill 800T's three, Velvia 50's falling as a
+slide film's do, and the paper's grade 2 curve for the print. The result is the photo as opened, then
+from the flip the five looks across it side by side, a sixteenth apart, since bar 6's four beats can't
+give five looks a beat each. The icons are drawn from the app's, with CineStill 800T's band in cyan
+rather than red, which the series keeps for the lamp; where the app's label is a name (800T, and TRI-X
+on the print), the board's is the speed or the paper's grade (800, G2).
 
 Every picture of the photo is Redlamp's own render (features/results.py): the owner's DSC03230 (2).jpg
-in ~/src/redlamp-social/photos as Redlamp opens it, and with each film's Base Look alone, as Basic ›
+in ~/src/redlamp-social/photos as Redlamp opens it, and with each look's Base Look alone, as Basic ›
 Base Look › Film Stocks sets it, without the grain and halation its recipe adds. Each is cropped to the
 panel's shape and reduced to pixel art with a palette of its own colours. The editor labels the photo as
 the raw it would be from his camera, DSC03230.ARW, as E02 does its photo. The curves are the datasheets'
@@ -41,8 +46,9 @@ FILE = "DSC03230.ARW"
 FOLDER = w.VIDEO / "public/features/e03/results"
 PHOTO = ("THE OWNER'S DSC03230 (2).JPG (THE STREET-FOOD COOK), LABELLED AS ITS RAW, DSC03230.ARW, AS PIXEL ART WITH "
          "ITS OWN PALETTE. EVERY PICTURE OF IT IS REDLAMP'S RENDER: AS OPENED, AND WITH THE BASE LOOK OF PORTRA 400, "
-         "TRI-X 400, CINESTILL 800T, VELVIA 50 AND HP5 PLUS, WITHOUT THEIR GRAIN AND HALATION. THE CURVES ARE THE "
-         "DATASHEETS' CHARACTERISTIC CURVES FROM RESEARCH/FILM-DATA")
+         "TRI-X 400, CINESTILL 800T, VELVIA 50 AND TRI-X'S DARKROOM PRINT (GRADE 2 MULTIGRADE), WITHOUT THEIR GRAIN "
+         "AND HALATION, EACH NAMED ON SCREEN BY ITS KIND AND SPEED. THE CURVES ARE THE DATASHEETS' CHARACTERISTIC "
+         "CURVES FROM RESEARCH/FILM-DATA")
 CUE = w.CUE
 
 PHOTO_PANEL = w.Rect(4, 106, 208, 120)
@@ -62,8 +68,10 @@ LOOKS = 36
 
 
 class Film(NamedTuple):
-    """A film look: its name, Redlamp's recipe for it, its accent, its icon (body, band and label colours, and
-    the label; a slide film's icon is its mount), and its datasheet in research/film-data."""
+    """A film look: its name on screen, its kind and speed rather than the film's; Redlamp's recipe for it;
+    its accent; its icon (its shape, as the app's: a canister, a slide film's mount or a paper print; then
+    its body, band and label colours, and the label); and the datasheet in research/film-data whose curves
+    its card draws."""
     name: str
     recipe: str
     accent: str
@@ -72,14 +80,19 @@ class Film(NamedTuple):
 
 
 FILMS = [
-    Film("PORTRA 400", "redlamp/stock/portra-400", "orange", ("#efe8d6", "orange", "#4a2c14", "400"), "kodak-portra-400"),
-    Film("TRI-X 400", "redlamp/stock/tri-x-400", "gold", ("gold", "#1b1b1b", "gold", "400"), "kodak-tri-x-400"),
-    Film("CINESTILL 800T", "redlamp/stock/cinestill-800t", "cyan", ("#1b1b1b", "cyan", "#1b1b1b", "800T"),
+    Film("COLOUR NEG 400", "redlamp/stock/portra-400", "orange", ("canister", "#efe8d6", "orange", "#4a2c14", "400"),
+         "kodak-portra-400"),
+    Film("B&W 400", "redlamp/stock/tri-x-400", "gold", ("canister", "gold", "#1b1b1b", "gold", "400"), "kodak-tri-x-400"),
+    Film("TUNGSTEN 800", "redlamp/stock/cinestill-800t", "cyan", ("canister", "#1b1b1b", "cyan", "#1b1b1b", "800"),
          "cinestill-800t"),
-    Film("VELVIA 50", "redlamp/stock/velvia-50", "violet", None, "fuji-velvia-50"),
-    Film("HP5 PLUS", "redlamp/stock/hp5-plus", "green", ("#1b1b1b", "#ececec", "#1b1b1b", "HP5"), "ilford-hp5-plus"),
+    Film("SLIDE 50", "redlamp/stock/velvia-50", "violet", ("slide", "#e4e0ec", "violet", "violet.dark", "50"),
+         "fuji-velvia-50"),
+    Film("DARKROOM PRINT", "redlamp/stock/tri-x-multigrade", "green", ("paper", "#efece4", None, "#262626", "G2"),
+         "ilford-multigrade-rc"),
 ]
-PORTRA, TRI_X, CINESTILL, VELVIA, HP5 = FILMS
+PORTRA, TRI_X, CINESTILL, VELVIA, PRINT = FILMS
+# A print's picture, as the app draws it: black and white, lightest at the top and darkest at the foot.
+PRINT_GREYS = ["#d6d6d6", "#a4a4a4", "#6e6e6e", "#3a3a3a"]
 
 
 class Click(NamedTuple):
@@ -90,9 +103,9 @@ class Click(NamedTuple):
 
 
 s1, s2, s3, s4 = (CUE[f"step{i}"] for i in range(1, 5))
-# Each film is picked on the beat its name comes up: Portra 400 with the second step's words, Tri-X 400
-# with the third's and CineStill 800T two beats later, Velvia 50 with the fourth's and HP5 Plus two beats
-# later. The pointer comes in from the right over the beat before the first.
+# Each look is picked on the beat its name comes up: COLOUR NEG 400 with the second step's words, B&W 400
+# with the third's and TUNGSTEN 800 two beats later, SLIDE 50 with the fourth's and DARKROOM PRINT two
+# beats later. The pointer comes in from the right over the beat before the first.
 CLICKS = [Click(film, at, at + 0.5) for film, at in zip(FILMS, (s2, s3, s3 + 2, s4, s4 + 2))]
 ENTER = s2 - 1
 # The card's curves draw themselves over three beats from the first step's cue, and a chosen film's
@@ -197,14 +210,19 @@ def photo_at(b):
 
 # ---------------------------------------------------------------- the film icons
 
-def canister(c, x, y, film):
+def small_icon(c, x, y, film):
     """The film's icon as the Base Look menu shows it, small: a canister in its colours with its band and
-    the film's leader, or a slide film's mount. 9 × 7."""
-    if film.icon is None:
-        c.rect(x + 1, y, 7, 7, "#e4e0ec")
-        c.rect(x + 3, y + 2, 3, 3, film.accent)
+    the film's leader, a slide film's mount, or a print with its picture. 9 × 7."""
+    shape, body, band, _, _ = film.icon
+    if shape == "slide":
+        c.rect(x + 1, y, 7, 7, body)
+        c.rect(x + 3, y + 2, 3, 3, band)
         return
-    body, band, _, _ = film.icon
+    if shape == "paper":
+        c.rect(x + 1, y, 7, 7, body)
+        for row, grey in enumerate(PRINT_GREYS):
+            c.hline(x + 2, y + 1 + row, 5, grey)
+        return
     c.rect(x + 1, y, 3, 1, "dim")
     c.rect(x, y + 1, 6, 6, body)
     c.rect(x, y + 3, 6, 2, band)
@@ -212,17 +230,26 @@ def canister(c, x, y, film):
     c.rect(x + 6, y + 3, 3, 2, "#8a5a32")
 
 
-def big_canister(c, x, y, film):
-    """The film's icon at the size it labels a look: the canister with the film's label on its band and its
-    leader running out to the right, or a slide film's mount with its speed under the window. 22 × 17."""
-    if film.icon is None:
-        c.rect(x + 2, y, 17, 17, "#e4e0ec")
+def big_icon(c, x, y, film):
+    """The film's icon at the size it labels a look: the canister with its label on its band and its leader
+    running out to the right, a slide film's mount with its speed under the window, or a print, its shadow
+    falling to the right, with its grade under the picture. 22 × 17."""
+    shape, body, band, ink, label = film.icon
+    if shape == "slide":
+        c.rect(x + 2, y, 17, 17, body)
         c.box(x + 2, y, 17, 17, "#b9b3c6")
-        c.rect(x + 5, y + 3, 11, 7, film.accent)
-        c.hline(x + 5, y + 3, 11, f"{film.accent}.light")
-        c.text(x + 10, y + 11, "50", f"{film.accent}.dark", align="center")
+        c.rect(x + 5, y + 3, 11, 7, band)
+        c.hline(x + 5, y + 3, 11, f"{band}.light")
+        c.text(x + 10, y + 11, label, ink, align="center")
         return
-    body, band, ink, label = film.icon
+    if shape == "paper":
+        c.rect(x + 3, y, 15, 16, body)
+        c.vline(x + 18, y + 1, 16, "shadow")
+        c.hline(x + 4, y + 16, 14, "shadow")
+        for row in range(7):
+            c.hline(x + 5, y + 2 + row, 11, PRINT_GREYS[row * len(PRINT_GREYS) // 7])
+        c.text(x + 10, y + 10, label, ink, align="center")
+        return
     c.rect(x + 6, y, 5, 2, "muted")
     c.rect(x, y + 2, 17, 2, "dim")
     c.rect(x, y + 4, 17, 11, body)
@@ -267,7 +294,7 @@ def chip(c, r, film, state):
         c.hline(r.x, r.y2 - 1, r.w, "shadow")
         ink = film.accent
     sink = state == "pressed"
-    canister(c, r.x + 2, r.y + 1 + sink, film)
+    small_icon(c, r.x + 2, r.y + 1 + sink, film)
     c.text(r.x + 13, r.y + 2 + sink, film.name, ink)
 
 
@@ -322,7 +349,7 @@ DENSITY = 4.0
 def curves(film, width, height):
     """The film's characteristic curves from its datasheet, as the row of each of `width` columns on a
     chart `height` rows tall: the red, green and blue layers' for a colour film, the one curve for black
-    and white, each across the exposures its datasheet plots."""
+    and white film or paper, each across the exposures its datasheet plots."""
     data = json.loads((w.REPO / "research/film-data" / f"{film.data}.json").read_text())["characteristicCurves"]
     log = np.array(data["logExposure"], dtype=float)
     out = []
@@ -338,8 +365,8 @@ def curves(film, width, height):
 
 
 def drawn_at(b):
-    """The film whose datasheet the card shows at beat b, and how much of its curves have drawn: Portra
-    400's as the example from the first step, then each film's from its click."""
+    """The look whose datasheet the card shows at beat b, and how much of its curves have drawn: Portra
+    400's as the example from the first step, then each look's from its click."""
     done = chosen_at(b)
     if not done:
         return PORTRA, w.between(b, *DRAW)
@@ -351,7 +378,7 @@ def datasheet(c, r, b):
     left to right over a dotted grid, density up and exposure across, a white pen at their heads as they
     draw."""
     film, share = drawn_at(b)
-    canister(c, r.x2 - 9, r.y - 9, film)
+    small_icon(c, r.x2 - 9, r.y - 9, film)
     c.text(r.x, r.y, film.name, "white")
     plot = w.Rect(r.x, r.y + 9, r.w, r.h - 9)
     c.grid(*plot, rows=3, cols=4, color="line")
@@ -417,7 +444,7 @@ def result(c, b):
             if i and b >= start:
                 c.vline(area.x, area.y, area.h, "shadow")
             w.appear(c, w.between(b, start, start + 4 / w.PER_BEAT),
-                     lambda c, film=film, area=area: big_canister(c, area.cx - 11, area.y2 - 21, film))
+                     lambda c, film=film, area=area: big_icon(c, area.cx - 11, area.y2 - 21, film))
             if start <= b < start + 0.75:
                 c.sparkles(area.x, area.y, area.w, area.h, 7, [f"{film.accent}.light", "white"],
                            seed=int(b * w.PER_BEAT) + i)
@@ -484,10 +511,10 @@ PANELS = [
             "The riff starts over the beat and the galloping bass; a run of soft blips rises with the curves as "
             "they draw; the pointer comes in."),
     w.Panel(3, 4.8, at(s2 + 1.2), PORTRA.name,
-            "A click on PORTRA 400 on the bar's first beat and a blip as its look applies."),
+            f"A click on {PORTRA.name} on the bar's first beat and a blip as its look applies."),
     w.Panel(4, 7.2, at(s3 + 2.6), f"{TRI_X.name}, then {CINESTILL.name} two beats later",
             "The riff's answer over A major and the full beat; a click and a blip for each film."),
-    w.Panel(5, 9.6, at(s4 + 1.2), f"{VELVIA.name}, then {HP5.name} two beats later",
+    w.Panel(5, 9.6, at(s4 + 1.2), f"{VELVIA.name}, then {PRINT.name} two beats later",
             "A click and a blip for each film; a snare roll doubles into the stop."),
     w.Panel(6, 12.0, at(BANDS[-1] + 0.6), CAPTION_RESULT + "; as opened, then the five looks from 13.2 s",
             "The drop and the sting; a run of blips climbing the chord as the looks develop across the photo."),
