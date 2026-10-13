@@ -64,7 +64,8 @@ struct FilterSearchFieldFocusTests {
         editor.layoutSubtreeIfNeeded()
         let editing = try textInk(field)
         #expect(abs(editing.minX - resting.minX) <= 0.5, "moved across: \(resting) then \(editing)")
-        #expect(abs(editing.minY - resting.minY) <= 0.5, "moved up or down: \(resting) then \(editing)")
+        // Its middle: at 1x the editor draws it a pixel thinner, top and bottom.
+        #expect(abs(editing.midY - resting.midY) <= 0.5, "moved up or down: \(resting) then \(editing)")
         #expect(resting.minX >= 24, "the placeholder starts after the magnifying glass: \(resting)")
     }
 
