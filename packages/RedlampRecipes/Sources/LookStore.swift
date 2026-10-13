@@ -43,14 +43,14 @@ public struct LookStore: Sendable {
 /// The Base Looks that ship with Redlamp: the parametric built-ins plus the LUT-backed
 /// looks in the framework's resources.
 ///
-/// Each LUT-backed look is its JSON compressed with LZFSE (`.json.lzfse`), listed with its
-/// details in the folder's index, so listing the looks reads no table; a look's file is
-/// read the first time its table is used.
+/// Each LUT-backed look is a `BundledLookFile` (`.look.lzma`), listed with its details in the
+/// folder's index, so listing the looks reads no table; a look's file is read the first time
+/// its table is used.
 public enum BuiltInBaseLooks {
     private final class BundleToken {}
 
     static let bundle = Bundle(for: BundleToken.self)
-    private static let fileExtension = "json.lzfse"
+    public static let fileExtension = BundledLookFile.fileExtension
     private static let indexName = "BaseLooks.json"
 
     /// Every bundled look, built-ins first.
@@ -84,12 +84,11 @@ public enum BuiltInBaseLooks {
         return index.map { $0.package(in: folder) }
     }
 
-    /// Writes `package` into a Resources/BaseLooks folder as `<name>.json.lzfse`, then lists
+    /// Writes `package` into a Resources/BaseLooks folder as `<name>.look.lzma`, then lists
     /// the folder's looks in its index again.
     public static func install(_ package: BaseLookPackage, as name: String, in folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let json = try RecipeFile.encoder.encode(package)
-        try ((json as NSData).compressed(using: .lzfse) as Data)
+        try BundledLookFile.encode(package)
             .write(to: folder.appending(path: "\(name).\(fileExtension)"), options: .atomic)
         let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent.hasSuffix(".\(fileExtension)") }
@@ -103,9 +102,8 @@ public enum BuiltInBaseLooks {
         try? decode(folder.appending(path: "\(name).\(fileExtension)"))
     }
 
-    private static func decode(_ url: URL) throws -> BaseLookPackage {
-        let json = try (Data(contentsOf: url) as NSData).decompressed(using: .lzfse) as Data
-        return try RecipeFile.decoder.decode(BaseLookPackage.self, from: json)
+    static func decode(_ url: URL) throws -> BaseLookPackage {
+        try BundledLookFile.decode(Data(contentsOf: url))
     }
 
     /// A look as the index lists it: everything but its table's data.

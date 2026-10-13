@@ -6,24 +6,20 @@ import Testing
 /// The Base Looks Redlamp ships: compressed in the bundle, listed by an index of their
 /// details, and each table read the first time its look is used.
 struct BundledBaseLookTests {
-    private static func decompress(_ url: URL) throws -> BaseLookPackage {
-        let json = try (Data(contentsOf: url) as NSData).decompressed(using: .lzfse) as Data
-        return try RecipeFile.decoder.decode(BaseLookPackage.self, from: json)
-    }
-
     @Test func `the bundled looks ship compressed, and the index lists each one`() {
         let bundle = BuiltInBaseLooks.bundle
         let plain = (bundle.urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
             .filter { $0.lastPathComponent.hasPrefix("base-") || $0.lastPathComponent.hasPrefix("stock-") }
         #expect(plain.isEmpty)
-        let files = bundle.urls(forResourcesWithExtension: "lzfse", subdirectory: nil) ?? []
+        #expect((bundle.urls(forResourcesWithExtension: "lzfse", subdirectory: nil) ?? []).isEmpty)
+        let files = bundle.urls(forResourcesWithExtension: "lzma", subdirectory: nil) ?? []
         #expect(!files.isEmpty)
         #expect(files.count == BuiltInBaseLooks.resources.count)
     }
 
     @Test func `every bundled look's details match its file, and its table decodes to its hash`() throws {
-        let files = BuiltInBaseLooks.bundle.urls(forResourcesWithExtension: "lzfse", subdirectory: nil) ?? []
-        let decoded = try files.map(Self.decompress)
+        let files = BuiltInBaseLooks.bundle.urls(forResourcesWithExtension: "lzma", subdirectory: nil) ?? []
+        let decoded = try files.map(BuiltInBaseLooks.decode)
         let listed = BuiltInBaseLooks.read()
         #expect(!listed.isEmpty)
         #expect(Set(decoded) == Set(listed))
@@ -60,9 +56,20 @@ struct BundledBaseLookTests {
             table: LookTable(size: 3) { SIMD3($0.x * 0.9, $0.y, $0.z) },
         )
         try BuiltInBaseLooks.install(package, as: "base-test", in: folder)
-        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "base-test.json.lzfse").path))
-        #expect(try Self.decompress(folder.appending(path: "base-test.json.lzfse")) == package)
+        let file = folder.appending(path: "base-test.look.lzma")
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(try BuiltInBaseLooks.decode(file) == package)
         #expect(BuiltInBaseLooks.installed("base-test", in: folder) == package)
         #expect(BuiltInBaseLooks.read(from: folder) == [package])
+    }
+
+    @Test func `a file that isn't a bundled look, or whose table is cut short, isn't read`() throws {
+        let other = try (Data("{}".utf8) as NSData).compressed(using: .lzma) as Data
+        #expect(throws: BundledLookFile.ReadError.notALook) { try BundledLookFile.decode(other) }
+
+        let package = try BaseLookPackage(id: "redlamp/test", name: "Test", table: LookTable(size: 3) { $0 })
+        let whole = try (BundledLookFile.encode(package) as NSData).decompressed(using: .lzma) as Data
+        let cut = try (whole.dropLast(2) as NSData).compressed(using: .lzma) as Data
+        #expect(throws: BundledLookFile.ReadError.badTable) { try BundledLookFile.decode(cut) }
     }
 }

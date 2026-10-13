@@ -21,7 +21,7 @@ enum StarterPackBuilder {
             try BuiltInBaseLooks.install(package, as: name, in: folder)
             let stats = try LookTableStats(package.definition().table!)
             print(
-                "\(package.id)@\(package.version)  strength \(String(format: "%.3f", stats.strength))  neutral \(String(format: "%.4f", stats.neutralChroma))  → \(name).json.lzfse",
+                "\(package.id)@\(package.version)  strength \(String(format: "%.3f", stats.strength))  neutral \(String(format: "%.4f", stats.neutralChroma))  → \(name).\(BuiltInBaseLooks.fileExtension)",
             )
         }
         print("Regenerate the workspace (mise run generate) so the app bundles the new files.")

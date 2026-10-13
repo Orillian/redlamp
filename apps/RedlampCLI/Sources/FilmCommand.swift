@@ -124,7 +124,7 @@ enum FilmCommand {
                 """)
             }
             try BuiltInBaseLooks.install(package, as: name, in: folder)
-            print("installed \(package.id)@\(package.version) → \(name).json.lzfse")
+            print("installed \(package.id)@\(package.version) → \(name).\(BuiltInBaseLooks.fileExtension)")
         }
         print("Regenerate the workspace (mise run generate) so the app bundles the new files.")
     }

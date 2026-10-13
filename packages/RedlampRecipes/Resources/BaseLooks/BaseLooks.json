@@ -1,6 +1,6 @@
 [
   {
-    "file" : "base-bleach.json.lzfse",
+    "file" : "base-bleach.look.lzma",
     "id" : "redlamp/film/bleach",
     "look" : {
       "contrast" : 1,
@@ -18,7 +18,7 @@
     "version" : 1
   },
   {
-    "file" : "base-chrome.json.lzfse",
+    "file" : "base-chrome.look.lzma",
     "id" : "redlamp/film/chrome",
     "look" : {
       "contrast" : 1,
@@ -36,7 +36,7 @@
     "version" : 1
   },
   {
-    "file" : "base-chrome@2.json.lzfse",
+    "file" : "base-chrome@2.look.lzma",
     "id" : "redlamp/film/chrome",
     "look" : {
       "contrast" : 1,
@@ -54,7 +54,7 @@
     "version" : 2
   },
   {
-    "file" : "base-chrome@3.json.lzfse",
+    "file" : "base-chrome@3.look.lzma",
     "id" : "redlamp/film/chrome",
     "look" : {
       "contrast" : 1,
@@ -72,7 +72,7 @@
     "version" : 3
   },
   {
-    "file" : "base-cinema.json.lzfse",
+    "file" : "base-cinema.look.lzma",
     "id" : "redlamp/film/cinema",
     "look" : {
       "contrast" : 1,
@@ -90,7 +90,7 @@
     "version" : 1
   },
   {
-    "file" : "base-monochrome-green.json.lzfse",
+    "file" : "base-monochrome-green.look.lzma",
     "id" : "redlamp/film/monochrome-green",
     "look" : {
       "contrast" : 1,
@@ -109,7 +109,7 @@
     "version" : 1
   },
   {
-    "file" : "base-monochrome-red.json.lzfse",
+    "file" : "base-monochrome-red.look.lzma",
     "id" : "redlamp/film/monochrome-red",
     "look" : {
       "contrast" : 1,
@@ -128,7 +128,7 @@
     "version" : 1
   },
   {
-    "file" : "base-monochrome-yellow.json.lzfse",
+    "file" : "base-monochrome-yellow.look.lzma",
     "id" : "redlamp/film/monochrome-yellow",
     "look" : {
       "contrast" : 1,
@@ -147,7 +147,7 @@
     "version" : 1
   },
   {
-    "file" : "base-monochrome.json.lzfse",
+    "file" : "base-monochrome.look.lzma",
     "id" : "redlamp/film/monochrome",
     "look" : {
       "contrast" : 1,
@@ -166,7 +166,7 @@
     "version" : 1
   },
   {
-    "file" : "base-negative-classic.json.lzfse",
+    "file" : "base-negative-classic.look.lzma",
     "id" : "redlamp/film/negative-classic",
     "look" : {
       "contrast" : 1,
@@ -184,7 +184,7 @@
     "version" : 1
   },
   {
-    "file" : "base-negative-high.json.lzfse",
+    "file" : "base-negative-high.look.lzma",
     "id" : "redlamp/film/negative-high",
     "look" : {
       "contrast" : 1,
@@ -202,7 +202,7 @@
     "version" : 1
   },
   {
-    "file" : "base-negative-nostalgic.json.lzfse",
+    "file" : "base-negative-nostalgic.look.lzma",
     "id" : "redlamp/film/negative-nostalgic",
     "look" : {
       "contrast" : 1,
@@ -220,7 +220,7 @@
     "version" : 1
   },
   {
-    "file" : "base-negative-standard.json.lzfse",
+    "file" : "base-negative-standard.look.lzma",
     "id" : "redlamp/film/negative-standard",
     "look" : {
       "contrast" : 1,
@@ -238,7 +238,7 @@
     "version" : 1
   },
   {
-    "file" : "base-sepia.json.lzfse",
+    "file" : "base-sepia.look.lzma",
     "id" : "redlamp/film/sepia",
     "look" : {
       "contrast" : 1,
@@ -257,7 +257,7 @@
     "version" : 1
   },
   {
-    "file" : "base-soft-slide.json.lzfse",
+    "file" : "base-soft-slide.look.lzma",
     "id" : "redlamp/film/soft-slide",
     "look" : {
       "contrast" : 1,
@@ -275,7 +275,7 @@
     "version" : 1
   },
   {
-    "file" : "base-soft-slide@2.json.lzfse",
+    "file" : "base-soft-slide@2.look.lzma",
     "id" : "redlamp/film/soft-slide",
     "look" : {
       "contrast" : 1,
@@ -293,7 +293,7 @@
     "version" : 2
   },
   {
-    "file" : "base-standard.json.lzfse",
+    "file" : "base-standard.look.lzma",
     "id" : "redlamp/film/standard",
     "look" : {
       "contrast" : 1,
@@ -311,7 +311,7 @@
     "version" : 1
   },
   {
-    "file" : "base-standard@2.json.lzfse",
+    "file" : "base-standard@2.look.lzma",
     "id" : "redlamp/film/standard",
     "look" : {
       "contrast" : 1,
@@ -329,7 +329,7 @@
     "version" : 2
   },
   {
-    "file" : "base-standard@3.json.lzfse",
+    "file" : "base-standard@3.look.lzma",
     "id" : "redlamp/film/standard",
     "look" : {
       "contrast" : 1,
@@ -347,7 +347,7 @@
     "version" : 3
   },
   {
-    "file" : "base-vivid-slide.json.lzfse",
+    "file" : "base-vivid-slide.look.lzma",
     "id" : "redlamp/film/vivid-slide",
     "look" : {
       "contrast" : 1,
@@ -365,7 +365,7 @@
     "version" : 1
   },
   {
-    "file" : "base-vivid-slide@2.json.lzfse",
+    "file" : "base-vivid-slide@2.look.lzma",
     "id" : "redlamp/film/vivid-slide",
     "look" : {
       "contrast" : 1,
@@ -383,7 +383,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-cinestill-50d.json.lzfse",
+    "file" : "stock-cinestill-50d.look.lzma",
     "id" : "redlamp/stock/cinestill-50d/look",
     "look" : {
       "contrast" : 1,
@@ -400,7 +400,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-cinestill-800t.json.lzfse",
+    "file" : "stock-cinestill-800t.look.lzma",
     "id" : "redlamp/stock/cinestill-800t/look",
     "look" : {
       "contrast" : 1,
@@ -417,7 +417,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-delta-100.json.lzfse",
+    "file" : "stock-delta-100.look.lzma",
     "id" : "redlamp/stock/delta-100/look",
     "look" : {
       "contrast" : 1,
@@ -434,7 +434,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-delta-3200.json.lzfse",
+    "file" : "stock-delta-3200.look.lzma",
     "id" : "redlamp/stock/delta-3200/look",
     "look" : {
       "contrast" : 1,
@@ -451,7 +451,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-ektachrome-e100.json.lzfse",
+    "file" : "stock-ektachrome-e100.look.lzma",
     "id" : "redlamp/stock/ektachrome-e100/look",
     "look" : {
       "contrast" : 1,
@@ -468,7 +468,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-ektachrome-e100@2.json.lzfse",
+    "file" : "stock-ektachrome-e100@2.look.lzma",
     "id" : "redlamp/stock/ektachrome-e100/look",
     "look" : {
       "contrast" : 1,
@@ -485,7 +485,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-ektar-100.json.lzfse",
+    "file" : "stock-ektar-100.look.lzma",
     "id" : "redlamp/stock/ektar-100/look",
     "look" : {
       "contrast" : 1,
@@ -502,7 +502,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-ektar-100@2.json.lzfse",
+    "file" : "stock-ektar-100@2.look.lzma",
     "id" : "redlamp/stock/ektar-100/look",
     "look" : {
       "contrast" : 1,
@@ -519,7 +519,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-eterna-vivid-250d-2383.json.lzfse",
+    "file" : "stock-eterna-vivid-250d-2383.look.lzma",
     "id" : "redlamp/stock/eterna-vivid-250d-2383/look",
     "look" : {
       "contrast" : 1,
@@ -536,7 +536,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-fp4-plus.json.lzfse",
+    "file" : "stock-fp4-plus.look.lzma",
     "id" : "redlamp/stock/fp4-plus/look",
     "look" : {
       "contrast" : 1,
@@ -553,7 +553,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-gold-200.json.lzfse",
+    "file" : "stock-gold-200.look.lzma",
     "id" : "redlamp/stock/gold-200/look",
     "look" : {
       "contrast" : 1,
@@ -570,7 +570,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-gold-200@2.json.lzfse",
+    "file" : "stock-gold-200@2.look.lzma",
     "id" : "redlamp/stock/gold-200/look",
     "look" : {
       "contrast" : 1,
@@ -587,7 +587,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-hp5-plus.json.lzfse",
+    "file" : "stock-hp5-plus.look.lzma",
     "id" : "redlamp/stock/hp5-plus/look",
     "look" : {
       "contrast" : 1,
@@ -604,7 +604,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-kodachrome-64.json.lzfse",
+    "file" : "stock-kodachrome-64.look.lzma",
     "id" : "redlamp/stock/kodachrome-64/look",
     "look" : {
       "contrast" : 1,
@@ -621,7 +621,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-kodachrome-64@2.json.lzfse",
+    "file" : "stock-kodachrome-64@2.look.lzma",
     "id" : "redlamp/stock/kodachrome-64/look",
     "look" : {
       "contrast" : 1,
@@ -638,7 +638,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-pan-f-plus.json.lzfse",
+    "file" : "stock-pan-f-plus.look.lzma",
     "id" : "redlamp/stock/pan-f-plus/look",
     "look" : {
       "contrast" : 1,
@@ -655,7 +655,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-portra-160.json.lzfse",
+    "file" : "stock-portra-160.look.lzma",
     "id" : "redlamp/stock/portra-160/look",
     "look" : {
       "contrast" : 1,
@@ -672,7 +672,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-portra-400-overexposed.json.lzfse",
+    "file" : "stock-portra-400-overexposed.look.lzma",
     "id" : "redlamp/stock/portra-400-overexposed/look",
     "look" : {
       "contrast" : 1,
@@ -689,7 +689,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-portra-400.json.lzfse",
+    "file" : "stock-portra-400.look.lzma",
     "id" : "redlamp/stock/portra-400/look",
     "look" : {
       "contrast" : 1,
@@ -706,7 +706,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-portra-400@2.json.lzfse",
+    "file" : "stock-portra-400@2.look.lzma",
     "id" : "redlamp/stock/portra-400/look",
     "look" : {
       "contrast" : 1,
@@ -723,7 +723,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-portra-800-1600.json.lzfse",
+    "file" : "stock-portra-800-1600.look.lzma",
     "id" : "redlamp/stock/portra-800-1600/look",
     "look" : {
       "contrast" : 1,
@@ -740,7 +740,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-portra-800.json.lzfse",
+    "file" : "stock-portra-800.look.lzma",
     "id" : "redlamp/stock/portra-800/look",
     "look" : {
       "contrast" : 1,
@@ -757,7 +757,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-pro-400h.json.lzfse",
+    "file" : "stock-pro-400h.look.lzma",
     "id" : "redlamp/stock/pro-400h/look",
     "look" : {
       "contrast" : 1,
@@ -774,7 +774,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-provia-100f-cross.json.lzfse",
+    "file" : "stock-provia-100f-cross.look.lzma",
     "id" : "redlamp/stock/provia-100f-cross/look",
     "look" : {
       "contrast" : 1,
@@ -791,7 +791,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-provia-100f.json.lzfse",
+    "file" : "stock-provia-100f.look.lzma",
     "id" : "redlamp/stock/provia-100f/look",
     "look" : {
       "contrast" : 1,
@@ -808,7 +808,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-provia-100f@2.json.lzfse",
+    "file" : "stock-provia-100f@2.look.lzma",
     "id" : "redlamp/stock/provia-100f/look",
     "look" : {
       "contrast" : 1,
@@ -825,7 +825,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-superia-400.json.lzfse",
+    "file" : "stock-superia-400.look.lzma",
     "id" : "redlamp/stock/superia-400/look",
     "look" : {
       "contrast" : 1,
@@ -842,7 +842,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-superia-400@2.json.lzfse",
+    "file" : "stock-superia-400@2.look.lzma",
     "id" : "redlamp/stock/superia-400/look",
     "look" : {
       "contrast" : 1,
@@ -859,7 +859,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-t-max-100.json.lzfse",
+    "file" : "stock-t-max-100.look.lzma",
     "id" : "redlamp/stock/t-max-100/look",
     "look" : {
       "contrast" : 1,
@@ -876,7 +876,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-t-max-400.json.lzfse",
+    "file" : "stock-t-max-400.look.lzma",
     "id" : "redlamp/stock/t-max-400/look",
     "look" : {
       "contrast" : 1,
@@ -893,7 +893,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-tri-x-1600.json.lzfse",
+    "file" : "stock-tri-x-1600.look.lzma",
     "id" : "redlamp/stock/tri-x-1600/look",
     "look" : {
       "contrast" : 1,
@@ -910,7 +910,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-tri-x-400.json.lzfse",
+    "file" : "stock-tri-x-400.look.lzma",
     "id" : "redlamp/stock/tri-x-400/look",
     "look" : {
       "contrast" : 1,
@@ -927,7 +927,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-tri-x-multigrade-hard.json.lzfse",
+    "file" : "stock-tri-x-multigrade-hard.look.lzma",
     "id" : "redlamp/stock/tri-x-multigrade-hard/look",
     "look" : {
       "contrast" : 1,
@@ -944,7 +944,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-tri-x-multigrade-hard@2.json.lzfse",
+    "file" : "stock-tri-x-multigrade-hard@2.look.lzma",
     "id" : "redlamp/stock/tri-x-multigrade-hard/look",
     "look" : {
       "contrast" : 1,
@@ -961,7 +961,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-tri-x-multigrade-soft.json.lzfse",
+    "file" : "stock-tri-x-multigrade-soft.look.lzma",
     "id" : "redlamp/stock/tri-x-multigrade-soft/look",
     "look" : {
       "contrast" : 1,
@@ -978,7 +978,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-tri-x-multigrade.json.lzfse",
+    "file" : "stock-tri-x-multigrade.look.lzma",
     "id" : "redlamp/stock/tri-x-multigrade/look",
     "look" : {
       "contrast" : 1,
@@ -995,7 +995,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-ultramax-400.json.lzfse",
+    "file" : "stock-ultramax-400.look.lzma",
     "id" : "redlamp/stock/ultramax-400/look",
     "look" : {
       "contrast" : 1,
@@ -1012,7 +1012,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-velvia-100.json.lzfse",
+    "file" : "stock-velvia-100.look.lzma",
     "id" : "redlamp/stock/velvia-100/look",
     "look" : {
       "contrast" : 1,
@@ -1029,7 +1029,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-velvia-100@2.json.lzfse",
+    "file" : "stock-velvia-100@2.look.lzma",
     "id" : "redlamp/stock/velvia-100/look",
     "look" : {
       "contrast" : 1,
@@ -1046,7 +1046,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-velvia-50-cross.json.lzfse",
+    "file" : "stock-velvia-50-cross.look.lzma",
     "id" : "redlamp/stock/velvia-50-cross/look",
     "look" : {
       "contrast" : 1,
@@ -1063,7 +1063,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-velvia-50.json.lzfse",
+    "file" : "stock-velvia-50.look.lzma",
     "id" : "redlamp/stock/velvia-50/look",
     "look" : {
       "contrast" : 1,
@@ -1080,7 +1080,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-velvia-50@2.json.lzfse",
+    "file" : "stock-velvia-50@2.look.lzma",
     "id" : "redlamp/stock/velvia-50/look",
     "look" : {
       "contrast" : 1,
@@ -1097,7 +1097,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-vision3-2383-bleach-bypass.json.lzfse",
+    "file" : "stock-vision3-2383-bleach-bypass.look.lzma",
     "id" : "redlamp/stock/vision3-2383-bleach-bypass/look",
     "look" : {
       "contrast" : 1,
@@ -1114,7 +1114,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-vision3-2383-bleach-bypass@2.json.lzfse",
+    "file" : "stock-vision3-2383-bleach-bypass@2.look.lzma",
     "id" : "redlamp/stock/vision3-2383-bleach-bypass/look",
     "look" : {
       "contrast" : 1,
@@ -1131,7 +1131,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-vision3-250d-2383.json.lzfse",
+    "file" : "stock-vision3-250d-2383.look.lzma",
     "id" : "redlamp/stock/vision3-250d-2383/look",
     "look" : {
       "contrast" : 1,
@@ -1148,7 +1148,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-vision3-500t-2383.json.lzfse",
+    "file" : "stock-vision3-500t-2383.look.lzma",
     "id" : "redlamp/stock/vision3-500t-2383/look",
     "look" : {
       "contrast" : 1,
@@ -1165,7 +1165,7 @@
     "version" : 1
   },
   {
-    "file" : "stock-vision3-500t-2383@2.json.lzfse",
+    "file" : "stock-vision3-500t-2383@2.look.lzma",
     "id" : "redlamp/stock/vision3-500t-2383/look",
     "look" : {
       "contrast" : 1,
@@ -1182,7 +1182,7 @@
     "version" : 2
   },
   {
-    "file" : "stock-vision3-50d-2383.json.lzfse",
+    "file" : "stock-vision3-50d-2383.look.lzma",
     "id" : "redlamp/stock/vision3-50d-2383/look",
     "look" : {
       "contrast" : 1,

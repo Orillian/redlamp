@@ -58,7 +58,7 @@ Each look has its own version. A changed look installs as `stock-<id>@<version>.
 - slides: Provia 100F and Velvia 50;
 - black and white: Tri-X 400, HP5 Plus, and Tri-X printed on Multigrade.
 
-Grain follows each datasheet's granularity. Kodak's Print Grain Index converts as (PGI − 25) × 0.6; slide rms is used as is; black-and-white rms is multiplied by 2.2. Where a datasheet gives no figure, the look is set beside its nearest peer. `redlamp recipe film --all` (or `--look <id>`) writes each look as a recipe with its Base Look and Effects into `build/film/looks/`, with one contact sheet. `--install` writes the bundled tables (`packages/RedlampRecipes/Resources/BaseLooks/stock-<id>.json`, 33³). `--readme` writes the icons and examples in `docs/images/film/`.
+Grain follows each datasheet's granularity. Kodak's Print Grain Index converts as (PGI − 25) × 0.6; slide rms is used as is; black-and-white rms is multiplied by 2.2. Where a datasheet gives no figure, the look is set beside its nearest peer. `redlamp recipe film --all` (or `--look <id>`) writes each look as a recipe with its Base Look and Effects into `build/film/looks/`, with one contact sheet. `--install` writes the bundled tables (`packages/RedlampRecipes/Resources/BaseLooks/stock-<id>.look.lzma`, 33³). `--readme` writes the icons and examples in `docs/images/film/`.
 
 **In the app:**
 - All 11 looks ship under their stock names; the owner will take the trademark question to counsel.
