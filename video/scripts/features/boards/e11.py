@@ -153,11 +153,12 @@ s1, s2, s3, s4 = (CUE[f"step{i}"] for i in range(1, 5))
 # Command goes down a beat after the words that ask for it and K on the next, which opens the palette;
 # K comes up first. E, X and P are typed a beat apart from the third bar's first beat. Return on the
 # fourth bar's first beat shrinks the palette to the slider bar, Shift goes down half a beat later and
-# the right arrow steps on each of the next three beats. The down arrow on the fifth bar's first beat
-# moves to Contrast, then 2, 0 and Return a beat apart.
+# the right arrow steps three times an eighth apart (0.3 s) from the next beat: the app keeps arrow
+# presses less than 0.5 s apart as one history step, as the card says (CommandPaletteModel.burstGap).
+# The down arrow on the fifth bar's first beat moves to Contrast, then 2, 0 and Return a beat apart.
 COMMAND, K = Key("⌘", ((s1 + 1, s1 + 3.5),)), Key("K", ((s1 + 2, s1 + 3.25),))
 TYPED = [tap(letter, s2 + i) for i, letter in enumerate("EXP")]
-RETURN, SHIFT, RIGHT = tap("↵", s3), Key("⇧", ((s3 + 0.5, s3 + 3.5),)), tap("→", s3 + 1, s3 + 2, s3 + 3)
+RETURN, SHIFT, RIGHT = tap("↵", s3), Key("⇧", ((s3 + 0.5, s3 + 3.5),)), tap("→", s3 + 1, s3 + 1.5, s3 + 2)
 DOWN, TWO, ZERO, SET = tap("↓", s4), tap("2", s4 + 1), tap("0", s4 + 2), tap("↵", s4 + 3)
 BARS = [(s1, [COMMAND, K]), (s2, TYPED), (s3, [RETURN, SHIFT, RIGHT]), (s4, [DOWN, TWO, ZERO, SET])]
 OPEN, ADJUST, NEXT, SET_AT = K.presses[0][0], RETURN.presses[0][0], DOWN.presses[0][0], SET.presses[0][0]
@@ -167,7 +168,7 @@ UNROLL, SHRINK, TURN = 6 / w.PER_BEAT, 6 / w.PER_BEAT, 4 / w.PER_BEAT
 # Exposure's step with Shift held, ten times its 0.05 (ParameterSpec); Contrast's value as typed.
 STEP, CONTRAST = 0.5, 20
 TARGET = {"EXPOSURE": STEP * len(RIGHT.presses), "CONTRAST": CONTRAST}
-CAPTIONS = [(s1, "PRESS COMMAND K"), (s2, ["EVERY SLIDER", "AND ACTION"]), (s3, ["STEP IT WITH", "THE ARROW KEYS"]),
+CAPTIONS = [(s1, "PRESS COMMAND K"), (s2, ["TYPE TO FIND", "ANY SLIDER"]), (s3, ["STEP IT WITH", "THE ARROW KEYS"]),
             (s4, ["NEXT SLIDER,", "TYPE A VALUE"]), (CUE["result"], CAPTION_RESULT)]
 
 
@@ -574,9 +575,9 @@ PANELS = [
             "unrolls; K up, then ⌘, in the bar's last beat."),
     w.Panel(3, 4.8, at(s2 + 2.1), " / ".join(CAPTIONS[1][1]),
             "A key down and up for E, X and P, a beat apart from the bar's first beat; the list narrows with each."),
-    w.Panel(4, 7.2, at(s3 + 3.2), " / ".join(CAPTIONS[2][1]),
+    w.Panel(4, 7.2, at(s3 + 2.2), " / ".join(CAPTIONS[2][1]),
             "The full beat comes in; a key for ↵ on the bar's first beat and air falling as the palette rolls up, "
-            "⇧ down half a beat later, and a key and a slider tick for each → a beat apart."),
+            "⇧ down half a beat later, and a key and a slider tick for each →, an eighth apart from the next beat."),
     w.Panel(5, 9.6, at(s4 + 3.2), " / ".join(CAPTIONS[3][1]),
             "A key for ↓, 2, 0 and ↵ a beat apart, and a tick as ↵ sets Contrast; a snare roll doubles into the "
             "stop, and the riff's F sharp holds through it."),

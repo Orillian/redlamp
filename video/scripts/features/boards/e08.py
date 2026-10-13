@@ -101,7 +101,7 @@ DRAG = Drag(s4, (s4 + 1, s4 + 2, s4 + 3), s4 + 3.5)
 AMOUNTS = (100, 90, 80, 70)
 # A knob's step eases in over the frames before its tick and lands on it.
 EASE = 3 / w.PER_BEAT
-CAPTIONS = [(s1, "HOVER TO PREVIEW"), (s2, ["ONE RECIPE", "AT A TIME"]), (s3, "CLICK TO APPLY"),
+CAPTIONS = [(s1, "HOVER TO PREVIEW"), (s2, ["SEE EACH ONE", "BEFORE YOU CLICK"]), (s3, "CLICK TO APPLY"),
             (s4, "SET THE AMOUNT"), (CUE["result"], CAPTION_RESULT)]
 
 
