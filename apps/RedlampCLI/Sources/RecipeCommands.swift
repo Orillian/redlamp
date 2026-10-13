@@ -36,6 +36,7 @@ enum RecipeCommands {
       fit --references <image>… [--images <raw>…] [--lut] [--name <name>] [-o <out.redrecipe>]
           [--evaluations <n>]
       profile [--pairs <manifest.json>] [--slots <slot,…>] [--install] [--evaluate <recipes,…>] [--diagnose]
+              [--import-defaults] [--firmware-exposure <ev,…>]
                                                fit film-slot Base Looks to camera JPEGs in raw files
       film [--film <stock>] [--print <stock>] [--exposure <ev>] [--interlayer <k>] [--grey <display>]
            [--negative-density <d>] [--flare <f>] [--name <name>] [--count <images>] [--out <dir>]
@@ -60,7 +61,7 @@ enum RecipeCommands {
     static let valued: Set<String> = [
         "--output", "--query", "--recipe", "--size", "--amount", "--recipes", "--images", "--tile", "--level",
         "--space", "--display", "--name", "--cube", "--out", "--references", "--evaluations", "--seed", "--pairs",
-        "--slots", "--evaluate", "--photo",
+        "--slots", "--evaluate", "--photo", "--firmware-exposure",
     ]
 
     /// One command's inputs.
@@ -77,9 +78,14 @@ enum RecipeCommands {
         guard let command = raw.first else { throw CLIError(description: usage) }
         // `--images` and `--references` take every following non-option argument.
         let rest = expandLists(Array(raw.dropFirst()), for: ["--images", "--references"])
+        let library = RecipeLibrary()
+        // The firmware model's prototype (fujisim-prototype only), switched on for one run.
+        if let folder = FirmwareFilmModel.environmentFolder {
+            library.firmwareModel = try FirmwareFilmModel.shared(at: folder)
+        }
         let context = try Context(
             arguments: Arguments(rest, valued: valued.union(FilmCommand.valued).union(AppLookCommands.valued)),
-            library: RecipeLibrary(),
+            library: library,
         )
         switch command {
         case "list": list(context)
@@ -172,7 +178,7 @@ enum RecipeCommands {
         guard let image = arguments.positional.first, let spec = arguments.value("--recipe"),
               let output = arguments.value("--output")
         else { throw CLIError(description: "render needs <image> --recipe <recipe> -o <out>") }
-        let recipe = try context.library.resolve(spec)
+        let recipe = try context.library.resolvingCard(context.library.resolve(spec))
         let rendered = try await context.renderer().render(
             recipe, image: URL(fileURLWithPath: image), maxLongEdge: arguments.int("--size"),
             amount: arguments.double("--amount") ?? 100,
@@ -185,6 +191,7 @@ enum RecipeCommands {
         let arguments = context.arguments
         guard let output = arguments.value("--output") else { throw CLIError(description: "contact-sheet needs -o") }
         var recipes: [Recipe?] = try context.library.resolveList(arguments.value("--recipes") ?? "all")
+            .map(context.library.resolvingCard)
         if arguments.has("--original") {
             recipes.insert(nil, at: 0)
         }

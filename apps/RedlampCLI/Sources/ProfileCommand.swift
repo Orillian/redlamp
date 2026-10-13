@@ -12,7 +12,10 @@ import RedlampRecipes
 /// `--evaluate a,b,…` fits nothing: it scores looks against the cameras' JPEGs instead, each
 /// slot's against Redlamp Color and the bundled look (TON-45). Each item is a `.redrecipe`, a
 /// recipe the library knows, a folder of them, or one of Fujifilm's LUTs, which is scored with
-/// each output decoding and exposure offset the import could use.
+/// each output decoding and exposure offset the import could use, or with `--import-defaults`
+/// with the import's own. An item `group:<name>` is every recipe in a library group. With
+/// `REDLAMP_FIRMWARE_MODEL` set, the firmware model's looks are scored for their slots, and
+/// `--firmware-exposure a,b,…` scores each at those exposure offsets instead of its own.
 enum ProfileCommand {
     struct Manifest: Decodable {
         struct Pair: Decodable {
@@ -167,8 +170,11 @@ enum ProfileCommand {
                 .sorted { $0.path < $1.path }
                 : exists ? [url] : []
             if !exists {
-                let recipe = try context.library.resolve(item)
-                candidates.append((slot(of: recipe), recipe))
+                let recipes = try item.hasPrefix("group:")
+                    ? context.library.resolveList(item) : [context.library.resolve(item)]
+                for recipe in recipes.map(context.library.resolvingCard) {
+                    candidates += try firmwareVariants(recipe, context: context)
+                }
             }
             for file in files {
                 guard let lut = FujifilmLUT.recognise(contentsOf: file) else {
@@ -177,8 +183,9 @@ enum ProfileCommand {
                     continue
                 }
                 let text = try String(contentsOf: file, encoding: .utf8)
-                for output in LookTableOutput.allCases {
-                    for exposure: Float in [0, 0.5, 0.9, 1.3] {
+                let defaults = context.arguments.has("--import-defaults")
+                for output in defaults ? [FujifilmLUT.output] : LookTableOutput.allCases {
+                    for exposure: Float in defaults ? [FujifilmLUT.exposure] : [0, 0.5, 0.9, 1.3] {
                         let space = ImportedTableSpace.cameraLog(lut.curve, output: output, exposure: exposure)
                         let table = try LookTableImport.parseCube(text, space: space).table
                         let name = "\(FujifilmLUT.name(of: file)) \(output.rawValue) \(String(format: "%+.1f", exposure))"
@@ -279,6 +286,30 @@ enum ProfileCommand {
             let file = output.appendingPathComponent("diagnose-\(slot.rawValue).json")
             try encoder.encode(diagnosis).write(to: file, options: .atomic)
             print("  wrote \(file.lastPathComponent)")
+        }
+    }
+
+    /// A recipe as a candidate. A firmware look is scored only for its slot, and at each of
+    /// `--firmware-exposure`'s offsets when that's given.
+    static func firmwareVariants(_ recipe: Recipe, context: RecipeCommands.Context) throws -> [(
+        slot: FilmSlot?,
+        recipe: Recipe,
+    )] {
+        guard let look = recipe.baseLook, let settings = FirmwareLook.settings(for: look) else {
+            return [(slot(of: recipe), recipe)]
+        }
+        guard let slot = settings.simulation.slot else { return [] }
+        guard let model = context.library.firmwareModel, let offsets = context.arguments.value("--firmware-exposure")
+        else { return [(slot, recipe)] }
+        return try offsets.split(separator: ",").compactMap { Double($0) }.map { exposure in
+            var shifted = settings
+            shifted.exposure = exposure
+            let package = try FirmwareLook.package(shifted, model: model)
+            var variant = recipe
+            variant.name = "\(recipe.name) firmware \(String(format: "%+.2f", exposure))"
+            variant.baseLook = package.reference
+            variant.embeddedBaseLooks = [package]
+            return (slot, variant)
         }
     }
 
