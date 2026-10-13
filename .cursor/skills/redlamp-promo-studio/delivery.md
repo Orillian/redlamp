@@ -14,7 +14,7 @@ Each promo has a render script, `video/scripts/<slug>.mjs` (copy `star.mjs`), ru
 
 In the agent sandbox, run it with `NODE_USE_ENV_PROXY=1` so its own request reaches GitHub; the script keeps that setting away from Remotion, whose requests to its own server on localhost would otherwise go to the proxy and stall the encode.
 
-Name files `<promo>-<shape>[-<hook>].mp4`, as `star-redlamp-9x16-psst.mp4`. Outputs aren't committed.
+Name files `<promo>-<shape>[-<hook>].mp4`, as `star-redlamp-9x16-psst.mp4`. Outputs aren't committed here: once the owner has approved the render, collect it into the marketing library, `~/src/redlamp-social/marketing` (its skill is `~/.cursor/skills/redlamp-marketing`), which keeps every delivered render with its campaign.
 
 ## The platforms
 

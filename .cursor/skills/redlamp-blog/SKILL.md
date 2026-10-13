@@ -15,6 +15,7 @@ Every blog post is tracked in one canvas, the blog room: the posts that are live
 | Posts | `web/content/blog/<slug>/index.md`, with its images beside it (`web/README.md`, The blog; the checks and capture script are in `.cursor/skills/redlamp-site/SKILL.md`) |
 | A post's kit | `docs/blog/social/<slug>/`: `card.json` (the card's words) and `posts.md` (the X and LinkedIn copy, what to attach, alt text, and where each went), committed; `card.png`, `card.gif`, `card.mp4` and `thumb.jpg`, rendered and gitignored |
 | Copies to post from | `~/Downloads/redlamp-<slug>.png`, `.gif` and `.mp4`. macOS keeps Downloads from Cursor: agents can write there but not list or read it, and the room opens the kit's own copies instead. |
+| The kept copy | `~/src/redlamp-social/marketing/blog/<slug>/`, the marketing library's copy of the kit. After rendering a card, run its collect (`~/.cursor/skills/redlamp-marketing`), so the rendered files outlive this checkout. |
 | Facts for a post not yet written | `docs/blog/facts/<slug>.md`, each fact with its source |
 | The card | [card/card.html](card/card.html) and [card/render.py](card/render.py) |
 | Where things stand | [room.py](room.py) `status` |
