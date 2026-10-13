@@ -329,6 +329,7 @@ struct ProcessVersion: View {
             ControlRow(label: "Style") { FrameStylePicker() }
             ParameterSlider(parameter: .frameSize)
             SubsectionHeader(title: "Camera Recipe", parameters: PanelID.cameraRecipeParameters)
+            FirmwareModelControls()
             ForEach(PanelID.cameraRecipeParameters, id: \.self) { ParameterSlider(parameter: $0) }
         }
     }

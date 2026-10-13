@@ -49,6 +49,9 @@ public struct SettingsView: View {
                     ModelsSettings(engine: engine)
                 }
             }
+            Tab("Prototype", systemImage: "flask") {
+                FirmwareModelSettings()
+            }
             Tab("About", systemImage: "info.circle") {
                 AboutSettings(checksForUpdates: checksForUpdates, showsWhatsNew: showsWhatsNew)
             }

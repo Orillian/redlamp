@@ -76,8 +76,8 @@ import SwiftUI
                     rows.controls("Style", FrameStylePicker()),
                     rows.slider(.frameSize),
                 ]
-                + [rows.header("Camera Recipe", PanelID.cameraRecipeParameters)] + rows
-                .sliders(PanelID.cameraRecipeParameters),
+                + [rows.header("Camera Recipe", PanelID.cameraRecipeParameters), rows.native(FirmwareModelControls())]
+                + rows.sliders(PanelID.cameraRecipeParameters),
         )
     }
 
