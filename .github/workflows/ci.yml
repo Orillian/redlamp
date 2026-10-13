@@ -13,11 +13,84 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The engine's tests take 31 to 44 minutes on the runner, half the suite's time, so they run in a
+  # job of their own beside the rest, and each job finishes inside its time limit.
+  engine-tests:
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v2
+
+      - name: Select Xcode 26
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Restore vendored LibRaw
+        uses: actions/cache/restore@v4
+        with:
+          path: vendor/build
+          key: libraw-${{ hashFiles('config/vendored-libs.json', 'vendor/shims/**', 'scripts/vendor-libraw.sh') }}
+
+      - name: Restore vendored libjxl
+        uses: actions/cache/restore@v4
+        with:
+          path: vendor/build/libjxl.xcframework
+          key: libjxl-${{ hashFiles('config/vendored-libs.json', 'scripts/vendor-libjxl.sh') }}
+
+      # The same files as the other job's, since either may be the one that saves them.
+      - name: Cache sample raw files
+        uses: actions/cache@v4
+        with:
+          path: |
+            tests/fixtures/raw
+            tests/fixtures/cameras
+            tests/fixtures/shoots
+          key: fixtures-${{ hashFiles('mise/tasks/fixtures', 'mise/tasks/fixtures-shoots', 'tests/decode/samples.json') }}
+
+      # The shoots are the dust evaluation's (DustEvaluationTests): without them it skips.
+      - name: Fetch fixtures
+        run: |
+          mise run fixtures
+          mise run fixtures-shoots
+
+      - name: Generate workspace
+        run: mise run generate
+
+      # GPU-dependent engine tests skip themselves when the runner has no Metal device.
+      - name: Engine tests
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild test \
+            -workspace Redlamp.xcworkspace \
+            -scheme RedlampEngine \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            REDLAMP_FUNCTION_BODY_TYPE_CHECK_LIMIT=3000 \
+            REDLAMP_EXPRESSION_TYPE_CHECK_LIMIT=3000 \
+            | tee build/test.log | grep -E "error:|✔ Test|✘|TEST (SUCCEEDED|FAILED)"
+
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-test-log
+          path: build/test.log
+
   build-and-test:
     runs-on: macos-26
     timeout-minutes: 90
 
-    # The push gate (scripts/push-gate.py) runs these steps before a push to main; keep the two in step.
+    # The push gate (scripts/push-gate.py) runs these steps, and the engine's tests with the rest in its
+    # Test, before a push to main; keep the two in step.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,7 +146,7 @@ jobs:
             tests/fixtures/shoots
           key: fixtures-${{ hashFiles('mise/tasks/fixtures', 'mise/tasks/fixtures-shoots', 'tests/decode/samples.json') }}
 
-      # The shoots are the dust evaluation's (DustEvaluationTests): without them it skips.
+      # The shoots are only the engine's tests', fetched here too since this job may be the one that saves them.
       - name: Fetch fixtures
         run: |
           mise run fixtures
@@ -100,7 +173,7 @@ jobs:
       - name: Lint (SwiftFormat)
         run: mise exec -- swiftformat --lint .
 
-      # GPU-dependent engine tests skip themselves when the runner has no Metal device.
+      # Every test but the engine's, which run in the job beside this one.
       # The runner's three cores under load take up to 3,000 ms on a trivial expression, against the
       # 1,000 ms this Mac and the push gate allow (DEC-65), and charge AppKit's import of NSMenuItem,
       # 1.5 to 1.8 s, to the first function body in a compile job that uses it, against 1,500 ms (DEC-70).
@@ -111,6 +184,7 @@ jobs:
           xcodebuild test \
             -workspace Redlamp.xcworkspace \
             -scheme Redlamp-Workspace \
+            -skip-testing:RedlampEngineTests \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
