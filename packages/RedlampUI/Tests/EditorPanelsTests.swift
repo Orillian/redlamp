@@ -121,10 +121,11 @@ struct EditorPanelsTests {
             model: model, theme: ThemeSettings(), onOpen: {}, onExport: {}, onExportWithPrevious: {},
         )
         let window = try #require(controller.window)
-        // The window keeps its frame by name, and other tests leave it at its smallest.
-        window.setContentSize(CGSize(width: 1600, height: 1000))
         window.orderFront(nil)
         defer { window.orderOut(nil) }
+        // Sized once it's shown, since showing it narrows it to its screen as far as its smallest (CI's runner's
+        // screen is 1,024 points wide); it keeps its frame by name, and other tests leave it at its smallest.
+        window.setContentSize(CGSize(width: 1600, height: 1000))
         let toolbar = try #require(window.toolbar)
         #expect(!toolbar.items.contains { $0.itemIdentifier.rawValue == "openFolder" || $0.label == "Open Folder" })
         func views(in view: NSView) -> [NSView] {
