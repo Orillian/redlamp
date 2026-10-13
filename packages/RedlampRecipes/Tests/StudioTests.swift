@@ -148,6 +148,8 @@ struct RenderedRecipeTests {
             == "/repository/tests/golden/recipes/process-15")
         #expect(GoldenRender.directory(root: root, processVersion: 15, gpu: "Apple M4 Max").path
             == "/repository/tests/golden/recipes/process-15/apple-m4-max")
+        #expect(GoldenRender.directory(root: root, processVersion: 15, gpu: "Apple Paravirtual device").path
+            == "/repository/tests/golden/recipes/process-15")
     }
 
     @Test func `bundled film looks match their designs`() throws {

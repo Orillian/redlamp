@@ -17,6 +17,10 @@ public enum GoldenRender {
     /// named for it.
     public static let referenceGPU = "Apple M1 Ultra"
 
+    /// GPUs that render as another does, and so read its set: CI's runner, a virtual machine whose
+    /// paravirtual GPU matches the M1 Ultra's renders within the comparison's limits.
+    public static let sharedSets = ["Apple Paravirtual device": referenceGPU]
+
     /// The GPU renders run on, as Metal names it ("Apple M4 Max").
     public static let gpu = MTLCreateSystemDefaultDevice()?.name ?? "no GPU"
 
@@ -34,6 +38,7 @@ public enum GoldenRender {
     /// `process-15/apple-m4-max` for the M4 Max's.
     public static func directory(root: URL, processVersion: Int, gpu: String) -> URL {
         let folder = root.appendingPathComponent("tests/golden/recipes/process-\(processVersion)", isDirectory: true)
+        let gpu = sharedSets[gpu] ?? gpu
         guard gpu != referenceGPU else { return folder }
         return folder.appendingPathComponent(
             gpu.lowercased().replacingOccurrences(of: " ", with: "-"),
