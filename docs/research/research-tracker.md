@@ -118,6 +118,7 @@ These block other rows. Most need the project owner; the ones marked *counsel* n
 | DEC-72 | ImageIO reads JPEG XL but doesn't write it: what writes JPEG XL exports? | libjxl 0.12.0, with Highway, Brotli and skcms at the commits it pins, compiled from source into a static XCFramework and cached on CI, as LibRaw is: lossy and lossless, BSD-3-Clause with Google's patent grant (Highway under its BSD-3-Clause option, Brotli MIT, skcms BSD-3-Clause), about 2.07 MB in the app, and its decoder can later read CAM-10's JPEG XL mosaic DNGs. Without a new library there's no lossy JPEG XL | EDT-30 | Accepted (2026-10-12): libjxl, with its notices in the README and `LICENSES/` beside LibRaw's | EDT-30's chat, from #373 |
 | DEC-73 | How may Redlamp use Fujifilm's published film-simulation LUTs, whose terms allow downloads for personal, noncommercial use and forbid modifying them without Fujifilm's permission? *(counsel)* | Users download them from Fujifilm's page, which tells them to import the files into editing software. Redlamp links to that page, recognises and applies the files, and keeps their tables on the Mac they were imported on; it never bundles, re-hosts or derives looks from them. The profiler may measure against the owner's copy as a reference | TON-43, TON-44, TON-45 | Accepted (2026-10-13): the owner chose this route. Still for counsel: whether the import panel and the manual may name the simulations, and whether converting a LUT into Redlamp's table at import counts as modifying it. Until then the UI names Fujifilm only as the files' source | [Look development](../recipes/look-development.md#fujifilms-published-luts) |
 | DEC-74 | Where does each look live in Develop? Each film stock is a recipe in the Recipes panel and a Base Look in Basic, under the same name, and imported LUTs are both too, so the same names do different things in two places | Each look once. A look that comes as a recipe (the film stocks, imported LUTs, Fujifilm's included) is listed only in the Recipes panel, whose search also finds the Base Looks; Apply Base Look Only on a recipe's menu sets its look alone. The Base Look menu, browser and ⌘K page list the looks with no recipe of their own (In This Photo, Redlamp's six, the Film Styles, Reproduction, installed looks no recipe uses), and the photo's look first while it's another. Hovering previews wherever a look is listed | UX-45 | Accepted (2026-10-13): the owner chose it, reviewing the duplication between Recipes › Film Stocks and the Base Look menu | This tracker |
+| DEC-75 | May the iPhone design study, the harness's iPhone and iPad platforms and an iPhone build of the harness be done before Phase 5? They are design work and tooling installed from Xcode, not the iPhone and iPad apps DEC-20 moved to Phase 5 | Yes, as design work and owner tooling; when the apps are built is decided once the design is | MOB-01, MOB-02, MOB-03, MOB-04 | Accepted (2026-10-13): the owner asked for it | This tracker |
 
 ---
 
@@ -589,7 +590,20 @@ The library and catalog track (5 October 2026): folders on disk organise photos,
 
 ---
 
-## 14. Recorded skips
+## 14. iPhone and iPad
+
+The iPhone work (13 October 2026): before the app is built, a design study decides how Redlamp works on a phone, and the harness previews every phone screen, token and component on the Mac and on the phone (DEC-75). The app opens on the iPhone's Photos library, with its albums and filters, and a tap opens a photo to edit. iPad follows the same path once the iPhone's design is decided. The apps themselves stay in Phase 5 (DEC-20) until the owner decides otherwise.
+
+| ID | Item | Recommended | Phase | Size | Depends on | Decision | Status | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MOB-01 | iPhone design study: a team of mobile UX specialists distils the Mac editor for a phone (what each capability needs and where it sits), studies Lightroom Mobile and other mobile editors (Apple Photos, Snapseed, VSCO, Darkroom, Photomator, RAW Power, Capture One) and the platform (PhotoKit, iOS 26), and proposes concepts for moving between modules and making an edit, ranked by a design critic, into `docs/research/mobile-findings.md`, with wireframes the owner picks from | Build | P5 | M | DEC-75 | Accepted (2026-10-13): the owner asked for it, Prequel left out for now | In progress: the study has started | Owner, 13 October 2026 |
+| MOB-02 | The harness for iPhone and iPad: a macOS, iPad and iPhone switch at the centre of the toolbar, scenes drawn in real device frames (point sizes, corner radii, safe areas, orientation, Dynamic Type), and `RedlampMobile`, the iPhone and iPad UI package, also built for macOS so the harness hosts it, on design tokens that build for iOS | Build | P5 | M | DEC-75 | Accepted (2026-10-13): the owner asked for it | Not started | Owner, 13 October 2026; omoi-station's harness |
+| MOB-03 | An iPhone build of the harness: the same phone scenes as an app installed from Xcode, to try gestures, reach and haptics on the phone, editing with the engine where it renders there | Build | P5 | S | MOB-02 | Accepted (2026-10-13): the owner chose it over the Mac alone | Not started | Owner, 13 October 2026 |
+| MOB-04 | Concept prototypes: the two or three concepts the owner picks from MOB-01, as harness scenes that edit a real photo, with tuning knobs and the same three tasks in each (brighten and warm, darken the sky with a mask, crop to 4:5), tried by the owner on the Mac and the phone | Build | P5 | M | MOB-01, MOB-03 | Accepted (2026-10-13): the owner asked for it | Not started | Owner, 13 October 2026 |
+
+---
+
+## 15. Recorded skips
 
 Decisions not to do something, kept so they aren't reopened without new evidence.
 

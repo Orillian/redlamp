@@ -961,6 +961,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [ ] Accessibility, usability testing, and the Mac App Store release <!-- internal -->
 
 ### Phase 5: iPad and iPhone
+- [ ] The iPhone design, decided before it's built: a study of how photographers edit on a phone, and concepts tried in the harness on the Mac and on the iPhone <!-- internal; tracker: MOB-01, MOB-02, MOB-03, MOB-04 -->
 - [ ] iPad and iPhone shells on the same engine (compact layout, touch, Apple Pencil), with in-process decoding
 - [ ] Coordinated sidecar I/O through Files, and edits moving between devices
 - [ ] Tiled rendering for large exports within iPhone and iPad memory <!-- internal; tracker: ARC-05 -->
