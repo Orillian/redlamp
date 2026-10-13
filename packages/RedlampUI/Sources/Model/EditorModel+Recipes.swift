@@ -5,8 +5,10 @@ import RedlampRecipes
 public extension EditorModel {
     /// Applies a recipe. Its Amount stays adjustable until the edit changes some other way.
     func applyRecipe(_ recipe: Recipe, amount: Double = 100) {
+        let recipe = recipes.resolved(recipe)
         previewingRecipe = nil
         recipes.prepare(recipe)
+        keepFirmwareLook(of: recipe)
         let base = recipe.id == recipeApplication?.recipe.id && recipeAmount != nil
             ? recipeApplication!.base
             : self.recipe
@@ -34,6 +36,7 @@ public extension EditorModel {
 
     /// Hover preview: renders a recipe without applying it.
     func previewRecipe(_ recipe: Recipe?) {
+        let recipe = recipe.map(recipes.resolved)
         guard previewingRecipe != recipe else { return }
         if let recipe {
             recipes.prepare(recipe)
@@ -132,6 +135,14 @@ public extension EditorModel {
         case .custom: nil
         default: mode.presetValue
         }
+    }
+
+    /// A firmware look the recipe brings, kept so the edit renders after a relaunch.
+    private func keepFirmwareLook(of recipe: Recipe) {
+        guard let look = recipe.baseLook, look.isFirmwareModel,
+              let definition = try? recipe.embeddedBaseLooks.first(where: { $0.matches(look) })?.definition()
+        else { return }
+        recipes.keepFirmwareLook(definition)
     }
 
     private func needsAutoWhiteBalance(_ recipe: Recipe) -> Bool {

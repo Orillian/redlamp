@@ -9,7 +9,7 @@ import RedlampRecipes
 @Observable
 public final class RecipeCatalog {
     @ObservationIgnored public let library: RecipeLibrary
-    @ObservationIgnored private let engine: any EditingEngine
+    @ObservationIgnored let engine: any EditingEngine
     /// Bumped on every change; list views observe it through the accessors below.
     public private(set) var revision = 0
     public private(set) var lastError: String?
@@ -17,12 +17,17 @@ public final class RecipeCatalog {
     @ObservationIgnored private var importedLists: Set<String> = []
     /// The looks given to the engine, by id, version and table hash.
     @ObservationIgnored private var registered: Set<String> = []
+    /// The firmware model's folder while its switch is on, and what reading it found.
+    public internal(set) var firmwareFolder: URL?
+    public internal(set) var firmwareStatus: String?
+    @ObservationIgnored var defaultsObserver: (any NSObjectProtocol)?
 
     public init(engine: any EditingEngine, library: RecipeLibrary = RecipeLibrary()) {
         self.engine = engine
         self.library = library
         engine.registerBaseLooks(BuiltInBaseLooks.all.map(Self.source))
         registerLooks()
+        observeFirmwareSwitch()
     }
 
     private static func key(_ package: BaseLookPackage) -> String {
@@ -43,7 +48,7 @@ public final class RecipeCatalog {
         engine.registerBaseLooks(added.map(Self.source))
     }
 
-    private func changed() {
+    func changed() {
         registerLooks()
         revision &+= 1
     }
@@ -74,7 +79,7 @@ public final class RecipeCatalog {
     /// Each look once, at its newest version: what menus and the browser offer. Looks
     /// embedded in photos are offered only with their photo.
     public var currentBaseLooks: [BaseLookPackage] {
-        BuiltInBaseLooks.newest(baseLooks).filter { !$0.reference.isEmbedded }
+        BuiltInBaseLooks.newest(baseLooks).filter { !$0.reference.isEmbedded && !$0.reference.isFirmwareModel }
     }
 
     /// The looks recipes stand for, by id: the film stocks' and the installed looks a recipe uses as

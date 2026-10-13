@@ -355,6 +355,7 @@ public final class RecipeLabModel {
             name: "New Camera Recipe",
             group: "My Recipes",
             slotLooks: catalog.library.filledSlots,
+            firmware: catalog.library.firmwareModel,
         )
         draftIncludes = CameraRecipeCard.includes
         creatorMessage = nil
@@ -364,7 +365,9 @@ public final class RecipeLabModel {
     public func updateCard(_ card: CameraRecipeCard) {
         draftCard = card
         guard let draft else { return }
-        self.draft = draft.updatingCard(card, slotLooks: catalog.library.filledSlots)
+        self.draft = draft.updatingCard(
+            card, slotLooks: catalog.library.filledSlots, firmware: catalog.library.firmwareModel,
+        )
         draftIncludes = CameraRecipeCard.includes
     }
 

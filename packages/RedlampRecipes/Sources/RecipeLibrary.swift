@@ -47,6 +47,13 @@ public final class RecipeLibrary {
     public private(set) var storedLooks: [BaseLookPackage] = []
     /// Files that couldn't be read, with the reasons.
     public private(set) var loadIssues: [URL: [RecipeIssue]] = [:]
+    /// The firmware model's prototype while its switch is on: card recipes resolve through it
+    /// (`resolvingCard`), and `firmwareRecipes` offers each of its simulations.
+    public var firmwareModel: FirmwareFilmModel? {
+        didSet { firmwareRecipes = firmwareModel.map(Self.firmwareRecipes(model:)) ?? [] }
+    }
+
+    public private(set) var firmwareRecipes: [Recipe] = []
 
     public init(root: URL = RecipeLibrary.defaultRoot, includeBundled: Bool = true) {
         locations = Locations(root: root)
@@ -98,9 +105,9 @@ public final class RecipeLibrary {
 
     // MARK: - Recipes
 
-    /// Every recipe: bundled, then made here, then installed.
+    /// Every recipe: bundled, then made here, then installed, then the firmware model's.
     public var all: [Recipe] {
-        bundled + userRecipes + installed
+        bundled + userRecipes + installed + firmwareRecipes
     }
 
     public func recipe(id: String) -> Recipe? {
@@ -181,6 +188,9 @@ public final class RecipeLibrary {
             }
         }
         result += order.map { ($0, (grouped[$0] ?? []) + (mine[$0] ?? [])) }
+        if !firmwareRecipes.isEmpty {
+            result.append((Self.firmwareGroup, firmwareRecipes))
+        }
         if !installed.isEmpty {
             result.append(("Installed", installed))
         }

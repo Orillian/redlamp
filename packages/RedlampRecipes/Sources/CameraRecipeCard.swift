@@ -267,8 +267,10 @@ public extension CameraRecipeCard {
         }
     }
 
-    /// The Redlamp values the card stands for.
-    func resolvedSettings() -> RecipeSettings {
+    /// The Redlamp values the card stands for. Through the firmware model, its look takes
+    /// the film simulation, Highlight and Shadow Tone, Color, dynamic range and toning, and the
+    /// treatment stays colour so the model's toning isn't greyed out.
+    func resolvedSettings(throughFirmwareModel: Bool = false) -> RecipeSettings {
         let card = clamped
         var values: [ParameterID: Double] = [:]
         func set(_ parameter: ParameterID, _ value: Double) {
@@ -278,12 +280,14 @@ public extension CameraRecipeCard {
             }
         }
         set(.exposure, card.exposure)
-        set(.highlights, card.highlight * Mapping.highlightsPerStep)
-        set(.whites, card.highlight * Mapping.whitesPerStep)
-        set(.shadows, card.shadow * Mapping.shadowsPerStep)
-        set(.blacks, card.shadow * Mapping.blacksPerStep)
-        set(.dynamicRange, card.dynamicRange.percent)
-        set(.saturation, Double(card.color) * Mapping.saturationPerColorStep)
+        if !throughFirmwareModel {
+            set(.highlights, card.highlight * Mapping.highlightsPerStep)
+            set(.whites, card.highlight * Mapping.whitesPerStep)
+            set(.shadows, card.shadow * Mapping.shadowsPerStep)
+            set(.blacks, card.shadow * Mapping.blacksPerStep)
+            set(.dynamicRange, card.dynamicRange.percent)
+            set(.saturation, Double(card.color) * Mapping.saturationPerColorStep)
+        }
         set(.colorChrome, strength(card.colorChrome))
         set(.colorChromeBlue, strength(card.chromeFxBlue))
         set(.wbShiftRed, Double(card.whiteBalance.shiftRed) * Mapping.shiftPerStep)
@@ -300,7 +304,7 @@ public extension CameraRecipeCard {
         set(.noiseLuminance, Double(card.noiseReduction + 4) * Mapping.noisePerStep)
 
         let slot = card.slot ?? .standard
-        if slot.isMonochrome {
+        if slot.isMonochrome, !throughFirmwareModel {
             var a = Double(card.monochromeWarmCool)
             var b = Double(card.monochromeMagentaGreen)
             if slot == .sepia {
@@ -335,7 +339,7 @@ public extension CameraRecipeCard {
         }
         return RecipeSettings(
             values: values,
-            treatment: slot.isMonochrome ? .blackAndWhite : .color,
+            treatment: slot.isMonochrome && !throughFirmwareModel ? .blackAndWhite : .color,
             whiteBalanceMode: whiteBalanceMode,
         )
     }
@@ -346,7 +350,8 @@ public extension CameraRecipeCard {
     ]
 
     /// A recipe built from the card, keeping the card as its source. `slotLooks` are looks
-    /// that fill slots on this Mac in place of the bundled ones (`RecipeLibrary.filledSlots`).
+    /// that fill slots on this Mac in place of the bundled ones (`RecipeLibrary.filledSlots`);
+    /// `firmware`, the firmware model's prototype, fills every slot in their place.
     func recipe(
         id: String,
         name: String,
@@ -354,9 +359,11 @@ public extension CameraRecipeCard {
         summary: String? = nil,
         tags: [String] = [],
         slotLooks: [FilmSlot: BaseLookReference] = [:],
+        firmware: FirmwareFilmModel? = nil,
     ) -> Recipe {
         let card = clamped
         let slot = card.slot ?? .standard
+        let look = firmware.flatMap { try? FirmwareLook.package(firmwareSettings, model: $0) }
         return Recipe(
             id: id,
             name: name,
@@ -364,17 +371,32 @@ public extension CameraRecipeCard {
             summary: summary,
             tags: tags + ["camera-card", slot.rawValue],
             includes: Self.includes,
-            settings: card.resolvedSettings(),
-            baseLook: slotLooks[slot] ?? slot.baseLook,
+            settings: card.resolvedSettings(throughFirmwareModel: look != nil),
+            baseLook: look?.reference ?? slotLooks[slot] ?? slot.baseLook,
+            embeddedBaseLooks: look.map { [$0] } ?? [],
             source: .cameraCard(card, mappingVersion: Self.mappingVersion),
             lintWaivers: slot.isMonochrome ? ["neutral-axis", "skin-hue"] : [],
+        )
+    }
+
+    /// The firmware look the card stands for: its slot's simulation at its settings.
+    var firmwareSettings: FirmwareLookSettings {
+        let card = clamped
+        return FirmwareLookSettings(
+            simulation: card.slot.flatMap(FirmwareSimulation.init(slot:)) ?? .standard,
+            dynamicRange: Int(card.dynamicRange.percent), highlight: card.highlight, shadow: card.shadow,
+            color: card.color, warmCool: card.monochromeWarmCool, magentaGreen: card.monochromeMagentaGreen,
         )
     }
 }
 
 public extension Recipe {
     /// Re-resolves a recipe from its camera card after the card was edited.
-    func updatingCard(_ card: CameraRecipeCard, slotLooks: [FilmSlot: BaseLookReference] = [:]) -> Recipe {
+    func updatingCard(
+        _ card: CameraRecipeCard,
+        slotLooks: [FilmSlot: BaseLookReference] = [:],
+        firmware: FirmwareFilmModel? = nil,
+    ) -> Recipe {
         var updated = card.recipe(
             id: id,
             name: name,
@@ -382,6 +404,7 @@ public extension Recipe {
             summary: summary,
             tags: tags.filter { $0 != "camera-card" && FilmSlot(rawValue: $0) == nil },
             slotLooks: slotLooks,
+            firmware: firmware,
         )
         updated.version = version
         updated.author = author
