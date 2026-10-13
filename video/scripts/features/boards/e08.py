@@ -1,8 +1,8 @@
 """
 E08, Camera recipes, in the series' look (boards/e01.py): Redlamp's camera-style recipes, built from
 Fujifilm-style recipe cards, previewed by hovering, applied with a click, then set with their Amount.
-The editor is drawn as E01's dashboard is: a Fujifilm raw in the photo panel as pixel art, its
-histogram and level under it, and the Recipes panel below with the Camera Recipes group listed, each
+The editor is drawn as E01's dashboard is: a raw in the photo panel as pixel art, its histogram and
+level under it, and the Recipes panel below with the Camera Recipes group listed, each
 recipe with a swatch of its look on the photo. The pointer comes in over CHROME STREET and the photo
 previews it, under the pill the app shows over a preview, then BRIGHT SLIDE and CINEMA TEAL, the photo
 following each; back on CHROME STREET it clicks, the recipe is applied and its AMOUNT comes up at 100,
@@ -11,13 +11,15 @@ step. What each bar says comes up as a card over the panel's right, clear of the
 previewed recipe is built from, the history step the click makes, and the Amount. The result is the
 photo before and after Chrome Street at 70, in pixel art.
 
-The photo is AFXT2720.RAF, the README's raw from a Fujifilm X-T3 (tests/fixtures/raw), and every
-picture of it is Redlamp's render with the redlamp CLI, kept in public/features/e08/results/: as opened,
-and with each camera recipe as the editor applies it (`redlamp recipe render`, which starts from the
-photo as opened, its white balance as shot, and works out a recipe's auto white balance as the editor
-does), Chrome Street at Amount 100, 90, 80 and 70. Each is reduced to pixel art with a palette of the
-photo's own colours, as E02's is. The Camera Recipes group, its order and each recipe's card are the
-app's own, read from the CLI too (`redlamp recipe list`, `redlamp recipe show`).
+The photo is a beach cove from the air, Hasselblad_L2D-20c.DNG, the raw from the Hasselblad camera on
+DJI's Mavic 3 in the camera coverage set (tests/fixtures/cameras, CC0 from raw.pixls.us), shown as
+BEACH.DNG. Every picture of it is Redlamp's render with the redlamp CLI, kept in
+public/features/e08/results/: as opened, and with each camera recipe as the editor applies it (`redlamp
+recipe render`, which starts from the photo as opened, its white balance as shot, and works out a
+recipe's auto white balance as the editor does), Chrome Street at Amount 100, 90, 80 and 70. Each is
+reduced to pixel art with a palette of the photo's own colours, as E02's is. The Camera Recipes group,
+its order and each recipe's card are the app's own, read from the CLI too (`redlamp recipe list`,
+`redlamp recipe show`).
 """
 
 import hashlib
@@ -37,10 +39,13 @@ from pixelkit.art import oklab
 
 EPISODE = w.episode("e08")
 FEATURE = "CAMERA RECIPES"
-FILE = "AFXT2720.RAF"
-PHOTO = ("AFXT2720.RAF (FUJIFILM X-T3), THE README'S RAW, EVERY PICTURE OF IT REDLAMP'S OWN RENDER WITH THE CLI: AS "
-         "OPENED, WITH EACH CAMERA RECIPE AS THE EDITOR APPLIES IT, AND CHROME STREET AT AMOUNT 100, 90, 80 AND 70; AS "
-         "PIXEL ART WITH ITS OWN PALETTE. THE RECIPES, THEIR ORDER AND THEIR CARDS ARE THE APP'S")
+# The panel shows the raw as BEACH.DNG: its own name carries its camera's maker, and the caption's
+# trademark line covers only Fujifilm.
+FILE = "BEACH.DNG"
+PHOTO = ("HASSELBLAD_L2D-20C.DNG (THE HASSELBLAD L2D-20C ON DJI'S MAVIC 3, CC0 FROM RAW.PIXLS.US), A BEACH COVE FROM "
+         "THE AIR, SHOWN AS BEACH.DNG; EVERY PICTURE OF IT REDLAMP'S OWN RENDER WITH THE CLI: AS OPENED, WITH EACH "
+         "CAMERA RECIPE AS THE EDITOR APPLIES IT, AND CHROME STREET AT AMOUNT 100, 90, 80 AND 70; AS PIXEL ART WITH ITS "
+         "OWN PALETTE. THE RECIPES, THEIR ORDER AND THEIR CARDS ARE THE APP'S")
 CUE = w.CUE
 FOLDER = w.VIDEO / "public/features/e08/results"
 GROUP = "Camera Recipes"
@@ -108,16 +113,16 @@ CAPTIONS = [(s1, "HOVER TO PREVIEW"), (s2, ["SEE EACH ONE", "BEFORE YOU CLICK"])
 # ---------------------------------------------------------------- the recipes and the photo, from Redlamp
 
 def fixture(name):
-    """A raw in the repository's fixtures, which a worktree has only in the main checkout."""
-    path = w.REPO / "tests/fixtures/raw" / name
+    """A raw in the repository's camera coverage set, which a worktree has only in the main checkout."""
+    path = w.REPO / "tests/fixtures/cameras" / name
     if not path.exists():
         common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=w.REPO,
                                 capture_output=True, text=True, check=True).stdout.strip()
-        path = Path(common).parent / "tests/fixtures/raw" / name
+        path = Path(common).parent / "tests/fixtures/cameras" / name
     return path
 
 
-RAW = fixture(FILE)
+RAW = fixture("Hasselblad_L2D-20c.DNG")
 
 
 def kept(name, key, suffix, make):
@@ -186,16 +191,17 @@ OPENED, EDIT = (None, 100), ("CHROME STREET", AMOUNTS[-1])
 
 
 def shown(img, size):
-    """The part of a render a picture of `size` shows: a band across its whole width through the bag's
-    red label for the editor, its whole height about the bag for the result, all of it for a swatch."""
+    """The part of a render a picture of `size` shows: a band across its whole width through the middle,
+    the sand and the water, for the editor, its whole height about the cove for the result, all of it at
+    the photo's own shape."""
     iw, ih = img.size
     if size[0] * ih > size[1] * iw * 1.01:
         h = round(iw * size[1] / size[0])
-        top = round(0.42 * ih - h / 2)
+        top = (ih - h) // 2
         box = (0, top, iw, top + h)
     elif size[0] * ih < size[1] * iw * 0.99:
         wd = round(ih * size[0] / size[1])
-        left = min(iw - wd, round(0.585 * iw - wd / 2))
+        left = (iw - wd) // 2
         box = (left, 0, left + wd, ih)
     else:
         box = (0, 0, iw, ih)
@@ -212,8 +218,8 @@ def looks():
 @cache
 def palette(colors=40):
     """The photo's own colours, in every look the editor shows and the result's two: the centres of its
-    pixels' clusters in Oklab, so the toys' greens and yellows and the bag's blues keep a colour for each
-    recipe's take on them."""
+    pixels' clusters in Oklab, so the water's turquoise, the sand and the trees' greens keep a colour for
+    each recipe's take on them."""
     shots = [shown(render(*look), EDITOR) for look in looks()]
     shots += [shown(render(*look), RESULT) for look in (OPENED, EDIT)]
     rgb = np.concatenate([np.asarray(img).reshape(-1, 3) for img in shots]).astype(np.float64)
@@ -244,17 +250,19 @@ def picture(look, size):
 
 @cache
 def keys():
-    """Where the photo as opened is the toy's green, the plush's yellow and the bag's blue, at 512 pixels."""
-    a = np.asarray(render(*OPENED).resize((512, 342), Image.BOX), dtype=np.float64)
+    """Where the photo as opened is the water's turquoise, white (the sand's, and the houses' above it) and
+    the trees' green, at 512 pixels."""
+    a = np.asarray(render(*OPENED).resize((512, 384), Image.BOX), dtype=np.float64)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    return [(g > r + 25) & (g > b + 60), (r > 170) & (g > 150) & (b < 130) & (r - b > 70), (b > r + 60) & (b > g + 20)]
+    return [(g > r + 60) & (b > r + 40) & (g > b), (r > 180) & (g > 170) & (b > 140),
+            (g > b + 25) & (g >= r) & (g < r + 50)]
 
 
 @cache
 def swatch(name):
-    """A recipe's look on the photo, as the list's swatch: three stripes, the recipe's take on the toy's
-    green, the plush's yellow and the bag's blue."""
-    a = np.asarray(render(name, 100).resize((512, 342), Image.BOX), dtype=np.float64)
+    """A recipe's look on the photo, as the list's swatch: three stripes, the recipe's take on the water's
+    turquoise, the sand and the trees' green."""
+    a = np.asarray(render(name, 100).resize((512, 384), Image.BOX), dtype=np.float64)
     out = np.zeros((SWATCH[1], SWATCH[0], 3), np.uint8)
     for i, mask in enumerate(keys()):
         out[:, i * SWATCH[0] // 3:(i + 1) * SWATCH[0] // 3] = np.rint(a[mask].mean(0))
