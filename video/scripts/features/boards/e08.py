@@ -11,9 +11,9 @@ step. What each bar says comes up as a card over the panel's right, clear of the
 previewed recipe is built from, the history step the click makes, and the Amount. The result is the
 photo before and after Chrome Street at 70, in pixel art.
 
-The photo is a beach cove from the air, Hasselblad_L2D-20c.DNG, the raw from the Hasselblad camera on
-DJI's Mavic 3 in the camera coverage set (tests/fixtures/cameras, CC0 from raw.pixls.us), shown as
-BEACH.DNG. Every picture of it is Redlamp's render with the redlamp CLI, kept in
+The photo is a puzzle cube on a black card, Pentax_K-3-Mark-III.PEF, the raw from a Pentax K-3 Mark III
+in the camera coverage set (tests/fixtures/cameras, CC0 from raw.pixls.us), shown as CUBE.PEF. Every
+picture of it is Redlamp's render with the redlamp CLI, kept in
 public/features/e08/results/: as opened, and with each camera recipe as the editor applies it (`redlamp
 recipe render`, which starts from the photo as opened, its white balance as shot, and works out a
 recipe's auto white balance as the editor does), Chrome Street at Amount 100, 90, 80 and 70. Each is
@@ -39,13 +39,13 @@ from pixelkit.art import oklab
 
 EPISODE = w.episode("e08")
 FEATURE = "CAMERA RECIPES"
-# The panel shows the raw as BEACH.DNG: its own name carries its camera's maker, and the caption's
+# The panel shows the raw as CUBE.PEF: its own name carries its camera's maker, and the caption's
 # trademark line covers only Fujifilm.
-FILE = "BEACH.DNG"
-PHOTO = ("HASSELBLAD_L2D-20C.DNG (THE HASSELBLAD L2D-20C ON DJI'S MAVIC 3, CC0 FROM RAW.PIXLS.US), A BEACH COVE FROM "
-         "THE AIR, SHOWN AS BEACH.DNG; EVERY PICTURE OF IT REDLAMP'S OWN RENDER WITH THE CLI: AS OPENED, WITH EACH "
-         "CAMERA RECIPE AS THE EDITOR APPLIES IT, AND CHROME STREET AT AMOUNT 100, 90, 80 AND 70; AS PIXEL ART WITH ITS "
-         "OWN PALETTE. THE RECIPES, THEIR ORDER AND THEIR CARDS ARE THE APP'S")
+FILE = "CUBE.PEF"
+PHOTO = ("PENTAX_K-3-MARK-III.PEF (PENTAX K-3 MARK III, CC0 FROM RAW.PIXLS.US), A PUZZLE CUBE ON A BLACK CARD, SHOWN "
+         "AS CUBE.PEF; EVERY PICTURE OF IT REDLAMP'S OWN RENDER WITH THE CLI: AS OPENED, WITH EACH CAMERA RECIPE AS THE "
+         "EDITOR APPLIES IT, AND CHROME STREET AT AMOUNT 100, 90, 80 AND 70; AS PIXEL ART WITH ITS OWN PALETTE. THE "
+         "RECIPES, THEIR ORDER AND THEIR CARDS ARE THE APP'S")
 CUE = w.CUE
 FOLDER = w.VIDEO / "public/features/e08/results"
 GROUP = "Camera Recipes"
@@ -122,7 +122,7 @@ def fixture(name):
     return path
 
 
-RAW = fixture("Hasselblad_L2D-20c.DNG")
+RAW = fixture("Pentax_K-3-Mark-III.PEF")
 
 
 def kept(name, key, suffix, make):
@@ -190,22 +190,24 @@ def render(name=None, amount=100):
 OPENED, EDIT = (None, 100), ("CHROME STREET", AMOUNTS[-1])
 
 
+# The point the editor's band and the result centre on, as shares of the photo's width and height: the
+# cube's middle, a little low, so the preview's pill sits over its top face and clear of its front one.
+CUBE = (0.525, 0.461)
+# How much of the photo's height each picture shows.
+SHARE = {EDITOR: 0.44, RESULT: 0.66}
+
+
 def shown(img, size):
-    """The part of a render a picture of `size` shows: a band across its whole width through the middle,
-    the sand and the water, for the editor, its whole height about the cove for the result, all of it at
-    the photo's own shape."""
+    """The part of a render a picture of `size` shows, about CUBE and within the photo: for the editor a
+    band through the cube, its faces filling the band's height, for the result the whole cube on its
+    card with some of its shadow."""
     iw, ih = img.size
-    if size[0] * ih > size[1] * iw * 1.01:
-        h = round(iw * size[1] / size[0])
-        top = (ih - h) // 2
-        box = (0, top, iw, top + h)
-    elif size[0] * ih < size[1] * iw * 0.99:
-        wd = round(ih * size[0] / size[1])
-        left = (iw - wd) // 2
-        box = (left, 0, left + wd, ih)
-    else:
-        box = (0, 0, iw, ih)
-    return img.crop(box).resize(size, Image.BOX)
+    h = SHARE[size] * ih
+    wd = min(iw, h * size[0] / size[1])
+    h = wd * size[1] / size[0]
+    left = min(iw - wd, max(0, CUBE[0] * iw - wd / 2))
+    top = min(ih - h, max(0, CUBE[1] * ih - h / 2))
+    return img.crop((round(left), round(top), round(left + wd), round(top + h))).resize(size, Image.BOX)
 
 
 def looks():
@@ -218,8 +220,8 @@ def looks():
 @cache
 def palette(colors=40):
     """The photo's own colours, in every look the editor shows and the result's two: the centres of its
-    pixels' clusters in Oklab, so the water's turquoise, the sand and the trees' greens keep a colour for
-    each recipe's take on them."""
+    pixels' clusters in Oklab, so the cube's red, orange, yellow, green, blue and white faces keep a colour
+    for each recipe's take on them."""
     shots = [shown(render(*look), EDITOR) for look in looks()]
     shots += [shown(render(*look), RESULT) for look in (OPENED, EDIT)]
     rgb = np.concatenate([np.asarray(img).reshape(-1, 3) for img in shots]).astype(np.float64)
@@ -250,19 +252,18 @@ def picture(look, size):
 
 @cache
 def keys():
-    """Where the photo as opened is the water's turquoise, white (the sand's, and the houses' above it) and
-    the trees' green, at 512 pixels."""
-    a = np.asarray(render(*OPENED).resize((512, 384), Image.BOX), dtype=np.float64)
+    """Where the photo as opened is the cube's red, blue and green faces, at 512 pixels."""
+    a = np.asarray(render(*OPENED).resize((512, 342), Image.BOX), dtype=np.float64)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    return [(g > r + 60) & (b > r + 40) & (g > b), (r > 180) & (g > 170) & (b > 140),
-            (g > b + 25) & (g >= r) & (g < r + 50)]
+    return [(r > 120) & (r > g + 90) & (r > b + 80) & (g < 60), (b > r + 80) & (b > g + 50),
+            (g > r + 70) & (g > b) & (b > 60)]
 
 
 @cache
 def swatch(name):
-    """A recipe's look on the photo, as the list's swatch: three stripes, the recipe's take on the water's
-    turquoise, the sand and the trees' green."""
-    a = np.asarray(render(name, 100).resize((512, 384), Image.BOX), dtype=np.float64)
+    """A recipe's look on the photo, as the list's swatch: three stripes, the recipe's take on the cube's
+    red, blue and green faces."""
+    a = np.asarray(render(name, 100).resize((512, 342), Image.BOX), dtype=np.float64)
     out = np.zeros((SWATCH[1], SWATCH[0], 3), np.uint8)
     for i, mask in enumerate(keys()):
         out[:, i * SWATCH[0] // 3:(i + 1) * SWATCH[0] // 3] = np.rint(a[mask].mean(0))
