@@ -48,7 +48,7 @@ public struct FilmCatalogView: View {
     private static let previewEdge = 640
 
     public var body: some View {
-        let entries = FilmLookCatalog.looks.compactMap { look in
+        let entries = FilmLookCatalog.browsingOrder.compactMap { look in
             model.recipes.recipe(id: look.recipeID).map { (look, $0) }
         }
         let shown = entries.filter { filter.includes($0.0, favourite: model.recipes.isFavorite($0.1)) }
@@ -140,7 +140,7 @@ public struct FilmCatalogView: View {
                     Image(decorative: image, scale: 2).resizable().aspectRatio(contentMode: .fill)
                 } else if model.info != nil {
                     ProgressView().controlSize(.small)
-                } else if let icon = FilmIconImage.image(for: look, points: 96) {
+                } else if let icon = LookIconImage.image(for: look, points: 96) {
                     Image(nsImage: icon)
                 }
             }
@@ -174,7 +174,7 @@ public struct FilmCatalogView: View {
                 .help(favourite ? "Remove from Favourites" : "Add to Favourites")
             }
             HStack(alignment: .center, spacing: 10) {
-                if let icon = FilmIconImage.image(for: look, points: 36) {
+                if let icon = LookIconImage.image(for: look, points: 36) {
                     Image(nsImage: icon)
                 }
                 VStack(alignment: .leading, spacing: 1) {

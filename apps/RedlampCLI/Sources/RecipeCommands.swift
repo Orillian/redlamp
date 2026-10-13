@@ -43,6 +43,9 @@ enum RecipeCommands {
       film --all | --look <id> [--install] [--readme]
                                                build the film catalogue's looks; --install bundles their
                                                tables, --readme writes docs/images/film
+      icons [-o <sheet.png>] [--readme]        every look icon at the app's sizes on the dark and light
+                                               panels (build/icons/look-icons.png); --readme also writes
+                                               docs/images/film/icon-<id>.png
       app-kit [--compact] [-o <folder>]        write the phone capture kit for app filters (--compact:
                                                one image per filter instead of 3 charts and 8 photos)
       app-import <folder|export> --name <name> [--app prequel|lightroom] [--filter <name>] [--kit <folder>]
@@ -95,6 +98,7 @@ enum RecipeCommands {
         case "fit": try await fit(context)
         case "profile": try await ProfileCommand.run(context)
         case "film": try await FilmCommand.run(context)
+        case "icons": try IconSheet.run(context)
         case "app-kit": try await AppLookCommands.kit(context)
         case "app-import": try await AppLookCommands.importLook(context)
         default: throw CLIError(description: usage)

@@ -21,7 +21,9 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
     private let createSnapshot: SymbolImageView
     private let clearHistory: SymbolImageView
     private var tracker: Tracker?
-    private var expandedGroups: Set<String> = ["Favorites", "My Recipes", "Essentials"]
+    private var expandedGroups: Set<String> = ["Favorites", "My Recipes", "Essentials", SidebarListView.baseLooksGroup]
+    /// The heading the Base Looks a search finds are listed under, after the recipes.
+    static let baseLooksGroup = "Base Looks"
     private var expandedSessions: Set<UUID> = []
     private var query = ""
 
@@ -69,7 +71,8 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
         searchField.font = .systemFont(ofSize: 11)
         searchField.delegate = self
         searchField.sendsSearchStringImmediately = true
-        searchField.toolTip = "Search recipes by name or tag. Lightroom words work too: preset, profile, LUT."
+        searchField.toolTip =
+            "Search recipes by name or tag, and the Base Looks after them. Lightroom words work too: preset, profile, LUT."
         searchField.setAccessibilityLabel("Search recipes")
 
         recipes.content = { [weak self] in self?.recipeRows() ?? [] }
@@ -126,9 +129,17 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
             }
         } else {
             let found = model.recipes.search(trimmed)
-            rows += found.isEmpty
-                ? [SidebarNode(.placeholder("No matching recipes"))]
-                : found.map { SidebarNode(.recipe($0)) }
+            let looks = model.recipes.searchBaseLooks(trimmed)
+            rows += found.map { SidebarNode(.recipe($0)) }
+            if !looks.isEmpty {
+                rows.append(SidebarNode(
+                    .group(Self.baseLooksGroup),
+                    children: looks.map { SidebarNode(.baseLook($0)) },
+                ))
+            }
+            if found.isEmpty, looks.isEmpty {
+                rows.append(SidebarNode(.placeholder("No matching recipes or Base Looks")))
+            }
         }
         return rows
     }

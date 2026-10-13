@@ -77,6 +77,14 @@ public final class RecipeCatalog {
         BuiltInBaseLooks.newest(baseLooks).filter { !$0.reference.isEmbedded }
     }
 
+    /// The looks recipes stand for, by id: the film stocks' and the installed looks a recipe uses as
+    /// its Base Look, such as an imported LUT's. The Base Look menu leaves them to the Recipes panel.
+    public var recipeLookIDs: Set<String> {
+        _ = revision
+        let installed = library.all.compactMap(\.baseLook?.id).filter { !$0.hasPrefix(RecipeNamespace.bundled + "/") }
+        return Set(FilmLookCatalog.looks.map(\.baseLookID)).union(installed)
+    }
+
     /// The lists imports have added to since the last call, for the panel to open once.
     public func takeImportedLists() -> Set<String> {
         defer { importedLists = [] }
@@ -91,6 +99,19 @@ public final class RecipeCatalog {
     public func search(_ query: String) -> [Recipe] {
         _ = revision
         return library.search(query)
+    }
+
+    /// The Base Looks the menu lists that match `query` by name or summary, for the Recipes panel's
+    /// search to list after the recipes. Lightroom's "profile", and "base" and "look", find them all.
+    public func searchBaseLooks(_ query: String) -> [BaseLookPackage] {
+        let terms = query.lowercased().split(separator: " ").map(String.init)
+        guard !terms.isEmpty else { return [] }
+        return BaseLookGroups.current(in: self).sections.flatMap(\.looks).filter { look in
+            terms.allSatisfy { term in
+                ["profile", "profiles", "base", "look", "looks"].contains(term)
+                    || [look.name, look.summary ?? ""].contains { $0.lowercased().contains(term) }
+            }
+        }
     }
 
     public func isFavorite(_ recipe: Recipe) -> Bool {

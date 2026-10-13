@@ -62,6 +62,7 @@ struct RedlampApp: App {
         model.onToggleFullScreen = { NSApp.keyWindow?.toggleFullScreen(nil) }
         model.onToggleToolbar = { EditorWindowController.frontWindow?.toggleToolbarShown(nil) }
         model.onTestCamera = { AppDelegate.showCameraBench?() }
+        model.onShowFilmLooks = { AppDelegate.performMenuItem(titled: ShortcutAction.filmLooks.title) }
         model.onSendFeedback = { prefill in FeedbackActions.present(model: model, prefill: prefill) }
         AppDelegate.isEditorBusy = { model.isModalDialogOpen }
         AppDelegate.performWhatsNew = { action in

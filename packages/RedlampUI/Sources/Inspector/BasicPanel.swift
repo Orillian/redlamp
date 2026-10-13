@@ -58,11 +58,10 @@ struct TreatmentPicker: View {
     }
 }
 
-/// The Base Look popup (Lightroom's Profile): built-in looks, the film-style looks, installed
-/// ones and Redlamp Reproduction, plus the browser.
+/// The Base Look popup (Lightroom's Profile): the photo's look first when it came from a recipe,
+/// then the looks that aren't recipes of their own (DEC-74), plus the browser.
 struct BaseLookMenu: View {
     @Environment(EditorModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     @State private var browsing = false
 
     /// The photo's embedded camera profile look, when the edit's process version renders it.
@@ -74,7 +73,7 @@ struct BaseLookMenu: View {
 
     var body: some View {
         let current = model.baseLook
-        let groups = BaseLookGroups.current(in: model.recipes)
+        let sections = BaseLookGroups.shown(in: model.recipes, photoLook: current)
         Menu {
             if let embedded = Self.embeddedLook(in: model) {
                 Section("In This Photo") {
@@ -90,7 +89,7 @@ struct BaseLookMenu: View {
                     .help("The look of the camera profile embedded in this file")
                 }
             }
-            ForEach(groups.sections, id: \.name) { section in
+            ForEach(sections, id: \.name) { section in
                 Section(section.name) {
                     ForEach(section.looks, id: \.self) { look in
                         Button {
@@ -98,7 +97,7 @@ struct BaseLookMenu: View {
                         } label: {
                             if look.matches(current) {
                                 Label(look.name, systemImage: "checkmark")
-                            } else if let icon = FilmIconImage.image(for: look.id, points: 18) {
+                            } else if let icon = LookIconImage.image(for: look.id, points: 18) {
                                 Label { Text(look.name) } icon: { Image(nsImage: icon) }
                             } else {
                                 Text(look.name)
@@ -109,14 +108,16 @@ struct BaseLookMenu: View {
             }
             Divider()
             Button("Browse Base Looks…") { browsing = true }
-            Button("Film Looks…") { openWindow(id: FilmCatalogView.windowID) }
         } label: {
             Text(current.name).font(Theme.labelFont)
         }
         .menuStyle(.button)
         .controlSize(.small)
         .accessibilityIdentifier("baseLook.menu")
-        .help("The look under every slider (Lightroom: Profile). LUT looks can be imported from the Recipes panel.")
+        .help(
+            "The look under every slider (Lightroom: Profile). Film looks and LUTs are recipes in the Recipes "
+                + "panel: right-click one there to use only its look.",
+        )
         .popover(isPresented: $browsing, arrowEdge: .leading) {
             BaseLookBrowser()
                 .environment(model)

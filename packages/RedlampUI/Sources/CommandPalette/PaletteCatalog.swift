@@ -262,7 +262,7 @@ enum PaletteCatalog {
             }
         }
         if page == .baseLook {
-            return BaseLookGroups(editor.recipes.currentBaseLooks).sections.map { section in
+            return BaseLookGroups.shown(in: editor.recipes, photoLook: editor.baseLook).map { section in
                 PaletteSection(title: section.name, items: section.looks.map(baseLookItem))
             }
         }

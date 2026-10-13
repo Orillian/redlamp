@@ -7,7 +7,7 @@ import RedlampRecipes
 /// chevron, glyph and title, so the lists read as the inspector's panels do. In a source list
 /// (LIB-45), its title, icon and count are a Mac sidebar's: the system's font and symbols at the
 /// sidebar size chosen in System Settings, in the system's label colours, the count in the secondary one.
-final class SidebarCellView: NSTableCellView {
+final class SidebarCellView: NSTableCellView, NSMenuDelegate {
     /// A source list's sizes, for its row size: the title's font matches AppKit's, and every icon has a slot
     /// as wide, so the titles line up.
     @MainActor enum SourceListLayout {
@@ -70,6 +70,8 @@ final class SidebarCellView: NSTableCellView {
         static let rowHeight = Metrics.controlRowMinHeight
         static let rowFont = Typography.label.nsFont
         static let iconPointSize: CGFloat = 11
+        /// A look's icon fills the row's symbol slot.
+        static let lookIconSize = Metrics.panelSymbolSlot
         static let indent: CGFloat = 13
         static let chevronSize = Symbol.layoutSize("chevron.right", pointSize: 9, weight: .bold)
         static let iconCenter = chevronSize.width + 8 + Metrics.panelSymbolSlot / 2
@@ -128,10 +130,21 @@ final class SidebarCellView: NSTableCellView {
             label.stringValue = recipe.name
             label.textColor = Palette.label.nsColor
             toolTip = [recipe.summary, "Hover to preview, click to apply"].compactMap(\.self).joined(separator: "\n")
+            if let image = LookIconImage.image(for: recipe, points: Layout.lookIconSize) {
+                showLookIcon(image)
+            }
             if model.recipes.isFavorite(recipe) {
                 trailing = SymbolImageView("star.fill", pointSize: 9, color: Palette.secondaryLabel.nsColor)
             } else if recipe.usesLookTable {
                 trailing = SymbolImageView("cube", pointSize: 9, color: Palette.tertiaryLabel.nsColor)
+            }
+        case let .baseLook(look):
+            label.stringValue = look.name
+            label.textColor = Palette.label.nsColor
+            toolTip = [look.summary, "Hover to preview the look alone, click to set it as the Base Look"]
+                .compactMap(\.self).joined(separator: "\n")
+            if let image = LookIconImage.image(for: look.id, points: Layout.lookIconSize) {
+                showLookIcon(image)
             }
         case let .recipeAmount(title, amount):
             label.stringValue = "Amount  \(Int(amount.rounded()))"
@@ -322,6 +335,15 @@ final class SidebarCellView: NSTableCellView {
         icon = image
     }
 
+    /// A look's icon in the row's symbol slot, in its own colours.
+    private func showLookIcon(_ image: NSImage) {
+        let view = NSImageView(image: image)
+        view.imageScaling = .scaleNone
+        view.setAccessibilityElement(false)
+        addSubview(view)
+        icon = view
+    }
+
     override var isFlipped: Bool {
         true
     }
@@ -420,6 +442,11 @@ final class SidebarCellView: NSTableCellView {
             menu.addItem(NSMenuItem(title: favorite ? "Remove from Favorites" : "Add to Favorites") { [model] in
                 model.recipes.setFavorite(recipe, !favorite)
             })
+            if let item = Self.baseLookOnlyItem(recipe, model: model) {
+                menu.autoenablesItems = false
+                menu.addItem(item)
+                menu.delegate = self
+            }
             menu.addItem(NSMenuItem(title: "Export…") { [model] in RecipeActions.export(recipe, model: model) })
             menu.addItem(NSMenuItem(title: "Duplicate to My Recipes") { [model] in
                 var copy = recipe
@@ -434,6 +461,11 @@ final class SidebarCellView: NSTableCellView {
                 menu.addItem(.separator())
                 menu.addItem(NSMenuItem(title: "Delete Recipe") { [model] in model.recipes.delete(recipe) })
             }
+        case let .group(name) where name == FilmLookCatalog.group:
+            let item = NSMenuItem(title: "Open Film Looks") { [model] in model.onShowFilmLooks?() }
+            item.isEnabled = model.onShowFilmLooks != nil
+            menu.autoenablesItems = false
+            menu.addItem(item)
         case let .folder(row):
             return Self.folderMenu(row, model: model, anchor: self)
         case let .source(row):
@@ -446,6 +478,30 @@ final class SidebarCellView: NSTableCellView {
         return menu
     }
 
+    /// Apply Base Look Only, for a recipe with a Base Look: sets its look and leaves the rest of the
+    /// edit. Its represented object is the recipe that previews the look alone while it's highlighted.
+    static func baseLookOnlyItem(_ recipe: Recipe, model: EditorModel) -> NSMenuItem? {
+        guard let look = recipe.baseLook, recipe.includes.contains(.baseLook),
+              let package = model.recipes.package(for: look) else { return nil }
+        let item = NSMenuItem(title: "Apply Base Look Only") { [model] in
+            model.recipes.prepare(recipe)
+            model.setBaseLook(look)
+        }
+        item.isEnabled = model.info != nil
+        item.representedObject = BaseLookBrowser.previewRecipe(for: package)
+        return item
+    }
+
+    func menu(_: NSMenu, willHighlight item: NSMenuItem?) {
+        guard model.info != nil else { return }
+        model.previewRecipe(item?.representedObject as? Recipe)
+    }
+
+    func menuDidClose(_: NSMenu) {
+        guard model.info != nil else { return }
+        model.previewRecipe(nil)
+    }
+
     // MARK: - Hover preview
 
     override func updateTrackingAreas() {
@@ -453,7 +509,7 @@ final class SidebarCellView: NSTableCellView {
         if let hoverArea {
             removeTrackingArea(hoverArea)
         }
-        guard case .recipe = node.kind else { return }
+        guard Self.preview(of: node.kind) != nil else { return }
         let area = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
@@ -463,9 +519,18 @@ final class SidebarCellView: NSTableCellView {
         hoverArea = area
     }
 
+    /// What hovering a row previews: a recipe as it applies, a Base Look alone.
+    static func preview(of kind: SidebarNode.Kind) -> Recipe? {
+        switch kind {
+        case let .recipe(recipe): recipe
+        case let .baseLook(look): BaseLookBrowser.previewRecipe(for: look)
+        default: nil
+        }
+    }
+
     override func mouseEntered(with _: NSEvent) {
         label.textColor = Palette.labelHover.nsColor
-        guard model.info != nil, case let .recipe(recipe) = node.kind else { return }
+        guard model.info != nil, let recipe = Self.preview(of: node.kind) else { return }
         model.previewRecipe(recipe)
     }
 

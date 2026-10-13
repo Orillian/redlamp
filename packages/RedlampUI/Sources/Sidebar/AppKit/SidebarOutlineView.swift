@@ -8,6 +8,8 @@ final class SidebarNode: NSObject {
     enum Kind {
         case group(String)
         case recipe(Recipe)
+        /// A Base Look the recipe search found; choosing it sets only the Base Look.
+        case baseLook(BaseLookPackage)
         /// The last applied recipe's Amount slider.
         case recipeAmount(String, Double)
         case placeholder(String)
@@ -516,6 +518,10 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
         case let .recipe(recipe):
             guard model.info != nil else { return }
             model.applyRecipe(recipe)
+        case let .baseLook(look):
+            guard model.info != nil else { return }
+            model.previewRecipe(nil)
+            model.setBaseLook(look.reference)
         case let .snapshot(snapshot):
             model.applySnapshot(snapshot)
         case let .history(_, index, _, _):

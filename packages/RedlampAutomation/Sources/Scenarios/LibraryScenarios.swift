@@ -691,7 +691,83 @@
     }
 
     enum RecipeScenarios {
-        static let all: [Scenario] = [apply, createAndImport, fujifilmPack, favorites, filmLooks]
+        static let all: [Scenario] = [
+            apply, createAndImport, fujifilmPack, favorites, filmLooks, baseLookOnly, searchBaseLooks, baseLookMenu,
+        ]
+
+        static func portra(_ app: RunningApp) throws -> Recipe {
+            let recipe = try app.main { model in
+                FilmLookCatalog.look("portra-400").flatMap { model.recipes.recipe(id: $0.recipeID) }
+            }
+            guard let recipe else { throw ScenarioFailure("No Portra 400 recipe") }
+            return recipe
+        }
+
+        static let baseLookOnly = Scenario(
+            "recipes.base-look-only",
+            "A film recipe's Apply Base Look Only previews its look alone while highlighted, then sets only the look",
+            claims: [.feature("recipes.applying")],
+        ) { app in
+            try app.openWorking()
+            let recipe = try portra(app)
+            let preview = try app
+                .main { BaseLookPreviews.baseLookOnlyItem(recipe, model: $0)?.representedObject as? Recipe }
+            guard let preview else { throw ScenarioFailure("No Apply Base Look Only, or nothing it previews") }
+            try app.expect(
+                preview.includes == [.baseLook],
+                "Highlighting Apply Base Look Only previews more than the look",
+            )
+            try app.expectRenders("previewing Portra 400's look alone") { try app.main { $0.previewRecipe(preview) } }
+            try app.main { $0.previewRecipe(nil) }
+            let applied = try app.main { model in
+                guard let item = BaseLookPreviews.baseLookOnlyItem(recipe, model: model), let action = item.action
+                else { return false }
+                return NSApplication.shared.sendAction(action, to: item.target, from: item)
+            }
+            try app.expect(applied, "Apply Base Look Only did nothing")
+            try app.wait("Portra 400's look") { $0.baseLook.id == recipe.baseLook?.id }
+            try app.expect(try app.main { $0.value(.grainAmount) } == 0, "Apply Base Look Only added grain")
+            try app.choose(.resetAll)
+            app.covered(.feature("recipes.applying"), via: .model)
+        }
+
+        static let searchBaseLooks = Scenario(
+            "recipes.search-base-looks",
+            "The recipe search lists Base Looks after the recipes; one previews alone and sets only the Base Look",
+            claims: [.feature("recipes.favorites")],
+        ) { app in
+            try app.openWorking()
+            let looks = try app.main { $0.recipes.searchBaseLooks("vivid") }
+            guard let look = looks.first else { throw ScenarioFailure("Searching \"vivid\" finds no Base Look") }
+            try app.expect(try app.main { $0.recipes.searchBaseLooks("ektar") }.isEmpty, "A film stock is a Base Look")
+            try app.expectRenders("previewing \(look.name)") {
+                try app.main { $0.previewRecipe(BaseLookPreviews.recipe(for: look)) }
+            }
+            try app.main { $0.previewRecipe(nil) }
+            try app.main { $0.setBaseLook(look.reference) }
+            try app.wait("\(look.name) set") { $0.baseLook.id == look.id }
+            try app.choose(.resetAll)
+            app.covered(.feature("recipes.favorites"), via: .model)
+        }
+
+        static let baseLookMenu = Scenario(
+            "develop.base-look-menu",
+            "The Base Look menu lists Redlamp's looks and the Film Styles, and a film stock only while it's in use",
+            claims: [.feature("develop.treatment")],
+        ) { app in
+            try app.openWorking()
+            let films = Set(FilmLookCatalog.looks.map(\.baseLookID))
+            let before = try app.main { BaseLookPreviews.menuSections($0) }
+            try app.expect(before.first?.name == "Redlamp", "The menu starts with \(before.first?.name ?? "nothing")")
+            try app.expect(before.allSatisfy { Set($0.ids).isDisjoint(with: films) }, "The menu lists film stocks")
+            let recipe = try portra(app)
+            try app.main { $0.applyRecipe(recipe) }
+            try app.wait("Portra 400 applied") { $0.appliedRecipe?.id == recipe.id }
+            let after = try app.main { BaseLookPreviews.menuSections($0) }
+            try app.expect(after.first?.ids == [recipe.baseLook?.id ?? ""], "The menu doesn't show Portra 400 first")
+            try app.choose(.resetAll)
+            app.covered(.feature("develop.treatment"), via: .model)
+        }
 
         static let apply = Scenario(
             "recipes.apply", "Bundled recipes preview, apply and take an Amount",
@@ -819,6 +895,19 @@
             try app.choose(.filmLooks, expectPerformed: false)
             try app
                 .wait("the Film Looks window", timeout: 10) { _ in
+                    NSApp.windows.contains { $0.isVisible && $0.title == "Film Looks" }
+                }
+            try app.main { _ in NSApp.windows.first { $0.title == "Film Looks" }?.close() }
+            let opened = try app.main { model in
+                guard let item = BaseLookPreviews.filmStocksMenu(model)?.items
+                    .first(where: { $0.title == "Open Film Looks" }),
+                    let action = item.action
+                else { return false }
+                return NSApplication.shared.sendAction(action, to: item.target, from: item)
+            }
+            try app.expect(opened, "The Film Stocks folder has no Open Film Looks")
+            try app
+                .wait("the Film Looks window, from the Film Stocks folder", timeout: 10) { _ in
                     NSApp.windows.contains { $0.isVisible && $0.title == "Film Looks" }
                 }
             try app.main { _ in NSApp.windows.first { $0.title == "Film Looks" }?.close() }

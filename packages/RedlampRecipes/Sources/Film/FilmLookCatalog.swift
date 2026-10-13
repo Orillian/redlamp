@@ -543,6 +543,28 @@ public enum FilmLookCatalog {
         looks.first { $0.id == id }
     }
 
+    /// The Recipes panel's list of the bundled film recipes.
+    public static let group = "Film Stocks"
+
+    /// The catalogue as it's browsed: colour negative, cinema, slide, then black and white, each
+    /// variant (pushed, overexposed, printed, bleach-bypassed, cross-processed) beside its stock.
+    public static var browsingOrder: [FilmLookDefinition] {
+        func kind(_ look: FilmLookDefinition) -> Int {
+            if look.isMonochrome {
+                return 3
+            }
+            if look.icon.shape == .reel || look.film.contains("cinestill") {
+                return 1
+            }
+            return look.icon.shape == .slide ? 2 : 0
+        }
+        let firstOfStock = Dictionary(looks.enumerated().map { ($1.film, $0) }, uniquingKeysWith: min)
+        return looks.enumerated().sorted { a, b in
+            (kind(a.element), firstOfStock[a.element.film] ?? a.offset, a.offset)
+                < (kind(b.element), firstOfStock[b.element.film] ?? b.offset, b.offset)
+        }.map(\.element)
+    }
+
     /// The catalogue look a bundled Base Look or recipe belongs to.
     public static func look(forBundledID id: String) -> FilmLookDefinition? {
         looks.first { $0.baseLookID == id || $0.recipeID == id }
@@ -551,11 +573,11 @@ public enum FilmLookCatalog {
     /// The bundled recipes: each look's bundled Base Look with its effects. A look whose
     /// table isn't bundled is left out.
     public static var bundledRecipes: [Recipe] {
-        looks.compactMap { look in
+        browsingOrder.compactMap { look in
             guard let package = BuiltInBaseLooks.package(id: look.baseLookID, version: look.version)
             else { return nil }
             return BuiltInRecipes.make(
-                "stock/\(look.id)", look.name, group: "Film Stocks", summary: look.summary, tags: ["film"],
+                "stock/\(look.id)", look.name, group: group, summary: look.summary, tags: ["film"],
                 values: look.effects, treatment: look.isMonochrome ? .blackAndWhite : nil, baseLook: package.reference,
                 lintWaivers: look.lintWaivers, version: look.version,
             )

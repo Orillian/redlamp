@@ -732,6 +732,8 @@ public final class EditorModel {
     @ObservationIgnored public var onToggleToolbar: (() -> Void)?
     /// Opens the Camera Bench window (CAM-15), which the app owns.
     @ObservationIgnored public var onTestCamera: (() -> Void)?
+    /// Opens the Film Looks window, which the app owns.
+    @ObservationIgnored public var onShowFilmLooks: (() -> Void)?
     /// Opens Report a Bug or Send Feedback; the app presents it (`FeedbackActions`).
     @ObservationIgnored public var onSendFeedback: ((FeedbackPrefill?) -> Void)?
 

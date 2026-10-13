@@ -4,25 +4,23 @@ import RedlampEngineAPI
 import RedlampRecipes
 import SwiftUI
 
-/// Base Looks sorted into the browser's and menu's sections.
+/// Base Looks sorted into the browser's and menu's sections: only the looks that aren't recipes
+/// of their own (DEC-74). Film stocks and imported LUTs are listed in the Recipes panel.
 struct BaseLookGroups {
     var sections: [(name: String, looks: [BaseLookPackage])]
 
-    init(_ looks: [BaseLookPackage]) {
+    /// `recipeLooks`: the ids of the looks recipes stand for, left out.
+    init(_ looks: [BaseLookPackage], leavingOut recipeLooks: Set<String> = []) {
         let reproduction = looks.filter { $0.id == BuiltInBaseLook.reproduction.rawValue }
         let builtIn = looks.filter { BuiltInBaseLook(rawValue: $0.id).map { $0 != .reproduction } ?? false }
-        let catalogue = FilmLookCatalog.looks.map(\.baseLookID)
-        let stocks = looks.filter { catalogue.contains($0.id) }
-            .sorted { (catalogue.firstIndex(of: $0.id) ?? 0) < (catalogue.firstIndex(of: $1.id) ?? 0) }
+        let catalogue = Set(FilmLookCatalog.looks.map(\.baseLookID))
         let film = looks.filter {
             BuiltInBaseLook(rawValue: $0.id) == nil && $0.id.hasPrefix(RecipeNamespace.bundled + "/")
                 && !catalogue.contains($0.id)
         }
-        let fujifilm = looks.filter(\.reference.isFromMakerLUT)
-        let other = looks.filter { !$0.id.hasPrefix(RecipeNamespace.bundled + "/") && !$0.reference.isFromMakerLUT }
+        let installed = looks.filter { !$0.id.hasPrefix(RecipeNamespace.bundled + "/") && !recipeLooks.contains($0.id) }
         sections = [
-            ("Redlamp", builtIn), ("Film Stocks", stocks), ("Film Styles", film), (FujifilmLUT.group, fujifilm),
-            ("Installed", other), ("Reproduction", reproduction),
+            ("Redlamp", builtIn), ("Film Styles", film), ("Installed", installed), ("Reproduction", reproduction),
         ].filter { !$0.1.isEmpty }
     }
 
@@ -33,9 +31,23 @@ struct BaseLookGroups {
         if let last = Cache.last, last.catalog === recipes, last.revision == revision {
             return last.groups
         }
-        let groups = BaseLookGroups(recipes.currentBaseLooks)
+        let groups = BaseLookGroups(recipes.currentBaseLooks, leavingOut: recipes.recipeLookIDs)
         Cache.last = Cache(catalog: recipes, revision: revision, groups: groups)
         return groups
+    }
+
+    static let inUse = "In Use"
+
+    /// The sections shown for an edit whose look is `photoLook`: that look first, in a section of its
+    /// own, when no other section lists it, such as a film stock a recipe brought. A photo's embedded
+    /// look has a section of its own in the menu instead.
+    @MainActor static func shown(in recipes: RecipeCatalog, photoLook: BaseLookReference)
+        -> [(name: String, looks: [BaseLookPackage])] {
+        let sections = current(in: recipes).sections
+        guard !photoLook.isEmbedded, !sections.contains(where: { $0.looks.contains { $0.matches(photoLook) } }),
+              let package = recipes.package(for: photoLook)
+        else { return sections }
+        return [(inUse, [package])] + sections
     }
 
     @MainActor private final class Cache {
@@ -52,8 +64,9 @@ struct BaseLookGroups {
     }
 }
 
-/// Every Base Look rendered on the current photo, as Lightroom's Profile Browser.
-/// Thumbnails render one after another at low priority, so editing stays responsive.
+/// The Base Looks rendered on the current photo, as Lightroom's Profile Browser: the menu's sections,
+/// the photo's look first. Thumbnails render one after another at low priority, so editing stays
+/// responsive; hovering one previews it on the photo.
 struct BaseLookBrowser: View {
     @Environment(EditorModel.self) private var model
     @State private var thumbnails: [String: CGImage] = [:]
@@ -61,10 +74,10 @@ struct BaseLookBrowser: View {
     private static let columns = [GridItem(.adaptive(minimum: 116), spacing: 10)]
 
     var body: some View {
-        let groups = BaseLookGroups.current(in: model.recipes)
+        let sections = BaseLookGroups.shown(in: model.recipes, photoLook: model.baseLook)
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(groups.sections, id: \.name) { section in
+                ForEach(sections, id: \.name) { section in
                     Text(section.name).font(.headline)
                     LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 10) {
                         ForEach(section.looks, id: \.self) { look in
@@ -87,7 +100,9 @@ struct BaseLookBrowser: View {
         }
         .overlayScrollers()
         .frame(width: 420, height: 520)
-        .task(id: model.info?.url) { await renderThumbnails(groups.sections.flatMap(\.looks)) }
+        .task(id: [model.info?.url.absoluteString, model.baseLook.id]) {
+            await renderThumbnails(sections.flatMap(\.looks))
+        }
         .onDisappear { model.previewRecipe(nil) }
     }
 
@@ -135,7 +150,7 @@ struct BaseLookBrowser: View {
             .frame(height: 78)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
             .overlay(alignment: .topLeading) {
-                if let icon = FilmIconImage.image(for: look.id, points: 22) {
+                if let icon = LookIconImage.image(for: look.id, points: 22) {
                     Image(nsImage: icon).padding(3)
                 }
             }
@@ -182,5 +197,20 @@ struct BaseLookBrowser: View {
     /// The recipe that previews `look` alone, as hovering it in the browser does.
     @MainActor public static func recipe(for look: BaseLookPackage) -> Recipe {
         BaseLookBrowser.previewRecipe(for: look)
+    }
+
+    /// The Base Look menu's sections for the open photo: each name with its looks' ids.
+    @MainActor public static func menuSections(_ model: EditorModel) -> [(name: String, ids: [String])] {
+        BaseLookGroups.shown(in: model.recipes, photoLook: model.baseLook).map { ($0.name, $0.looks.map(\.id)) }
+    }
+
+    /// A recipe row's Apply Base Look Only, as its right-click menu has it.
+    @MainActor public static func baseLookOnlyItem(_ recipe: Recipe, model: EditorModel) -> NSMenuItem? {
+        SidebarCellView.baseLookOnlyItem(recipe, model: model)
+    }
+
+    /// The Film Stocks folder's right-click menu in the Recipes panel.
+    @MainActor public static func filmStocksMenu(_ model: EditorModel) -> NSMenu? {
+        SidebarCellView(node: SidebarNode(.group(FilmLookCatalog.group)), model: model).contextMenu()
     }
 }

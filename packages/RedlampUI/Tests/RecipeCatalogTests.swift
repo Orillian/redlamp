@@ -45,6 +45,51 @@ struct RecipeCatalogTests {
             Set(BuiltInBaseLook.allCases.filter { $0 != .reproduction }.map(\.rawValue)))
     }
 
+    private func saveLUTRecipe(_ catalog: RecipeCatalog, look: BaseLookDefinition) {
+        catalog.save(Recipe(
+            id: "user/test/lut", name: "LUT", group: "Mine", includes: [.baseLook], settings: RecipeSettings(),
+            baseLook: look.reference,
+            embeddedBaseLooks: [BaseLookPackage(id: look.id, name: look.name, table: look.table)],
+        ))
+    }
+
+    @Test func `the Base Look sections leave film stocks and the looks recipes use to the Recipes panel`() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let catalog = try catalog(StubEngine())
+        let used = try grey(0.5, id: "local/test/used")
+        saveLUTRecipe(catalog, look: used)
+        let unused = try grey(0.25, id: "local/test/unused")
+        catalog.remember(unused)
+        let sections = BaseLookGroups.current(in: catalog).sections
+        let listed = Set(sections.flatMap(\.looks).map(\.id))
+        #expect(listed.isDisjoint(with: FilmLookCatalog.looks.map(\.baseLookID)))
+        #expect(!listed.contains(used.id))
+        #expect(listed.contains(unused.id))
+        #expect(sections.first?.name == "Redlamp")
+        #expect(!sections.contains { ["Film Stocks", FujifilmLUT.group].contains($0.name) })
+    }
+
+    @Test func `the photo's look comes first when no section lists it`() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let catalog = try catalog(StubEngine())
+        let used = try grey(0.5, id: "local/test/used")
+        saveLUTRecipe(catalog, look: used)
+        let shown = BaseLookGroups.shown(in: catalog, photoLook: used.reference)
+        #expect(shown.first?.name == BaseLookGroups.inUse)
+        #expect(shown.first?.looks.map(\.id) == [used.id])
+        #expect(BaseLookGroups.shown(in: catalog, photoLook: BuiltInBaseLook.vivid.reference).first?.name == "Redlamp")
+    }
+
+    @Test func `the Base Look search finds the looks the menu lists, and Lightroom's word finds them all`() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let catalog = try catalog(StubEngine())
+        #expect(catalog.searchBaseLooks("vivid").map(\.id).contains(BuiltInBaseLook.vivid.rawValue))
+        #expect(catalog.searchBaseLooks("ektar").isEmpty)
+        #expect(catalog.searchBaseLooks("").isEmpty)
+        let listed = BaseLookGroups.current(in: catalog).sections.flatMap(\.looks)
+        #expect(catalog.searchBaseLooks("profile").map(\.id) == listed.map(\.id))
+    }
+
     @Test func `toggling a favourite registers nothing`() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let engine = StubEngine()

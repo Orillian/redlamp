@@ -114,6 +114,31 @@ struct FilmModelTests {
         }
     }
 
+    @Test func `a recipe shows its film's icon, or the icon of the film it's built on`() throws {
+        let portra = try #require(FilmLookCatalog.look("portra-400"))
+        #expect(LookIcons.icon(forID: portra.recipeID) == .film(portra.icon))
+        #expect(LookIcons.icon(forID: portra.baseLookID) == .film(portra.icon))
+        var mine = Recipe(
+            id: "local/test/mine", name: "Mine", group: "My Recipes", includes: [.baseLook], settings: RecipeSettings(),
+            baseLook: BaseLookReference(id: portra.baseLookID, version: portra.version, name: portra.name),
+        )
+        #expect(LookIcons.icon(for: mine) == .film(portra.icon))
+        mine.baseLook = BuiltInBaseLook.color.reference
+        #expect(LookIcons.icon(for: mine) == nil)
+    }
+
+    @Test func `the film stocks are browsed by kind, each variant beside its stock`() {
+        let ids = FilmLookCatalog.browsingOrder.map(\.id)
+        #expect(ids.sorted() == FilmLookCatalog.looks.map(\.id).sorted())
+        let at = { (id: String) in ids.firstIndex(of: id) ?? -1 }
+        #expect(at("portra-400-overexposed") == at("portra-400") + 1)
+        #expect(at("velvia-50-cross") == at("velvia-50") + 1)
+        #expect(at("vision3-2383-bleach-bypass") == at("vision3-500t-2383") + 1)
+        #expect(at("superia-400") < at("cinestill-800t"))
+        #expect(at("eterna-vivid-250d-2383") < at("provia-100f"))
+        #expect(at("provia-100f-cross") < at("tri-x-400"))
+    }
+
     @Test func `scanner profiles keep mid-grey neutral`() throws {
         for scanner in ScannerProfile.allCases {
             var parameters = FilmLookParameters()
