@@ -906,6 +906,11 @@
                 return NSApplication.shared.sendAction(action, to: item.target, from: item)
             }
             try app.expect(opened, "The Film Stocks folder has no Open Film Looks")
+            let recipe = try portra(app)
+            try app.expectRenders("previewing Portra 400, as hovering its card does") {
+                try app.main { $0.previewRecipe(recipe) }
+            }
+            try app.main { $0.previewRecipe(nil) }
             try app
                 .wait("the Film Looks window, from the Film Stocks folder", timeout: 10) { _ in
                     NSApp.windows.contains { $0.isVisible && $0.title == "Film Looks" }

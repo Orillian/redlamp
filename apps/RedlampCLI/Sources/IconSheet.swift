@@ -17,7 +17,7 @@ enum IconSheet {
     static let gap: CGFloat = 12
     static let rowHeight: CGFloat = 36 * 2 + gap
 
-    static func run(_ context: RecipeCommands.Context) throws {
+    static func run(_ context: RecipeCommands.Context) async throws {
         if context.arguments.has("--readme") {
             let folder = Repository.root.appendingPathComponent("docs/images/film")
             for look in FilmLookCatalog.looks {
@@ -27,18 +27,28 @@ enum IconSheet {
             }
             print("wrote \(FilmLookCatalog.looks.count) icons into \(folder.path)")
         }
-        let output = URL(fileURLWithPath: context.arguments.value("--output") ?? "build/icons/look-icons.png")
+        let styles = context.arguments.has("--styles")
+        let rows: [Row] = if styles {
+            try await IconStyles.rows(renderer: context.renderer(), photo: context.arguments.value("--photo"))
+        } else {
+            LookIcons.all.map { entry in (entry.name, { entry.icon.image(pixels: $0) }) }
+        }
+        let name = styles ? "look-icon-styles.png" : "look-icons.png"
+        let output = URL(fileURLWithPath: context.arguments.value("--output") ?? "build/icons/\(name)")
         try FileManager.default.createDirectory(
             at: output.deletingLastPathComponent(),
             withIntermediateDirectories: true,
         )
-        try ImageFile.write(sheet(LookIcons.all), to: output)
+        try ImageFile.write(sheet(rows), to: output)
         print("wrote \(output.path)")
     }
 
+    /// A row's name, and its icon drawn at a number of pixels square.
+    typealias Row = (name: String, image: (Int) -> CGImage?)
+
     /// One row per icon: its name, then for each background its 1x sizes and its 2x sizes, each drawn
     /// at its size in pixels.
-    static func sheet(_ icons: [(id: String, name: String, icon: LookIcon)]) throws -> CGImage {
+    static func sheet(_ icons: [Row]) throws -> CGImage {
         let block = oneX.reduce(0, +) + sizes.map { $0 * 2 }.reduce(0, +) + CGFloat(oneX.count + sizes.count + 1) * gap
         let width = nameWidth + CGFloat(backgrounds.count) * block
         let height = CGFloat(icons.count) * rowHeight + gap
@@ -59,7 +69,7 @@ enum IconSheet {
             for b in backgrounds.indices {
                 var x = nameWidth + CGFloat(b) * block + gap
                 for pixels in oneX + sizes.map({ $0 * 2 }) {
-                    if let image = entry.icon.image(pixels: Int(pixels)) {
+                    if let image = entry.image(Int(pixels)) {
                         context.draw(
                             image,
                             in: CGRect(x: x, y: top + (rowHeight - pixels) / 2, width: pixels, height: pixels),
