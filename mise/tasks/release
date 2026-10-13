@@ -53,7 +53,7 @@ DSYMS="$OUT/dSYMs"
 DSYMS_ZIP="$OUT/dSYMs-$VERSION.zip"
 
 # The keychain can hold several Developer ID certificates with the same name, which
-# codesign rejects as ambiguous, so sign by SHA-1.
+# codesign rejects as ambiguous, so sign by SHA-1, the black box's copy of the app included.
 IDENTITY="${REDLAMP_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
     | awk -v team="($TEAM_ID)\"" '/"Developer ID Application:/ && index($0, team) { print $2; exit }')}"
 [ -n "$IDENTITY" ] || fail "no Developer ID Application identity for team $TEAM_ID in the keychain"
@@ -219,7 +219,8 @@ grep -q 'usage: redlamp' <<<"$CLI_OUTPUT" \
 # The signed app as a black box (ARC-07); E2E_NO_UPDATE=1 leaves out the Sparkle update check.
 if [ -z "${SKIP_E2E:-}" ]; then
     echo "==> Checking the signed app as a black box..."
-    scripts/e2e.py --blackbox "$APP" ${E2E_NO_UPDATE:+--no-update} || fail "the signed app failed its black-box checks"
+    REDLAMP_SIGN_IDENTITY="$IDENTITY" scripts/e2e.py --blackbox "$APP" ${E2E_NO_UPDATE:+--no-update} \
+        || fail "the signed app failed its black-box checks"
 fi
 
 # The zip leaves out the extended attributes the build gave the app's files: Finder puts them back
