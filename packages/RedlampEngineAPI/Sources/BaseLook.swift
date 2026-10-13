@@ -47,10 +47,19 @@ public struct BaseLookReference: Sendable, Hashable {
         id.hasPrefix(Self.makerIDPrefix)
     }
 
+    /// The id prefix of looks baked from the firmware-derived film-simulation model, a
+    /// prototype on the local fujisim-prototype branch.
+    public static let firmwareIDPrefix = "local/firmware/"
+
+    /// Whether the look was baked from the firmware-derived model.
+    public var isFirmwareModel: Bool {
+        id.hasPrefix(Self.firmwareIDPrefix)
+    }
+
     /// Whether the look's table must stay on the Mac that has it: its maker's terms don't let
     /// Redlamp pass it on, so shared recipes carry only the reference.
     public var staysOnThisMac: Bool {
-        isEmbedded || isFromMakerLUT
+        isEmbedded || isFromMakerLUT || isFirmwareModel
     }
 
     /// Whether it's Redlamp Reproduction, which has no tone curve.

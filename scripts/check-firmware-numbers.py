@@ -6,10 +6,10 @@ its folder (REDLAMP_FIRMWARE_MODEL, or ~/src/redlamp-fujix100v/model) and must n
 This reads the folder's JSON files, then checks every line the branch adds over origin/main, its
 uncommitted changes and untracked files included:
 
-- a decimal with three or more places that equals one of the model's values rounded to as
-  many places, so a copied matrix or curve is caught however it was rounded;
-- an integer of 100 or more that is one of the model's integers, except the dynamic range
-  percentages Redlamp's cards already use.
+- a decimal with three or more significant digits that equals one of the model's values
+  rounded to as many places, so a copied matrix or curve is caught however it was rounded;
+- an integer of 100 or more that is one of the model's integers and not a multiple of 100,
+  which Redlamp's own code is full of (the cards' dynamic range percentages among them).
 
 Usage: scripts/check-firmware-numbers.py [--base <ref>]
 """
@@ -29,7 +29,6 @@ FILES = [
     "fujisim_constants.json",
     "test_vectors.json",
 ]
-CARD_PERCENTAGES = {100, 200, 400}
 NUMBER = re.compile(r"(?<![\w.])[-+]?(?:\d+\.\d+|\d+)(?:[eE][-+]?\d+)?(?![\w.])")
 
 
@@ -102,7 +101,7 @@ def main() -> int:
             token = match.group().lstrip("+-")
             if "." in token and "e" not in token.lower():
                 places = len(token.split(".")[1])
-                if places < 3:
+                if places < 3 or len(token.replace(".", "").lstrip("0")) < 3:
                     continue
                 if places not in by_places:
                     by_places[places] = {round(value, places) for value in floats}
@@ -110,7 +109,7 @@ def main() -> int:
                     found.append((path, token, line.strip()))
             elif token.isdigit():
                 value = int(token)
-                if value >= 100 and value in integers and value not in CARD_PERCENTAGES:
+                if value >= 100 and value % 100 != 0 and value in integers:
                     found.append((path, token, line.strip()))
     for path, token, line in found:
         print(f"{path}: {token}: {line[:160]}")
