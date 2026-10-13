@@ -13,6 +13,7 @@ network, and everything runs here, as it would without the build Mac:
     scripts/build-mac.py gate --suite         # the whole test suite, as CI runs it
     scripts/build-mac.py gate --full          # and CI's Release builds
     scripts/build-mac.py e2e [-- <arguments>] # the regression suite on the working tree
+    scripts/build-mac.py app [--open]         # the app from the working tree, signed as mise run build signs it
     scripts/build-mac.py release-checks       # a release's checks on this checkout's commit
     scripts/build-mac.py attach [<job>]       # follow a job again (the one running by default)
     scripts/build-mac.py cancel [<job>]       # stop a job there (the one running by default)
@@ -20,7 +21,7 @@ network, and everything runs here, as it would without the build Mac:
     scripts/build-mac.py setup [<options>]    # scripts/build-mac/setup.sh there, with this Mac's versions
 
 A job sends a commit with git push to the build Mac's clone (~/src/build-mac/redlamp), under
-refs/build-mac/, which the pre-push hook lets through. test and e2e send the working tree,
+refs/build-mac/, which the pre-push hook lets through. test, e2e and app send the working tree,
 uncommitted and new files included, as a commit made with a temporary index, which leaves the
 checkout's index and branch as they are (HEAD itself when nothing differs from it). The job runs
 there in a process of its own, so it carries on if the connection drops, under caffeinate. The
@@ -30,12 +31,12 @@ xcodebuild's, the tests' results (tests.json, which scripts/test-results.py comp
 here) and, when tests fail, their result bundle; a gate's pass comes back into
 build/push-gate/passed, so a push of that commit, by the owner or an agent, goes straight through.
 
-The build Mac runs several jobs at once, each in a lane of its own: 3 short tests (test with --only)
-and 2 long jobs (a gate, or test for a whole scheme). A test's lane is a worktree beside the clone
-whose DerivedData stays warm between jobs, and a job takes the lane its checkout used last when
-it's free. The regression suite drives the screen, so it runs alone: it waits for the jobs running,
-and jobs that come meanwhile wait for it. A job whose lanes are all taken waits there, saying what
-for, rather than running here (the owner's choice, 13 October 2026).
+The build Mac runs several jobs at once, each in a lane of its own: 3 short jobs (test with --only,
+and app) and 2 long jobs (a gate, or test for a whole scheme). The lane of a test or an app is a
+worktree beside the clone whose DerivedData stays warm between jobs, and a job takes the lane its
+checkout used last when it's free. The regression suite drives the screen, so it runs alone: it
+waits for the jobs running, and jobs that come meanwhile wait for it. A job whose lanes are all
+taken waits there, saying what for, rather than running here (the owner's choice, 13 October 2026).
 
 test runs xcodebuild test for the scheme unsigned, as CI and the push gate do, and shows failures,
 errors and each bundle's result. e2e runs scripts/e2e.py, with the arguments after --, and brings
@@ -45,15 +46,24 @@ that name this Mac's files, check a signed app or record performance run it here
 which mise run release-checks runs in the release copy, is the regression suite's release tier with
 focus, then the push gate on every test suite, each skipped if it has passed already, on either Mac.
 
+app builds the app as mise run build does (the Redlamp scheme, Debug), but signed ad hoc: the build
+Mac's keychain holds no development identity, and an SSH session finds its login keychain locked.
+The app comes back into build/build-mac/<job>/Redlamp.app, where this Mac signs it with the
+identity mise run build signs with, the project's team's Apple Development one (REDLAMP_SIGN_IDENTITY
+names another): the parts Xcode signs, its executable's dylibs, frameworks and XPC services and then
+the app, each keeping its identifier, entitlements and flags, so its designated requirement is
+mise run build's and macOS treats it as the same app. --open launches it. The newest 3 apps are kept.
+
 When the build Mac doesn't answer, or its Xcode isn't this Mac's, a command says so in one line and
-runs here (test in the checkout, with its own build/DerivedData-test); a different macOS is reported
-and allowed, since only Xcode has to match. --there waits for the build Mac instead, and gate
---there checks a commit there even when it passed here; --here doesn't try it.
+runs here (test in the checkout, with its own build/DerivedData-test; app as mise run build, or
+mise run run with --open); a different macOS is reported and allowed, since only Xcode has to
+match. --there waits for the build Mac instead, and gate --there checks a commit there even when it
+passed here; --here doesn't try it.
 
 The build Mac is the host build-mac in ~/.ssh/config; REDLAMP_BUILD_MAC names another. Under its
 ~/src/build-mac: the clone, the push gate's worktree beside it (redlamp-push-gate), lanes/, with a
-worktree for each test lane, and jobs/, with a folder per job (job.json and its log) and a copy of
-this script, sent with each command, which runs its side of them.
+worktree for each short and long lane, and jobs/, with a folder per job (job.json and its log, and
+an app job's app) and a copy of this script, sent with each command, which runs its side of them.
 """
 
 from __future__ import annotations
@@ -110,6 +120,10 @@ LEFT_THERE = ("home", "photos", "originals", "exports")
 # Starts the last line the build Mac's side of a command prints: what came of it, as JSON.
 MARK = b"@@build-mac "
 KEPT_JOBS = 30
+# An app is 160 MB; the jobs' other results are a few.
+KEPT_APPS = 3
+# Where the build's DEVELOPMENT_TEAM is set; mise run build signs with that team's Apple Development identity.
+TEAM = ("Tuist/ProjectDescriptionHelpers/Module.swift", re.compile(r'redlampDevelopmentTeam = "(\w+)"'))
 MODELS = Path.home() / "Library/Application Support/Redlamp/Models"
 # Git exports GIT_DIR and the like to hooks; git run from here mustn't see them.
 ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
@@ -318,10 +332,13 @@ def new_job(kind: str, commit: str) -> str:
 
 
 def prune() -> None:
-    """The newest jobs' results, and no others."""
+    """The newest jobs' results, and no others; of their apps, the newest few."""
     base = checkout() / "build/build-mac"
     kept = sorted(path for path in base.iterdir() if path.is_dir() and JOB_ID.fullmatch(path.name))
     for old in kept[:-KEPT_JOBS]:
+        shutil.rmtree(old, ignore_errors=True)
+    apps = [path / "Redlamp.app" for path in kept[-KEPT_JOBS:] if (path / "Redlamp.app").is_dir()]
+    for old in apps[:-KEPT_APPS]:
         shutil.rmtree(old, ignore_errors=True)
 
 
@@ -334,14 +351,17 @@ def send(commit: str, job: str) -> None:
         sys.exit(f"build-mac: sending {commit[:7]} to the build Mac failed: {result.stderr.strip()}")
 
 
-def start(kind: str, commit: str, command: list[str], detach: bool, size: str, into: Path | None = None) -> int:
+def start(kind: str, commit: str, command: list[str], detach: bool, size: str, into: Path | None = None,
+          opens: bool = False) -> int:
     """Starts a job there, in a lane of its size (short, long, or alone); a regression run's folder
-    comes back into `into`'s build/e2e/ when it ends."""
+    comes back into `into`'s build/e2e/ when it ends, and an app job's app is launched here if `opens`."""
     job = new_job(kind, commit)
     say(f"On the build Mac, as {job}")
     send(commit, job)
     if into:
         (results(job) / "into").write_text(f"{into}\n")
+    if opens:
+        (results(job) / "open").touch()
     mode = ["_start", job, kind, commit, f"--size={size}", f"--from={ROOT}", *(["--detach"] if detach else []),
             "--", *command]
     if not detach:
@@ -430,6 +450,74 @@ def remember(state: dict) -> None:
     say(f"Its pass ({passed['level']}) is kept here, so a push of {state['commit'][:7]} goes straight through")
 
 
+def identity() -> tuple[str, str] | None:
+    """The identity mise run build signs with here, as its hash and its name: the Apple Development one of the
+    project's team (the one that lasts longest, when the keychain holds several), or REDLAMP_SIGN_IDENTITY."""
+    if os.environ.get("REDLAMP_SIGN_IDENTITY"):
+        return os.environ["REDLAMP_SIGN_IDENTITY"], os.environ["REDLAMP_SIGN_IDENTITY"]
+    source, pattern = TEAM
+    team = pattern.search((ROOT / source).read_text())
+    listed = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"], capture_output=True, text=True)
+    usable = dict(re.findall(r'([0-9A-F]{40}) "(Apple Development: [^"]+)"', listed.stdout))
+    certificates = subprocess.run(["security", "find-certificate", "-a", "-Z", "-p", "-c", "Apple Development: "],
+                                  capture_output=True, text=True).stdout
+    found = []
+    for sha, pem in re.findall(r"SHA-1 hash: ([0-9A-F]{40})\n(-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----)",
+                               certificates, re.S):
+        fields = subprocess.run(["openssl", "x509", "-noout", "-subject", "-enddate"], input=pem, capture_output=True,
+                                text=True).stdout
+        expires = re.search(r"notAfter=(.+)", fields)
+        if team and sha in usable and expires and re.search(rf"\bOU\s?=\s?{team.group(1)}\b", fields):
+            found.append((dt.datetime.strptime(expires.group(1).strip(), "%b %d %H:%M:%S %Y %Z"), sha))
+    return (max(found)[1], usable[max(found)[1]]) if found else None
+
+
+def sign(app: Path) -> bool:
+    """Signs the app, which the build Mac signed ad hoc, as mise run build signs it: the parts Xcode signs, inside
+    out, then the app, each keeping its identifier, entitlements and flags. Sparkle's helpers, inside its framework,
+    keep the ad hoc signatures it ships them with, as in mise run build's app."""
+    found = identity()
+    if found is None:
+        say("This Mac's keychain holds no Apple Development identity of the project's team, so the app stays signed "
+            "ad hoc")
+        return True
+    sha, name = found
+    contents = app / "Contents"
+    parts = [part for folder in ("MacOS/*.dylib", "Frameworks/*", "XPCServices/*", "PlugIns/*", "Helpers/*")
+             for part in sorted(contents.glob(folder)) if not part.is_symlink()]
+    for part in [*parts, app]:
+        result = subprocess.run(["codesign", "--force", "--sign", sha, "--timestamp=none", "--generate-entitlement-der",
+                                 "--preserve-metadata=identifier,entitlements,flags", str(part)],
+                                capture_output=True, text=True, env=ENV)
+        if result.returncode != 0:
+            errors = result.stderr.strip().splitlines()
+            say(f"Signing {part.relative_to(app.parent)} failed: {errors[-1] if errors else result.returncode}")
+            return False
+    checked = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], capture_output=True, text=True)
+    if checked.returncode != 0:
+        say(f"Its signature doesn't verify: {checked.stderr.strip()}")
+        return False
+    say(f"Signed here as mise run build signs it, with {name}")
+    return True
+
+
+def bring_app(job: str, folder: Path) -> int:
+    """An app job's app, from its folder there into its folder here, signed as mise run build signs it, and
+    launched if the job was started with --open."""
+    app = folder / "Redlamp.app"
+    shutil.rmtree(app, ignore_errors=True)
+    if not unpack(f"{JOBS_THERE}/{job}/Redlamp.app", app):
+        say(f"`scripts/build-mac.py attach {job}` tries again")
+        return 1
+    if not sign(app):
+        return 1
+    say(f"The app is in {shown(app)}")
+    if not (folder / "open").exists():
+        return 0
+    say("Opening it")
+    return subprocess.run(["open", str(app)], env=ENV).returncode
+
+
 def finish(job: str, state: dict, folder: Path) -> int:
     (folder / "job.json").write_text(json.dumps(state, indent=1) + "\n")
     printed = (folder / "log").read_text(errors="replace")
@@ -437,8 +525,9 @@ def finish(job: str, state: dict, folder: Path) -> int:
     if gate_log:
         fetch(f"{gate_log.group(1)}.log", folder / "push-gate.log")
         fetch(f"{gate_log.group(1)}.tests.json", folder / "tests.json")
-    if state.get("kind") == "test":
+    if state.get("kind") in ("test", "app"):
         fetch(f"{JOBS_THERE}/{job}/xcodebuild.log", folder / "xcodebuild.log")
+    if state.get("kind") == "test":
         fetch(f"{JOBS_THERE}/{job}/tests.json", folder / "tests.json")
         if state["state"] != "passed" and unpack(f"{JOBS_THERE}/{job}/tests.xcresult", folder / "tests.xcresult"):
             say(f"Its result bundle is in {shown(folder / 'tests.xcresult')}")
@@ -455,10 +544,11 @@ def finish(job: str, state: dict, folder: Path) -> int:
     queued = f", after {took(waited)} waiting for its turn" if waited and waited >= 5 else ""
     lane = f" (lane {state['lane']})" if state.get("lane") else ""
     say(f"{job}: {state['state']}{spent} on the build Mac{lane}{queued}; its logs are in {shown(folder)}")
+    code = 0 if state["state"] == "passed" else 130 if state["state"] == "cancelled" else state.get("exit") or 1
+    if code == 0 and state.get("kind") == "app":
+        code = bring_app(job, folder)
     prune()
-    if state["state"] == "passed":
-        return 0
-    return 130 if state["state"] == "cancelled" else state.get("exit") or 1
+    return code
 
 
 def pick(named: str | None, unfinished: bool) -> str:
@@ -534,6 +624,31 @@ def e2e(args: argparse.Namespace, replace: bool = True) -> int:
     return start("e2e", commit, command, args.detach, size="alone", into=ROOT)
 
 
+def app(args: argparse.Namespace) -> int:
+    """The app as mise run build builds it, from the working tree as it is: in a lane there and signed here, as
+    mise run build signs it, or with mise run build here."""
+    if where(args) is None:
+        return app_here(args)
+    return start("app", snapshot(), [], args.detach, size="short", opens=args.open)
+
+
+def app_here(args: argparse.Namespace) -> int:
+    """mise run build here, or with --open mise run run, which launches what it built."""
+    code = subprocess.call(["mise", "run", "run" if args.open else "build"], cwd=ROOT, env=ENV)
+    if code == 0 and not args.open:
+        built = ROOT / "build/DerivedData/Build/Products" / os.environ.get("CONFIGURATION", "Debug") / "Redlamp.app"
+        say(f"The app is in {shown(built)}")
+    return code
+
+
+def xcodebuild_app(derived: Path) -> list[str]:
+    """xcodebuild build for the app as mise run build builds it (mise/tasks/build), but signed ad hoc: the build
+    Mac's keychain holds no development identity, and an SSH session finds its login keychain locked."""
+    return ["xcodebuild", "build", "-workspace", "Redlamp.xcworkspace", "-scheme", "Redlamp", "-configuration", "Debug",
+            "-destination", "platform=macOS,arch=arm64", "-derivedDataPath", str(derived),
+            "CODE_SIGN_IDENTITY=-", "CODE_SIGN_STYLE=Manual", "DEVELOPMENT_TEAM="]
+
+
 def xcodebuild_test(args: argparse.Namespace, derived: Path, bundle: Path) -> list[str]:
     """xcodebuild test for the scheme and the tests asked for, unsigned, as the push gate and CI run it."""
     return ["xcodebuild", "test", "-workspace", "Redlamp.xcworkspace", "-scheme", args.scheme,
@@ -542,13 +657,10 @@ def xcodebuild_test(args: argparse.Namespace, derived: Path, bundle: Path) -> li
             *[f"-only-testing:{name}" for name in args.only], *[f"-skip-testing:{name}" for name in args.skip]]
 
 
-def run_tests(root: Path, args: argparse.Namespace, derived: Path, folder: Path, generate: bool) -> int:
-    """xcodebuild test in the checkout at root, showing failures, errors and each bundle's result, and
-    keeping in the job's folder its whole output (xcodebuild.log), the tests' results (tests.json) and,
-    when it fails, the result bundle (tests.xcresult)."""
+def logged(root: Path, command: list[str], folder: Path, generate: bool, title: str) -> int:
+    """xcodebuild in the checkout at root, after generating its workspace if asked, showing failures, errors and
+    each bundle's result, and keeping its whole output in the folder's xcodebuild.log."""
     folder.mkdir(parents=True, exist_ok=True)
-    bundle = folder / "tests.xcresult"
-    shutil.rmtree(bundle, ignore_errors=True)
     started = beat = time.monotonic()
     with (folder / "xcodebuild.log").open("w") as log:
         if generate:
@@ -558,12 +670,10 @@ def run_tests(root: Path, args: argparse.Namespace, derived: Path, folder: Path,
             if code != 0:
                 say(f"Generating the workspace failed; its output is in {folder / 'xcodebuild.log'}")
                 return code
-        tests = [*args.only, *(f"all but {name}" for name in args.skip)]
-        say(f"xcodebuild test {args.scheme}: {', '.join(tests) or 'every test'}")
+        say(title)
         log.flush()
-        process = subprocess.Popen(xcodebuild_test(args, derived, bundle), cwd=root, env=ENV,
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   text=True, errors="replace")
+        process = subprocess.Popen(command, cwd=root, env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True, errors="replace")
         try:
             for line in process.stdout:
                 log.write(line)
@@ -572,10 +682,20 @@ def run_tests(root: Path, args: argparse.Namespace, derived: Path, folder: Path,
                 if time.monotonic() - beat >= 180:
                     beat = time.monotonic()
                     print(f"    {took(beat - started)} so far", flush=True)
-            code = process.wait()
+            return process.wait()
         except KeyboardInterrupt:
             process.wait()
             raise
+
+
+def run_tests(root: Path, args: argparse.Namespace, derived: Path, folder: Path, generate: bool) -> int:
+    """xcodebuild test in the checkout at root, as logged runs it, keeping in the job's folder the tests' results
+    (tests.json) too and, when it fails, the result bundle (tests.xcresult)."""
+    bundle = folder / "tests.xcresult"
+    shutil.rmtree(bundle, ignore_errors=True)
+    tests = [*args.only, *(f"all but {name}" for name in args.skip)]
+    code = logged(root, xcodebuild_test(args, derived, bundle), folder, generate,
+                  f"xcodebuild test {args.scheme}: {', '.join(tests) or 'every test'}")
     summary = root / "scripts/test-results.py"
     if bundle.exists() and summary.exists():
         found = subprocess.run([sys.executable, str(summary), "summary", str(bundle), "--out", str(folder / "tests.json")],
@@ -958,8 +1078,8 @@ def prepare_lane(place: Path, commit: str, env: dict, log) -> bool:
 
 
 def supervise(job: str) -> None:
-    """Runs the job at its commit once it's its turn, a test in its lane's worktree and a gate or a
-    regression run in the clone, and records what came of it."""
+    """Runs the job at its commit once it's its turn, a test or an app in its lane's worktree and a gate
+    or a regression run in the clone, and records what came of it."""
     state = update_job(job, supervisor=os.getpid())
     clone = Path.home() / CLONE_THERE
     env = environment_there()
@@ -969,11 +1089,11 @@ def supervise(job: str) -> None:
             update_job(job, state="cancelled", finished=now())
             return
         update_job(job, state="running", started=now(), **({"lane": lane} if lane else {}))
-        if state["kind"] == "test":
+        if state["kind"] in ("test", "app"):
             log.write(f"==> In lane {lane}\n".encode())
             place = Path.home() / LANES_THERE / lane
             ready = prepare_lane(place, state["commit"], env, log)
-            command = [sys.executable, str(Path(__file__).resolve()), "_test", job, *state["command"]]
+            command = [sys.executable, str(Path(__file__).resolve()), f"_{state['kind']}", job, *state["command"]]
         else:
             place, command = clone, state["command"]
             # origin/main as GitHub has it now, which the push gate measures the commit's changes from.
@@ -1145,15 +1265,18 @@ def status_there() -> int:
     return 0
 
 
-def pack_there(run: str) -> int:
-    """A regression run's folder as a tar stream, leaving out what each run makes again."""
-    base = Path(run)
+def pack_there(path: str) -> int:
+    """A folder as a tar stream, its links kept as links: a regression run's without what each run makes
+    again, and a result bundle or an app as it is."""
+    base = Path(path)
     with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
         for folder, folders, files in os.walk(base):
             relative = Path(folder).relative_to(base)
             if not relative.parts or (len(relative.parts) == 1 and relative.parts[0].startswith("attempt-")):
                 folders[:] = [name for name in folders if name not in LEFT_THERE]
-            for name in sorted(files):
+            # os.walk lists a link to a folder with the folders, and doesn't go into it; a framework has several.
+            links = [name for name in folders if (Path(folder) / name).is_symlink()]
+            for name in sorted([*files, *links]):
                 archive.add(Path(folder) / name, arcname=str(relative / name))
     return 0
 
@@ -1172,6 +1295,19 @@ def test_there(argv: list[str]) -> int:
     return run_tests(root, args, root / "build/DerivedData", folder_there(args.job), generate=True)
 
 
+def app_there(argv: list[str]) -> int:
+    """An app job's build, in its lane's worktree (the folder it runs in) with the lane's DerivedData, its app
+    cloned into the job's folder, from which it's brought back."""
+    root, folder = Path.cwd(), folder_there(argv[0])
+    derived = root / "build/DerivedData"
+    code = logged(root, xcodebuild_app(derived), folder, generate=True,
+                  title="xcodebuild build Redlamp (Debug), as mise run build builds it, signed ad hoc")
+    if code != 0:
+        return code
+    return subprocess.run(["cp", "-cR", str(derived / "Build/Products/Debug/Redlamp.app"), str(folder / "Redlamp.app")],
+                          env=ENV).returncode
+
+
 THERE = {
     "_start": start_there,
     "_follow": lambda argv: follow_there(argv[0], int(argv[1])),
@@ -1179,6 +1315,7 @@ THERE = {
     "_status": lambda argv: status_there(),
     "_pack": lambda argv: pack_there(argv[0]),
     "_test": test_there,
+    "_app": app_there,
 }
 
 
@@ -1219,6 +1356,15 @@ def main() -> int:
     place.add_argument("--there", action="store_true", help="wait for the build Mac rather than run it here")
     place.add_argument("--here", action="store_true", help="run it here, without trying the build Mac")
     regression.add_argument("--detach", action="store_true", help="start it there and return; attach follows it")
+    building = commands.add_parser("app", help="the app as mise run build builds it, from the working tree as it is, "
+                                               "in a lane there and signed here or, failing that, here")
+    building.add_argument("--open", action="store_true", help="launch it here once it's built")
+    place = building.add_mutually_exclusive_group()
+    place.add_argument("--there", action="store_true", help="wait for the build Mac rather than build here")
+    place.add_argument("--here", action="store_true",
+                       help="build it here (mise run build), without trying the build Mac")
+    building.add_argument("--detach", action="store_true", help="start it there and return; attach follows it and "
+                                                                "brings the app back")
     releasing = commands.add_parser("release-checks", help="the regression suite's release tier with focus, then "
                                                            "every test suite, on this checkout's commit")
     place = releasing.add_mutually_exclusive_group()
@@ -1242,8 +1388,9 @@ def main() -> int:
             setattr(args, flag[2:], True)
     if args.command == "e2e" and args.there and args.here:
         parser.error("argument --here: not allowed with argument --there")
-    commands_by_name = {"status": status, "test": test, "gate": gate, "e2e": e2e, "release-checks": release_checks,
-                        "attach": attach, "cancel": cancel, "models": copy_models, "setup": setup}
+    commands_by_name = {"status": status, "test": test, "gate": gate, "e2e": e2e, "app": app,
+                        "release-checks": release_checks, "attach": attach, "cancel": cancel, "models": copy_models,
+                        "setup": setup}
     try:
         return commands_by_name[args.command](args)
     except KeyboardInterrupt:
