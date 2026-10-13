@@ -2,8 +2,10 @@ import { readRepoFile } from "./repo.ts";
 
 /**
  * The README is the project's status page, so the roadmap and the list of what works today are read from
- * it at build time rather than copied: every push that updates the README updates the site. Item text
- * stays Markdown; `<Inline>` renders it. Roadmap items name their tracker rows in a trailing comment
+ * it at build time rather than copied: every push that changes them updates the site. Vercel builds a
+ * commit only when these parsers' results differ from the last deployment's (scripts/ignore-build.ts), so
+ * anything else the site shows from the README needs a parser here, named in that script's views. Item
+ * text stays Markdown; `<Inline>` renders it. Roadmap items name their tracker rows in a trailing comment
  * (`<!-- tracker: TON-06 -->`, or `<!-- internal -->`), which is read here and left out of the text.
  */
 
@@ -113,6 +115,10 @@ export function worksToday(): FeatureGroup[] {
   return parseWorksToday(readRepoFile("README.md"));
 }
 
+export function parseLastUpdated(markdown: string): string | null {
+  return markdown.match(/Last updated: ([^.*]+)/)?.[1].trim() ?? null;
+}
+
 export function lastUpdated(): string | null {
-  return readRepoFile("README.md").match(/Last updated: ([^.*]+)/)?.[1].trim() ?? null;
+  return parseLastUpdated(readRepoFile("README.md"));
 }

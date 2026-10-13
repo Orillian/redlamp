@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const docs = path.join(repo, "docs");
 
+// ignore-build.ts lists these too, so that Vercel builds a commit that changes one.
 const sources = [
   { from: path.join(docs, "images"), to: "images", filter: (name) => /\.(png|jpe?g)$/i.test(name) },
   { from: path.join(docs, "images", "film"), to: "film" },
