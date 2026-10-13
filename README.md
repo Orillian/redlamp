@@ -962,8 +962,8 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 
 ### Phase 5: iPad and iPhone
 - [ ] The iPhone design, decided before it's built: a study of how photographers edit on a phone, and concepts tried in the harness on the Mac and on the iPhone <!-- internal; tracker: MOB-01, MOB-02, MOB-03, MOB-04 -->
-- [ ] iPad and iPhone shells on the same engine (compact layout, touch, Apple Pencil), with in-process decoding
-- [ ] Coordinated sidecar I/O through Files, and edits moving between devices
+- [ ] iPad and iPhone shells on the same engine (compact layout, touch, Apple Pencil), with in-process decoding <!-- tracker: MOB-05, MOB-07, MOB-08, MOB-09, MOB-10 -->
+- [ ] Coordinated sidecar I/O through Files, and edits moving between devices <!-- tracker: MOB-06 -->
 - [ ] Tiled rendering for large exports within iPhone and iPad memory <!-- internal; tracker: ARC-05 -->
 - [ ] On-device timing of the AI models on iPhone and iPad, and performance-lab tiers for both <!-- internal; tracker: DN-04 -->
 - [ ] App Store releases for iPad and iPhone
