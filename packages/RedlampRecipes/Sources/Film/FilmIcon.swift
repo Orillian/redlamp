@@ -41,9 +41,6 @@ public struct FilmIcon: Sendable, Hashable {
         self.leader = leader ?? Colour(0.55, 0.33, 0.16)
     }
 
-    /// Below this many pixels a label can't be read, only seen as specks, so the icon goes without it.
-    public static let smallestLabelled = 28
-
     /// The icon at `pixels` square, transparent around the shape.
     public func image(pixels: Int) -> CGImage? {
         guard let context = CGContext(
@@ -53,15 +50,11 @@ public struct FilmIcon: Sendable, Hashable {
         ) else { return nil }
         context.scaleBy(x: CGFloat(pixels) / 64, y: CGFloat(pixels) / 64)
         context.setShouldAntialias(true)
-        var icon = self
-        if pixels < Self.smallestLabelled {
-            icon.label = ""
-        }
         switch shape {
-        case .canister: icon.drawCanister(context)
-        case .slide: icon.drawSlide(context)
-        case .reel: icon.drawReel(context)
-        case .paper: icon.drawPaper(context)
+        case .canister: drawCanister(context)
+        case .slide: drawSlide(context)
+        case .reel: drawReel(context)
+        case .paper: drawPaper(context)
         }
         return context.makeImage()
     }

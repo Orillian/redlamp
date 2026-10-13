@@ -28,7 +28,9 @@ Every place asks `LookIcons` (`packages/RedlampRecipes/Sources/LookIcons.swift`)
 - **label:** the speed, or a variant's mark: `400`, `800T`, `E100`, `K64`, `+2` (overexposed), `1600` (pushed), `G1` and `G4` (paper grades), `BB` (bleach bypass), `XPRO` (cross-processed). Four characters at most; it shrinks to fit.
 - **leader:** orange-brown (the default) for colour negative, `(0.3, 0.3, 0.3)` for black and white.
 
-A variant keeps its stock's body and band and changes the label, so Portra 400 · +2 sits beside Portra 400 and reads as its sibling. Below `FilmIcon.smallestLabelled` pixels (28, which only a display without Retina reaches) the label is left out, since it would show as specks.
+A variant keeps its stock's body and band and changes the label, so Portra 400 · +2 sits beside Portra 400 and reads as its sibling.
+
+**The existing film icons don't change** (the owner, 13 October 2026). Add icons for new stocks; never redraw, recolour or relabel a published one, at any size, without the owner asking.
 
 ## Rules every icon follows
 
