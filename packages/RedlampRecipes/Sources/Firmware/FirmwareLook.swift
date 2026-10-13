@@ -171,8 +171,10 @@ public enum FirmwareLook {
     public static let bakeVersion = 1
     public static let tableSize = 33
     /// Stops added to Redlamp's scene light before the model: the model expects a raw
-    /// developer's linear output, and Redlamp's scene light is scaled differently.
-    public static let exposure = 0.0
+    /// developer's linear output, and Redlamp's scene light is scaled differently. Swept with
+    /// `profile --evaluate --firmware-exposure` on the Standard pairs, it's where the median
+    /// photo needs no more exposure to match the camera's midtones.
+    public static let exposure = 0.8
 
     public static func id(_ settings: FirmwareLookSettings) -> String {
         let settings = settings.clamped
