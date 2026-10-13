@@ -19,5 +19,10 @@ let package = Package(
         productTypes: ["Cmlx": .framework, "MLX": .framework],
         // Apple Silicon only, as the app's own targets are (redlampBaseSettings).
         baseSettings: .settings(base: ["ARCHS": "arm64"]),
+        // MLX's Swift API reaches its C++ core only through MLX's C API, so the core exports that
+        // alone, and dead-stripping drops the C++ the C API doesn't reach.
+        targetSettings: [
+            "Cmlx": .settings(base: ["OTHER_LDFLAGS": ["$(inherited)", "-Wl,-exported_symbol,_mlx_*"]]),
+        ],
     )
 #endif
