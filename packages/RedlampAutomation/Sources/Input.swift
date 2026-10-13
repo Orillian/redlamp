@@ -917,11 +917,16 @@
         /// `steps` moves, as the mouse makes one. An overlay scroller that has faded out lets a press through to
         /// what's under it, and the pointer coming near it, which shows it again, can't be sent: two fingers rest
         /// on the trackpad and lift first, which shows it too. A scroller tracks its knob inside the press, taking
-        /// the drags and the release from the queue, so they're queued before the press; whatever the press leaves
-        /// there goes after it, as `tap`'s release does, and in a window that isn't key both go to the view under
-        /// the pointer. Nil when the press reached the scroller, else what it found.
+        /// the drags and the release from the queue, so they're queued before the press, once AppKit reads what's
+        /// queued for the window where it's sent (`awaitQueuedEvents`); whatever the press leaves there goes after
+        /// it, as `tap`'s release does, and in a window that isn't key both go to the view under the pointer. Nil
+        /// when the press reached the scroller, else what was wrong.
         static func dragKnob(of scroller: NSScroller, to fraction: Double, steps: Int = 8) -> String? {
             guard let window = scroller.window else { return "the scroller isn't in a window" }
+            let middle = scroller.convert(NSPoint(x: scroller.bounds.midX, y: scroller.bounds.midY), to: nil)
+            if let problem = awaitQueuedEvents(at: middle, in: window) {
+                return problem
+            }
             if scroller.scrollerStyle == .overlay, let scrollView = scroller.superview as? NSScrollView {
                 let knob = scroller.convert(scroller.rect(for: .knob), to: nil)
                 touchTrackpad(over: scrollView, at: NSPoint(x: knob.midX, y: knob.midY))
@@ -974,6 +979,31 @@
                 }
             }
             return hit === scroller ? nil : "the press found \(ancestry(hit).joined(separator: " in ")), not its scroller"
+        }
+
+        /// Waits, for up to 2 s, until a mouse event queued for `window` at `location` (in it) is read there; else
+        /// what's wrong. AppKit takes a queued event back rebuilt from its place on the screen, and macOS 26 works
+        /// out its place in the window from the window server's, which for a window just shown can still be
+        /// elsewhere: on CI's runner a drag back to a scroller's middle was read 200 points to its right, as though
+        /// the window were at the screen's corner.
+        static func awaitQueuedEvents(at location: NSPoint, in window: NSWindow) -> String? {
+            let deadline = Date().addingTimeInterval(2)
+            while true {
+                guard let event = NSEvent.mouseEvent(
+                    with: .leftMouseDragged, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
+                ), let rebuilt = event.cgEvent.flatMap(NSEvent.init(cgEvent:)) else { return nil }
+                let read = rebuilt.locationInWindow
+                let miss = hypot(read.x - location.x, read.y - location.y)
+                if miss < 0.5 {
+                    return nil
+                }
+                guard Date() < deadline else {
+                    return "an event queued at \(location) in its window is read at \(read) after 2 s"
+                }
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            }
         }
 
         /// Two fingers resting on the trackpad over `scrollView` at `location` (in its window) and lifting again,
