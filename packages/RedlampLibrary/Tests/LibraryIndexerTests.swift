@@ -392,17 +392,21 @@ extension LibraryIndexerTests {
         defer { sandbox.remove() }
         let wanted = try #require(sandbox.fixture.folders.dropFirst(2).first)
         let last = try #require(sandbox.photos(in: wanted.path).last)
+        let fileSystem = SlowReadFileSystem(slow: sandbox.url(last), delay: .seconds(4))
         let indexer = LibraryIndexer(
-            index: sandbox.index, fileSystem: SlowReadFileSystem(slow: sandbox.url(last), delay: .seconds(4)),
-            configuration: .testing(batchSize: 50),
+            index: sandbox.index, fileSystem: fileSystem, configuration: .testing(batchSize: 50),
         )
         indexer.prioritise([sandbox.root.appending(path: wanted.path)])
         let changing = Task {
-            try await Task.sleep(for: .milliseconds(500))
+            let deadline = ContinuousClock.now + .seconds(30)
+            while !fileSystem.slowReadBegan, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
             indexer.prioritise([])
+            return fileSystem.slowReadBegan
         }
         let run = await IndexerRun.collect(indexer.index([sandbox.root]))
-        try await changing.value
+        #expect(try await changing.value, "the slow read began, and the folders asked for changed during it")
         let indexed = run.indexedFolders
         #expect(indexed.first != sandbox.path(wanted.path), "\(indexed)")
         #expect(indexed.count == sandbox.fixture.folders.count)

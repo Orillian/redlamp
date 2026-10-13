@@ -282,11 +282,17 @@ final class SlowReadFileSystem: LibraryFileSystem {
     let base: any LibraryFileSystem
     private let slow: String
     private let delay: Duration
+    private let began = Mutex(false)
 
     init(_ base: any LibraryFileSystem = LocalFileSystem(), slow: URL, delay: Duration) {
         self.base = base
         self.slow = LibraryIndexer.path(slow)
         self.delay = delay
+    }
+
+    /// Whether the slow read has begun.
+    var slowReadBegan: Bool {
+        began.withLock { $0 }
     }
 
     func contentsOfDirectory(at url: URL) throws -> [FileEntry] {
@@ -299,6 +305,7 @@ final class SlowReadFileSystem: LibraryFileSystem {
 
     func read(_ url: URL, range: Range<Int>) throws -> Data {
         if LibraryIndexer.path(url) == slow {
+            began.withLock { $0 = true }
             Thread.sleep(forTimeInterval: delay.seconds)
         }
         return try base.read(url, range: range)
