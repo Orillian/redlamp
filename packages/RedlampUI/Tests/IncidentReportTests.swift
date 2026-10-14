@@ -3,8 +3,8 @@ import Testing
 @_spi(Harness) @testable import RedlampUI
 
 /// A report on a crash or a hang in an earlier session: its issue and diagnostics.json from the fixtures
-/// (`IncidentTests`), what's redacted from them, what each detail's switch leaves out, the sheet's crash mode, and what
-/// sending, queueing and Not Now do to Your Reports.
+/// (`IncidentTests`), what's redacted from them, what each detail's switch leaves out, the sheet's crash mode, what
+/// sending, queueing and Not Now do to Your Reports, and which crash or hang the banner offers.
 @MainActor
 struct IncidentReportTests {
     private final class Relay: FeedbackSending, @unchecked Sendable {
@@ -323,5 +323,36 @@ struct IncidentReportTests {
             == "[Performance & Stability › Freezes] Hang: 14 s, then Redlamp was closed")
         let relaunched = FeedbackHistory(directory: directory, defaults: defaults)
         #expect(relaunched.incidents.isEmpty && relaunched.queued.count == 1 && relaunched.reports.count == 1)
+    }
+
+    // MARK: - The banner
+
+    @Test func `the banner offers the first crash or hang not dismissed, in the module shown`() throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = EditorModel(engine: StubEngine())
+        let crash = try Self.crash()
+        #expect(IncidentBanner.offered(model, in: .develop) == nil, "no history, as in tests")
+        let history = FeedbackHistory(directory: directory, defaults: defaults)
+        model.incidentHistory = history
+        #expect(IncidentBanner.offered(model, in: .develop) == nil, "nothing found")
+        history.add([crash])
+        #expect(IncidentBanner.offered(model, in: .develop)?.id == crash.id)
+        #expect(IncidentBanner.offered(model, in: .library) == nil, "Develop is shown")
+        model.module = .library
+        #expect(IncidentBanner.offered(model, in: .library)?.id == crash.id)
+        #expect(IncidentBanner.offered(model, in: .develop) == nil, "the Library covers Develop's")
+        model.cullingProblem = CullingProblem(
+            title: "3 Stars", field: .rating, photos: [], values: [], reasons: [], step: ObjectIdentifier(model),
+        )
+        #expect(IncidentBanner.offered(model, in: .library) == nil, "the culling problem is in its place")
+        model.cullingProblem = nil
+        history.dismiss(crash.id)
+        #expect(IncidentBanner.offered(model, in: .library) == nil, "Not Now")
+    }
+
+    @Test func `the banner says when, and a hang's how long`() throws {
+        let read = ". You can read the report before you send it."
+        #expect(try IncidentBanner.detail(Self.crash().incident).hasSuffix(read))
+        #expect(IncidentBanner.detail(Self.hang(seconds: 14.2, closed: true).incident).hasSuffix(", for 14 s" + read))
     }
 }

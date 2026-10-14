@@ -17,9 +17,11 @@ public final class SessionRecorder {
     }
 
     public let journal: SessionJournal?
+    /// Whether what the launch check finds is kept and offered to report: in Release builds, and in development builds
+    /// with `offersInDevelopmentKey`.
+    public let offers: Bool
     private let activity: ActivityLog
     private let history: FeedbackHistory
-    private let offers: Bool
     private let inbox = Inbox()
     private var watchdog: HangWatchdog?
     private var metricKit: MetricKitDiagnostics?

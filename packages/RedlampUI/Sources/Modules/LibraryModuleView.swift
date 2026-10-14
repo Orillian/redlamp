@@ -17,6 +17,9 @@ final class LibraryModuleView: NSView {
     let filterBar: LibraryFilterBarView
     /// A culling change some photos didn't get, floating over the top of the photos shown (LIB-15).
     private let problem: NSView
+    /// A crash or a hang to report, in the culling problem's place while there's none (`IncidentBanner`): this view
+    /// covers Develop's canvas, where it shows otherwise.
+    private let incident: NSView
     private let filmstrip: NSView
     private let filmstripStatus: NSView
     private var filmstripHeight: NSLayoutConstraint?
@@ -56,6 +59,7 @@ final class LibraryModuleView: NSView {
         filmstripStatus = NSHostingView(rootView: LibraryFilmstripStatus(model: model, theme: theme)
             .focusEffectDisabled())
         problem = CullingProblemStrip(model: model)
+        incident = LibraryIncidentBanner.view(model: model, theme: theme)
         super.init(frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))
         wantsLayer = true
         layer?.backgroundColor = LibraryLook.background
@@ -70,6 +74,7 @@ final class LibraryModuleView: NSView {
             filmstrip,
             filterBar,
             problem,
+            incident,
             filmstripStatus,
         ] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -98,6 +103,9 @@ final class LibraryModuleView: NSView {
             problem.centerXAnchor.constraint(equalTo: stage.centerXAnchor),
             problem.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: 10),
             problem.widthAnchor.constraint(lessThanOrEqualTo: stage.widthAnchor, constant: -32),
+            incident.centerXAnchor.constraint(equalTo: stage.centerXAnchor),
+            incident.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: 10),
+            incident.widthAnchor.constraint(lessThanOrEqualTo: stage.widthAnchor, constant: -32),
         ]
         for view in [grid, loupe, compare, survey] as [NSView] {
             constraints += [

@@ -744,6 +744,9 @@ public final class EditorModel {
     @ObservationIgnored public var onShowFilmLooks: (() -> Void)?
     /// Opens Report a Bug or Send Feedback; the app presents it (`FeedbackActions`).
     @ObservationIgnored public var onSendFeedback: ((FeedbackPrefill?) -> Void)?
+    /// The crashes and hangs the launch found, which the banner over the photo offers to report (`IncidentBanner`).
+    /// Set where Redlamp offers them (`SessionRecorder.offers`), so tests show none.
+    public var incidentHistory: FeedbackHistory?
 
     /// Every recipe and Base Look on this machine.
     public let recipes: RecipeCatalog

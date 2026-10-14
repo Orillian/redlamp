@@ -109,6 +109,7 @@ import UniformTypeIdentifiers
                 if let error = model.saveError {
                     SaveErrorBanner(error: error)
                 }
+                IncidentBanner(module: .develop)
             }
             .padding(.top, 14)
             .padding(stagePadding)

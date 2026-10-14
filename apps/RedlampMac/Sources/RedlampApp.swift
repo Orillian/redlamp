@@ -91,6 +91,9 @@ struct RedlampApp: App {
             let session = SessionRecorder(activity: model.activity, development: Self.isDevelopmentBuild)
             session.start()
             AppDelegate.session = session
+            if session.offers {
+                model.incidentHistory = .shared
+            }
             #if DEBUG || REDLAMP_PROFILING
                 DebugDrawCounter.startIfRequested()
             #endif
