@@ -366,6 +366,7 @@ RAWmakase's setup screen opens on a first launch when Lightroom's catalog (`~/Pi
 2. **All nine recommendations, as Accepted rows,** and UX-35, the Targeted Adjustment Tool, accepted.
 3. **DEC-41:** yes, as numbers only.
 4. **After the review in 9.8:** recommendations 1 and 3 join the process version planned for 0.3.2, with CAM-29, DN-12 and LNS-02's Panasonic and OM System corrections; recommendation 4's two parts, `.dcp` profiles and Adobe's XMP looks, are both Phase 2; EDT-23 comes in the releases right after 0.3.2, with recommendations 5 and 6 and versions (EDT-09, LIB-48), everything but masks and spots; raw defaults (EDT-06) may choose the photographer's own Adobe Color; ARC-16 stays Proposed.
+5. **For 0.3.3,** the release after 0.3.2: the other eight rows (LNS-15, LNS-17, TON-51, TON-52, EDT-33, EDT-34, CAM-33, CAM-34), with EDT-23 and versions (EDT-09, LIB-48); masks and spots after it.
 
 **Rows,** with the IDs free on 14 October:
 
