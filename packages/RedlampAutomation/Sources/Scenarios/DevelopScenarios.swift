@@ -488,18 +488,19 @@
             try app.closeSettings()
             try app.openWorking()
             try app.main { $0.expandedPanels.insert(.effects) }
-            try app.expectRenders("the Standard simulation") { try app.chooseFirmware("Standard", in: "simulation") }
-            try app.wait("Standard from the model") { $0.firmwareSettings?.simulation == .standard }
-            try app.expectRenders("Highlight +1") { try app.chooseFirmware("+1.0", in: "highlight") }
-            try app.wait("Highlight +1") { $0.firmwareSettings?.highlight == 1 }
-            try app.chooseFirmware("ACROS", in: "simulation")
-            try app.wait("ACROS, keeping Highlight") {
+            try app.expectRenders("the Standard simulation") {
+                try app.chooseFirmware("Standard", in: "simulation") { $0.firmwareSettings?.simulation == .standard }
+            }
+            try app.expectRenders("Highlight +1") {
+                try app.chooseFirmware("+1.0", in: "highlight") { $0.firmwareSettings?.highlight == 1 }
+            }
+            try app.chooseFirmware("ACROS", in: "simulation") {
                 $0.firmwareSettings?.simulation == .acros && $0.firmwareSettings?.highlight == 1
             }
-            try app.expectRenders("Warm/Cool +2") { try app.chooseFirmware("+2", in: "warm-cool") }
-            try app.wait("Warm/Cool +2") { $0.firmwareSettings?.warmCool == 2 }
-            try app.chooseFirmware("None", in: "simulation")
-            try app.wait("Redlamp Color again") { $0.baseLook == BuiltInBaseLook.color.reference }
+            try app.expectRenders("Warm/Cool +2") {
+                try app.chooseFirmware("+2", in: "warm-cool") { $0.firmwareSettings?.warmCool == 2 }
+            }
+            try app.chooseFirmware("None", in: "simulation") { $0.baseLook == BuiltInBaseLook.color.reference }
             try app.choose(.resetAll)
             try app.openSettings(tab: "Experimental")
             try app.clickInSettings("settings.firmware-model", fallback: 0)
@@ -908,20 +909,40 @@
 
     extension RunningApp {
         /// Chooses `title` in the firmware model's pop-up `develop.firmware-model.<control>` in the
-        /// Camera Recipe group, as choosing it from its menu does.
-        func chooseFirmware(_ title: String, in control: String) throws {
+        /// Camera Recipe group, as choosing it from its menu does, and waits until `done`. SwiftUI's
+        /// pop-ups take a choice through their menu items' actions, AppKit's through their own.
+        func chooseFirmware(
+            _ title: String, in control: String, until done: @escaping @MainActor (EditorModel) -> Bool,
+        ) throws {
             let identifier = "develop.firmware-model.\(control)"
             try wait("the \(identifier) pop-up") { _ in Self.firmwarePopUp(identifier) != nil }
-            try main { _ in
-                guard let popUp = Self.firmwarePopUp(identifier)
-                else { throw ScenarioFailure("No \(identifier) pop-up") }
-                guard let index = popUp.itemTitles.firstIndex(of: title) else {
-                    throw ScenarioFailure("\(identifier) has no \(title): \(popUp.itemTitles)")
+            for byItem in [true, false] {
+                try main { _ in
+                    guard let popUp = Self.firmwarePopUp(identifier)
+                    else { throw ScenarioFailure("No \(identifier) pop-up") }
+                    guard let index = popUp.itemTitles.firstIndex(of: title) else {
+                        throw ScenarioFailure("\(identifier) has no \(title): \(popUp.itemTitles)")
+                    }
+                    if byItem {
+                        popUp.menu?.performActionForItem(at: index)
+                    } else {
+                        popUp.selectItem(at: index)
+                        _ = popUp.sendAction(popUp.action, to: popUp.target)
+                    }
                 }
-                popUp.selectItem(at: index)
-                _ = popUp.sendAction(popUp.action, to: popUp.target)
+                if (try? wait("\(title) in \(identifier)", timeout: 3, until: done)) != nil {
+                    return
+                }
             }
-            pause(0.05)
+            let shown = try main { _ -> String in
+                guard let popUp = Self.firmwarePopUp(identifier) else { return "no pop-up" }
+                let item = popUp.itemTitles.firstIndex(of: title).flatMap { popUp.item(at: $0) }
+                return "showing \(popUp.titleOfSelectedItem ?? "nothing"), identifier "
+                    + "\(popUp.accessibilityIdentifier().isEmpty ? "on its element only" : "on the button"), "
+                    + "action \(popUp.action.map(NSStringFromSelector) ?? "none"), "
+                    + "item action \(item?.action.map(NSStringFromSelector) ?? "none")"
+            }
+            throw ScenarioFailure("Choosing \(title) in \(identifier) changed nothing: \(shown)")
         }
 
         /// SwiftUI may give a picker's identifier to its accessibility element rather than to the
