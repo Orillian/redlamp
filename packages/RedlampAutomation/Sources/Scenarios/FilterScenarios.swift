@@ -63,6 +63,22 @@
             return names
         }
 
+        /// Esc while the filter bar's text has the keyboard, which would type the keys meant for the grid: it closes
+        /// the completions, then gives the grid the keyboard.
+        func leaveFilterText() throws {
+            @MainActor func typing() -> Bool {
+                (Views.editorWindow?.firstResponder as? NSTextView)?.delegate is NSTextField
+            }
+            guard try main({ _ in typing() }) else { return }
+            for _ in 0 ..< 2 where try main({ _ in typing() }) {
+                try pressInWindow(KeyCombo(.escape))
+                pause(0.2)
+            }
+            try wait("Esc to give the grid the keyboard") { _ in
+                Views.editorWindow?.firstResponder.map { "\(Swift.type(of: $0))" } == "LibraryGridContentView"
+            }
+        }
+
         /// Types `text` as keys, with Shift for the characters this keyboard layout types with it
         /// (`:`, `>` and `=` on most), which `type` has no key for.
         func typeQuery(_ text: String) throws {

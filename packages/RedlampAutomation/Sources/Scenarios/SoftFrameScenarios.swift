@@ -58,6 +58,7 @@
                 shown(model, .soft) == ["A_0003.JPG", "B_0003.JPG"] && shown(model, .proposed).count == 2
             }
 
+            try app.leaveFilterText()
             try app.press(.toggleFilterBar)
             try app.wait("the filter bar hidden") { $0.libraryFilters?.isBarShown == false }
             try app.press(.toggleFilterBar)

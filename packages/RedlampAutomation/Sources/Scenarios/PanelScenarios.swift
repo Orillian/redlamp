@@ -234,6 +234,13 @@
             }
         }
 
+        /// What the field `identifier` holds while it has the keyboard; nil when it hasn't.
+        @MainActor static func editedText(_ identifier: String) -> String? {
+            guard let editor = Views.editorWindow?.firstResponder as? NSTextView,
+                  (editor.delegate as? NSView)?.accessibilityIdentifier() == identifier else { return nil }
+            return editor.string
+        }
+
         /// Types `text` into the sheet in front, where its first responder takes it.
         func typeInSheet(_ text: String) throws {
             for character in text {
@@ -341,6 +348,14 @@
                 }
                 try app.clickControl("keywording.completion.0")
                 try app.waitForPanels()
+                // The three had it already, so the entry keeps the keyword it completed, and the keyboard: deleted as
+                // a person would, so the scenarios after don't type after it.
+                if let left = try app.main({ _ in RunningApp.editedText("keywording.entry") }) {
+                    for _ in left.utf16 {
+                        try app.pressInWindow(KeyCombo(.delete))
+                    }
+                    try app.wait("the entry emptied") { _ in RunningApp.editedText("keywording.entry") == "" }
+                }
                 try app.clickControl("keywording.remove.E2E Trips/2007")
                 try app.wait("⊖ to take it off") { model in
                     model.libraryPanels.selection.hasEverywhere(KeywordPath("E2E Trips/2007")!) == false
@@ -360,6 +375,12 @@
 
                 try app.choose("Wedding Photography")
                 try app.wait("the wedding set chosen") { $0.libraryPanels.activeSet?.name == "Wedding Photography" }
+                // The entry would type ⌥1 to ⌥9: a click in the grid, ⇧ keeping the three selected, takes the keyboard.
+                try app.click(.identifier("grid.\(cells[2][0])"), modifiers: .shift)
+                try app.wait("the grid to take the keyboard, the three still selected") { model in
+                    Views.editorWindow?.firstResponder.map { "\(Swift.type(of: $0))" } == "LibraryGridContentView"
+                        && model.libraryPanels.selection.ids.count == three.count
+                }
                 for action in ShortcutAction.allCases where action.keywordSetNumber != nil {
                     let keyword = try app.main { model in
                         model.libraryPanels.activeSet?.keyword(forShortcut: action.keywordSetNumber ?? 0)

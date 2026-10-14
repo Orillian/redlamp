@@ -140,10 +140,16 @@
         }
 
         /// Clicks `target` at `point` (0...1 across and down its frame).
-        func click(_ target: Target, at point: CGPoint = CGPoint(x: 0.5, y: 0.5), count: Int = 1) throws {
+        func click(
+            _ target: Target, at point: CGPoint = CGPoint(x: 0.5, y: 0.5), count: Int = 1,
+            modifiers: NSEvent.ModifierFlags = [],
+        ) throws {
             let (window, location) = try place(point, on: target)
             for clicks in 1 ... count {
-                try mouse([(.leftMouseDown, location, clicks), (.leftMouseUp, location, clicks)], in: window)
+                try mouse(
+                    [(.leftMouseDown, location, clicks), (.leftMouseUp, location, clicks)], in: window,
+                    modifiers: modifiers,
+                )
             }
         }
 
