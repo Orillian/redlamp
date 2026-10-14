@@ -1,0 +1,56 @@
+<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Redlamp promo presets">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    crs:PresetType="Normal"
+    crs:Cluster=""
+    crs:UUID="FA037A97FAE94DF3B26DAE713ECDEF80"
+    crs:SupportsAmount="True"
+    crs:SupportsColor="True"
+    crs:SupportsMonochrome="True"
+    crs:SupportsHighDynamicRange="True"
+    crs:SupportsNormalDynamicRange="True"
+    crs:SupportsSceneReferred="True"
+    crs:SupportsOutputReferred="True"
+    crs:Version="16.5"
+    crs:ProcessVersion="15.4"
+    crs:CameraProfile="Camera Standard"
+    crs:WhiteBalance="Custom"
+    crs:Temperature="6400"
+    crs:Tint="+8"
+    crs:Exposure2012="+0.10"
+    crs:Contrast2012="-10"
+    crs:Highlights2012="-45"
+    crs:Shadows2012="+35"
+    crs:Vibrance="+25"
+    crs:PostCropVignetteAmount="-20"
+    crs:PostCropVignetteStyle="2"
+    crs:HasSettings="True">
+   <crs:Name>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Warm Summer</rdf:li>
+    </rdf:Alt>
+   </crs:Name>
+   <crs:Look>
+    <rdf:Description
+     crs:Name="Warm Summer"
+     crs:Amount="1"
+     crs:UUID="ED19210B952F4A70B242EC1F4E79214B"
+     crs:SupportsAmount="True"
+     crs:SupportsMonochrome="False"
+     crs:SupportsOutputReferred="False"/>
+   </crs:Look>
+   <crs:ToneCurvePV2012>
+    <rdf:Seq>
+     <rdf:li>0, 22</rdf:li>
+     <rdf:li>64, 70</rdf:li>
+     <rdf:li>128, 134</rdf:li>
+     <rdf:li>192, 198</rdf:li>
+     <rdf:li>255, 246</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
