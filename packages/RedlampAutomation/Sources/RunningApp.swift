@@ -177,15 +177,33 @@
 
         /// Brings the app to the front with the editor window key, for steps that need them
         /// (`Scenario.needsFocus`), when the run allows it (`--focus`). Returns whether it did.
+        ///
+        /// macOS can drop a request to come to the front: a new launch's first is dropped when another app was
+        /// put in front by request just before, as a window manager does. So it asks once a second until the
+        /// window is key.
         @discardableResult
-        public func focus() throws -> Bool {
+        public func focus(timeout: Double = 10) throws -> Bool {
             guard allowsFocus else { return false }
-            try main { _ in
-                NSApp.activate()
-                EditorWindowController.frontWindow?.makeKeyAndOrderFront(nil)
+            let started = Date()
+            var requests = 0
+            while try !main({ _ in EditorWindowController.frontWindow?.isKeyWindow == true }) {
+                let waited = Date().timeIntervalSince(started)
+                if waited > timeout {
+                    throw ScenarioFailure(
+                        "The editor window didn't become key in \(Int(timeout)) s, asked \(requests) times",
+                    )
+                }
+                if waited >= Double(requests) {
+                    requests += 1
+                    try main { _ in
+                        NSApp.activate()
+                        EditorWindowController.frontWindow?.makeKeyAndOrderFront(nil)
+                    }
+                }
+                pause(0.02)
             }
-            try wait("the editor window to become key", timeout: 5) { _ in
-                EditorWindowController.frontWindow?.isKeyWindow == true
+            if requests > 1 {
+                recorder.write("note", ["step": "the app came to the front at its request \(requests)"])
             }
             return true
         }
