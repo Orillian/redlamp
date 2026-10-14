@@ -101,6 +101,14 @@ defaults delete app.redlamp.mac WhatsNewEndpoint
 - Domain: `redlamp.app`.
 - Enable **Web Analytics** in the project's Analytics tab. `<Analytics />` in `app/layout.tsx` reports page views from deployments on Vercel; under `mise run site` it only logs them to the browser console.
 
+## Hosted files
+
+The site serves files kept outside the repository at paths of their own, such as the ones release builds of the app fetch, through rewrites (`lib/hosted.ts`). Each file is a numbered pair of the Vercel project's environment variables, set in its settings and never in the repository: `HOSTED_1_PATH`, the path on redlamp.app (`/files/name.bin`), and `HOSTED_1_URL`, the https address where the file is kept, such as the project's Blob storage; then `HOSTED_2_PATH` and `HOSTED_2_URL`, and so on, numbered without gaps. A pair half set, or a path with `:`, `*` or brackets, stops the build with the variable's name.
+
+- **The variables take effect at the next deployment,** since `next.config.ts` reads them when the site builds: redeploy the latest production deployment, which the Ignored Build Step always builds.
+- **A rewrite, not a redirect:** the file is proxied, so its address stays on redlamp.app, and clients that don't follow redirects, such as the release's `curl` check, get the file.
+- **Never cached and never indexed:** each path answers with `Cache-Control: no-store` and `X-Robots-Tag: noindex`. Removing a pair and redeploying makes its path answer Not Found; so does deleting the file where it's kept, when that host answers Not Found for it.
+
 ## The feedback relay
 
 Redlamp's Report a Bug or Send Feedback (`packages/RedlampUI/Sources/Feedback`) posts each report to `POST /api/feedback`, which files it as a GitHub issue as the Redlamp Feedback GitHub App, so people need no GitHub account. The app writes the issue; the relay checks it (kind, labels, sizes, that screenshots are JPEGs and diagnostics are JSON), stores the attachments in a public attachments repo, links them into the body, and files the issue with only the labels that already exist. `GET /api/feedback/status?numbers=12,15` gives the state of the reports a Mac has sent, for its Your Reports list. The logic is in `lib/feedback.ts` and `lib/github-app.ts`, tested by `lib/feedback.test.ts`.
