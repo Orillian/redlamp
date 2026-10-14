@@ -392,7 +392,61 @@
     }
 
     enum ExportScenarios {
-        static let all: [Scenario] = [formats, sizes, metadata, previous, shortWindow, chooseFolder, jpegXL]
+        static let all: [Scenario] = [formats, sizes, metadata, previous, shortWindow, chooseFolder, jpegXL, batch]
+
+        /// EDT-16 (#78): the photos selected with Select All Photos export at once from Export…, named by a template
+        /// typed in the dialog, in the background, with the filmstrip saying how far it's got.
+        static let batch = Scenario(
+            "export.batch",
+            "The photos selected with Select All Photos export at once from Export…, named by a typed template",
+            claims: [.feature("export.batch"), .feature("export.dialog")],
+        ) { app in
+            try app.openWorking()
+            try app.choose(Menus.title(of: .selectAllPhotos))
+            try app.wait("several photos selected", timeout: 30) { $0.selectedCount > 1 && $0.info != nil }
+            let count = try app.main { $0.selectedCount }
+            let settings = try app.host.map { host in try app.main { _ in host.exports.initialSettings } }
+                ?? ExportSettings()
+            let folder = settings.destinationFolder ?? app.photos
+            let before = Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+
+            try app.choose(Menus.title(of: .export))
+            try app.waitForSheet("the Export dialog for \(count) photos")
+            app.pause(0.5)
+            try app.clickInSheet("export.naming")
+            try app.selectSheetField()
+            try app.typeInAttachedSheet("Batch {sequence:2} of {total}")
+            app.pause(0.5)
+            try app.expect(
+                try app.pressInSheet(KeyCombo(.character("\r"))),
+                "The Export dialog's Export button didn't take Return",
+            )
+            try app.waitForNoSheet("the Export dialog")
+            let expected = (1 ... count).map {
+                "Batch \(String(format: "%02d", $0)) of \(count).\(settings.format.fileExtension)"
+            }
+            @Sendable func written() -> Set<String> {
+                Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).subtracting(before)
+                    .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".redlamp") }
+            }
+            try app.wait("the \(count) exports", timeout: 300) { model in
+                model.batchExport.progress == nil && written().count >= count
+            }
+            defer {
+                for file in written() {
+                    try? FileManager.default.removeItem(at: folder.appending(path: file))
+                }
+            }
+            try app.expect(written() == Set(expected), "The batch wrote \(written().sorted()), not \(expected)")
+            for file in expected {
+                try app.expect(
+                    app.imageProperties(folder.appending(path: file)) != nil, "\(file) doesn't decode",
+                )
+            }
+            let summary = try app.main { $0.batchExport.summary }
+            try app.expect(summary == "Exported \(count) photos", "The filmstrip says \(summary ?? "nothing")")
+            app.covered([.feature("export.batch"), .feature("export.dialog")], via: .mouse)
+        }
 
         /// The scenarios that choose from the Export dialog's menus find each by the pop-up button showing it, which
         /// macOS 27's SwiftUI doesn't make: it draws the dialog's pickers itself.

@@ -1,6 +1,6 @@
 # Export: design
 
-The owner's goal: an export dialog like Lightroom's, where you set the format, size, quality, compression and whether the file is lossy or lossless. It exports the active photo; exporting several photos at once comes later, and nothing here should stand in its way. Tracker rows EDT-15 (this) and EDT-16 (batch).
+The owner's goal: an export dialog like Lightroom's, where you set the format, size, quality, compression and whether the file is lossy or lossless. It exports the active photo, or the photos selected (Batch export, below). Tracker rows EDT-15 (the dialog) and EDT-16 (batch).
 
 ## What it writes
 
@@ -26,7 +26,7 @@ Every format goes through ImageIO. On macOS 26 it encodes these, checked in memo
 A sheet on the editor window (`ExportSheet`, presented like New Recipe), in grouped-form sections:
 
 - **Preset:** a popup, as in the Print dialog: four built-ins (Full Size JPEG; Web, 2048 px; Email, under 500 KB; Print, 16-bit TIFF), then your own, then Save as Preset…, Update and Delete. A preset with a changed setting reads "(edited)". The dialog opens with the last export's settings.
-- **Location:** Export to the same folder as the original or a chosen one; the file name is the original's plus a suffix (`-redlamp`) or a custom name, with the result shown; if the file exists: Ask, Add a Number or Overwrite.
+- **Location:** Export to the same folder as the original or a chosen one; the file name is a naming template, the original's name with `-redlamp` by default, with the result shown; if the file exists: Ask, Add a Number, Overwrite or Skip.
 - **File:** the format grouped as Lossy and Lossless, then the options above, then the color space. The footer says what the format is good for.
 - **Size:** full size, long edge, short edge, width and height, megapixels or percentage, each keeping its own value, with a readout such as `6000 × 4000 → 2048 × 1365 px`. Exports are never enlarged. Resolution (ppi) only goes into the file's metadata.
 - **Metadata:** All, All Except Location, or None; and Show in Finder after export.
@@ -37,9 +37,16 @@ Export closes the sheet and runs in the background; the canvas pill says "Export
 
 The original is re-read with ImageIO, which reads raw files' EXIF too, and only an allowlist is copied: Exif (without the pixel size and color space tags), ExifAux, the camera, date, artist, copyright and description from TIFF, IPTC, and GPS. Maker notes, thumbnails and raw dictionaries stay behind. Exports are always tagged upright, since the pixels are, and name Redlamp as the software. All Except Location drops GPS and the IPTC city, region, country and location fields. Focus stack documents export without camera metadata for now.
 
-## Ready for batch
+## Batch export (EDT-16)
 
-Settings never name a photo (`ExportSettings` in RedlampDocument): the folder and file name are worked out for each photo when it is exported, and `EditorModel.export(_:to:)` takes one photo. A batch then needs a selection, a queue and an engine call that renders a file that isn't open. Exports run on the engine's still path, which renders the open photo; `StillRequest.source` makes that render fail rather than export a photo opened in the meantime, since a background export lets you move on straight away.
+Decided with the owner on 14 October 2026.
+
+- **How it starts:** Export… (⇧⌘E), the toolbar's Export and the palette act on the photos selected in the filmstrip or the grid. With several, the dialog is titled and buttoned "Export 12 Photos"; Export with Previous (⌥⇧⌘E) exports the selection with the last settings, without the dialog. One photo selected exports as it always has, rendered by the editor's engine.
+- **Naming:** the File name is the naming template field Rename Photos and the import window share (LIB-25), with its presets (Lightroom Classic's nine, Redlamp's three, and those saved, shared with renaming and importing), Insert Token, Custom Text, Shoot Name and a start number for sequences. "Filename with Suffix", `{name}-redlamp`, is the default, and settings saved before templates name files as they did (`ExportNaming`). `ExportNames` (RedlampLibrary) names a batch: sequences number the photos in the filmstrip's order, `{total}` counts them, named counters carry on, and no two photos get one name, those after the first numbered in the order they were taken; a raw's export and its JPEG's are two files.
+- **Files already there:** a photo is never replaced, whatever the rule; an earlier export is replaced, numbered or skipped, or asked about once for the whole batch (Replace, Keep Both, Skip). Skip joins the rules.
+- **The worker** (`BatchExport`, RedlampUI) renders in an engine of its own, made by the factory Sync Settings' worker uses, with its own GPU queue, so Develop's frames never wait behind an export. One photo at a time is opened, rendered, written and let go, since a downscaled export still renders at full resolution in half floats. The library's edit renders wait while a batch runs, as they do for one export.
+- **Edits:** each photo exports as it was when Export was clicked. A batch takes every photo's edit as soon as it's asked for, the open photo's as it is on screen and the others' from their sidecars once their saves are on disk; until a photo's edit is taken, opening it waits, and so do Sync Settings' writes to it. The edits are kept without their masks' bitmaps, read again from each photo's sidecar when its turn comes. A photo moved, renamed or deleted while it waits fails, by name.
+- **Progress, Cancel and failures:** the filmstrip's status, where Sync Settings shows its own, says "Exporting: 3 of 12" with Cancel, in Develop and Library, and the toolbar's Export button carries the count left. Cancel stops after the photo being written; what's written stays. A photo that fails is left and the rest go on; at the end one alert names each with its reason, with Show in Finder and Report This Problem…, and the status says how it went for a few seconds.
 
 ## Built in the harness first
 
@@ -50,4 +57,4 @@ The key monitor steps aside while a sheet is up, so ← and → don't change the
 
 ## Later
 
-Batch export (EDT-16): multi-selection, background progress and cancel, naming templates with sequence numbers and dates, and Skip for existing files. Then wider color spaces, output sharpening, watermarks, the recipe embedded in the file (EDT-14), JPEG XL once ImageIO encodes it, HDR gain maps, and the CLI writing through `ImageExporter`.
+Wider color spaces, output sharpening, watermarks, the recipe embedded in the file (EDT-14), JPEG XL once ImageIO encodes it, HDR gain maps, and the CLI writing through `ImageExporter`.
