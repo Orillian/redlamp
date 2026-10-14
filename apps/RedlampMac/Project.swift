@@ -33,6 +33,11 @@ let project = Project(
                 // The commit a release is built from, named in feedback reports; empty in builds
                 // from source.
                 "RedlampCommit": "$(REDLAMP_COMMIT)",
+                // The firmware model's hosted file and its outer key (TON-50), from
+                // Version.xcconfig: empty in builds from source, set in releases from the kept
+                // Firmware.local.xcconfig. Not in the target's settings, which would hide it.
+                "RedlampFirmwareTablesURL": "$(REDLAMP_FIRMWARE_TABLES_URL)",
+                "RedlampFirmwareKeyURL": "$(REDLAMP_FIRMWARE_KEY_URL)",
                 // Sidecars are packages (edit.json plus mask bitmaps), shown as one file.
                 "UTExportedTypeDeclarations": [
                     [

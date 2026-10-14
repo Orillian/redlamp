@@ -2,3 +2,9 @@
 MARKETING_VERSION = 0.3.1-alpha
 // Release builds replace this with the number of commits on main, so build numbers only go up.
 CURRENT_PROJECT_VERSION = 1
+// The firmware model's two hosted files (TON-50), in the app's Info.plist. Empty here, so the
+// repository and builds from source name neither; release builds set both from the kept
+// Firmware.local.xcconfig, which `mise run release` copies in and which is never committed.
+REDLAMP_FIRMWARE_TABLES_URL =
+REDLAMP_FIRMWARE_KEY_URL =
+#include? "Firmware.local.xcconfig"

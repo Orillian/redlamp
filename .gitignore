@@ -21,6 +21,9 @@ graph.png
 # mise
 .mise.local.toml
 
+# The firmware model's kept release config (TON-50): its addresses and masked secret
+Firmware.local.xcconfig
+
 # Vendored third-party builds (reproduced by `mise run vendor`)
 vendor/build/
 vendor/cache/

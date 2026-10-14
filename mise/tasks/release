@@ -58,6 +58,18 @@ IDENTITY="${REDLAMP_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
     | awk -v team="($TEAM_ID)\"" '/"Developer ID Application:/ && index($0, team) { print $2; exit }')}"
 [ -n "$IDENTITY" ] || fail "no Developer ID Application identity for team $TEAM_ID in the keychain"
 
+# The firmware model's hosted files (TON-50): the config the owner keeps outside the repository
+# gives the build both addresses and the masked secret its inner key needs, so no release ships
+# without them. SKIP_FIRMWARE_MODEL="<why>" builds without them, and the reason goes in the log;
+# the toggle then has no hosted model.
+FIRMWARE_CONFIG="${REDLAMP_FIRMWARE_CONFIG:-$HOME/.config/redlamp/Firmware.local.xcconfig}"
+if [ -z "${SKIP_FIRMWARE_MODEL:-}" ] && [ ! -f "$FIRMWARE_CONFIG" ] \
+    && git cat-file -e "$COMMIT:scripts/firmware-release-config.py" 2>/dev/null; then
+    fail "no firmware model config at $FIRMWARE_CONFIG (TON-50): the file redlamp recipe firmware-pack
+       wrote, with both addresses filled in. Set REDLAMP_FIRMWARE_CONFIG to keep it elsewhere, or
+       SKIP_FIRMWARE_MODEL=\"<why>\" to release without the hosted model"
+fi
+
 # A process started by a binary carrying com.apple.provenance tags every file it writes, and Homebrew
 # installs mise with one. The zip leaves the tags out, but the disk image would hold them, and an app
 # dragged from it to /Applications is then refused by Gatekeeper (#333).
@@ -157,6 +169,17 @@ for framework in LibRaw libjxl; do
     [ ! -d "vendor/build/$framework.xcframework" ] \
         || ditto "vendor/build/$framework.xcframework" "$SRC/vendor/build/$framework.xcframework"
 done
+FIRMWARE_MODEL=0
+if [ -n "${SKIP_FIRMWARE_MODEL:-}" ]; then
+    echo "==> Firmware model skipped: $SKIP_FIRMWARE_MODEL"
+elif [ ! -f "$SRC/scripts/firmware-release-config.py" ]; then
+    echo "==> Firmware model: $(git rev-parse --short "$COMMIT") predates it (TON-50)"
+else
+    # Into the throwaway worktree only, so neither the addresses nor the secret is ever committed.
+    python3 "$SRC/scripts/firmware-release-config.py" "$FIRMWARE_CONFIG" "$SRC" \
+        || fail "the firmware model config at $FIRMWARE_CONFIG isn't complete; see above"
+    FIRMWARE_MODEL=1
+fi
 (cd "$SRC" && mise run generate)
 
 # What ships is stripped of all but its exported symbols; the dSYMs keep the rest, for
@@ -215,6 +238,22 @@ CLI_STATUS=0
 CLI_OUTPUT="$("$APP/Contents/Helpers/redlamp" 2>&1)" || CLI_STATUS=$?
 grep -q 'usage: redlamp' <<<"$CLI_OUTPUT" \
     || fail "the bundled CLI does not run (exit status $CLI_STATUS): ${CLI_OUTPUT:-no output}"
+# Both hosted addresses reached the app whole (a `//` the xcconfig read as a comment leaves "https:"),
+# and what they hold opens with the kept config's secret for this team, fetched with curl, which goes
+# through a proxy where the CLI's URLSession doesn't.
+if [ "$FIRMWARE_MODEL" = 1 ]; then
+    FIRMWARE_FILES="$WORK/firmware"
+    mkdir -p "$FIRMWARE_FILES"
+    for key in RedlampFirmwareTablesURL RedlampFirmwareKeyURL; do
+        VALUE="$(/usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" 2>/dev/null || true)"
+        [[ "$VALUE" =~ ^https://[^/]+/ ]] || fail "the app's $key isn't a whole https address; check $FIRMWARE_CONFIG"
+        curl -fsS --max-time 60 -o "$FIRMWARE_FILES/$key" "$VALUE" \
+            || fail "couldn't fetch the hosted file at the app's $key"
+    done
+    "$APP/Contents/Helpers/redlamp" recipe firmware-pack --check --config "$FIRMWARE_CONFIG" --team "$TEAM_ID" \
+        --tables-file "$FIRMWARE_FILES/RedlampFirmwareTablesURL" --key-file "$FIRMWARE_FILES/RedlampFirmwareKeyURL" \
+        || fail "the hosted firmware model doesn't open with the secret in $FIRMWARE_CONFIG; host the files it was sealed with"
+fi
 
 # The signed app as a black box (ARC-07); E2E_NO_UPDATE=1 leaves out the Sparkle update check.
 if [ -z "${SKIP_E2E:-}" ]; then
