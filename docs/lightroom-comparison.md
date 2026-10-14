@@ -85,8 +85,8 @@ A high-level list of the features photographers know from Lightroom, and where R
 
 | Feature | Lightroom | Redlamp | vs Lightroom | Phase | Tracker | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Lens corrections the raw file carries | Yes | Done | | | LNS-01, LNS-02 | DNG opcodes, Sony's and Fujifilm's built-in corrections |
-| Lens corrections from Panasonic and OM System raws | Yes | In progress | | P3 | LNS-02 | |
+| Lens corrections the raw file carries | Yes | Done | | | LNS-01, LNS-02 | DNG opcodes, Sony's and Fujifilm's built-in corrections, and from process 16 Panasonic's and OM System's distortion, framed as in the camera's own JPEG |
+| Chromatic aberration and vignetting from Panasonic and OM System raws | Yes | In progress | | P3 | LNS-02 | Their distortion corrections apply from process 16; the fringing and vignetting data the files carry don't match the cameras' JPEGs yet, and Remove Chromatic Aberration still works on them |
 | Adobe LCP lens profiles | Yes | Done | Behind | | LNS-04, LNS-11 | Profiles you put in Redlamp's Lens Profiles folder, each used only on the body it was made on, where Lightroom uses it on other bodies too; Redlamp doesn't ship Adobe's |
 | Lens profiles made on other bodies, chosen by hand, from Camera Raw's folders, and for fisheye lenses | Yes | Planned | | P2 | LNS-14, LNS-15, LNS-16, LNS-17 | A profile made on another body whose sensor covers the photo's; Lightroom's Make, Model and Profile menus; the profiles Lightroom Classic and Camera Raw install, read where they are; fisheye profiles in Phase 3 |
 | A built-in lens profile database | Yes | Planned | | P2 | LNS-03 | The lensfun database, once a licence question is answered |
