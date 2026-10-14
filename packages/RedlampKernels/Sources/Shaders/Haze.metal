@@ -28,7 +28,7 @@ kernel void rl_haze_dark(
     float brightness = 0.0f;
     for (int y = start.y; y < end.y; y++) {
         for (int x = start.x; x < end.x; x++) {
-            float3 v = pyramid.read(uint2(x, y), 0).rgb / airlight;
+            float3 v = max(pyramid.read(uint2(x, y), 0).rgb, 0.0f) / airlight;
             darkest = min(darkest, min3(v.r, v.g, v.b));
             brightness += (v.r + v.g + v.b) / 3.0f;
         }

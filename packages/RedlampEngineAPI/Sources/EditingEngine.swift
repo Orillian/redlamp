@@ -7,6 +7,11 @@ import Foundation
 /// lives in `RedlampEngine`, which UI modules are not allowed to import; the app's
 /// composition root hands them an `EditingEngine`.
 public protocol EditingEngine: AnyObject, Sendable {
+    /// The raw revision `url`'s edit renders with (`EditRecipe.rawRevision`), told as soon as it's
+    /// known: a photo built after this is built at it, so an edit made before the raw stages last
+    /// changed renders without the photo being built again.
+    func expect(_ revision: RawRevision, for url: URL)
+
     /// Decodes an image and makes it the current image. Replaces any previous one.
     func open(_ url: URL) async throws -> ImageInfo
 
@@ -197,6 +202,9 @@ public protocol EditingEngine: AnyObject, Sendable {
 }
 
 public extension EditingEngine {
+    /// Engines without raw stages build every photo the same way.
+    func expect(_: RawRevision, for _: URL) {}
+
     func registerBaseLooks(_ looks: [BaseLookSource]) {
         for look in looks {
             if let definition = look.load() {

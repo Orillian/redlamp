@@ -1,5 +1,6 @@
 import Foundation
 import RedlampEngineAPI
+import Synchronization
 
 /// An edit made before its photo's raw stages last changed (`RawRevision`) renders from a variant:
 /// the photo's decoded image built again at the edit's revision, with its own pyramid and maps
@@ -64,5 +65,20 @@ final class RevisionStage: @unchecked Sendable {
             variants.removeAll { $0.photo === photo && !revisions.contains($0.rawRevision) }
             return dropped
         }
+    }
+}
+
+/// The raw revision each photo's edit renders with, when the editor knows it before the photo is
+/// built: the photo is then built at that revision, so an older edit needs no variant. A photo
+/// without one is built at the current revision, and an older edit falls back to its variant.
+final class ExpectedRevisions: Sendable {
+    private let revisions = Mutex<[URL: RawRevision]>([:])
+
+    func expect(_ revision: RawRevision, for url: URL) {
+        revisions.withLock { $0[url] = revision }
+    }
+
+    func revision(for url: URL) -> RawRevision {
+        revisions.withLock { $0[url] } ?? .current
     }
 }

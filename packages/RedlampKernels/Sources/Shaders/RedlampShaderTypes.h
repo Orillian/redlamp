@@ -13,7 +13,7 @@ struct CFAParams {
     uint patternWidth;   // CFA repeat (2 for Bayer, 6 for X-Trans)
     uint patternHeight;
     uint pad0;
-    uint pad1;
+    uint keepBelowBlack; // 1 from raw revision 3: values below black are kept for noise reduction to average
     float white;
     float4 multipliers;  // as-shot white balance, smallest channel = 1
 };
@@ -100,7 +100,8 @@ struct DenoiseParams {
     int4 origin;              // xy first texel of the work area, z pyramid level
     int4 size;                // xy work area size in texels
     int4 scale;               // x à-trous hole spacing, y 1 on the finest scale, z 1 on the coarsest
-    float4 a;                 // noise per channel in pyramid units: variance = a · value + b
+    float4 a;                 // noise per channel in pyramid units: variance = a · value + b;
+                              // w 1 from process 16: values below black are stabilised by the read noise
     float4 b;
     float4 threshold;         // x luma, yz chroma: detail below these is removed (0 keeps it)
     float4 edge;              // x luma difference (stabilised units) at which chroma stops averaging (0 off),

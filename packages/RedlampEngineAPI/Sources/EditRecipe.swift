@@ -85,8 +85,10 @@ public struct EditRecipe: Sendable, Hashable {
     /// 15: highlights the camera clipped in one or two colours are rebuilt with the colour around
     /// them, and areas clipped in every colour fade to neutral (`RawRevision.second`), so a sky
     /// clipped in green and blue no longer turns lilac when pulled below white.
+    /// 16: a raw's values below black are kept through the demosaic and noise reduction, and clamped
+    /// after the detail stage (`RawRevision.third`), so deep shadows at high ISO keep their level.
     /// A new version records its references for the process-stability gate (`ProcessStabilityTests`).
-    public static let currentProcessVersion = 15
+    public static let currentProcessVersion = 16
     public static let linearPointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)]
 
     /// Sidecars written before process versions existed are version 1.

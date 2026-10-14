@@ -6,18 +6,22 @@
 constant float kB3[5] = {1.0f / 16.0f, 4.0f / 16.0f, 6.0f / 16.0f, 4.0f / 16.0f, 1.0f / 16.0f};
 
 // Generalised Anscombe transform for variance = a·v + b: afterwards the noise is 1 at every level.
-static inline float3 stabilize(float3 v, float3 a, float3 b) {
-    float3 root = sqrt(b);
-    float3 shot = 2.0f * (sqrt(max(a * v + b, 0.0f)) - root) / max(a, 1e-12f);
-    return select(shot, v / root, a < 1e-9f);
+// With a.w set (process 16), a value below black, whose noise is the read noise alone, is divided
+// by that noise instead, so values below black keep their spread and average to their own level.
+static inline float3 stabilize(float3 v, float4 a, float4 b) {
+    float3 root = sqrt(b.xyz);
+    float3 shot = 2.0f * (sqrt(max(a.xyz * v + b.xyz, 0.0f)) - root) / max(a.xyz, 1e-12f);
+    if (a.w != 0.0f) shot = select(shot, v / root, v < 0.0f);
+    return select(shot, v / root, a.xyz < 1e-9f);
 }
 
-static inline float3 unstabilize(float3 f, float3 a, float3 b) {
-    float3 root = sqrt(b);
-    float3 u = 0.5f * a * f + root;
+static inline float3 unstabilize(float3 f, float4 a, float4 b) {
+    float3 root = sqrt(b.xyz);
+    float3 u = 0.5f * a.xyz * f + root;
     // u·|u| keeps the inverse monotonic below black.
-    float3 shot = (u * abs(u) - b) / max(a, 1e-12f);
-    return select(shot, f * root, a < 1e-9f);
+    float3 shot = (u * abs(u) - b.xyz) / max(a.xyz, 1e-12f);
+    if (a.w != 0.0f) shot = select(shot, f * root, f < 0.0f);
+    return select(shot, f * root, a.xyz < 1e-9f);
 }
 
 // Orthonormal, so unit noise per channel stays unit noise per axis.
@@ -76,7 +80,7 @@ kernel void rl_denoise_prepare(
     int2 levelSize = int2(pyramid.get_width(level), pyramid.get_height(level));
     int2 at = clamp(int2(gid) + p.origin.xy, int2(0), levelSize - 1);
     float3 value = pyramid.read(uint2(at), level).rgb / noiseGainAt(noiseGain, pyramid, gid, p);
-    out.write(half4(half3(toOpponent(stabilize(value, p.a.xyz, p.b.xyz))), 1.0h), gid);
+    out.write(half4(half3(toOpponent(stabilize(value, p.a, p.b))), 1.0h), gid);
 }
 
 // Lee's sigma filter (1983) across channels: a neighbour's chroma counts as much as its luma
@@ -129,7 +133,7 @@ static inline void accumulate(float3 kept, float3 coarse, texture2d<half, access
     if (p.scale.z != 0 && p.edge.z != 0) {
         result.write(half4(half3(total + coarse), 1.0h), gid);
     } else if (p.scale.z != 0) {
-        float3 value = unstabilize(fromOpponent(total + coarse), p.a.xyz, p.b.xyz)
+        float3 value = unstabilize(fromOpponent(total + coarse), p.a, p.b)
             * noiseGainAt(noiseGain, pyramid, gid, p);
         out.write(half4(half3(max(value, 0.0f)), 1.0h), gid);
     } else {
@@ -248,7 +252,7 @@ kernel void rl_denoise_nonlocal(
         guides[i] = float(guide.read(uint2(at)).r);
         int2 source = clamp(at + p.origin.xy, int2(0), levelSize - 1);
         float3 value = pyramid.read(uint2(source), level).rgb / noiseGainAt(noiseGain, pyramid, uint2(at), p);
-        noisy[i] = toOpponent(stabilize(value, p.a.xyz, p.b.xyz)).x;
+        noisy[i] = toOpponent(stabilize(value, p.a, p.b)).x;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -303,7 +307,7 @@ kernel void rl_denoise_nonlocal(
             if (at.x >= p.size.x || at.y >= p.size.y) continue;
             float3 here = float3(guide.read(uint2(at)).rgb);
             float luma = weights[j][i] > 0.0f ? sums[j][i] / weights[j][i] : noisy[origin + j * kNonLocalSpan + i];
-            float3 value = unstabilize(fromOpponent(float3(luma, here.yz)), p.a.xyz, p.b.xyz)
+            float3 value = unstabilize(fromOpponent(float3(luma, here.yz)), p.a, p.b)
                 * noiseGainAt(noiseGain, pyramid, uint2(at), p);
             out.write(half4(half3(max(value, 0.0f)), 1.0h), uint2(at));
         }

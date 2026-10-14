@@ -7,11 +7,20 @@
 public enum RawRevision: Int, Sendable, Hashable, Comparable {
     /// Processes 1 to 14.
     case first = 1
-    /// Process 15 on: clipped highlights keep the colour of what's around them (CAM-31).
+    /// Process 15: clipped highlights keep the colour of what's around them (CAM-31), as they do
+    /// in every later revision.
     case second
+    /// Process 16 on: values below black are kept through the demosaic, for noise reduction to
+    /// average, and clamped after it (DN-12).
+    case third
 
     public init(processVersion: Int) {
-        self = processVersion >= 15 ? .second : .first
+        self = processVersion >= 16 ? .third : processVersion >= 15 ? .second : .first
+    }
+
+    /// Whether the raw stages keep values below black, to be clamped after the detail stage.
+    public var keepsBelowBlack: Bool {
+        self >= .third
     }
 
     /// New edits'.

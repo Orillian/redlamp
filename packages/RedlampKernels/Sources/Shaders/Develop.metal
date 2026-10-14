@@ -731,6 +731,9 @@ kernel void rl_develop(
             camera.b = source.sample(linearSampler, orient(blueUV, int(p.geometry.x)), level(p.geometry.y)).b;
         }
     }
+    // From raw revision 3, values below black reach this far, so noise reduction and the pyramid's
+    // levels average them to their own level (DN-12); nothing after this takes them.
+    camera = max(camera, 0.0f);
     // What AI mask edges are guided by (process 13), before any correction.
     float maskEV = maskEdgeEV(camera);
     // Edge-aware tone's detail (process 7, `ToneBase`): this pixel's log luminance above its

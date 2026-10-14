@@ -28,7 +28,16 @@ struct XTransParams {
     int solitaryRow;     // a solitary green's position in the 3 x 3 cell (LibRaw's sgrow, sgcol)
     int solitaryColumn;
     float4 xyzCam[3];    // camera RGB to XYZ, each row divided by D65's white (rows)
+    uint keepBelowBlack; // 1 from raw revision 3: values below black survive, for noise reduction to average
 };
+
+static inline float xfloor(float value, constant XTransParams &p) {
+    return p.keepBelowBlack != 0 ? value : max(value, 0.0f);
+}
+
+static inline float3 xfloor(float3 value, constant XTransParams &p) {
+    return p.keepBelowBlack != 0 ? value : max(value, 0.0f);
+}
 
 static inline int xmod(int v, int m) {
     int r = v % m;
@@ -153,8 +162,8 @@ kernel void rl_xtrans_solitary(
         }
         if (d < 2 || (d & 1)) {
             float4 current = XPLANE(planes, plane, int2(0));
-            planes.write(half4(half(max(colour[0][d] / 2.0f, 0.0f)), half(current.g),
-                               half(max(colour[2][d] / 2.0f, 0.0f)), 1.0h), gid, plane);
+            planes.write(half4(half(xfloor(colour[0][d] / 2.0f, p)), half(current.g),
+                               half(xfloor(colour[2][d] / 2.0f, p)), 1.0h), gid, plane);
             plane++;
         }
         i = i.yx;
@@ -190,7 +199,7 @@ kernel void rl_xtrans_opposite(
         float4 ahead = XPLANE(planes, d, o);
         float4 behind = XPLANE(planes, d, -o);
         float value = (ahead[f] + behind[f] + 2.0f * g0 - ahead.g - behind.g) / 2.0f;
-        scratch.write(half4(half(max(value, 0.0f)), 0.0h, 0.0h, 0.0h), gid, d);
+        scratch.write(half4(half(xfloor(value, p)), 0.0h, 0.0h, 0.0h), gid, d);
     }
 }
 
@@ -242,7 +251,7 @@ kernel void rl_xtrans_blocks(
             red = (g + pa.r + pb.r) / 2.0f;
             blue = (g + pa.b + pb.b) / 2.0f;
         }
-        scratch.write(half4(half(max(red, 0.0f)), half(max(blue, 0.0f)), 0.0h, 0.0h), gid, d);
+        scratch.write(half4(half(xfloor(red, p)), half(xfloor(blue, p)), 0.0h, 0.0h), gid, d);
     }
 }
 
@@ -348,5 +357,5 @@ kernel void rl_xtrans_average(
             count += 1.0f;
         }
     }
-    out.write(float4(max(total / count, 0.0f), 1.0f), uint2(gid.x, y));
+    out.write(float4(xfloor(total / count, p), 1.0f), uint2(gid.x, y));
 }

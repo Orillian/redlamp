@@ -50,6 +50,7 @@ extension EditRenders {
         guard await mayGoOn(rendering: url), let engine = await workerEngine() else { return }
         let opening = ContinuousClock.now
         stepRunning = true
+        engine.expect(recipe.rawRevision, for: url)
         let opened = try? await engine.open(url)
         stepRunning = false
         guard !Task.isCancelled else { return }

@@ -39,6 +39,9 @@ struct DenoiseSettings: Hashable {
     var chroma: [Float]
     var lumaRadius: Float
     var nonLocalWidth: Float
+    /// Process 16 on: the pyramid keeps values below black (`RawRevision.third`), which the
+    /// noise-stabilising transform takes by the read noise alone.
+    var keepsBelowBlack = false
 
     var isActive: Bool {
         luma > 0 || chroma.contains { $0 > 0 }
@@ -96,6 +99,7 @@ struct DenoiseSettings: Hashable {
         }
         lumaRadius = Self.lumaEnergyRadius
         nonLocalWidth = Self.nonLocalWidth
+        keepsBelowBlack = recipe.rawRevision.keepsBelowBlack
     }
 }
 
@@ -1271,7 +1275,7 @@ final class DetailStage {
         var params = DenoiseParams(
             origin: SIMD4(Int32(work.origin.x), Int32(work.origin.y), Int32(work.level), 0),
             size: SIMD4(Int32(work.size.x), Int32(work.size.y), 0, 0),
-            a: SIMD4(session.noise.a, 0),
+            a: SIMD4(session.noise.a, settings.keepsBelowBlack ? 1 : 0),
             b: SIMD4(session.noise.b, 0),
         )
         var current = textures[0]

@@ -16,6 +16,7 @@ struct MenonParams {
     uint height;
     uint patternWidth;
     uint patternHeight;
+    uint keepBelowBlack;  // 1 from raw revision 3: values below black survive, for noise reduction to average
 };
 
 static inline int reflectIndex(int v, int size) {
@@ -178,5 +179,5 @@ kernel void rl_menon_rb_at_rb(
         float detail = smoothstep(3.0f * sigma, 6.0f * sigma, range);
         rgb += (1.0f - detail) * (smooth - rgb.g);
     }
-    out.write(float4(max(rgb, 0.0f), 1.0f), gid);
+    out.write(float4(p.keepBelowBlack != 0 ? rgb : max(rgb, 0.0f), 1.0f), gid);
 }

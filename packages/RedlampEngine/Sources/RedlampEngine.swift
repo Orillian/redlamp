@@ -114,6 +114,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
     private var lastOverview: CachedOverview?
     private let detailStage: DetailStage
     let revisions: RevisionStage
+    let expectedRevisions: ExpectedRevisions
     let retouch: RetouchStage
     let masks: MaskResources
     private let baseLooks: BaseLookRegistry
@@ -178,13 +179,16 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
             device: device, queue: buildQueue, kernels: kernels, lensProfiles: lensProfiles, files: files,
         )
         revisions = RevisionStage(builder: builder)
+        let expected = ExpectedRevisions()
+        expectedRevisions = expected
         let signposter = signposts
         sessions = SessionCache(
             budget: min(Int(device.recommendedMaxWorkingSetSize) / 4, 3 << 30),
             build: { url in
                 let state = signposter.beginInterval("Open", "\(url.lastPathComponent)")
                 defer { signposter.endInterval("Open", state) }
-                return try builder.build(SupportedFormats.isStack(url) ? stacks.decode(url) : decoder.decode(url))
+                let decoded = try SupportedFormats.isStack(url) ? stacks.decode(url) : decoder.decode(url)
+                return try builder.build(decoded, revision: expected.revision(for: url))
             },
         )
         let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global())
@@ -207,6 +211,10 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
     }
 
     // MARK: - Opening
+
+    public func expect(_ revision: RawRevision, for url: URL) {
+        expectedRevisions.expect(revision, for: url)
+    }
 
     public func open(_ url: URL) async throws -> ImageInfo {
         let generation = openGeneration.withLock { value in

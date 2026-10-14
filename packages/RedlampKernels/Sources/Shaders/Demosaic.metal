@@ -13,6 +13,7 @@ kernel void rl_cfa_normalize(
     constant uchar *colorPattern [[buffer(3)]],
     device const float *rowOffsets [[buffer(4)]],
     device const float *columnOffsets [[buffer(5)]],
+    device atomic_uint *belowBlack [[buffer(6)]],
     texture2d<float, access::write> out [[texture(0)]],
     uint2 gid [[thread_position_in_grid]])
 {
@@ -21,8 +22,11 @@ kernel void rl_cfa_normalize(
     float black = blackPattern[position];
     float banding = rowOffsets[gid.y] + columnOffsets[gid.x];
     float value = (float(raw[gid.y * p.width + gid.x]) - black - banding) / max(p.white - black, 1.0f);
-    value = max(value * p.multipliers[colorPattern[position]], 0.0f);
-    out.write(float4(value), gid);
+    value = value * p.multipliers[colorPattern[position]];
+    if (value < 0.0f && atomic_load_explicit(belowBlack, memory_order_relaxed) == 0) {
+        atomic_store_explicit(belowBlack, 1u, memory_order_relaxed);
+    }
+    out.write(float4(p.keepBelowBlack != 0 ? value : max(value, 0.0f)), gid);
 }
 
 // MARK: - DNG gain maps
@@ -111,7 +115,12 @@ struct DemosaicParams {
     uint height;
     uint patternWidth;
     uint patternHeight;
+    uint keepBelowBlack;  // 1 from raw revision 3: values below black survive, for noise reduction to average
 };
+
+static inline float3 demosaicked(float3 rgb, constant DemosaicParams &p) {
+    return p.keepBelowBlack != 0 ? rgb : max(rgb, 0.0f);
+}
 
 // Reflects about the edge pixel, which preserves Bayer parity.
 static inline int reflect(int v, int size) {
@@ -386,7 +395,7 @@ kernel void rl_demosaic_bayer(
         rgb = color == 0 ? float3(c, green, opposite) : float3(opposite, green, c);
     }
     #undef S
-    out.write(float4(max(rgb, 0.0f), 1.0f), gid);
+    out.write(float4(demosaicked(rgb, p), 1.0f), gid);
 }
 
 // Distance-weighted same-color interpolation for any CFA up to 6x6 (X-Trans).
@@ -422,5 +431,5 @@ kernel void rl_demosaic_generic(
     if (own == 0) rgb.r = ownValue;
     else if (own == 1) rgb.g = ownValue;
     else rgb.b = ownValue;
-    out.write(float4(max(rgb, 0.0f), 1.0f), gid);
+    out.write(float4(demosaicked(rgb, p), 1.0f), gid);
 }

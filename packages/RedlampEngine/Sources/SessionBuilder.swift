@@ -125,7 +125,7 @@ struct SessionBuilder {
             throw EngineError.gpuUnavailable
         }
         commands.label = "Build pyramid"
-        let (repairedCount, highlights) = try encodeBase(
+        let (repairedCount, highlights, belowBlack) = try encodeBase(
             decoded, revision: revision, balance: balance, noise: noise, noiseGain: noiseGain, into: pyramid,
             commands: commands,
         )
@@ -137,7 +137,10 @@ struct SessionBuilder {
         if let error = commands.error {
             throw EngineError.renderFailed(error.localizedDescription)
         }
-        return (pyramid, repairedCount, highlights != nil)
+        // Revisions build different pyramids where a photosite clipped (revision 2 rebuilds it
+        // otherwise) or was below black (revision 3 keeps it).
+        let anyBelowBlack = belowBlack.contents().load(as: UInt32.self) != 0
+        return (pyramid, repairedCount, highlights != nil || anyBelowBlack)
     }
 
     /// The maps made from the photo's own pixels, from `pyramid` with its mipmaps: its analysis
@@ -271,8 +274,9 @@ struct SessionBuilder {
     }
 
     /// Level 0 of `texture`: normalised, hot pixels repaired, highlights rebuilt as `revision` does
-    /// and demosaiced. Returns the buffer counting repaired photosites, readable once `commands`
-    /// completes, and the highlight model, nil when nothing clipped.
+    /// and demosaiced. Returns the buffer counting repaired photosites and the one that is nonzero
+    /// when a photosite was below black, readable once `commands` completes, and the highlight
+    /// model, nil when nothing clipped.
     private func encodeBase(
         _ decoded: DecodedImage,
         revision: RawRevision,
@@ -281,13 +285,15 @@ struct SessionBuilder {
         noiseGain: any MTLTexture,
         into texture: any MTLTexture,
         commands: any MTLCommandBuffer,
-    ) throws -> (repairedCount: any MTLBuffer, highlights: HighlightModel?) {
+    ) throws -> (repairedCount: any MTLBuffer, highlights: HighlightModel?, belowBlack: any MTLBuffer) {
         let multipliers = SIMD4<Float>(SIMD3<Float>(balance), 1)
-        guard let repairedCount = device.makeBuffer(length: MemoryLayout<UInt32>.stride, options: .storageModeShared)
+        guard let repairedCount = device.makeBuffer(length: MemoryLayout<UInt32>.stride, options: .storageModeShared),
+              let belowBlack = device.makeBuffer(length: MemoryLayout<UInt32>.stride, options: .storageModeShared)
         else {
             throw EngineError.gpuUnavailable
         }
         memset(repairedCount.contents(), 0, repairedCount.length)
+        memset(belowBlack.contents(), 0, belowBlack.length)
         var highlights: HighlightModel?
         switch decoded.layout {
         case let .mosaic(pattern):
@@ -295,14 +301,15 @@ struct SessionBuilder {
             try encodeMosaic(
                 decoded, pattern: pattern, multipliers: multipliers,
                 noise: noise.scaled(by: SIMD3<Float>(balance)), noiseGain: noiseGain, repairedCount: repairedCount,
-                highlights: highlights, into: texture, commands: commands,
+                belowBlack: belowBlack, keepsBelowBlack: revision.keepsBelowBlack, highlights: highlights,
+                into: texture, commands: commands,
             )
         case .linearRGB:
             try encodeLinearRGB(decoded, multipliers: multipliers, into: texture, commands: commands)
         case .linearSRGBHalf, .balancedCameraHalf:
             try encodeHalves(decoded, into: texture, commands: commands)
         }
-        return (repairedCount, highlights)
+        return (repairedCount, highlights, belowBlack)
     }
 
     private func encodeMosaic(
@@ -312,6 +319,8 @@ struct SessionBuilder {
         noise: NoiseModel,
         noiseGain: any MTLTexture,
         repairedCount: any MTLBuffer,
+        belowBlack: any MTLBuffer,
+        keepsBelowBlack: Bool,
         highlights: HighlightModel?,
         into pyramid: any MTLTexture,
         commands: any MTLCommandBuffer,
@@ -339,10 +348,12 @@ struct SessionBuilder {
                 patternWidth: UInt32(pattern.width), patternHeight: UInt32(pattern.height),
                 white: decoded.whiteLevel, multipliers: multipliers,
             )
+            params.keepBelowBlack = keepsBelowBlack ? 1 : 0
             var blacks = decoded.blackLevels
             var colors = pattern.colors
             encoder.setComputePipelineState(kernels.cfaNormalize)
             encoder.setBuffer(samples, offset: 0, index: 0)
+            encoder.setBuffer(belowBlack, offset: 0, index: 6)
             encoder.setBytes(&params, length: MemoryLayout<CFAParams>.stride, index: 1)
             encoder.setBytes(&blacks, length: blacks.count * MemoryLayout<Float>.stride, index: 2)
             encoder.setBytes(&colors, length: colors.count, index: 3)
@@ -429,6 +440,7 @@ struct SessionBuilder {
                 width: UInt32(width), height: UInt32(height),
                 patternWidth: UInt32(pattern.width), patternHeight: UInt32(pattern.height),
             )
+            demosaicParams.keepBelowBlack = keepsBelowBlack ? 1 : 0
             let bayer = pattern.width == 2 && pattern.height == 2
             if bayer, bayerDemosaic == .menon {
                 try encodeMenon(
@@ -448,8 +460,8 @@ struct SessionBuilder {
             // X-Trans keeps the generic interpolation only in the 8 photosites at its edges.
             if !bayer, xTransDemosaic == .markesteijn, let table = XTransMarkesteijn(pattern) {
                 try encodeMarkesteijn(
-                    table, mosaic: mosaic, colors: colors, cameraToSRGB: decoded.cameraToSRGB, into: pyramid,
-                    encoder: encoder,
+                    table, mosaic: mosaic, colors: colors, cameraToSRGB: decoded.cameraToSRGB,
+                    keepsBelowBlack: keepsBelowBlack, into: pyramid, encoder: encoder,
                 )
             }
         }

@@ -108,6 +108,7 @@ extension SessionBuilder {
         mosaic: any MTLTexture,
         colors: [UInt8],
         cameraToSRGB: [Double],
+        keepsBelowBlack: Bool,
         into pyramid: any MTLTexture,
         encoder: any MTLComputeCommandEncoder,
     ) throws {
@@ -142,6 +143,7 @@ extension SessionBuilder {
                 outTop: UInt32(outTop), outBottom: UInt32(outBottom),
                 solitaryRow: table.solitaryRow, solitaryColumn: table.solitaryColumn, xyzCam: xyzCam,
             )
+            params.keepBelowBlack = keepsBelowBlack ? 1 : 0
             func dispatch(_ pipeline: any MTLComputePipelineState, _ textures: [any MTLTexture]) {
                 encoder.setComputePipelineState(pipeline)
                 for (index, texture) in textures.enumerated() {

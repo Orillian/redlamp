@@ -11,7 +11,7 @@ public struct CFAParams {
     public var patternWidth: UInt32
     public var patternHeight: UInt32
     public var pad0: UInt32 = 0
-    public var pad1: UInt32 = 0
+    public var keepBelowBlack: UInt32 = 0
     public var white: Float
     public var multipliers: SIMD4<Float>
 
@@ -34,11 +34,14 @@ public struct CFAParams {
     }
 }
 
+/// Mirrors `DemosaicParams` in Demosaic.metal and `MenonParams` in DemosaicMenon.metal.
 public struct DemosaicParams {
     public var width: UInt32
     public var height: UInt32
     public var patternWidth: UInt32
     public var patternHeight: UInt32
+    /// 1 from raw revision 3: the demosaic keeps values below black.
+    public var keepBelowBlack: UInt32 = 0
 
     public init(width: UInt32, height: UInt32, patternWidth: UInt32, patternHeight: UInt32) {
         self.width = width
@@ -61,6 +64,8 @@ public struct XTransParams {
     public var xyzCam0: SIMD4<Float>
     public var xyzCam1: SIMD4<Float>
     public var xyzCam2: SIMD4<Float>
+    /// 1 from raw revision 3: the demosaic keeps values below black.
+    public var keepBelowBlack: UInt32 = 0
 
     public init(
         width: UInt32, height: UInt32, bandTop: UInt32, bandRows: UInt32, outTop: UInt32, outBottom: UInt32,

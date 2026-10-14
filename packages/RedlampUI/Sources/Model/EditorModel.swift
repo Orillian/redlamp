@@ -922,11 +922,17 @@ public final class EditorModel {
                 settingsSync,
                 scheduler = library.scheduler,
                 beforeReadingSidecar,
+                engine,
             ] in
             await beforeReadingSidecar(url)
             await saves.wait(for: url)
             await settingsSync.wait(for: url)
-            return try? await scheduler.run(.onScreen) { OpenedSidecar(url, in: sidecars) }
+            let read = try? await scheduler.run(.onScreen) { OpenedSidecar(url, in: sidecars) }
+            // Usually read while the photo still decodes, so the photo is built for its edit.
+            if let recipe = read?.sidecar?.recipe {
+                engine.expect(recipe.rawRevision, for: url)
+            }
+            return read
         }
         if let opened = engine.openIfReady(url) {
             if !hasFrame {
