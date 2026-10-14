@@ -940,7 +940,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 ### Phase 4: 1.0
 - [ ] **Edits made in Lightroom:** each photo's develop settings, from its XMP sidecar or a Lightroom Classic catalog, converted once with a report of what came across, photos edited in Lightroom's first versions included, and a catalog's virtual copies as versions <!-- tracker: EDT-12, EDT-23, EDT-31 -->
 - [ ] HDR and EDR editing and export <!-- tracker: TON-42 -->
-- [ ] Batch export <!-- tracker: EDT-16 -->
+- [x] Batch export <!-- tracker: EDT-16 -->
 - [x] JPEG XL export, lossy or lossless <!-- tracker: EDT-30 -->
 - [x] The edit embedded in exported files <!-- tracker: EDT-14 -->
 - [ ] **AI-assisted focus stacking:** learned fusion and halo suppression, occlusion and motion handling, and good stacks from fewer or handheld frames <!-- tracker: FS-14 -->

@@ -180,7 +180,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Copy and paste settings | Yes | Done | | | EDT-08, EDT-19 | Lightroom's checklist, remembered; also from a filmstrip photo's context menu |
 | Sync and Auto Sync | Yes | Done | | | EDT-17, EDT-18, EDT-20 | Undo with Auto Sync on gives each photo its own edit back, as in Lightroom |
 | Ratings, flags and colour labels | Yes | Done | | | | Saved with the photo's edit, shown in the grid, the loupe and the filmstrip |
-| Batch export | Yes | Planned | | P4 | EDT-16 | |
+| Batch export | Yes | Done | | | EDT-16 | |
 | Batch rename | Yes | In progress | | P4 | LIB-25, LIB-26 | Rename Photos (F2): naming templates shared with importing, batch export and capture sessions, a live preview of every new name, and Undo; Move to Folder and Copy to Folder from the menus, photos dragged onto a folder (⌥ to copy), and Stop partway |
 | Open photos edited in Lightroom | Yes | Planned | | P4 | EDT-12 | Converts Lightroom's XMP sidecars once, and never writes them |
 | Bring a Lightroom Classic catalog's edits across | Yes (Lightroom's migration from Classic) | Planned | | P4 | EDT-23, EDT-33, EDT-34 | Each photo's develop settings, converted once with a report, and its virtual copies as versions, read without changing the catalog; its ratings, keywords and collections come across with the library; one window finds the catalog, its presets and your Adobe profiles, and edits render in those profiles when they're on your Mac |
@@ -244,7 +244,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Edit in Photoshop or another app | Yes | Planned | | P4 | EDT-29 | |
 | Content Credentials | Yes | Planned | | P3 | RM-03 | |
 | The edit embedded in exported files | Yes | Done | | | EDT-14 | |
-| Command-line rendering and export | No | Done | | | | The `redlamp` tool |
+| Command-line rendering and export | No | Done | | | | The `redlamp` tool; `redlamp export` exports several photos, named by templates |
 | Plug-ins for export, publishing and metadata | Yes (Classic) | Undecided | | | | Lightroom Classic runs plug-ins written for its SDK; Redlamp's nearest are the `redlamp` command line and `redlamp mcp` |
 
 ## Library and organising
