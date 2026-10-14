@@ -50,7 +50,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Texture, Clarity and Dehaze | Yes | Done | | | TON-06, TON-27 | Clarity and Dehaze follow the photo's edges for new edits, so a skyline gets no bright and dark bands |
 | Vibrance and Saturation | Yes | Done | | | TON-07 | Boosts stop at the edge of the output's colours instead of clipping |
 | Tone curve: parametric and point curves | Yes | Done | | | | With split points and the point curve's presets |
-| Tone curve: separate red, green and blue curves | Yes | Planned | | P2 | TON-40 | |
+| Tone curve: separate red, green and blue curves | Yes | Done | | | TON-40 | Chosen from a Channel menu under the point curve; Lightroom presets' channel curves come across |
 | Targeted Adjustment Tool | Yes | Planned | | P2 | UX-35 | Drag on the photo to move a curve or a colour band |
 | Color Mixer: hue, saturation and luminance per colour | Yes | Done | | | | Works in OKLCh |
 | Black and white | Yes | Done | | | | |
