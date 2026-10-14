@@ -323,6 +323,11 @@ def roadmap_commits(files):
     return {sha for sha, paths in files.items() if TRACKER_DOC in paths and paths <= ROADMAP_DOCS}
 
 
+def tooling_commits(files):
+    """The commits, of those in `changed_files`, that change only the agents' rules and skills, which fix no report."""
+    return {sha for sha, paths in files.items() if paths and all(path.startswith(".cursor/") for path in paths)}
+
+
 # ---------------------------------------------------------------- the release
 
 
@@ -439,7 +444,7 @@ def build(offline):
     files = changed_files(shas)
     in_app = app_commits(files)
     in_code = code_commits(files)
-    planning = roadmap_commits(files)
+    planning = roadmap_commits(files) | tooling_commits(files)
     all_tags = [t for t in git("tag", "--list", "v*", "--sort=v:refname").splitlines() if t]
     rel = release(offline)
     reports = []
