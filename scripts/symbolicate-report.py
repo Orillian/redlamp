@@ -373,7 +373,7 @@ def markdown(incident, names, notes, *, source=None, version=None, number=None, 
     lines = [f"<!-- {SYMBOLICATED} {hidden} -->"]
     if reporter:
         what = "stopped responding" if incident.get("kind") == "hang" else "quit"
-        lines += [f"This is where Redlamp was when it {what}{', with its own functions named,' if named else ''} so I can "
+        lines += [f"This is where Redlamp was when it {what}{', with its own functions named,' if named else ','} so I can "
                   "work out the fix. There's nothing you need to do.", ""]
     when = moment(incident.get("time"))
     lines.append(f"**{headline(incident)}** in Redlamp {incident.get('version') or version or '(the version is unknown)'}"
