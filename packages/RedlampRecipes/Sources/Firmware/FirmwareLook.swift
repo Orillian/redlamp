@@ -197,7 +197,7 @@ public enum FirmwareLook {
     public static func definition(_ settings: FirmwareLookSettings, model: FirmwareFilmModel) throws
         -> BaseLookDefinition {
         let settings = settings.clamped
-        let key = "\(model.folder.path)#\(id(settings))"
+        let key = "\(model.source)#\(id(settings))"
         if let cached = cache.value(key) {
             return cached
         }
@@ -264,6 +264,11 @@ public enum FirmwareLook {
         DispatchQueue.concurrentPerform(iterations: count) { slots[$0] = body($0) }
         return results.map { $0! }
     }
+}
+
+/// The second of the inner key's three salt pieces (`FirmwareKeySaltA`).
+enum FirmwareKeySaltB {
+    static let bytes: [UInt8] = [0x3E, 0xD7, 0x05, 0x8A, 0x61, 0xF9, 0x2B, 0x94, 0x0E, 0x77, 0xBC]
 }
 
 private final class DefinitionCache: @unchecked Sendable {

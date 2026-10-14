@@ -30,6 +30,10 @@ FILES = [
     "test_vectors.json",
 ]
 NUMBER = re.compile(r"(?<![\w.])[-+]?(?:\d+\.\d+|\d+)(?:[eE][-+]?\d+)?(?![\w.])")
+# Numbers that equal one of the model's by chance, each where it means something else.
+ALLOWED = {
+    ("packages/RedlampRecipes/Sources/Firmware/FirmwareModelHost.swift", "404"): "HTTP's Not Found",
+}
 
 
 def model_folder() -> Path:
@@ -99,6 +103,8 @@ def main() -> int:
             continue
         for match in NUMBER.finditer(line):
             token = match.group().lstrip("+-")
+            if (path, token) in ALLOWED:
+                continue
             if "." in token and "e" not in token.lower():
                 places = len(token.split(".")[1])
                 if places < 3 or len(token.replace(".", "").lstrip("0")) < 3:

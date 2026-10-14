@@ -39,23 +39,48 @@ public extension RecipeCatalog {
         }
     }
 
-    /// Reads the switch and the model's folder, after launch and whenever they change.
+    /// Reads the switch and where the model comes from, after launch and whenever the settings
+    /// change. A folder that failed is read again at the next change; the hosted file is opened
+    /// once per launch or turn of the switch, so a failure stays off rather than refetching.
     func refreshFirmwareModel() {
-        let folder = FirmwareFilmModel.settingsFolder()
-        guard folder != firmwareFolder || (folder != nil && library.firmwareModel == nil) else { return }
-        firmwareFolder = folder
-        if let folder {
+        let source = FirmwareFilmModel.source()
+        var retry = false
+        if case .folder? = source {
+            retry = library.firmwareModel == nil
+        }
+        guard source != firmwareSource || retry else { return }
+        firmwareSource = source
+        firmwareTask?.cancel()
+        firmwareTask = nil
+        library.firmwareModel = nil
+        switch source {
+        case nil:
+            firmwareStatus = nil
+        case .unavailable?:
+            firmwareStatus = "This build has no hosted model, and the folder doesn't hold the model's files."
+        case let .folder(folder)?:
             do {
                 let model = try FirmwareFilmModel.shared(at: folder)
                 library.firmwareModel = model
                 firmwareStatus = "\(model.simulationNames.count) simulations read from \(folder.path)"
             } catch {
-                library.firmwareModel = nil
                 firmwareStatus = "\(error)"
             }
-        } else {
-            library.firmwareModel = nil
-            firmwareStatus = nil
+        case let .hosted(addresses)?:
+            firmwareStatus = "Fetching the model…"
+            let host = FirmwareModelHost(addresses: addresses)
+            firmwareTask = Task { [weak self] in
+                let result = await host.open()
+                guard let self, !Task.isCancelled, firmwareSource == source else { return }
+                switch result {
+                case let .success(model):
+                    library.firmwareModel = model
+                    firmwareStatus = "\(model.simulationNames.count) simulations from the hosted file"
+                case let .failure(failure):
+                    firmwareStatus = failure.description
+                }
+                changed()
+            }
         }
         changed()
     }

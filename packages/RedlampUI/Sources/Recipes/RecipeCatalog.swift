@@ -17,9 +17,10 @@ public final class RecipeCatalog {
     @ObservationIgnored private var importedLists: Set<String> = []
     /// The looks given to the engine, by id, version and table hash.
     @ObservationIgnored private var registered: Set<String> = []
-    /// The firmware model's folder while its switch is on, and what reading it found.
-    public internal(set) var firmwareFolder: URL?
+    /// Where the firmware model comes from while its switch is on, and what reading it found.
     public internal(set) var firmwareStatus: String?
+    @ObservationIgnored var firmwareSource: FirmwareModelSource?
+    @ObservationIgnored var firmwareTask: Task<Void, Never>?
     @ObservationIgnored var defaultsObserver: (any NSObjectProtocol)?
 
     public init(engine: any EditingEngine, library: RecipeLibrary = RecipeLibrary()) {

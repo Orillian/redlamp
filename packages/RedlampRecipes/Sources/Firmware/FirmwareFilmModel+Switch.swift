@@ -33,6 +33,11 @@ public extension FirmwareFilmModel {
     }
 }
 
+/// The third of the inner key's three salt pieces (`FirmwareKeySaltA`).
+enum FirmwareKeySaltC {
+    static let bytes: [UInt8] = [0x6A, 0x0F, 0xC8, 0x53, 0xB2, 0x19, 0xE5, 0x47, 0x8D]
+}
+
 private final class Cache: @unchecked Sendable {
     static let shared = Cache()
     private let lock = NSLock()

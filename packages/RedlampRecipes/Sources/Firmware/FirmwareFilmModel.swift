@@ -26,8 +26,9 @@ public struct FirmwareFilmModel: Sendable {
         }
     }
 
-    /// The folder the model was read from.
-    public let folder: URL
+    /// Where the model was read from, which keys its baked looks: the folder's path, or the
+    /// hosted file's digest.
+    public let source: String
     /// The model's simulation names, as its files key them.
     public let simulationNames: [String]
     private let simulations: [String: Simulation]
@@ -38,23 +39,73 @@ public struct FirmwareFilmModel: Sendable {
     private let ycbcr: simd_double3x3
     private let ycbcrInverse: simd_double3x3
 
+    /// The model's four files as bytes, read from the folder or opened from the hosted pack. The
+    /// field names match the files `FirmwareFilmModel.fileNames` lists, in that order.
+    public struct Files: Sendable {
+        /// `fsim_params.json`.
+        public var parameters: Data
+        /// `tone_gain_curves.json`.
+        public var toneGains: Data
+        /// `calibration.json`.
+        public var calibration: Data
+        /// `fujisim_constants.json`.
+        public var constants: Data
+
+        public init(parameters: Data, toneGains: Data, calibration: Data, constants: Data) {
+            self.parameters = parameters
+            self.toneGains = toneGains
+            self.calibration = calibration
+            self.constants = constants
+        }
+
+        /// The four files in a model folder.
+        public init(folder: URL) throws {
+            func read(_ name: String) throws -> Data {
+                let url = folder.appendingPathComponent(name)
+                guard FileManager.default.fileExists(atPath: url.path) else { throw LoadError.missing(name) }
+                do {
+                    return try Data(contentsOf: url)
+                } catch {
+                    throw LoadError.invalid("\(name) (\(error))")
+                }
+            }
+            let constants = try read("fujisim_constants.json")
+            let calibration = try read("calibration.json")
+            let parameters = try read("fsim_params.json")
+            try self.init(
+                parameters: parameters, toneGains: read("tone_gain_curves.json"), calibration: calibration,
+                constants: constants,
+            )
+        }
+    }
+
+    /// The four files the model reads, in the order `Files` and the pack store them.
+    public static let fileNames = [
+        "fsim_params.json", "tone_gain_curves.json", "calibration.json", "fujisim_constants.json",
+    ]
+
     public init(folder: URL) throws {
-        self.folder = folder
+        try self.init(files: Files(folder: folder), source: folder.standardizedFileURL.path)
+    }
+
+    /// Parses the model from the four files in memory, from the folder or the hosted pack.
+    public init(files: Files, source: String) throws {
+        self.source = source
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        func read<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
-            let url = folder.appendingPathComponent(name)
-            guard FileManager.default.fileExists(atPath: url.path) else { throw LoadError.missing(name) }
+        func decode<T: Decodable>(_ type: T.Type, _ data: Data, _ name: String) throws -> T {
             do {
-                return try decoder.decode(type, from: Data(contentsOf: url))
+                return try decoder.decode(type, from: data)
             } catch {
                 throw LoadError.invalid("\(name) (\(error))")
             }
         }
-        let constants = try read(Constants.self, "fujisim_constants.json")
-        let calibration = try read(Calibration.self, "calibration.json")
-        let parameters = try read([String: SimulationParameters].self, "fsim_params.json")
-        let gains = try read([String: [String: [String: [String: [Double]]]]].self, "tone_gain_curves.json")
+        let constants = try decode(Constants.self, files.constants, "fujisim_constants.json")
+        let calibration = try decode(Calibration.self, files.calibration, "calibration.json")
+        let parameters = try decode([String: SimulationParameters].self, files.parameters, "fsim_params.json")
+        let gains = try decode(
+            [String: [String: [String: [String: [Double]]]]].self, files.toneGains, "tone_gain_curves.json",
+        )
         guard !calibration.gamut else { throw LoadError.unsupported("the gamut table, which its calibration turns on") }
         self.constants = constants
         preMatrix = try Self.matrix(calibration.preMatrix, "pre-matrix")
@@ -74,8 +125,7 @@ public struct FirmwareFilmModel: Sendable {
 
     /// Whether `folder` holds the four files the model reads.
     public static func isAvailable(at folder: URL) -> Bool {
-        ["fsim_params.json", "tone_gain_curves.json", "calibration.json", "fujisim_constants.json"]
-            .allSatisfy { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+        fileNames.allSatisfy { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
     }
 
     public func isMonochrome(_ simulation: String) -> Bool {
@@ -163,6 +213,13 @@ public struct FirmwareFilmModel: Sendable {
         guard rows.count == 3, rows.allSatisfy({ $0.count == 3 }) else { throw LoadError.invalid(what) }
         return simd_double3x3(rows: rows.map { SIMD3($0[0], $0[1], $0[2]) })
     }
+}
+
+/// One of the three pieces the inner key is salted with (`FirmwareModelKey`), kept apart so no
+/// single source file holds the salt (TON-50). These bytes are public and carry nothing of the
+/// model; the secret the key also needs is not in the sources.
+enum FirmwareKeySaltA {
+    static let bytes: [UInt8] = [0x9B, 0x1C, 0x7F, 0x30, 0xE2, 0xA4, 0x58, 0x6D, 0xC1, 0x0A]
 }
 
 // MARK: - Rendering
