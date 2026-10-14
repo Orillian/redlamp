@@ -3,10 +3,13 @@ import RedlampDesign
 import SwiftUI
 
 /// Help › Your Reports: what this Mac has sent and what's waiting to be, each opening on GitHub,
-/// where anyone can read it and its replies.
+/// where anyone can read it and its replies, and the crashes and hangs not reported yet, kept for
+/// 30 days.
 struct YourReportsView: View {
     @Bindable var history: FeedbackHistory
     let dismiss: () -> Void
+    /// Closes the list and opens the report on a crash or a hang.
+    let review: (PendingIncident) -> Void
     /// Reports with news when the list opened; seen once it has.
     @State private var news: Set<UUID> = []
     @Environment(\.openURL) private var openURL
@@ -30,12 +33,21 @@ struct YourReportsView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            if history.reports.isEmpty, history.queued.isEmpty {
+            if history.reports.isEmpty, history.queued.isEmpty, history.incidents.isEmpty {
                 Text("Nothing sent from this Mac yet. Reports you send appear here.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
+                    if !history.incidents.isEmpty {
+                        Section("Not reported yet") {
+                            ForEach(history.incidents) { pending in
+                                IncidentRow(pending: pending, review: { review(pending) }, remove: {
+                                    history.forgetIncident(pending.id)
+                                })
+                            }
+                        }
+                    }
                     if !history.queued.isEmpty {
                         Section("Waiting to send") {
                             ForEach(history.queued) { item in
@@ -99,6 +111,48 @@ struct YourReportsView: View {
             news = Set(history.reports.filter(\.hasNews).map(\.id))
             history.markSeen()
         }
+    }
+}
+
+/// A crash or a hang the launch found: what happened, when, and how long it's kept unless it's
+/// reported or removed.
+private struct IncidentRow: View {
+    let pending: PendingIncident
+    let review: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pending.incident.headline).lineLimit(2)
+                Text(details).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Remove", action: remove)
+                .help("Removes it from this list. Nothing is sent.")
+                .automationIdentifier("reports.incident.\(pending.id.uuidString).remove")
+            Button("Review Report…", action: review)
+                .automationIdentifier("reports.incident.\(pending.id.uuidString).review")
+        }
+        .contextMenu {
+            Button("Review Report…", action: review)
+            Divider()
+            Button("Remove from List", action: remove)
+        }
+    }
+
+    /// "14 Oct 2026 at 10:08 · EXC_BAD_ACCESS (SIGSEGV) · kept until 13 Nov 2026".
+    private var details: String {
+        let incident = pending.incident
+        let kept = pending.found.addingTimeInterval(TimeInterval(FeedbackHistory.incidentDays) * 86400)
+        return [
+            incident.time.formatted(date: .abbreviated, time: .shortened),
+            incident.kind == .crash ? incident.exception : incident.duration.map { "for \(Incident.seconds($0))" },
+            "kept until \(kept.formatted(date: .abbreviated, time: .omitted))",
+        ].compactMap(\.self).joined(separator: " · ")
     }
 }
 

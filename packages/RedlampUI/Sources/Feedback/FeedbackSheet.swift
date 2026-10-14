@@ -14,6 +14,8 @@ struct FeedbackSheet: View {
     let showReports: () -> Void
 
     static let size = CGSize(width: 620, height: 780)
+    /// A report on a crash or a hang asks for less.
+    static let incidentSize = CGSize(width: 620, height: 660)
 
     var body: some View {
         Group {
@@ -90,114 +92,12 @@ private struct FeedbackForm: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                if sheet.restoredDraft {
-                    Section {
-                        HStack {
-                            Text("Your unsent report is back as you left it.").foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Start Over", action: sheet.startOver)
-                        }
-                    }
+                if let incident = sheet.report.incident {
+                    IncidentSections(sheet: sheet, incident: incident, preview: { previewing = true })
+                } else {
+                    reportSections
                 }
-                Section {
-                    Picker("Kind", selection: $sheet.report.kind) {
-                        ForEach(FeedbackReport.Kind.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    LabeledContent("Area") {
-                        Button {
-                            choosingArea = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(sheet.report.topic?.path ?? "Choose an area…")
-                                Image(systemName: "chevron.up.chevron.down").font(.caption2)
-                            }
-                        }
-                        .popover(isPresented: $choosingArea, arrowEdge: .trailing) {
-                            AreaPicker(
-                                featureID: $sheet.report.featureID,
-                                suggestion: sheet.context.suggestedTopic,
-                                done: { choosingArea = false },
-                            )
-                        }
-                    }
-                } footer: {
-                    if sheet.isSuggested {
-                        Text("Suggested from what you were doing. Change it if it's about something else.").formFooter()
-                    }
-                }
-
-                Section {
-                    TextField(titlePrompt, text: $sheet.report.title, prompt: Text(titlePlaceholder))
-                    WordsField(label: bodyLabel, text: $sheet.report.body, height: 96)
-                    if kind != .question {
-                        WordsField(
-                            label: kind == .bug ? "What did you expect?" : "How could it work?",
-                            text: $sheet.report.expected,
-                            height: 60,
-                        )
-                    }
-                    if kind == .bug {
-                        WordsField(label: "Steps to reproduce", text: $sheet.report.steps, height: 70)
-                        HStack {
-                            Spacer()
-                            Button("Insert Recent Steps", action: sheet.insertRecentSteps)
-                                .help("Adds the last things you did, from the activity this report includes")
-                                .disabled(sheet.context.activity.isEmpty)
-                        }
-                        Picker("How often?", selection: $sheet.report.frequency) {
-                            Text("Not sure").tag(FeedbackReport.Frequency?.none)
-                            ForEach(FeedbackReport.Frequency.allCases) { Text($0.title).tag(Optional($0)) }
-                        }
-                        if sheet.context.photo != nil {
-                            Picker("Other photos too?", selection: $sheet.report.otherPhotos) {
-                                Text("Not sure").tag(FeedbackReport.OtherPhotos?.none)
-                                ForEach(FeedbackReport.OtherPhotos.allCases) { Text($0.title).tag(Optional($0)) }
-                            }
-                        }
-                    }
-                }
-
-                ScreenshotsSection(sheet: sheet)
-
-                Section {
-                    Toggle("About what I was doing just now", isOn: $sheet.aboutSession)
-                    Group {
-                        Toggle("The photo, its edit and its history", isOn: $sheet.report.details.photo)
-                            .disabled(sheet.context.photo == nil)
-                        Toggle(
-                            "What I did in the last 15 minutes, and the editor's state",
-                            isOn: $sheet.report.details.activity,
-                        )
-                        Toggle("Redlamp's log", isOn: $sheet.report.details.log)
-                    }
-                    .padding(.leading, 18)
-                    Toggle("The Mac and the Redlamp build", isOn: $sheet.report.details.system)
-                    Toggle("File names (otherwise Photo A, Photo B)", isOn: $sheet.report.details.fileNames)
-                    HStack {
-                        Spacer()
-                        Button("Preview the Report…") { previewing = true }
-                    }
-                } header: {
-                    Text("Included with your report")
-                } footer: {
-                    Text("Paths, folder names, location and serial numbers are never included.").formFooter()
-                }
-
-                Section {
-                    TextField("GitHub username", text: $sheet.report.githubUsername, prompt: Text("Optional"))
-                    HStack {
-                        Spacer()
-                        Button("Your Reports…", action: showReports)
-                    }
-                } header: {
-                    Text("Hearing back")
-                } footer: {
-                    Text(
-                        "With a GitHub account, you're mentioned in the report and notified of replies. Either way, Help › Your Reports lists what you've sent, with a link to each report.",
-                    )
-                    .formFooter()
-                }
+                hearingBack
             }
             .overlayScrollers()
             .formStyle(.grouped)
@@ -215,6 +115,119 @@ private struct FeedbackForm: View {
                     .map(\.source) + (sheet.outgoing.includesDetails ? [FeedbackReport.diagnosticsName] : []),
                 done: { previewing = false },
             )
+        }
+    }
+
+    @ViewBuilder private var reportSections: some View {
+        if sheet.restoredDraft {
+            Section {
+                HStack {
+                    Text("Your unsent report is back as you left it.").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Start Over", action: sheet.startOver)
+                }
+            }
+        }
+        Section {
+            Picker("Kind", selection: $sheet.report.kind) {
+                ForEach(FeedbackReport.Kind.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            LabeledContent("Area") {
+                Button {
+                    choosingArea = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(sheet.report.topic?.path ?? "Choose an area…")
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                    }
+                }
+                .popover(isPresented: $choosingArea, arrowEdge: .trailing) {
+                    AreaPicker(
+                        featureID: $sheet.report.featureID,
+                        suggestion: sheet.context.suggestedTopic,
+                        done: { choosingArea = false },
+                    )
+                }
+            }
+        } footer: {
+            if sheet.isSuggested {
+                Text("Suggested from what you were doing. Change it if it's about something else.").formFooter()
+            }
+        }
+
+        Section {
+            TextField(titlePrompt, text: $sheet.report.title, prompt: Text(titlePlaceholder))
+            WordsField(label: bodyLabel, text: $sheet.report.body, height: 96)
+            if kind != .question {
+                WordsField(
+                    label: kind == .bug ? "What did you expect?" : "How could it work?",
+                    text: $sheet.report.expected,
+                    height: 60,
+                )
+            }
+            if kind == .bug {
+                WordsField(label: "Steps to reproduce", text: $sheet.report.steps, height: 70)
+                HStack {
+                    Spacer()
+                    Button("Insert Recent Steps", action: sheet.insertRecentSteps)
+                        .help("Adds the last things you did, from the activity this report includes")
+                        .disabled(sheet.context.activity.isEmpty)
+                }
+                Picker("How often?", selection: $sheet.report.frequency) {
+                    Text("Not sure").tag(FeedbackReport.Frequency?.none)
+                    ForEach(FeedbackReport.Frequency.allCases) { Text($0.title).tag(Optional($0)) }
+                }
+                if sheet.context.photo != nil {
+                    Picker("Other photos too?", selection: $sheet.report.otherPhotos) {
+                        Text("Not sure").tag(FeedbackReport.OtherPhotos?.none)
+                        ForEach(FeedbackReport.OtherPhotos.allCases) { Text($0.title).tag(Optional($0)) }
+                    }
+                }
+            }
+        }
+
+        ScreenshotsSection(sheet: sheet)
+
+        Section {
+            Toggle("About what I was doing just now", isOn: $sheet.aboutSession)
+            Group {
+                Toggle("The photo, its edit and its history", isOn: $sheet.report.details.photo)
+                    .disabled(sheet.context.photo == nil)
+                Toggle(
+                    "What I did in the last 15 minutes, and the editor's state",
+                    isOn: $sheet.report.details.activity,
+                )
+                Toggle("Redlamp's log", isOn: $sheet.report.details.log)
+            }
+            .padding(.leading, 18)
+            Toggle("The Mac and the Redlamp build", isOn: $sheet.report.details.system)
+            Toggle("File names (otherwise Photo A, Photo B)", isOn: $sheet.report.details.fileNames)
+            HStack {
+                Spacer()
+                Button("Preview the Report…") { previewing = true }
+            }
+        } header: {
+            Text("Included with your report")
+        } footer: {
+            Text("Paths, folder names, location and serial numbers are never included.").formFooter()
+        }
+    }
+
+    private var hearingBack: some View {
+        Section {
+            TextField("GitHub username", text: $sheet.report.githubUsername, prompt: Text("Optional"))
+            HStack {
+                Spacer()
+                Button("Your Reports…", action: showReports)
+            }
+        } header: {
+            Text("Hearing back")
+        } footer: {
+            Text(
+                "With a GitHub account, you're mentioned in the report and notified of replies. Either way, Help › Your Reports lists what you've sent, with a link to each report.",
+            )
+            .formFooter()
         }
     }
 
@@ -244,12 +257,15 @@ private struct FeedbackForm: View {
                 if sheet.phase == .sending {
                     ProgressView().controlSize(.small)
                 }
-                Button("Cancel", role: .cancel, action: dismiss).keyboardShortcut(.cancelAction)
+                Button("Cancel", role: .cancel, action: dismiss)
+                    .keyboardShortcut(.cancelAction)
+                    .automationIdentifier("feedback.cancel")
                 Button(sheet.error == nil ? "Send Report" : "Try Again") {
                     Task { await sheet.send() }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!sheet.canSend)
+                .automationIdentifier("feedback.send")
             }
         }
     }
@@ -292,6 +308,77 @@ private struct FeedbackForm: View {
         case .idea: "What would you like to do?"
         case .question: "Your question or message"
         }
+    }
+}
+
+/// A report on a crash or a hang: what it's about, a title and a line of the person's own, kept
+/// short, and what goes with it. It's a bug, filed under Crashes or Freezes; no screenshot, photo
+/// or log of this session goes with it.
+private struct IncidentSections: View {
+    @Bindable var sheet: FeedbackSheetModel
+    let incident: PendingIncident
+    let preview: () -> Void
+
+    var body: some View {
+        Section {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(incident.incident.headline).fontWeight(.semibold)
+                    Text(about).font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Picker("Kind", selection: $sheet.report.kind) {
+                ForEach(FeedbackReport.Kind.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .disabled(true)
+            .help("A report on a crash or a hang is a bug")
+            LabeledContent("Area", value: sheet.report.topic?.path ?? "")
+        }
+
+        Section {
+            TextField("Title", text: $sheet.report.title, prompt: Text("What went wrong, in a line"))
+                .automationIdentifier("feedback.title")
+            WordsField(label: "What were you doing?", text: $sheet.report.body, height: 80)
+                .automationIdentifier("feedback.words")
+        } footer: {
+            Text(sheet.report.details.incident
+                ? "Optional. Anything you remember about what led to it helps."
+                : "Without what happened, the report needs your own words.")
+                .formFooter()
+        }
+
+        Section {
+            Toggle("What happened, with the threads' stacks", isOn: $sheet.report.details.incident)
+                .automationIdentifier("feedback.details.incident")
+            Toggle("What I did in the 15 minutes before it", isOn: $sheet.report.details.activity)
+                .automationIdentifier("feedback.details.activity")
+            Toggle("The Mac and the Redlamp build", isOn: $sheet.report.details.system)
+                .automationIdentifier("feedback.details.system")
+            HStack {
+                Spacer()
+                Button("Preview the Report…", action: preview)
+                    .automationIdentifier("feedback.preview")
+            }
+        } header: {
+            Text("Included with your report")
+        } footer: {
+            Text(
+                "Photos are named Photo A, Photo B. Paths, folder names, location and serial numbers are never included.",
+            )
+            .formFooter()
+        }
+    }
+
+    /// "Today at 10:08, for 14 s, in Redlamp 0.3.2-alpha (431)".
+    private var about: String {
+        let incident = incident.incident
+        return [
+            IncidentBanner.when(incident.time),
+            incident.kind == .hang ? incident.duration.map { "for \(Incident.seconds($0))" } : nil,
+            incident.version.map { "in Redlamp \($0)" },
+        ].compactMap(\.self).joined(separator: ", ")
     }
 }
 

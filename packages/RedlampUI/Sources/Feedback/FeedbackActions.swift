@@ -33,6 +33,10 @@ public enum FeedbackActions {
         history: FeedbackHistory = .shared,
     ) {
         guard !model.isModalDialogOpen, let window = editorWindow else { return }
+        if let incident = prefill?.incident {
+            presentReport(on: incident, model: model, prefill: prefill, over: window, history: history)
+            return
+        }
         let context = FeedbackContext.capture(from: model)
         let sessionStart = model.activity.events.first?.time ?? Date(timeIntervalSinceNow: -3600)
         model.isModalDialogOpen = true
@@ -40,12 +44,7 @@ public enum FeedbackActions {
         Task {
             async let shot = Screenshots.capture(windowNumber: windowNumber)
             let sheet = await makeSheet(model: model, context: context, windowShot: shot, prefill: prefill)
-            sheet.onSent = { report, result in
-                if case let .filed(number, url) = result {
-                    history.record(report, number: number, url: url)
-                }
-            }
-            sheet.onQueue = { history.enqueue($0) }
+            connect(sheet, to: history)
             show(over: window, model: model, size: FeedbackSheet.size) { close, height in
                 FeedbackSheet(sheet: sheet, height: height, dismiss: close, showReports: {
                     close()
@@ -56,13 +55,44 @@ public enum FeedbackActions {
         }
     }
 
-    /// The sheet's model as Report a Bug builds it: what the editor shows now, the Mac's
-    /// details, and the relay it sends to.
+    /// The report on a crash or a hang in an earlier session, from the banner or Your Reports. It holds
+    /// that session's activity, so neither this window nor this session's log goes with it.
+    private static func presentReport(
+        on incident: PendingIncident, model: EditorModel, prefill: FeedbackPrefill?, over window: NSWindow,
+        history: FeedbackHistory,
+    ) {
+        model.isModalDialogOpen = true
+        Task {
+            let sheet = await makeSheet(model: model, prefill: prefill)
+            connect(sheet, to: history, incident: incident.id)
+            show(over: window, model: model, size: FeedbackSheet.incidentSize) { close, height in
+                FeedbackSheet(sheet: sheet, height: height, dismiss: close, showReports: {
+                    close()
+                    presentReports(model: model, history: history)
+                })
+            }
+        }
+    }
+
+    /// What's sent joins Your Reports, and what waits joins its outbox; either way, the crash or
+    /// hang it's on is done with.
+    private static func connect(_ sheet: FeedbackSheetModel, to history: FeedbackHistory, incident: UUID? = nil) {
+        sheet.onSent = { report, result in
+            if case let .filed(number, url) = result {
+                history.record(report, number: number, url: url)
+            }
+        }
+        sheet.onQueue = { history.enqueue($0, incident: incident) }
+    }
+
+    /// The sheet's model as Report a Bug builds it: what the editor shows now (for a crash or a
+    /// hang, what its session did instead), the Mac's details, and the relay it sends to.
     @_spi(Harness) public static func makeSheet(
         model: EditorModel, context: FeedbackContext? = nil, windowShot: FeedbackReport.Screenshot? = nil,
         prefill: FeedbackPrefill? = nil,
     ) async -> FeedbackSheetModel {
-        let context = context ?? FeedbackContext.capture(from: model)
+        let context = context ?? prefill?.incident.map { FeedbackContext(reporting: $0) }
+            ?? FeedbackContext.capture(from: model)
         let models = await model.engine.models()
         let system = SystemSnapshot.capture(models: models)
         return FeedbackSheetModel(
@@ -75,7 +105,10 @@ public enum FeedbackActions {
         guard !model.isModalDialogOpen, let window = editorWindow else { return }
         model.isModalDialogOpen = true
         show(over: window, model: model, size: YourReportsView.size) { close, _ in
-            YourReportsView(history: history, dismiss: close)
+            YourReportsView(history: history, dismiss: close, review: { incident in
+                close()
+                present(model: model, prefill: FeedbackPrefill(incident: incident), history: history)
+            })
         }
     }
 
