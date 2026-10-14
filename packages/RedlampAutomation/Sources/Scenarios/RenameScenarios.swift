@@ -195,7 +195,9 @@
                 model.renameSheetNames?.allSatisfy { $0.hasPrefix("Stopped-") } == true
             }
             try app.clickInSheet("rename.rename")
-            try app.wait("the rename under way", timeout: 60) { _ in renamed().count >= 3 }
+            // Six, so the ⌘Z stopped below after two photos still has photos left when its Stop arrives,
+            // which on a busy Mac takes longer than a step's 400 ms.
+            try app.wait("the rename under way", timeout: 60) { _ in renamed().count >= 6 }
             try app.clickInSheet("rename.stop")
             try app.waitForNoSheet("Rename Photos", timeout: 60)
             try app.run("the rename stopped", timeout: 60) { await $0.filesMade() }

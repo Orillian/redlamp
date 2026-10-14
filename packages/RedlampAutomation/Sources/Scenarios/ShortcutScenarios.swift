@@ -260,6 +260,8 @@
             }
             try app.main { $0.selectAllPhotos() }
             try app.wait("the three photos selected") { $0.selectedCount == 3 }
+            // What earlier scenarios in the launch ran from the palette is listed above the selection's actions.
+            try app.main { _ in PaletteRecents.current.clear() }
 
             try app.press(.commandPalette)
             try app.wait("the palette") { $0.commandPalette != nil }
