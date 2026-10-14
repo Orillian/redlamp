@@ -23,10 +23,91 @@
             try body()
             return Date().timeIntervalSince(start) * 1000
         }
+
+        /// Drags Exposure at 120 events a second for 3 s: the frames delivered a second, and the slowest 1% of the
+        /// main thread's iterations, in milliseconds.
+        func dragExposure() throws -> (fps: Double, p99: Double?) {
+            let monitor = try MainThread.run { () -> MainThreadMonitorBox in
+                let monitor = MainThreadMonitor()
+                monitor.start()
+                return MainThreadMonitorBox(monitor)
+            }
+            let before = try frames()
+            try main { $0.beginEdit(.exposure) }
+            let start = Date()
+            var step = 0
+            while Date().timeIntervalSince(start) < 3 {
+                let value = sin(Double(step) / 20) * 2
+                post { $0.setSliderValue(.exposure, value) }
+                step += 1
+                pause(1.0 / 120)
+            }
+            try main { $0.endEdit(name: nil) }
+            let seconds = Date().timeIntervalSince(start)
+            let summary = try MainThread.run { () -> MainThreadMonitor.Summary? in
+                monitor.monitor.stop()
+                return monitor.monitor.summary()
+            }
+            let delivered = try frames() - before
+            return (Double(delivered) / seconds, summary?.p99)
+        }
+
+        /// Scrolls the filmstrip shown from one end to the other and back, a step every 1/120 s for 3 s: the
+        /// slowest 1% of the main thread's iterations, in milliseconds.
+        func scrollFilmstrip() throws -> Double? {
+            let strip = try main { _ in
+                Views.editorWindow.flatMap { FilmstripViews.strip(in: $0) }.map { FilmstripBox($0) }
+            }
+            guard let strip, try main({ _ in FilmstripViews.scrollWidth(strip.view) }) > 0 else {
+                throw ScenarioFailure("The filmstrip shown doesn't scroll")
+            }
+            let (summary, _) = try watchingMainThread("filmstrip") {
+                let start = Date()
+                var step = 0
+                while Date().timeIntervalSince(start) < 3 {
+                    let fraction = (1 - cos(Double(step) / 40)) / 2
+                    post { _ in FilmstripViews.scroll(strip.view, to: fraction) }
+                    step += 1
+                    pause(1.0 / 120)
+                }
+            }
+            return summary?.p99
+        }
+    }
+
+    /// The strip a scroll steps through; only touched on main.
+    private final class FilmstripBox: @unchecked Sendable {
+        let view: NSView
+        init(_ view: NSView) {
+            self.view = view
+        }
+    }
+
+    /// `Memory.footprint()` every 100 ms, beside what the scenario does, until `stop()`.
+    private final class FootprintSamples: @unchecked Sendable {
+        private let lock = NSLock()
+        private var samples: [Double] = []
+        private let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+
+        init() {
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                let footprint = Memory.footprint()
+                lock.withLock { samples.append(footprint) }
+            }
+            timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+            timer.resume()
+        }
+
+        /// Stops sampling: the most sampled, in megabytes.
+        func stop() -> Double {
+            timer.cancel()
+            return lock.withLock { samples.max() ?? 0 }
+        }
     }
 
     enum PerformanceScenarios {
-        static let all: [Scenario] = [openAndSwitch, drag, export, palette]
+        static let all: [Scenario] = [openAndSwitch, drag, export, palette, batchExport]
 
         static let openAndSwitch = Scenario(
             "performance.open", "Opening each raw from the filmstrip to its first frame, and memory after all of them",
@@ -54,32 +135,95 @@
             try app.openWorking()
             try app.main { $0.expandedPanels = Set(PanelID.allCases) }
             app.pause(0.5)
-            let monitor = try MainThread.run { () -> MainThreadMonitorBox in
-                let monitor = MainThreadMonitor()
-                monitor.start()
-                return MainThreadMonitorBox(monitor)
+            let drag = try app.dragExposure()
+            app.record("e2e-drag-fps", drag.fps)
+            if let p99 = drag.p99 {
+                app.record("e2e-drag-p99", p99)
             }
-            let frames = try app.frames()
-            try app.main { $0.beginEdit(.exposure) }
-            let start = Date()
-            var step = 0
-            while Date().timeIntervalSince(start) < 3 {
-                let value = sin(Double(step) / 20) * 2
-                app.post { $0.setSliderValue(.exposure, value) }
-                step += 1
-                app.pause(1.0 / 120)
+            try app.choose(.resetAll)
+        }
+
+        /// EDT-16 (#78): a batch export renders in an engine of its own, one photo at a time, and mustn't slow
+        /// Develop's frames or the filmstrip. Each is measured before the batch and while it runs, every photo
+        /// selected both times, and memory from before the batch to its end.
+        static let batchExport = Scenario(
+            "performance.batch-export",
+            "Dragging Exposure and scrolling the filmstrip before and while every photo exports, and memory meanwhile",
+            tiers: [.performance], claims: [],
+        ) { app in
+            try app.openWorking()
+            try app.main { model in
+                model.expandedPanels = Set(PanelID.allCases)
+                model.keepsFilmstripShown = true
             }
-            try app.main { $0.endEdit(name: nil) }
-            let seconds = Date().timeIntervalSince(start)
-            let summary = try MainThread.run { () -> MainThreadMonitor.Summary? in
-                monitor.monitor.stop()
-                return monitor.monitor.summary()
+            defer { try? app.main { $0.keepsFilmstripShown = false } }
+            try app.choose(Menus.title(of: .selectAllPhotos))
+            try app.wait("several photos selected", timeout: 30) { $0.selectedCount > 1 && $0.info != nil }
+            app.pause(0.5)
+            let idle = try app.dragExposure()
+            let idleStrip = try app.scrollFilmstrip()
+
+            let count = try app.main { $0.selectedCount }
+            let settings = try app.host.map { host in try app.main { _ in host.exports.initialSettings } }
+                ?? ExportSettings()
+            let folder = settings.destinationFolder ?? app.photos
+            let before = Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+            @Sendable func written() -> Set<String> {
+                Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).subtracting(before)
+                    .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".redlamp") }
             }
-            let delivered = try app.frames() - frames
-            app.record("e2e-drag-fps", Double(delivered) / seconds)
-            if let summary {
-                app.record("e2e-drag-p99", summary.p99)
+            defer {
+                for file in written() {
+                    try? FileManager.default.removeItem(at: folder.appending(path: file))
+                }
             }
+            let footprint = Memory.footprint()
+            let samples = FootprintSamples()
+            try app.choose(Menus.title(of: .export))
+            try app.waitForSheet("the Export dialog for \(count) photos")
+            app.pause(0.5)
+            try app.expect(
+                try app.pressInSheet(KeyCombo(.character("\r"))),
+                "The Export dialog's Export button didn't take Return",
+            )
+            try app.waitForNoSheet("the Export dialog")
+            try app.wait("the batch to start") { $0.batchExport.progress != nil }
+            let started = Date()
+            let busy = try app.dragExposure()
+            let afterDrag = try app.main { $0.batchExport.progress }
+            let busyStrip = try app.scrollFilmstrip()
+            let afterStrip = try app.main { $0.batchExport.progress }
+            try app.wait("the \(count) exports", timeout: 300) { model in
+                model.batchExport.progress == nil && written().count >= count
+            }
+            let peak = samples.stop()
+            app.recorder.write("note", [
+                "batchPhotos": count, "batchSeconds": Date().timeIntervalSince(started),
+                "doneAfterDrag": afterDrag?.done ?? count, "doneAfterScroll": afterStrip?.done ?? count,
+            ])
+
+            app.record("e2e-batch-idle-drag-fps", idle.fps)
+            app.record("e2e-batch-drag-fps", busy.fps)
+            if let p99 = idle.p99 {
+                app.record("e2e-batch-idle-drag-p99", p99)
+            }
+            if let p99 = busy.p99 {
+                app.record("e2e-batch-drag-p99", p99)
+            }
+            if let p99 = idleStrip {
+                app.record("e2e-batch-idle-strip-p99", p99)
+            }
+            if let p99 = busyStrip {
+                app.record("e2e-batch-strip-p99", p99)
+            }
+            app.record("e2e-batch-footprint", peak)
+            app.record("e2e-batch-footprint-rise", peak - footprint)
+            try app.expect(afterDrag != nil, "The batch of \(count) photos finished before the drag did")
+            try app.expect(
+                afterStrip != nil,
+                "The batch of \(count) photos finished before the filmstrip's scroll did, "
+                    + "\(afterDrag?.done ?? 0) of them done when the drag ended",
+            )
             try app.choose(.resetAll)
         }
 

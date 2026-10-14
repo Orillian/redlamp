@@ -544,6 +544,94 @@
       ]
     },
     {
+      "id": "e2e-batch-idle-drag-fps",
+      "label": "Frames while the suite drags Exposure, before a batch export",
+      "detail": "As e2e-drag-fps, with every photo selected and the filmstrip shown, just before e2e-batch-drag-fps",
+      "unit": "fps",
+      "group": "Editing",
+      "better": "higher",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-drag-fps",
+      "label": "Frames while the suite drags Exposure during a batch export",
+      "detail": "As e2e-batch-idle-drag-fps, while every photo in the suite's folder exports at the Export dialog's settings",
+      "unit": "fps",
+      "group": "Editing",
+      "better": "higher",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-idle-drag-p99",
+      "label": "Slowest 1% of iterations while the suite drags Exposure, before a batch export",
+      "detail": "As e2e-drag-p99, with every photo selected and the filmstrip shown, just before e2e-batch-drag-p99",
+      "unit": "ms",
+      "group": "Responsiveness",
+      "better": "lower",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-drag-p99",
+      "label": "Slowest 1% of iterations while the suite drags Exposure during a batch export",
+      "detail": "As e2e-batch-idle-drag-p99, while every photo in the suite's folder exports",
+      "unit": "ms",
+      "group": "Responsiveness",
+      "better": "lower",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-idle-strip-p99",
+      "label": "Slowest 1% of iterations while the suite scrolls the filmstrip, before a batch export",
+      "detail": "The 99th percentile of the main thread's run-loop iterations while Develop's filmstrip scrolls end to end and back, a step every 1/120 s for 3 seconds",
+      "unit": "ms",
+      "group": "Responsiveness",
+      "better": "lower",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-strip-p99",
+      "label": "Slowest 1% of iterations while the suite scrolls the filmstrip during a batch export",
+      "detail": "As e2e-batch-idle-strip-p99, while every photo in the suite's folder exports",
+      "unit": "ms",
+      "group": "Responsiveness",
+      "better": "lower",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-footprint",
+      "label": "Most memory during a batch export",
+      "detail": "The largest phys_footprint sampled every 100 ms while every photo in the suite's folder exports, one at a time, with Develop in use",
+      "unit": "MB",
+      "group": "Memory",
+      "better": "lower",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
+      "id": "e2e-batch-footprint-rise",
+      "label": "Memory a batch export adds",
+      "detail": "e2e-batch-footprint less the footprint just before the batch started",
+      "unit": "MB",
+      "group": "Memory",
+      "better": "lower",
+      "measuredBy": [
+        "e2e"
+      ]
+    },
+    {
       "id": "footprint-photo",
       "label": "Memory with a photo open",
       "detail": "What macOS charges the app for (Activity Monitor's Memory) with a 24 MP raw open at Fit, after a slider drag and 30 seconds untouched",
