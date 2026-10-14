@@ -2,7 +2,8 @@
 """Per-pixel gather with scatter-as-gather weights, near and far fields composited (OTH-03).
 
     build/research-venv/bin/python research/prototypes/lens_blur/render_gather.py [--clipped] [--sprites]
-        [--kappa 16] [--name NAME] [--set layered|blender] [--scene S] [--focus F] [--variant V]
+        [--matte exact|coarse] [--depth LABEL] [--circles] [--kappa 16] [--name NAME]
+        [--set layered|blender] [--scene S] [--focus F] [--variant V]
 
 After Jimenez 2014 (Call of Duty: Advanced Warfare), Abadie 2018 ('A Life of a Bokeh') and Gustafsson
 2018 ('Bokeh depth of field in a single pass'). Each pixel reads samples on a dense lattice out to
@@ -22,6 +23,10 @@ mask without strand detail (render_common.matte).
 own CoC, hidden by the blurred coverage of anything nearer than it. --clipped reads
 input_clipped.exr; with --sprites it also gives clipped lights back energy (Glow's clip gain 16,
 from 0.9 to the clip point).
+
+--depth LABEL renders on the depth bake-off's estimate (estimated/<label>/, depth_eval.py) in place
+of the truth's depth.exr, into gather…@<label>/, for the scenes and focuses it covers. --circles
+renders only the circular variants, as render_depth.py does.
 """
 
 import math
@@ -201,18 +206,24 @@ def render(image, depth, cam, kappa, sprites, clipped):
 
 
 def main(argv):
-    opts = rc.parse_args(argv, {"--kappa": 16.0, "--name": "", "--matte": "none"})
+    opts = rc.parse_args(argv, {"--kappa": 16.0, "--name": "", "--matte": "none", "--depth": ""})
     clipped, sprites = "--clipped" in opts["flags"], "--sprites" in opts["flags"]
-    kappa, matte = opts["values"]["--kappa"], opts["values"]["--matte"]
+    kappa, matte, estimate = opts["values"]["--kappa"], opts["values"]["--matte"], opts["values"]["--depth"]
     name = opts["values"]["--name"] or ("gather" + ("-sprites" if sprites else "") + ("" if matte == "none" else f"-matte-{matte}")
-                                        + ("-clipped" if clipped else ""))
+                                        + ("-clipped" if clipped else "") + (f"@{estimate}" if estimate else ""))
     paths = rc.variant_paths(opts["sets"], opts["scenes"], opts["focus"], opts["variants"])
     if matte != "none":
         paths = [p for p in paths if (p.parent / "alpha.exr").exists()]
+    if estimate:
+        paths = [p for p in paths if rc.estimated_depth(estimate, p).exists()]
+    if "--circles" in opts["flags"]:
+        paths = [p for p in paths if p.stem.endswith("-circle")]
     counts = []
 
     def one(path, cam):
         image, depth = rc.load(path.parent, clipped)
+        if estimate:
+            depth = common.read_exr(rc.estimated_depth(estimate, path))
         if matte != "none":
             alpha = rc.matte(path.parent, matte)
             depth = np.where(alpha > 0.1, rc.subject_depth(depth, alpha), depth).astype(np.float32)

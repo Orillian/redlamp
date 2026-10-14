@@ -18,6 +18,7 @@ from common import DATA, OUT, read_exr, write_exr
 
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 LUMA = torch.tensor([0.2126, 0.7152, 0.0722])
+ESTIMATED = DATA / "estimated"
 
 
 def variant_paths(sets, scenes=None, focus=None, variants=None):
@@ -84,6 +85,11 @@ def load(folder, clipped=False):
     image = read_exr(folder / ("input_clipped.exr" if clipped else "input.exr"))
     depth = read_exr(folder / "depth.exr")
     return image, depth
+
+
+def estimated_depth(label, json_path):
+    """The depth bake-off's estimate for a variant's scene and focus (depth_eval.py), in metres."""
+    return ESTIMATED / label / json_path.relative_to(DATA).parent / "depth.exr"
 
 
 def matte(folder, kind="exact"):

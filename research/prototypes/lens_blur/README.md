@@ -67,12 +67,24 @@ check a scene's build.
 | `render_depth.py` | Renders the baseline on an estimated depth and scores it with `score.py` |
 | `depth_report.py` | The bake-off's tables, from `metrics.json` and the renders' `score.json` |
 | `depth_sheets.py` | Contact sheets of the depth maps, on the benchmark and on MSK-25 photos |
+| `render_common.py` | The renderers' shared pieces: variant lists, aperture shapes and kernels, pull-push fill, the subject matte, light detection and clip recovery |
+| `render_gather.py` | Per-pixel gather with scatter-as-gather weights, near and far fields; `--sprites`, `--matte`, `--clipped`, `--depth` |
+| `render_layers.py` | Depth slices 1 px of CoC apart, blurred by FFT and composited: `--mode plain`, `fill` or `oracle` (`--matte coarse`); `--sprites`, `--clipped` |
+| `apple_depth_blur.py`, `apple_depth_blur.swift` | Core Image's `CIDepthBlurEffect` as a reference, its aperture searched per variant against the truth |
+| `metal/main.swift`, `metal/Gather.metal` | Standalone Metal harness for the gather: checks against the Python render, times it at editor and export sizes |
+| `metal/fft_layer.swift` | Times one FFT layer of `render_layers.py` with MPSGraph |
+| `metal_check.py` | The harness's check scene, and its output against the Python gather |
+| `summarise.py` | Score tables for several renderers over the variants they share |
+| `contact_sheets.py` | Crops of hair, foregrounds and lights for the truth and each renderer, into `docs/research/images/` |
+| `run_renderers.sh` | Renders and scores every renderer configuration, in chains that run side by side |
+| `bench_assets.py` | The Lightroom bench task's 20 assets in `build/proto-out/lens_blur/bench-assets/`: ten benchmark inputs as 16-bit sRGB TIFFs (clipped at white), four CC0 MSK-25 portraits, the iPhone ProRAW and Pixel raw fixtures, and four labelled copies of the night portrait for the bokeh shapes. The task is `oth-03-lens-blur-lightroom` (`redlamp task new --draft …/draft.json`) |
 
 ## Depth bake-off
 
 Which depth model, input size, refinement and stored format a lens blur needs, measured on the two
-sets' exact depth. Findings: `build/proto-out/lens_blur/depth.md`. The models run in a venv of their
-own, since Depth Anything 3 and MoGe pin different packages:
+sets' exact depth. Findings: section 11 of the
+[OTH-03 note](../../../docs/research/notes/OTH-03-lens-blur.md#11-depth-for-lens-blur). The models run
+in a venv of their own, since Depth Anything 3 and MoGe pin different packages:
 
 ```bash
 uv venv --python 3.12 build/lens-blur-depth-venv
@@ -111,22 +123,11 @@ in metres after alignment, the truth's convention, so any renderer can read them
 
 | Step | Time, with the load average beside it |
 | --- | --- |
-| `depth_estimate.py`, 14 sources on 40 inputs | 4 min (load 45 to 62); per photo, see `depth.md` |
+| `depth_estimate.py`, 14 sources on 40 inputs | 4 min (load 45 to 62); per photo, see the note's §11.6 |
 | `depth_mattes.py`, 40 mattes at full size | 1 min (0.1 to 0.3 s a matte) |
 | `depth_eval.py`, one source, 4 refinements, 3 alignments | 2.5 min (load 30 to 60); the weighted median takes 3 to 6 s an image |
 | `render_depth.py`, one label (104 circular variants) and its score | 5 to 10 min (load 35 to 190) |
 | `depth_sheets.py photos`, 12 photos, 4 combinations | 5 min (load 170) |
-| `render_common.py` | The renderers' shared pieces: variant lists, aperture shapes and kernels, pull-push fill, the subject matte, light detection and clip recovery |
-| `render_gather.py` | Per-pixel gather with scatter-as-gather weights, near and far fields; `--sprites`, `--matte`, `--clipped` |
-| `render_layers.py` | Depth slices 1 px of CoC apart, blurred by FFT and composited: `--mode plain`, `fill` or `oracle` (`--matte coarse`); `--sprites`, `--clipped` |
-| `apple_depth_blur.py`, `apple_depth_blur.swift` | Core Image's `CIDepthBlurEffect` as a reference, its aperture searched per variant against the truth |
-| `metal/main.swift`, `metal/Gather.metal` | Standalone Metal harness for the gather: checks against the Python render, times it at editor and export sizes |
-| `metal/fft_layer.swift` | Times one FFT layer of `render_layers.py` with MPSGraph |
-| `metal_check.py` | The harness's check scene, and its output against the Python gather |
-| `summarise.py` | Score tables for several renderers over the variants they share |
-| `contact_sheets.py` | Crops of hair, foregrounds and lights for the truth and each renderer, into `docs/research/images/` |
-| `run_renderers.sh` | Renders and scores every renderer configuration, in chains that run side by side |
-| `bench_assets.py` | The Lightroom bench task's 20 assets in `build/proto-out/lens_blur/bench-assets/`: ten benchmark inputs as 16-bit sRGB TIFFs (clipped at white), four CC0 MSK-25 portraits, the iPhone ProRAW and Pixel raw fixtures, and four labelled copies of the night portrait for the bokeh shapes. The task is `oth-03-lens-blur-lightroom` (`redlamp task new --draft …/draft.json`) |
 
 ## Set A: layered scenes (`layered/`)
 
@@ -339,13 +340,13 @@ band 33.13, bleeding 1.10.
 ## Renderers
 
 Prototypes in PyTorch on MPS, written from the papers each names; the findings, scores and timings
-are in `build/proto-out/lens_blur/renderers.md`, the contact sheets in
-`docs/research/images/lens-blur-renderers-*.jpg`.
+are in section 10 of the [OTH-03 note](../../../docs/research/notes/OTH-03-lens-blur.md#10-renderers),
+the contact sheets in `docs/research/images/lens-blur-renderers-*.jpg`.
 
 ```bash
 P=research/prototypes/lens_blur
 PY=build/research-venv/bin/python
-$PY $P/render_gather.py [--sprites] [--matte exact|coarse] [--clipped] [--kappa 16] [--set S --scene S --focus F --variant V]
+$PY $P/render_gather.py [--sprites] [--matte exact|coarse] [--clipped] [--depth LABEL] [--circles] [--kappa 16] [--set S --scene S --focus F --variant V]
 $PY $P/render_layers.py --mode plain|fill|oracle [--matte coarse] [--sprites] [--clipped] [--step 1.0]
 $PY $P/score.py <renderer> [--set layered]
 $PY $P/summarise.py baseline-gaussian-all gather layers-fill [--set layered] [--by focus|type|scene]
@@ -354,7 +355,13 @@ $PY $P/contact_sheets.py
 
 Each writes `build/proto-out/lens_blur/<renderer>/`, the renderer's name built from its options
 (`gather-sprites-clipped`, `layers-oracle-coarse`). `run_renderers.sh <chain>` runs a chain of them
-and their scores; don't edit it while a chain runs, since `sh` reads the script as it goes.
+and their scores; don't edit it while a chain runs, since `sh` reads the script as it goes. Start the
+chains from a shell that stays open until they finish (`wait` on them): started with `nohup … &` from
+an agent's shell that then exited, they were killed with it.
+
+`--depth <label>` renders on one of the depth bake-off's estimates in place of the truth's depth,
+into `gather…@<label>/`. The chains `depth_moge2_l`, `depth_moge2_b` and `depth_mono_l` render the
+leading estimates this way, on the circular variants (`--circles`), about 25 minutes each side by side.
 
 Core Image's depth blur, as a reference (set A only):
 

@@ -38,7 +38,7 @@ Later notes, each behind tracker rows or another findings document:
 | [INF-11-app-store-privacy.md](INF-11-app-store-privacy.md) | App Store rules, privacy law, keys and provenance for sending work to a cloud provider, route by route (7 October 2026) |
 | [INF-11-comfyui-masks-denoise.md](INF-11-comfyui-masks-denoise.md) | ComfyUI as a route (its API, hosted services, removal workflows on commercially licensed weights), cloud masking and cloud denoise for raw photos (7 October 2026) |
 | [UX-17-masks-panel-audit.md](UX-17-masks-panel-audit.md) | The Masks panel, fourteen tasks step by step against Lightroom Classic's published workflow: where Redlamp's way is longer or hidden, and the redesign's findings ranked (7 October 2026) |
-| [OTH-03-lens-blur.md](OTH-03-lens-blur.md) | Lens blur: Lightroom's Lens Blur in full, competitors, rendering methods, depth models and licences, phone depth formats, patents, and the measurements that follow (13 October 2026) |
+| [OTH-03-lens-blur.md](OTH-03-lens-blur.md) | Lens blur: Lightroom's Lens Blur in full, competitors, rendering methods, depth models and licences, phone depth formats and patents; then measured on an exact-truth benchmark: the renderers, the depth bake-off and the subject's edge under the gather (13 and 14 October 2026). Design: [2026-10-14-lens-blur-design.md](../../plans/2026-10-14-lens-blur-design.md) |
 | [UX-develop-panels.md](UX-develop-panels.md) | Switching Develop panels off and choosing which show: what Lightroom Classic, Photos, darktable and others do, the owner's decision, and the questions for the UX-30 and UX-41 builds (10 October 2026) |
 
 Some notes mention scratch scripts under `/tmp/`. Those were one-off measurement harnesses and are not
