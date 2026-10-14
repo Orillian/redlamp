@@ -201,14 +201,15 @@ extension FeedbackReport {
         let activity: [ActivityLog.Event]?
     }
 
-    /// A crash or a hang's details in full: the whole incident, and its session's activity.
+    /// A crash or a hang's details in full: the whole incident, and its session's activity in the window the
+    /// switch names.
     func incidentDiagnostics(_ pending: PendingIncident, context: FeedbackContext, system: SystemSnapshot) throws
         -> Data? {
         let document = IncidentDiagnostics(
             report: id, kind: kind, area: featureID, captured: context.captured,
             system: details.system ? system : nil,
             incident: details.incident ? pending.incident : nil,
-            activity: details.activity ? pending.activity : nil,
+            activity: details.activity ? pending.activityBefore : nil,
         )
         let encoder = JSONEncoder()
         // The redactor finds paths by their slashes.

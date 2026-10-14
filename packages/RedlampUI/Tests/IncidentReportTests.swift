@@ -218,7 +218,7 @@ struct IncidentReportTests {
 
     // MARK: - diagnostics.json
 
-    @Test func `diagnostics hold every thread and the binaries to symbolicate them, and the session's activity`(
+    @Test func `diagnostics hold every thread and the binaries to symbolicate them, and the activity before it`(
     ) throws {
         let pending = try Self.crash()
         let report = sheet(pending).outgoing
@@ -231,7 +231,7 @@ struct IncidentReportTests {
         let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(object["format"] as? String == "app.redlamp.feedback-diagnostics")
         #expect(object["area"] as? String == "performance.crash")
-        #expect((object["activity"] as? [Any])?.count == 5, "the whole session's")
+        #expect((object["activity"] as? [Any])?.count == 4, "the 15 minutes before the crash, as the switch says")
         for key in ["photo", "edit", "history", "state", "messages", "log", "sidecar", "photoNames"] {
             #expect(object[key] == nil, "\(key) is this session's")
         }

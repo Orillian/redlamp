@@ -194,7 +194,7 @@ What happened, with the threads' stacks
 : What went wrong: the exception macOS recorded and why, or how long Redlamp didn't respond and whether it came back; which part of Redlamp it was in; the version and the time; and the threads' stacks, which show what Redlamp's code was doing. `diagnostics.json` holds every thread's stack. Without it, the report needs your own words.
 
 What I did in the 15 minutes before it
-: The activity of the session that ended, from 15 minutes before the crash or the hang. `diagnostics.json` holds that session's activity in full.
+: The activity of the session that ended, from 15 minutes before the crash or the hang until the session ended, or until Redlamp responded again after a hang. `diagnostics.json` holds the same events.
 
 The Mac and the Redlamp build
 : The same details as a bug report's.
