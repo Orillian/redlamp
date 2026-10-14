@@ -19,10 +19,21 @@ public struct PendingIncident: Codable, Sendable, Hashable, Identifiable {
     }
 
     public init(incident: Incident, session: PreviousSession, found: Date) {
+        self.init(
+            incident: incident, activity: session.events, photos: session.photos, folders: session.folders,
+            found: found,
+        )
+    }
+
+    /// One whose session is given by what it did, as a test or a scenario makes one up.
+    @_spi(Harness) public init(
+        incident: Incident, activity: [ActivityLog.Event] = [], photos: [PhotoName] = [], folders: [String] = [],
+        found: Date,
+    ) {
         self.incident = incident
-        activity = session.events
-        photos = session.photos
-        folders = session.folders
+        self.activity = activity
+        self.photos = photos
+        self.folders = folders
         self.found = found
     }
 }

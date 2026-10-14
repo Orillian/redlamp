@@ -73,8 +73,22 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
         public var log = true
         /// Off: photos are Photo A, Photo B.
         public var fileNames = false
+        /// A crash or a hang's report: what happened, with the threads' stacks.
+        public var incident = true
 
         public init() {}
+
+        /// A draft kept before a detail was added still opens.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let defaults = Details()
+            system = try container.decodeIfPresent(Bool.self, forKey: .system) ?? defaults.system
+            photo = try container.decodeIfPresent(Bool.self, forKey: .photo) ?? defaults.photo
+            activity = try container.decodeIfPresent(Bool.self, forKey: .activity) ?? defaults.activity
+            log = try container.decodeIfPresent(Bool.self, forKey: .log) ?? defaults.log
+            fileNames = try container.decodeIfPresent(Bool.self, forKey: .fileNames) ?? defaults.fileNames
+            incident = try container.decodeIfPresent(Bool.self, forKey: .incident) ?? defaults.incident
+        }
     }
 
     public struct Screenshot: Codable, Sendable, Hashable, Identifiable {
@@ -107,6 +121,9 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
     public var githubUsername = ""
     public var details = Details()
     public var screenshots: [Screenshot] = []
+    /// The crash or hang in an earlier session this reports. Its report holds that session's activity, redacted with
+    /// that session's photos and folders, and nothing of this one: no open photo, edit or log.
+    public var incident: PendingIncident?
 
     public static let titleLimit = 120
     /// GitHub's 65,536 characters, less room for the addresses the relay puts in.
@@ -122,9 +139,11 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
         featureID.flatMap(FeedbackArea.topic)
     }
 
+    /// A crash or a hang says what happened itself, so the person's words are needed only without it.
     public var isComplete: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let words = !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (words || incident != nil && details.incident)
     }
 
     /// "[Masking › Objects] Clicking a second object drops the first".
@@ -153,13 +172,22 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
     }
 
     var includesDetails: Bool {
-        details.system || details.photo || details.activity || details.log
+        incident == nil
+            ? details.system || details.photo || details.activity || details.log
+            : details.system || details.incident || details.activity
+    }
+
+    /// A crash or a hang's report redacts with its own session's photos, whose aliases its activity uses, and always
+    /// names them by their aliases.
+    func redactor(_ context: FeedbackContext) -> FeedbackRedactor {
+        guard let incident else { return context.redactor(keepingFileNames: details.fileNames) }
+        return FeedbackRedactor(folders: incident.folders + context.folders, photos: incident.photos)
     }
 
     // MARK: - The issue
 
     public func issueBody(context: FeedbackContext, system: SystemSnapshot, log: [String]) -> String {
-        let redactor = context.redactor(keepingFileNames: details.fileNames)
+        let redactor = redactor(context)
         var limits = Limits()
         while true {
             let body = redactor.redact(render(context: context, system: system, log: log, limits: limits))
@@ -174,16 +202,19 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
     }
 
     /// How much of each long section the body takes, shrunk until it fits.
-    private struct Limits {
+    struct Limits {
         var activity = 150
         var log = 60
         var history = 40
+        /// Of each thread's stack.
+        var frames = 200
 
         mutating func shrink() -> Bool {
-            guard activity > 10 || log > 0 || history > 10 else { return false }
+            guard activity > 10 || log > 0 || history > 10 || frames > 16 else { return false }
             activity = max(10, activity * 2 / 3)
             log = log > 10 ? log / 2 : 0
             history = max(10, history * 2 / 3)
+            frames = max(16, frames * 2 / 3)
             return true
         }
     }
@@ -201,6 +232,9 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
             : "**From:** Redlamp \(system.version)")
         if let mention {
             out.append("**Reported by:** \(mention)")
+        }
+        if let incident {
+            return (out + incidentLines(incident, system: system, limits: limits)).joined(separator: "\n") + "\n"
         }
 
         switch kind {
@@ -288,6 +322,7 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
     private func marker(system: SystemSnapshot) -> String {
         var fields = ["report": id.uuidString, "kind": kind.rawValue, "version": system.version]
         fields["area"] = featureID
+        fields["incident"] = incident?.incident.kind.rawValue
         let data = (try? JSONSerialization.data(
             withJSONObject: fields,
             options: [.sortedKeys, .withoutEscapingSlashes],
@@ -295,16 +330,16 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
         return "<!-- redlamp-feedback v1 \(String(decoding: data, as: UTF8.self)) -->"
     }
 
-    private func section(_ title: String, _ text: String) -> [String] {
+    func section(_ title: String, _ text: String) -> [String] {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? [] : ["", "### \(title)", "", Self.sanitized(text)]
     }
 
-    private func disclosure(_ summary: String, _ lines: [String]) -> [String] {
+    func disclosure(_ summary: String, _ lines: [String]) -> [String] {
         lines.isEmpty ? [] : ["", "<details><summary>\(summary)</summary>", ""] + lines + ["", "</details>"]
     }
 
-    private func table(_ rows: [(String, String?)], headers: (String, String) = ("", "")) -> [String] {
+    func table(_ rows: [(String, String?)], headers: (String, String) = ("", "")) -> [String] {
         let rows = rows.compactMap { name, value in value.map { (name, $0) } }.filter { !$0.1.isEmpty }
         guard !rows.isEmpty else { return [] }
         return ["| \(headers.0) | \(headers.1) |", "| --- | --- |"]
@@ -399,6 +434,9 @@ extension FeedbackReport {
     /// `nil` when the person sends none of the details.
     public func diagnostics(context: FeedbackContext, system: SystemSnapshot, log: [String]) throws -> Data? {
         guard includesDetails else { return nil }
+        if let incident {
+            return try incidentDiagnostics(incident, context: context, system: system)
+        }
         let document = Diagnostics(
             report: id, kind: kind, area: featureID, captured: context.captured,
             system: details.system ? system : nil,

@@ -1,21 +1,30 @@
 import Foundation
 
-/// How a report starts when it comes from a message on screen ("Report This Problem…").
+/// How a report starts when it comes from a message on screen ("Report This Problem…"), or from a crash or a hang
+/// offered at launch.
 public struct FeedbackPrefill: Sendable, Hashable {
     public var kind: FeedbackReport.Kind
     public var featureID: String?
     /// The message, quoted at the start of "What happened".
     public var message: String?
+    /// The report is on this crash or hang, and is a bug.
+    public var incident: PendingIncident?
 
-    public init(kind: FeedbackReport.Kind = .bug, featureID: String? = nil, message: String? = nil) {
+    public init(
+        kind: FeedbackReport.Kind = .bug, featureID: String? = nil, message: String? = nil,
+        incident: PendingIncident? = nil,
+    ) {
         self.kind = kind
         self.featureID = featureID
         self.message = message
+        self.incident = incident
     }
 }
 
 /// The Report a Bug or Send Feedback sheet: the note asking people to be kind, the report
-/// being written (kept as a draft until it's sent), what goes with it, and sending.
+/// being written (kept as a draft until it's sent), what goes with it, and sending. A report on
+/// a crash or a hang keeps no draft: it can be opened again from Your Reports, and the draft is
+/// the person's other report.
 @MainActor
 @Observable
 public final class FeedbackSheetModel {
@@ -67,7 +76,14 @@ public final class FeedbackSheetModel {
         self.dryRun = dryRun
         self.defaults = defaults
         var report = FeedbackReport()
-        if let prefill {
+        if let incident = prefill?.incident {
+            report.kind = .bug
+            report.featureID = prefill?.featureID ?? incident.incident.featureID
+            report.title = incident.incident.suggestedTitle
+            report.incident = incident
+            report.details.photo = false
+            report.details.log = false
+        } else if let prefill {
             report.kind = prefill.kind
             report.featureID = prefill.featureID ?? context.suggestion
             report.body = prefill.message.map { "Redlamp said: “\($0)”\n\n" } ?? ""
@@ -171,7 +187,7 @@ public final class FeedbackSheetModel {
             let submission = try outgoing.submission(context: context, system: system, log: log, dryRun: dryRun)
             let result = try await sender.send(submission)
             if case .filed = result {
-                defaults.removeObject(forKey: Self.draftKey)
+                removeDraft()
             }
             onSent?(outgoing, result)
             phase = .sent(result)
@@ -193,14 +209,21 @@ public final class FeedbackSheetModel {
     public func queue() {
         guard let submission = try? submission(), let onQueue else { return }
         onQueue(submission)
-        defaults.removeObject(forKey: Self.draftKey)
+        removeDraft()
         phase = .queued
     }
 
     private func saveDraft() {
+        guard report.incident == nil else { return }
         var draft = report
         draft.screenshots = []
         defaults.set(try? JSONEncoder().encode(draft), forKey: Self.draftKey)
+    }
+
+    private func removeDraft() {
+        if report.incident == nil {
+            defaults.removeObject(forKey: Self.draftKey)
+        }
     }
 
     private static func draft(in defaults: UserDefaults) -> FeedbackReport? {

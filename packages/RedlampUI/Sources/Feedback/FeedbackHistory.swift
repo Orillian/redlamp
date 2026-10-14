@@ -188,12 +188,16 @@ public final class FeedbackHistory {
         reports.count { $0.hasNews }
     }
 
+    /// A report the relay filed; a crash or a hang it was on is reported.
     public func record(_ report: FeedbackReport, number: Int, url: URL) {
         reports.removeAll { $0.id == report.id }
         reports.insert(SentReport(
             id: report.id, number: number, url: url, title: report.issueTitle, featureID: report.featureID,
             kind: report.kind, sent: now(),
         ), at: 0)
+        if let incident = report.incident {
+            incidents.removeAll { $0.id == incident.id }
+        }
         save()
     }
 
@@ -236,10 +240,14 @@ public final class FeedbackHistory {
 
     // MARK: - The outbox
 
-    public func enqueue(_ submission: FeedbackSubmission) {
+    /// `incident`: the crash or hang the report is on, which the outbox now has.
+    public func enqueue(_ submission: FeedbackSubmission, incident: UUID? = nil) {
         queued.removeAll { $0.id == submission.report }
         queued.append(QueuedReport(submission: submission, queued: now()))
         queued.removeFirst(max(0, queued.count - Self.outboxLimit))
+        if let incident {
+            incidents.removeAll { $0.id == incident }
+        }
         save()
     }
 
