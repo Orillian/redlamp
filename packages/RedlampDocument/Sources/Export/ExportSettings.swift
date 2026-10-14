@@ -104,65 +104,85 @@ public enum ExportMetadataPolicy: String, Codable, Sendable, Hashable, CaseItera
 }
 
 public enum ExistingFilePolicy: String, Codable, Sendable, Hashable, CaseIterable {
-    case ask, addNumber, overwrite
+    case ask, addNumber, overwrite, skip
 
     public var name: String {
         switch self {
         case .ask: "Ask"
         case .addNumber: "Add a Number"
         case .overwrite: "Overwrite"
+        case .skip: "Skip"
         }
     }
 }
 
-/// What the exported file is called. Settings never name a photo, so the same rule names
-/// every photo it is applied to.
-public struct ExportNaming: Codable, Sendable, Hashable {
-    public enum Mode: String, Codable, Sendable, Hashable, CaseIterable {
-        case original, custom
+/// What the exported files are called: a naming template in the grammar renaming and importing
+/// share (LIB-25), which RedlampLibrary reads (`ExportNames`), the texts it asks for, and the
+/// number its sequences start at. Settings never name a photo, so the same rule names every
+/// photo it is applied to.
+public struct ExportNaming: Sendable, Hashable {
+    /// The original name with Redlamp's suffix, as exports were named before templates.
+    public static let standard = "{name}-redlamp"
 
-        public var name: String {
-            switch self {
-            case .original: "Original Name"
-            case .custom: "Custom Name"
-            }
+    public var template: String
+    /// `{text}` and `{text:shoot}`, by their names ("" and "shoot").
+    public var texts: [String: String]
+    public var sequenceStart: Int
+
+    public init(template: String = ExportNaming.standard, texts: [String: String] = [:], sequenceStart: Int = 1) {
+        self.template = template
+        self.texts = texts
+        self.sequenceStart = sequenceStart
+    }
+
+    /// The original name followed by `suffix`, written as text.
+    public static func original(suffix: String) -> ExportNaming {
+        ExportNaming(template: "{name}" + escaped(suffix))
+    }
+
+    /// `name` for every photo, written as text; numbers tell the photos of a batch apart.
+    public static func custom(_ name: String) -> ExportNaming {
+        ExportNaming(template: escaped(name))
+    }
+
+    /// A brace in a template's text is doubled.
+    static func escaped(_ text: String) -> String {
+        text.replacingOccurrences(of: "{", with: "{{").replacingOccurrences(of: "}", with: "}}")
+    }
+}
+
+extension ExportNaming: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case template, texts, sequenceStart
+        /// Before templates: the original name with `suffix`, or `customName` (`mode` "custom").
+        case mode, suffix, customName
+    }
+
+    /// Settings saved before templates name files as they did then.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys) -> T? {
+            (try? container.decodeIfPresent(T.self, forKey: key)) ?? nil
         }
-    }
-
-    public var mode: Mode = .original
-    public var suffix = "-redlamp"
-    public var customName = ""
-
-    public init(mode: Mode = .original, suffix: String = "-redlamp", customName: String = "") {
-        self.mode = mode
-        self.suffix = suffix
-        self.customName = customName
-    }
-
-    /// The file name without its extension.
-    public func baseName(for source: URL) -> String {
-        let original = source.deletingPathExtension().lastPathComponent
-        switch mode {
-        case .original:
-            return Self.sanitized(original + suffix) ?? original
-        case .custom:
-            return Self.sanitized(customName) ?? original
+        if let template: String = value(.template) {
+            self.init(template: template)
+        } else if value(.mode) == "custom", let name: String = value(.customName),
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            self = .custom(name)
+        } else {
+            self = .original(suffix: value(.suffix) ?? "-redlamp")
         }
+        texts = value(.texts) ?? [:]
+        sequenceStart = value(.sequenceStart) ?? 1
     }
 
-    /// Whether the rule makes a usable name (a custom name needs some text).
-    public var isValid: Bool {
-        mode == .original || Self.sanitized(customName) != nil
-    }
-
-    /// Slashes and colons can't be in a file name, and a leading dot would hide the file.
-    static func sanitized(_ name: String) -> String? {
-        var cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        while cleaned.hasPrefix(".") {
-            cleaned.removeFirst()
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(template, forKey: .template)
+        if !texts.isEmpty {
+            try container.encode(texts, forKey: .texts)
         }
-        return cleaned.isEmpty ? nil : cleaned
+        try container.encode(sequenceStart, forKey: .sequenceStart)
     }
 }
 

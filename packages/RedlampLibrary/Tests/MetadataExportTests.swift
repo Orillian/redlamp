@@ -7,7 +7,7 @@ import Testing
 @testable import RedlampLibrary
 
 /// Reads a file's ImageIO properties, as the decode service does for the app's exports.
-private struct ImageIOFiles: FileInspecting {
+struct ImageIOFiles: FileInspecting {
     func captures(of urls: [URL], concurrently _: Bool) -> [CaptureSettings?] {
         urls.map { _ in nil }
     }
@@ -70,7 +70,7 @@ struct MetadataExportTests {
         let folder = try TemporaryFolder()
         var settings = ExportSettings()
         settings.destinationFolder = folder.url
-        let url = ExportDestination.url(for: photo, settings: settings, reading: ImageIOFiles())
+        let url = ExportDestination.url("export", for: photo, settings: settings, reading: ImageIOFiles())
         let metadata = ExportMetadata.properties(
             from: photo, reading: ImageIOFiles(), policy: .all, recipe: EditRecipe(), fields: fields,
         )

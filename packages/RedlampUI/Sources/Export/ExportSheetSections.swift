@@ -1,14 +1,16 @@
 import AppKit
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampLibrary
 import SwiftUI
 
-/// Where the file goes and what it is called.
+/// Where the files go and what they're called.
 struct ExportLocationSection: View {
-    let photo: URL
-    /// Where the settings put the export, worked out when they change, not on every redraw: it
+    /// Where the settings put the exports, worked out when they change, not on every redraw: it
     /// reads files in the folder.
     let plan: ExportPlan
+    /// The naming templates saved for renaming and importing, which exports share.
+    let namingPresets: NamingPresetStore?
     @Binding var settings: ExportSettings
     @State private var chosenFolder: URL?
 
@@ -26,14 +28,14 @@ struct ExportLocationSection: View {
                 Divider()
                 Text("Choose…").tag(Choice.choose)
             }
-            Picker("File name", selection: $settings.naming.mode) {
-                ForEach(ExportNaming.Mode.allCases, id: \.self) { Text($0.name).tag($0) }
+            LabeledContent("File name") {
+                ExportNamingField(store: namingPresets, naming: $settings.naming, problem: plan.problem)
             }
-            switch settings.naming.mode {
-            case .original:
-                TextField("Suffix", text: $settings.naming.suffix, prompt: Text("None"))
-            case .custom:
-                TextField("Name", text: $settings.naming.customName, prompt: Text("Name"))
+            ForEach(template?.textNames ?? [], id: \.self) { name in
+                TextField(Self.title(ofText: name), text: text(name), prompt: Text(Self.title(ofText: name)))
+            }
+            if template?.tokens.contains(where: { $0.field == .sequence }) == true {
+                TextField("Start numbers at", value: $settings.naming.sequenceStart, format: .number)
             }
             LabeledContent("Saves as") {
                 Text(plan.savesAs)
@@ -47,6 +49,24 @@ struct ExportLocationSection: View {
         }
         .onAppear { chosenFolder = settings.destinationFolder }
         .onChange(of: settings, initial: true) { plan.update(settings) }
+    }
+
+    /// The template as it's typed, for the texts and numbers it asks for.
+    private var template: NamingTemplate? {
+        try? NamingTemplate(parsing: settings.naming.template, asYouType: true)
+    }
+
+    /// `{text}` and `{text:shoot}`'s values.
+    private func text(_ name: String) -> Binding<String> {
+        Binding(
+            get: { settings.naming.texts[name] ?? "" },
+            set: { settings.naming.texts[name] = $0.isEmpty ? nil : $0 },
+        )
+    }
+
+    /// Custom Text for `{text}`, Shoot Name for `{text:shoot}`, as Rename Photos calls them.
+    static func title(ofText name: String) -> String {
+        name.isEmpty ? "Custom Text" : name.capitalized + " Name"
     }
 
     private var choice: Binding<Choice> {
@@ -77,7 +97,7 @@ struct ExportLocationSection: View {
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
         panel.message = "Choose the folder exports go to."
-        panel.directoryURL = settings.destinationFolder ?? photo.deletingLastPathComponent()
+        panel.directoryURL = settings.destinationFolder ?? plan.folder
         if panel.runModal() == .OK, let url = panel.url {
             chosenFolder = url
             settings.destinationFolder = url

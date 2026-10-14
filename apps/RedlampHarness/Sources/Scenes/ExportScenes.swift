@@ -127,7 +127,7 @@ private struct ExportStatesScene: View {
         var dimensions = ExportSettings()
         dimensions.sizing = ExportSizing(mode: .dimensions)
         var custom = ExportSettings()
-        custom.naming = ExportNaming(mode: .custom)
+        custom.naming = ExportNaming(template: "")
         var missing = ExportSettings()
         missing.destinationFolder = URL(fileURLWithPath: "/Volumes/Gone/Exports")
         return [

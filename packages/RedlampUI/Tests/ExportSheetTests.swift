@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampLibrary
 import SwiftUI
 import Testing
 @testable import RedlampUI
@@ -16,19 +17,16 @@ struct ExportSheetTests {
         photo: URL = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString)/IMG_0001.ARW"),
         plan: ExportPlan? = nil,
         onCancel: @escaping () -> Void = {},
-        onExport: @escaping (ExportSettings, UUID?, URL) -> Void = { _, _, _ in },
+        onExport: @escaping (ExportSettings, UUID?, [ExportNames.Target]) -> Void = { _, _, _ in },
     ) async throws -> NSWindow {
         _ = NSApplication.shared
         let name = "ExportSheetTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
         defaults.removePersistentDomain(forName: name)
         let sheet = ExportSheet(
-            photo: photo,
-            photoSize: PixelSize(width: 6000, height: 4000), plan: plan ?? ExportPlan(
-                photo: photo,
-                files: UnreadableFiles(),
-            ),
-            store: ExportPresetStore(defaults: defaults),
+            plan: plan ?? ExportPlan(photo: photo, files: UnreadableFiles()),
+            photoSize: PixelSize(width: 6000, height: 4000),
+            store: ExportPresetStore(defaults: defaults), namingPresets: nil,
             height: height, onCancel: onCancel, onExport: onExport,
         )
         let window = NSWindow(
@@ -132,7 +130,7 @@ struct ExportSheetTests {
         var exported: URL?
         var cancelled = false
         let window = try await dialog(
-            height: 560, onCancel: { cancelled = true }, onExport: { _, _, url in exported = url },
+            height: 560, onCancel: { cancelled = true }, onExport: { _, _, targets in exported = targets.first?.url },
         )
         defer { window.contentViewController = nil }
         let returnKey = try key(kVK_Return, "\r")
@@ -195,13 +193,14 @@ struct ExportSheetTests {
         defer { files.gate.release() }
         let plan = ExportPlan(photo: photo, files: files)
         var exported: URL?
-        let window = try await dialog(height: 720, photo: photo, plan: plan, onExport: { _, _, url in exported = url })
+        let window = try await dialog(
+            height: 720, photo: photo, plan: plan, onExport: { _, _, targets in exported = targets.first?.url },
+        )
         defer { window.contentViewController = nil }
         try await eventually { !files.asked.isEmpty }
-        #expect(plan.savesAs == "IMG_0001-redlamp.jpg", "until it arrives, the name without a file there")
-        #expect(plan.step == nil)
+        #expect(plan.names == nil, "until the files there are read")
         files.gate.release()
-        try await eventually { plan.step != nil }
+        try await eventually { plan.names != nil }
         #expect(plan.savesAs == "IMG_0001-redlamp-2.jpg")
 
         #expect(try window.performKeyEquivalent(with: key(kVK_Return, "\r")))

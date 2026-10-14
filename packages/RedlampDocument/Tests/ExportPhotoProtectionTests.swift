@@ -23,12 +23,10 @@ struct ExportPhotoProtectionTests {
         try Data("raw".utf8).write(to: raw)
         try Self.cameraJPEG(at: folder.appending(path: "IMG_0001.JPG"))
         try Data("not an image".utf8).write(to: folder.appending(path: "IMG_0002.jpg"))
-        var settings = ExportSettings()
-        settings.naming = ExportNaming(suffix: "")
-        #expect(ExportDestination.url(for: raw, settings: settings, reading: ImageIOFiles())
+        let settings = ExportSettings()
+        #expect(ExportDestination.url("IMG_0001", for: raw, settings: settings, reading: ImageIOFiles())
             .lastPathComponent == "IMG_0001-2.jpg")
-        settings.naming = ExportNaming(mode: .custom, customName: "IMG_0002")
-        #expect(ExportDestination.url(for: raw, settings: settings, reading: ImageIOFiles())
+        #expect(ExportDestination.url("IMG_0002", for: raw, settings: settings, reading: ImageIOFiles())
             .lastPathComponent == "IMG_0002-2.jpg")
     }
 
@@ -57,7 +55,7 @@ struct ExportPhotoProtectionTests {
         try Data("raw".utf8).write(to: photo)
         var settings = ExportSettings()
         settings.format = format
-        let target = ExportDestination.url(for: photo, settings: settings, reading: ImageIOFiles())
+        let target = ExportDestination.url("IMG_0001-redlamp", for: photo, settings: settings, reading: ImageIOFiles())
         try ImageExporter.write(
             ExportWriterTests.image(),
             to: target,
@@ -66,7 +64,8 @@ struct ExportPhotoProtectionTests {
             reading: ImageIOFiles(),
         )
         #expect(!ExportDestination.isPhoto(target, source: photo, reading: ImageIOFiles()))
-        #expect(ExportDestination.url(for: photo, settings: settings, reading: ImageIOFiles()) == target)
+        #expect(ExportDestination.url("IMG_0001-redlamp", for: photo, settings: settings, reading: ImageIOFiles())
+            == target)
         try ImageExporter.write(
             ExportWriterTests.image(),
             to: target,
@@ -81,9 +80,7 @@ struct ExportPhotoProtectionTests {
         defer { cleanup() }
         let photo = folder.appending(path: "IMG_0001.JPG")
         try Data("original".utf8).write(to: photo)
-        var settings = ExportSettings()
-        settings.naming = ExportNaming(suffix: "")
-        #expect(ExportDestination.url(for: photo, settings: settings, reading: ImageIOFiles())
+        #expect(ExportDestination.url("IMG_0001", for: photo, settings: ExportSettings(), reading: ImageIOFiles())
             .lastPathComponent == "IMG_0001-2.jpg")
     }
 
@@ -95,12 +92,10 @@ struct ExportPhotoProtectionTests {
         try Data("raw".utf8).write(to: photo)
         try Data("other".utf8).write(to: other)
         try SidecarStore().save(Sidecar(recipe: EditRecipe(), metadata: PhotoMetadata(rating: 3)), for: other)
-        var settings = ExportSettings()
-        settings.naming = ExportNaming(mode: .custom, customName: "IMG_0002")
-        #expect(ExportDestination.url(for: photo, settings: settings, reading: ImageIOFiles())
+        let settings = ExportSettings()
+        #expect(ExportDestination.url("IMG_0002", for: photo, settings: settings, reading: ImageIOFiles())
             .lastPathComponent == "IMG_0002-2.jpg")
-        settings.naming = ExportNaming(mode: .custom, customName: "IMG_0003")
-        #expect(ExportDestination.url(for: photo, settings: settings, reading: ImageIOFiles())
+        #expect(ExportDestination.url("IMG_0003", for: photo, settings: settings, reading: ImageIOFiles())
             .lastPathComponent == "IMG_0003.jpg")
     }
 

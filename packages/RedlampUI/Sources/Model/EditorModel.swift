@@ -763,6 +763,8 @@ public final class EditorModel {
     public internal(set) var hasClipboard = false
     /// Sync, and Paste or Update AI Masks on the selection's other photos, in the background.
     public let settingsSync = SettingsSync { nil }
+    /// Exports of several photos, in the background (EDT-16).
+    public let batchExport = BatchExport()
     /// Makes an engine for photos that aren't open (the worker's), when it needs one. Set by the
     /// app; without it, AI masks pasted onto those photos keep the bitmaps they came with.
     @ObservationIgnored public var makeWorkerEngine: (() -> (any EditingEngine)?)?
@@ -841,6 +843,7 @@ public final class EditorModel {
         settingsSync.photoAnchor = { [weak self] url in await self?.anchor(forPhotoAt: url) }
         settingsSync.saves = saves
         settingsSync.editor = self
+        connectBatchExport()
         saves.reportResults { [weak self] url, write, outcome, superseded in
             self?.saved(url, write, outcome, superseded: superseded)
         }
@@ -928,6 +931,7 @@ public final class EditorModel {
                 sidecars = library.sidecars.store(for: url),
                 saves,
                 settingsSync,
+                batchExport,
                 scheduler = library.scheduler,
                 beforeReadingSidecar,
                 engine,
@@ -935,6 +939,7 @@ public final class EditorModel {
             await beforeReadingSidecar(url)
             await saves.wait(for: url)
             await settingsSync.wait(for: url)
+            await batchExport.wait(for: url)
             let read = try? await scheduler.run(.onScreen) { OpenedSidecar(url, in: sidecars) }
             // Usually read while the photo still decodes, so the photo is built for its edit.
             if let recipe = read?.sidecar?.recipe {

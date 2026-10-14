@@ -18,10 +18,7 @@ extension EditorModel {
         do {
             let image = try await engine.renderStill(request)
             try await Task.detached(priority: .userInitiated) {
-                var fields: ExportMetadata.Fields?
-                if let core, let id = await LibraryService.indexIDs(of: [source], in: core.index)[source] {
-                    fields = try? await LibraryMetadata(index: core.index, paths: core.paths).exportFields(ofPhoto: id)
-                }
+                let fields = await Self.exportFields(of: source, core: core)
                 let metadata = ExportMetadata.properties(
                     from: source,
                     reading: files,
@@ -38,6 +35,28 @@ extension EditorModel {
             throw error
         }
         setExportStatus("Exported \(url.lastPathComponent)", clearAfter: .seconds(3))
+    }
+
+    /// The library's fields for `source`, which its export carries; nil when the library doesn't have it.
+    nonisolated static func exportFields(of source: URL, core: LibraryCore?) async -> ExportMetadata.Fields? {
+        guard let core, let id = await LibraryService.indexIDs(of: [source], in: core.index)[source] else { return nil }
+        return try? await LibraryMetadata(index: core.index, paths: core.paths).exportFields(ofPhoto: id)
+    }
+
+    /// Wires the batch exporter to the editor's engine factory, sidecars, saves and looks.
+    func connectBatchExport() {
+        batchExport.makeEngine = { [weak self] in self?.makeWorkerEngine?() }
+        batchExport.sidecars = library.sidecars
+        batchExport.saved = { [weak self] url in
+            guard let self else { return }
+            await saves.wait(for: url)
+            await settingsSync.wait(for: url)
+        }
+        batchExport.baseLook = { [weak self] reference in self?.recipes.library.definition(for: reference) }
+        batchExport.fields = { [weak self] url in
+            await Self.exportFields(of: url, core: self?.library.service?.core)
+        }
+        settingsSync.beforeWriting = { [weak self] url in await self?.batchExport.wait(for: url) }
     }
 
     private func setExportStatus(_ status: String?, clearAfter delay: Duration?) {

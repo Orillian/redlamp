@@ -401,10 +401,14 @@ public extension FeedbackArea {
         ),
         FeedbackArea(
             "export", "Export", symbol: "square.and.arrow.up",
-            summary: "The Export dialog: formats, sizes, metadata and presets.",
+            summary: "The Export dialog: formats, sizes, metadata and presets, for one photo or several.",
             tracker: ["EDT"],
             features: [
                 FeedbackFeature("dialog", "Export Dialog", ["export", "location", "file name"]),
+                FeedbackFeature(
+                    "batch", "Exporting Several Photos",
+                    ["batch", "several", "selection", "progress", "cancel", "naming template", "sequence"],
+                ),
                 FeedbackFeature(
                     "formats", "Formats and Quality",
                     ["jpeg", "jpg", "heic", "avif", "png", "tiff", "quality", "bit depth", "file size"],

@@ -1,54 +1,67 @@
 import AppKit
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampLibrary
 import SwiftUI
 
-/// The Export dialog and Export with Previous.
+/// The Export dialog and Export with Previous, on the photos selected in the filmstrip or the grid (EDT-16): one
+/// photo is rendered by the editor's engine, as it always was; several go to the batch exporter (`BatchExport`).
 @MainActor
 public enum ExportActions {
-    /// What an export needs before it can run.
+    /// What an export of one photo needs before it can run.
     public enum Step: Equatable, Sendable {
         /// No previous export to repeat: show the dialog.
         case needsDialog
         case ready(URL, ExportSettings)
         /// The file exists and the settings say to ask.
         case confirmReplace(URL, ExportSettings)
+        /// The file exists and the settings say to skip it.
+        case skip(URL, ExportSettings)
     }
 
-    /// Where `settings` put an export of `photo`, after their rule for existing files. It reads
-    /// the files there, through the decode service in the app, so it is never worked out on the
-    /// main thread.
+    /// Where `settings` put an export of `photo` named from its URL alone, after their rule for existing files.
+    /// It reads the files there, through the decode service in the app, so it is never worked out on the main
+    /// thread.
     public nonisolated static func step(
         for settings: ExportSettings, photo: URL, reading files: any FileInspecting,
     ) -> Step {
-        step(at: ExportDestination.url(for: photo, settings: settings, reading: files), settings: settings)
+        guard let names = try? ExportNames([ExportNames.Photo(url: photo)], settings: settings, reading: files),
+              let target = names.targets.first
+        else { return .needsDialog }
+        return step(target, settings: settings)
     }
 
-    /// What `settings`' rule for existing files does with an export to `url`.
-    nonisolated static func step(at url: URL, settings: ExportSettings) -> Step {
-        guard FileManager.default.fileExists(atPath: url.path) else { return .ready(url, settings) }
-        switch settings.existingFiles {
-        case .ask: return .confirmReplace(url, settings)
-        case .addNumber: return .ready(ExportDestination.firstFree(url), settings)
-        case .overwrite: return .ready(url, settings)
+    nonisolated static func step(_ target: ExportNames.Target, settings: ExportSettings) -> Step {
+        switch target.existing {
+        case .none, .replaced: .ready(target.url, settings)
+        case .asked: .confirmReplace(target.url, settings)
+        case .skipped: .skip(target.url, settings)
         }
     }
 
-    /// What Export with Previous would do for the open photo, worked out off the main thread.
+    /// What Export with Previous would do for the open photo alone, worked out off the main thread.
     public static func previousExport(model: EditorModel, store: ExportPresetStore) async -> Step {
         guard let info = model.info, let settings = store.previous else { return .needsDialog }
-        let (photo, files) = (info.url, model.engine.files)
-        return await Task.detached(priority: .userInitiated) {
-            step(for: settings, photo: photo, reading: files)
-        }.value
+        let read = reader(for: SelectedPhotos([info.url]), model: model)
+        guard let names = await names(read, settings: settings, model: model), let target = names.targets.first
+        else { return .needsDialog }
+        return step(target, settings: settings)
     }
 
-    /// Shows the Export dialog as an app-modal sheet on the editor window: until it closes, no
-    /// other window gets events and every editor action is unavailable. Returns when it closes.
+    // MARK: - The dialog
+
+    /// Shows the Export dialog for the photos selected as an app-modal sheet on the editor window: until it
+    /// closes, no other window gets events and every editor action is unavailable. Returns when it closes.
     public static func present(model: EditorModel, store: ExportPresetStore) {
         guard let info = model.info, !model.isModalDialogOpen,
               let window = EditorWindowController.frontWindow, window.attachedSheet == nil
         else { return }
+        let photos = model.selectionForAction()
+        let presets = namingPresets(model)
+        let plan = ExportPlan(
+            count: photos.count, folder: info.url.deletingLastPathComponent(), files: model.engine.files,
+            counters: presets?.counters ?? NamingCounters(), read: reader(for: photos, model: model),
+        )
         let height = window.sheetHeight(fitting: ExportSheet.size.height)
         let sheetWindow = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: ExportSheet.size.width, height: height),
@@ -64,15 +77,16 @@ public enum ExportActions {
             }
         }
         sheetWindow.contentViewController = NSHostingController(rootView: ExportSheet(
-            photo: info.url,
+            plan: plan,
             photoSize: info.pixelSize,
-            files: model.engine.files,
             store: store,
+            namingPresets: presets,
             height: height,
             onCancel: close,
-            onExport: { [weak window] settings, presetID, url in
+            onExport: { [weak window] settings, presetID, targets in
                 close()
-                run(Job(settings: settings, presetID: presetID, url: url), model: model, store: store, window: window)
+                let job = Job(settings: settings, presetID: presetID, targets: targets, counters: plan.names?.counters)
+                run(job, model: model, store: store, window: window)
             },
         ).focusEffectDisabled())
         model.isModalDialogOpen = true
@@ -80,61 +94,94 @@ public enum ExportActions {
         NSApp.runModal(for: sheetWindow)
     }
 
-    /// Exports the open photo with the last export's settings, or shows the dialog if there
-    /// hasn't been one.
+    // MARK: - Export with Previous
+
+    /// Exports the photos selected with the last export's settings, or shows the dialog if there hasn't been one.
     public static func exportWithPrevious(model: EditorModel, store: ExportPresetStore) {
         let window = EditorWindowController.frontWindow
         Task { await exportWithPrevious(model: model, store: store, window: window) }
     }
 
     private static func exportWithPrevious(model: EditorModel, store: ExportPresetStore, window: NSWindow?) async {
-        switch await previousExport(model: model, store: store) {
-        case .needsDialog:
-            present(model: model, store: store)
-        case let .ready(url, settings):
-            let job = Job(settings: settings, presetID: store.previousPresetID, url: url)
-            run(job, model: model, store: store, window: window)
-        case let .confirmReplace(url, settings):
-            guard let window else { return }
-            let alert = NSAlert()
+        guard model.info != nil, let settings = store.previous else { return present(model: model, store: store) }
+        let presets = namingPresets(model)
+        let read = reader(for: model.selectionForAction(), model: model)
+        guard let names = await names(read, settings: settings, counters: presets?.counters, model: model) else {
+            return present(model: model, store: store)
+        }
+        let job = { (targets: [ExportNames.Target]) in
+            Job(settings: settings, presetID: store.previousPresetID, targets: targets, counters: names.counters)
+        }
+        guard names.asked > 0 else { return run(job(names.targets), model: model, store: store, window: window) }
+        guard let window else { return }
+        let several = names.targets.count > 1
+        let alert = NSAlert()
+        if several {
+            alert.messageText = ExportSheet.conflictTitle(names.asked, of: names.targets.count)
+            alert.informativeText = ExportSheet.conflictMessage(several: names.asked)
+        } else if let url = names.targets.first?.url {
             alert.messageText = ExportSheet.conflictTitle(url)
             alert.informativeText = ExportSheet.conflictMessage(url)
-            alert.addButton(withTitle: "Replace")
-            alert.addButton(withTitle: "Keep Both")
-            alert.addButton(withTitle: "Cancel")
-            alert.beginSheetModal(for: window) { response in
-                let target: URL? = switch response {
-                case .alertFirstButtonReturn: url
-                case .alertSecondButtonReturn: ExportDestination.firstFree(url)
-                default: nil
-                }
-                guard let target else { return }
-                let job = Job(settings: settings, presetID: store.previousPresetID, url: target)
-                run(job, model: model, store: store, window: window)
-            }
+        }
+        let answers: [ExistingFilePolicy] = several ? [.overwrite, .addNumber, .skip] : [.overwrite, .addNumber]
+        for answer in answers {
+            alert.addButton(withTitle: answer == .overwrite ? "Replace" : answer == .addNumber ? "Keep Both" : "Skip")
+        }
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            guard answers.indices.contains(index) else { return }
+            run(job(names.answering(answers[index])), model: model, store: store, window: window)
         }
     }
 
-    /// One export: the settings, the preset they started from, and the file to write.
+    // MARK: - Running
+
+    /// An export: the settings, the preset they started from, where each photo goes, and the named counters as
+    /// they'll be after it.
     private struct Job {
         let settings: ExportSettings
         let presetID: UUID?
-        let url: URL
+        let targets: [ExportNames.Target]
+        let counters: NamingCounters?
     }
 
     private static func run(_ job: Job, model: EditorModel, store: ExportPresetStore, window: NSWindow?) {
         store.recordExport(job.settings, presetID: job.presetID)
+        if let counters = job.counters {
+            namingPresets(model)?.setCounters(counters)
+        }
+        guard job.targets.count > 1 else {
+            guard let target = job.targets.first else { return }
+            return runOne(target, settings: job.settings, model: model, window: window)
+        }
+        let open = model.info.flatMap { info in
+            job.targets.contains { $0.photo == info.url } ? (url: info.url, recipe: model.unobservedRecipe) : nil
+        }
+        model.activity.record(.export, "Export of \(job.targets.count) photos")
+        model.batchExport.run(BatchExport.Job(targets: job.targets, settings: job.settings, open: open) { report in
+            finished(report, settings: job.settings, model: model, window: window)
+        })
+    }
+
+    private static func runOne(
+        _ target: ExportNames.Target, settings: ExportSettings, model: EditorModel, window: NSWindow?,
+    ) {
+        guard target.existing != .skipped else {
+            model.activity.record(.export, "\(target.url.lastPathComponent) exists, so it was skipped")
+            return
+        }
         Task {
             do {
-                try await model.export(job.settings, to: job.url)
-                if job.settings.revealInFinder {
-                    NSWorkspace.shared.activateFileViewerSelecting([job.url])
+                try await model.export(settings, to: target.url)
+                if settings.revealInFinder {
+                    NSWorkspace.shared.activateFileViewerSelecting([target.url])
                 }
             } catch {
                 let alert = NSAlert(error: error)
                 alert.addButton(withTitle: "OK")
                 alert.addButton(withTitle: "Report This Problem…")
-                let report: @MainActor (NSApplication.ModalResponse) -> Void = { response in
+                show(alert, on: window) { response in
                     if response == .alertSecondButtonReturn {
                         model.sendFeedback(FeedbackPrefill(
                             featureID: "export.dialog",
@@ -142,12 +189,121 @@ public enum ExportActions {
                         ))
                     }
                 }
-                if let window, window.attachedSheet == nil {
-                    alert.beginSheetModal(for: window, completionHandler: report)
-                } else {
-                    report(alert.runModal())
-                }
             }
         }
+    }
+
+    /// Shows what a batch wrote in Finder when the settings say to, and the photos it couldn't export, each with
+    /// why, in one alert.
+    private static func finished(
+        _ report: BatchExport.Report, settings: ExportSettings, model: EditorModel, window: NSWindow?,
+    ) {
+        model.activity.record(.export, BatchExport.summary(of: report))
+        guard !report.failures.isEmpty else {
+            if settings.revealInFinder, !report.written.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting(report.written)
+            }
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = report.failures.count == 1
+            ? "1 of the \(report.total) photos wasn't exported."
+            : "\(report.failures.count) of the \(report.total) photos weren't exported."
+        alert.informativeText = failureList(report.failures)
+        alert.addButton(withTitle: "OK")
+        if !report.written.isEmpty {
+            alert.addButton(withTitle: "Show in Finder")
+        }
+        alert.addButton(withTitle: "Report This Problem…")
+        let showsFinder = !report.written.isEmpty
+        show(alert, on: window) { response in
+            switch response {
+            case .alertSecondButtonReturn where showsFinder:
+                NSWorkspace.shared.activateFileViewerSelecting(report.written)
+            case .alertSecondButtonReturn, .alertThirdButtonReturn:
+                model.sendFeedback(FeedbackPrefill(featureID: "export.batch", message: failureList(report.failures)))
+            default:
+                break
+            }
+        }
+    }
+
+    /// Each photo and why, the first ten, then how many more.
+    static func failureList(_ failures: [BatchExport.Failure]) -> String {
+        let shown = failures.prefix(10).map { "\($0.photo.lastPathComponent): \($0.reason)" }
+        let more = failures.count > shown.count ? ["And \(failures.count - shown.count) more."] : []
+        return (shown + more).joined(separator: "\n")
+    }
+
+    private static func show(
+        _ alert: NSAlert, on window: NSWindow?,
+        then answered: @escaping @MainActor (NSApplication.ModalResponse) -> Void,
+    ) {
+        if let window, window.attachedSheet == nil {
+            alert.beginSheetModal(for: window, completionHandler: answered)
+        } else {
+            answered(alert.runModal())
+        }
+    }
+
+    // MARK: - The photos
+
+    /// The naming templates and counters renaming and importing keep in the library's folder, when it's open.
+    static func namingPresets(_ model: EditorModel) -> NamingPresetStore? {
+        model.library.service.map { NamingPresetStore.shared(for: $0.paths) }
+    }
+
+    /// Reads what `photos`' names are made from, off the main thread: the index's fields for those it has, the
+    /// fields their files and sidecars hold for the others.
+    static func reader(
+        for photos: SelectedPhotos, model: EditorModel,
+    ) -> @Sendable () async -> [ExportNames.Photo] {
+        let core = model.library.service?.core
+        let sidecars = model.library.sidecars
+        return {
+            let urls = await photos.all()
+            var indexed: [URL: NamingFields] = [:]
+            if let core {
+                let ids = await LibraryService.indexIDs(of: urls, in: core.index)
+                let found = try? await core.index.read { reader in
+                    try NamingFields.read(Array(Set(ids.values)), from: reader)
+                }
+                let byID = Dictionary((found ?? []).map { ($0.id, $0.fields) }, uniquingKeysWith: { first, _ in first })
+                for (url, id) in ids {
+                    indexed[url] = byID[id]
+                }
+            }
+            return urls.map { url in
+                if let fields = indexed[url] {
+                    return ExportNames.Photo(url: url, fields: fields)
+                }
+                let name = url.lastPathComponent, folder = url.deletingLastPathComponent().path
+                var fields = PhotoMetadataReader.read(url: url).map { NamingFields(
+                    name: name,
+                    folder: folder,
+                    metadata: $0,
+                ) }
+                    ?? NamingFields(name: name, folder: folder)
+                if let metadata = sidecars.store(for: url).load(for: url)?.metadata {
+                    fields.apply(metadata)
+                }
+                return ExportNames.Photo(url: url, fields: fields)
+            }
+        }
+    }
+
+    /// The names `settings` give the photos `read` reads, worked out off the main thread; nil when the template
+    /// doesn't read.
+    private static func names(
+        _ read: @escaping @Sendable () async -> [ExportNames.Photo], settings: ExportSettings,
+        counters: NamingCounters? = nil, model: EditorModel,
+    ) async -> ExportNames? {
+        let files = model.engine.files
+        let counters = counters ?? NamingCounters()
+        return await Task.detached(priority: .userInitiated) {
+            let photos = await read()
+            return try? ExportNames(photos, settings: settings, counters: counters, reading: files)
+        }.value
     }
 }

@@ -146,7 +146,7 @@ extension EditRenders {
 
     private var isDevelopQuiet: Bool {
         guard let editor else { return true }
-        guard !editor.isModalDialogOpen, editor.exportStatus == nil else { return false }
+        guard !editor.isModalDialogOpen, editor.exportStatus == nil, !editor.batchExport.isRunning else { return false }
         guard editor.module == .develop else { return true }
         return !editor.isLoading && developActive.map { .now - $0 >= Self.developQuiet } ?? true
     }

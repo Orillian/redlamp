@@ -49,7 +49,9 @@ struct ExportTests {
         settings.colorSpace = .displayP3
         settings.sizing = ExportSizing(mode: .longEdge)
         settings.sizing.longEdge = 300
-        let url = try ExportDestination.url(for: #require(model.info).url, settings: settings, reading: engine.files)
+        let url = try ExportDestination.url(
+            "IMG_0001-redlamp", for: #require(model.info).url, settings: settings, reading: engine.files,
+        )
         #expect(url.lastPathComponent == "IMG_0001-redlamp.png")
 
         try await model.export(settings, to: url)
@@ -235,7 +237,7 @@ struct ExportTests {
         let photo = folder.appending(path: "IMG_0001.JPG")
         try Data("original".utf8).write(to: photo)
         var settings = ExportSettings()
-        settings.naming = ExportNaming(suffix: "")
+        settings.naming = ExportNaming(template: "{name}")
         settings.existingFiles = policy
         #expect(ExportActions.step(for: settings, photo: photo, reading: UnreadableFiles()) == .ready(
             folder.appending(path: "IMG_0001-2.jpg"), settings,

@@ -374,14 +374,28 @@ public extension EditRecipe {
 
     /// Fills in the bytes of the edit's mask bitmaps from `bytes(sha256)`.
     mutating func loadMaskBitmaps(_ bytes: (String) -> Data?) {
+        updateMaskBitmaps { bitmap in
+            if bitmap.png == nil {
+                bitmap.png = bytes(bitmap.sha256)
+            }
+        }
+    }
+
+    /// Lets go of the bytes of the edit's mask bitmaps, keeping their hashes, which `loadMaskBitmaps`
+    /// reads them by again.
+    mutating func unloadMaskBitmaps() {
+        updateMaskBitmaps { $0.png = nil }
+    }
+
+    private mutating func updateMaskBitmaps(_ update: (inout MaskBitmap) -> Void) {
         for layer in masks.indices {
             for index in masks[layer].components.indices {
                 switch masks[layer].components[index].shape {
-                case var .ai(mask) where mask.bitmap.png == nil:
-                    mask.bitmap.png = bytes(mask.bitmap.sha256)
+                case var .ai(mask):
+                    update(&mask.bitmap)
                     masks[layer].components[index].shape = .ai(mask)
-                case var .depthRange(range) where range.depth.bitmap.png == nil:
-                    range.depth.bitmap.png = bytes(range.depth.bitmap.sha256)
+                case var .depthRange(range):
+                    update(&range.depth.bitmap)
                     masks[layer].components[index].shape = .depthRange(range)
                 default:
                     break
@@ -389,12 +403,12 @@ public extension EditRecipe {
             }
         }
         for index in spots.indices {
-            if var region = spots[index].region, region.bitmap.png == nil {
-                region.bitmap.png = bytes(region.bitmap.sha256)
+            if var region = spots[index].region {
+                update(&region.bitmap)
                 spots[index].region = region
             }
-            if var fill = spots[index].fill, fill.bitmap.png == nil {
-                fill.bitmap.png = bytes(fill.bitmap.sha256)
+            if var fill = spots[index].fill {
+                update(&fill.bitmap)
                 spots[index].fill = fill
             }
         }

@@ -19,6 +19,7 @@ struct FilmstripView: View {
                 HStack(spacing: 8) {
                     FilmstripFolder()
                     FilmstripCount()
+                    FilmstripExport()
                     FilmstripSync()
                     FilmstripSuggestion()
                     Spacer()
@@ -119,6 +120,7 @@ struct FilmstripStatus: View {
     var body: some View {
         if !FilmstripPreference.shared.showsInfoLine, hasAny {
             HStack(spacing: 8) {
+                FilmstripExport()
                 FilmstripSync()
                 FilmstripSuggestion()
                 FilmstripStackButton()
@@ -135,7 +137,8 @@ struct FilmstripStatus: View {
     }
 
     private var hasAny: Bool {
-        model.settingsSync.progress != nil || model.isMultiSelecting || model.settingsSync.report != nil
+        model.batchExport.progress != nil || model.batchExport.summary != nil
+            || model.settingsSync.progress != nil || model.isMultiSelecting || model.settingsSync.report != nil
             || !model.stackSuggestions.isEmpty || model.selection.map(SupportedFormats.isStack) == true
     }
 }
@@ -173,6 +176,27 @@ private struct FilmstripCount: View {
         guard model.library.isFiltered, let listed = model.libraryFilters?.listed, listed.shown < listed.total
         else { return nil }
         return listed.total
+    }
+}
+
+/// A batch export's progress with Cancel, and for a moment after it ends, how it went (EDT-16).
+private struct FilmstripExport: View {
+    @Environment(EditorModel.self) private var model
+
+    var body: some View {
+        if let progress = model.batchExport.progress {
+            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                .frame(width: 80)
+            Text("Exporting: \(progress.done) of \(progress.total)")
+            Button("Cancel") { model.batchExport.cancel() }
+                .buttonStyle(.link)
+                .help("Stop after the photo being written; the files written stay")
+                .automationIdentifier("filmstrip.export.cancel")
+        } else if let summary = model.batchExport.summary {
+            Text(summary)
+                .foregroundStyle(Theme.tertiaryLabel)
+                .lineLimit(1)
+        }
     }
 }
 

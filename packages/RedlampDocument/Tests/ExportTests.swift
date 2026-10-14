@@ -422,19 +422,28 @@ struct ExportSizingTests {
 struct ExportSettingsTests {
     private let source = URL(fileURLWithPath: "/Photos/IMG_1234.NEF")
 
-    @Test func `names follow the rule and the format`() {
+    @Test func `a name goes in the folder the settings choose, with the format's extension`() {
         var settings = ExportSettings()
-        #expect(ExportDestination.url(for: source, settings: settings, reading: ImageIOFiles())
+        #expect(ExportDestination.url("IMG_1234-redlamp", for: source, settings: settings, reading: ImageIOFiles())
             .path == "/Photos/IMG_1234-redlamp.jpg")
         settings.setFormat(.tiff)
-        settings.naming = ExportNaming(mode: .custom, customName: " Harbour: dusk/2 ")
         settings.destinationFolder = URL(fileURLWithPath: "/Exports")
-        #expect(ExportDestination.url(for: source, settings: settings, reading: ImageIOFiles())
-            .path == "/Exports/Harbour- dusk-2.tif")
-        settings.naming = ExportNaming(mode: .custom, customName: "  ")
-        #expect(!settings.naming.isValid)
-        #expect(ExportDestination.url(for: source, settings: settings, reading: ImageIOFiles())
-            .lastPathComponent == "IMG_1234.tif")
+        #expect(ExportDestination.named("Harbour", for: source, settings: settings).path == "/Exports/Harbour.tif")
+    }
+
+    @Test func `names saved before templates become the template that names files the same way`() throws {
+        func decoded(_ json: String) throws -> ExportNaming {
+            try JSONDecoder().decode(ExportNaming.self, from: Data(json.utf8))
+        }
+        #expect(try decoded(#"{"mode":"original","suffix":"-redlamp","customName":""}"#) == ExportNaming())
+        #expect(try decoded(#"{"mode":"original","suffix":""}"#).template == "{name}")
+        #expect(try decoded(#"{"mode":"original","suffix":"-{web}"}"#).template == "{name}-{{web}}")
+        #expect(try decoded(#"{"mode":"custom","customName":"Harbour"}"#).template == "Harbour")
+        #expect(try decoded(#"{"mode":"custom","customName":"  "}"#) == ExportNaming())
+        #expect(try decoded("{}") == ExportNaming())
+
+        let naming = ExportNaming(template: "{text:shoot}-{sequence:3}", texts: ["shoot": "Harbour"], sequenceStart: 7)
+        #expect(try JSONDecoder().decode(ExportNaming.self, from: JSONEncoder().encode(naming)) == naming)
     }
 
     @Test func `numbering skips names that are taken`() throws {

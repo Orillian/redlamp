@@ -1,22 +1,29 @@
 import Foundation
 import RedlampEngineAPI
 
-/// Where an export of one photo goes.
+/// Where an export of one photo goes, once its name is made (`ExportNames`, in RedlampLibrary,
+/// makes names from the settings' template).
 public enum ExportDestination {
-    /// The file `settings` name for `source`. A name that is a photo (see `isPhoto`) gets the
-    /// first free number instead, so no rule for existing files can replace one.
-    public static func url(for source: URL, settings: ExportSettings, reading files: any FileInspecting) -> URL {
-        let named = named(for: source, settings: settings)
-        return isPhoto(named, source: source, reading: files) ? firstFree(named) : named
+    /// The folder `settings` export `source` to.
+    public static func folder(for source: URL, settings: ExportSettings) -> URL {
+        settings.destinationFolder ?? source.deletingLastPathComponent()
     }
 
-    /// The file `settings` name for `source` before any file there is read: `url`'s answer when
-    /// no photo has that name.
-    public static func named(for source: URL, settings: ExportSettings) -> URL {
-        let folder = settings.destinationFolder ?? source.deletingLastPathComponent()
-        return folder
-            .appending(path: settings.naming.baseName(for: source), directoryHint: .notDirectory)
+    /// The file `base` names in the folder `settings` export `source` to, with the format's
+    /// extension, before any file there is read.
+    public static func named(_ base: String, for source: URL, settings: ExportSettings) -> URL {
+        folder(for: source, settings: settings)
+            .appending(path: base, directoryHint: .notDirectory)
             .appendingPathExtension(settings.format.fileExtension)
+    }
+
+    /// `named`'s file, or the first free number when a photo has that name (see `isPhoto`), so no
+    /// rule for existing files can replace one.
+    public static func url(
+        _ base: String, for source: URL, settings: ExportSettings, reading files: any FileInspecting,
+    ) -> URL {
+        let named = named(base, for: source, settings: settings)
+        return isPhoto(named, source: source, reading: files) ? firstFree(named) : named
     }
 
     /// Whether the file at `url` is a photo an export must never replace: anything there but an
@@ -48,9 +55,11 @@ public enum ExportDestination {
             == second.path.precomposedStringWithCanonicalMapping.lowercased()
     }
 
-    /// `url`, or the first of `name-2`, `name-3`… that doesn't exist.
-    public static func firstFree(_ url: URL, fileManager: FileManager = .default) -> URL {
-        guard fileManager.fileExists(atPath: url.path) else { return url }
+    /// `url`, or the first of `name-2`, `name-3`… that doesn't exist and isn't `taken`.
+    public static func firstFree(
+        _ url: URL, taken: (URL) -> Bool = { _ in false }, fileManager: FileManager = .default,
+    ) -> URL {
+        guard fileManager.fileExists(atPath: url.path) || taken(url) else { return url }
         let folder = url.deletingLastPathComponent()
         let name = url.deletingPathExtension().lastPathComponent
         let ext = url.pathExtension
@@ -58,7 +67,7 @@ public enum ExportDestination {
         while true {
             let candidate = folder.appending(path: "\(name)-\(number)", directoryHint: .notDirectory)
                 .appendingPathExtension(ext)
-            if !fileManager.fileExists(atPath: candidate.path) {
+            if !fileManager.fileExists(atPath: candidate.path), !taken(candidate) {
                 return candidate
             }
             number += 1

@@ -128,6 +128,11 @@ public final class EditorWindowController: NSWindowController, NSToolbarDelegate
             Tracker { [weak self] in
                 self?.feedbackItem?.badge = Self.feedbackBadge
             },
+            // A batch export's photos still to write, seen with the filmstrip hidden too.
+            Tracker { [weak self] in
+                guard let self else { return }
+                exportItem?.badge = model.batchExport.progress.map { .count($0.total - $0.done) }
+            },
         ]
     }
 

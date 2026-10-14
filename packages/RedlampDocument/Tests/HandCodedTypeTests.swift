@@ -190,7 +190,7 @@ struct HandCodedTypeTests {
         settings.sizing = sizing
         settings.metadata = .allExceptLocation
         settings.destinationFolder = URL(fileURLWithPath: "/tmp/Exports", isDirectory: true)
-        settings.naming = ExportNaming(mode: .custom, customName: "Trip")
+        settings.naming = ExportNaming(template: "{text}-{sequence:3}", texts: ["": "Trip"], sequenceStart: 5)
         settings.existingFiles = .overwrite
         settings.revealInFinder = false
         try check(settings)

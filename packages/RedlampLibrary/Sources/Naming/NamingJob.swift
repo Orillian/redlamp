@@ -79,8 +79,9 @@ public struct NamingJob: Sendable {
     /// For each folder, the names files already in it take (folded), and one such file for each.
     let existing: [Int32: [String: String]]
 
-    /// `existing` lists the files in the folders the photos go to, by folder path.
-    public init(_ photos: [NamingPhoto], existing: [String: Set<String>] = [:]) {
+    /// `existing` lists the files in the folders the photos go to, by folder path. Without `pairing`, photos of
+    /// one name in a folder are named apart, as their exports are: a raw's and its JPEG's are two files.
+    public init(_ photos: [NamingPhoto], existing: [String: Set<String>] = [:], pairing: Bool = true) {
         self.photos = photos
         let parallel = photos.count >= Self.parallelGroups
         let foldedBases = UnsafeMutableBufferPointer<String>.allocate(capacity: photos.count)
@@ -132,7 +133,7 @@ public struct NamingJob: Sendable {
             let key = CollisionKey(folder: source, base: foldedBases[index])
             let ext = prepared[index].ext
             let extensionBytes = ext.isEmpty ? 0 : 1 + ext.utf8.count
-            if let group = groupIDs[key] {
+            if pairing, let group = groupIDs[key] {
                 prepared[index].group = group
                 groups[Int(group)].extensionBytes = max(groups[Int(group)].extensionBytes, extensionBytes)
                 if !Self.isRaw(prepared[Int(groups[Int(group)].primary)].ext), Self.isRaw(ext) {

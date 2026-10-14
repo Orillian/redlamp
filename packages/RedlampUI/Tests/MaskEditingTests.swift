@@ -106,6 +106,13 @@ final class StubEngine: EditingEngine, @unchecked Sendable {
         releases.withLock { $0 += 1 }
     }
 
+    /// Each raw revision `expect` was told, with its photo, in order.
+    let expected = Mutex<[(url: URL, revision: RawRevision)]>([])
+
+    func expect(_ revision: RawRevision, for url: URL) {
+        expected.withLock { $0.append((url, revision)) }
+    }
+
     func releaseMaskModels() async {
         maskModelReleases.withLock { $0 += 1 }
     }

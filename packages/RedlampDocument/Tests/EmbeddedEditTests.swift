@@ -203,7 +203,7 @@ struct EmbeddedEditTests {
         let source = try Self.source(in: folder)
         var settings = ExportSettings()
         settings.setFormat(format)
-        let url = ExportDestination.url(for: source, settings: settings, reading: ImageIOFiles())
+        let url = ExportDestination.url("export", for: source, settings: settings, reading: ImageIOFiles())
         let metadata = ExportMetadata.properties(
             from: source,
             reading: ImageIOFiles(),

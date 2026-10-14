@@ -2,31 +2,33 @@ import AppKit
 import RedlampDesign
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampLibrary
 import SwiftUI
 
-/// The Export dialog: a preset, then where the file goes, its format, size and metadata.
+/// The Export dialog: a preset, then where the files go and what they're called, their format,
+/// size and metadata. For several photos it says how many, and asks once about files already there.
 public struct ExportSheet: View {
     /// Its size on a window with room for it; on a shorter one, `height` is less and the
     /// settings scroll above the buttons.
     public static let size = CGSize(width: 540, height: 720)
 
-    let photo: URL
     let photoSize: PixelSize
     let store: ExportPresetStore
+    let namingPresets: NamingPresetStore?
     let height: CGFloat
     let onCancel: () -> Void
-    /// The settings, the preset they started from, and the file to write.
-    let onExport: (ExportSettings, UUID?, URL) -> Void
+    /// The settings, the preset they started from, and where each photo goes.
+    let onExport: (ExportSettings, UUID?, [ExportNames.Target]) -> Void
 
     @State private var settings: ExportSettings
     @State private var presetID: UUID?
-    @State private var conflict: URL?
+    @State private var conflict: ExportNames?
     @State private var plan: ExportPlan
-    @State private var isWaitingForStep = false
+    @State private var isWaitingForNames = false
     @State private var isNamingPreset = false
     @State private var presetName = ""
 
-    /// `files` reads the destination's files, to tell an earlier export from a photo.
+    /// One photo; `files` reads the destination's files, to tell an earlier export from a photo.
     public init(
         photo: URL,
         photoSize: PixelSize,
@@ -36,29 +38,29 @@ public struct ExportSheet: View {
         presetID: UUID? = nil,
         height: CGFloat = ExportSheet.size.height,
         onCancel: @escaping () -> Void,
-        onExport: @escaping (ExportSettings, UUID?, URL) -> Void,
+        onExport: @escaping (ExportSettings, UUID?, [ExportNames.Target]) -> Void,
     ) {
         self.init(
-            photo: photo, photoSize: photoSize, plan: ExportPlan(photo: photo, files: files), store: store,
+            plan: ExportPlan(photo: photo, files: files), photoSize: photoSize, store: store, namingPresets: nil,
             settings: settings, presetID: presetID, height: height, onCancel: onCancel, onExport: onExport,
         )
     }
 
     init(
-        photo: URL,
-        photoSize: PixelSize,
         plan: ExportPlan,
+        photoSize: PixelSize,
         store: ExportPresetStore,
+        namingPresets: NamingPresetStore?,
         settings: ExportSettings? = nil,
         presetID: UUID? = nil,
         height: CGFloat = ExportSheet.size.height,
         onCancel: @escaping () -> Void,
-        onExport: @escaping (ExportSettings, UUID?, URL) -> Void,
+        onExport: @escaping (ExportSettings, UUID?, [ExportNames.Target]) -> Void,
     ) {
-        self.photo = photo
         self.photoSize = photoSize
         _plan = State(initialValue: plan)
         self.store = store
+        self.namingPresets = namingPresets
         self.height = height
         self.onCancel = onCancel
         self.onExport = onExport
@@ -66,8 +68,19 @@ public struct ExportSheet: View {
         _presetID = State(initialValue: settings == nil ? store.initialPresetID : presetID)
     }
 
+    private var count: Int {
+        plan.count
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
+            if count > 1 {
+                Text(Self.title(count))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+            }
             form
                 .frame(maxHeight: .infinity)
                 .tint(Theme.nativeTint)
@@ -82,7 +95,7 @@ public struct ExportSheet: View {
                 }
                 Spacer()
                 Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Export", action: export)
+                Button(count > 1 ? Self.title(count) : "Export", action: export)
                     .keyboardShortcut(.defaultAction)
                     .disabled(problem != nil)
             }
@@ -90,7 +103,7 @@ public struct ExportSheet: View {
         }
         .frame(width: Self.size.width, height: height)
         .tint(Theme.nativeTint)
-        .alert(conflict.map(Self.conflictTitle) ?? "", isPresented: Binding(
+        .alert(conflictTitle, isPresented: Binding(
             get: { conflict != nil },
             set: {
                 if !$0 {
@@ -98,11 +111,14 @@ public struct ExportSheet: View {
                 }
             },
         )) {
-            Button("Replace", role: .destructive) { finish(conflict) }
-            Button("Keep Both") { finish(conflict.map { ExportDestination.firstFree($0) }) }
+            Button("Replace", role: .destructive) { answer(.overwrite) }
+            Button("Keep Both") { answer(.addNumber) }
+            if count > 1 {
+                Button("Skip") { answer(.skip) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(conflict.map(Self.conflictMessage) ?? "")
+            Text(conflictMessage)
         }
         .alert("Save Preset", isPresented: $isNamingPreset) {
             TextField("Name", text: $presetName)
@@ -128,7 +144,7 @@ public struct ExportSheet: View {
                     },
                 )
             }
-            ExportLocationSection(photo: photo, plan: plan, settings: $settings)
+            ExportLocationSection(plan: plan, namingPresets: namingPresets, settings: $settings)
             ExportFileSection(settings: $settings)
             ExportSizeSection(photoSize: photoSize, sizing: $settings.sizing)
             Section {
@@ -151,8 +167,11 @@ public struct ExportSheet: View {
 
     /// Why Export is unavailable, if it is.
     var problem: String? {
-        if !settings.naming.isValid {
+        if settings.naming.template.trimmingCharacters(in: .whitespaces).isEmpty {
             return "Type a name for the file."
+        }
+        if let problem = plan.problem {
+            return problem
         }
         if !settings.sizing.isValid {
             return "Enter a size above zero."
@@ -164,30 +183,51 @@ public struct ExportSheet: View {
     }
 
     private func export() {
-        if let step = plan.step {
-            return take(step)
+        if let names = plan.names {
+            return take(names)
         }
-        guard !isWaitingForStep else { return }
-        isWaitingForStep = true
+        guard !isWaitingForNames else { return }
+        isWaitingForNames = true
         Task {
-            if let step = await plan.currentStep() {
-                take(step)
+            if let names = await plan.currentNames() {
+                take(names)
             }
-            isWaitingForStep = false
+            isWaitingForNames = false
         }
     }
 
-    private func take(_ step: ExportActions.Step) {
-        switch step {
-        case let .ready(url, _): finish(url)
-        case let .confirmReplace(url, _): conflict = url
-        case .needsDialog: break
+    private func take(_ names: ExportNames) {
+        if names.asked > 0 {
+            conflict = names
+        } else {
+            onExport(settings, presetID, names.targets)
         }
     }
 
-    private func finish(_ url: URL?) {
-        guard let url else { return }
-        onExport(settings, presetID, url)
+    private func answer(_ policy: ExistingFilePolicy) {
+        guard let conflict else { return }
+        onExport(settings, presetID, conflict.answering(policy))
+    }
+
+    private var conflictTitle: String {
+        guard let conflict else { return "" }
+        if count == 1, let url = conflict.targets.first?.url {
+            return Self.conflictTitle(url)
+        }
+        return Self.conflictTitle(conflict.asked, of: count)
+    }
+
+    private var conflictMessage: String {
+        guard let conflict else { return "" }
+        if count == 1, let url = conflict.targets.first?.url {
+            return Self.conflictMessage(url)
+        }
+        return Self.conflictMessage(several: conflict.asked)
+    }
+
+    /// "Export 12 Photos".
+    static func title(_ count: Int) -> String {
+        "Export \(count) Photos"
     }
 
     static func conflictTitle(_ url: URL) -> String {
@@ -196,6 +236,16 @@ public struct ExportSheet: View {
 
     static func conflictMessage(_ url: URL) -> String {
         "It's in “\(url.deletingLastPathComponent().lastPathComponent)”. Replace it, or keep both and number the new file."
+    }
+
+    static func conflictTitle(_ asked: Int, of count: Int) -> String {
+        asked == 1 ? "1 of the \(count) files already exists." : "\(asked) of the \(count) files already exist."
+    }
+
+    static func conflictMessage(several asked: Int) -> String {
+        asked == 1
+            ? "It's an earlier export. Replace it, keep both and number the new file, or skip its photo."
+            : "They're earlier exports. Replace them, keep both and number the new files, or skip their photos."
     }
 }
 

@@ -30,7 +30,7 @@ struct ExportFieldsTests {
         var settings = ExportSettings()
         settings.setFormat(format)
         settings.destinationFolder = folder
-        let url = ExportDestination.url(for: source, settings: settings, reading: ImageIOFiles())
+        let url = ExportDestination.url("export", for: source, settings: settings, reading: ImageIOFiles())
         let metadata = ExportMetadata.properties(
             from: source, reading: ImageIOFiles(), policy: policy, recipe: recipe, fields: fields,
         )
