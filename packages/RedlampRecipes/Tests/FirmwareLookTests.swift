@@ -18,6 +18,20 @@ struct FirmwareLookTests {
         #expect(FirmwareLook.settings(for: BuiltInBaseLook.color.reference) == nil)
     }
 
+    @Test func `the identity model bakes every simulation at both ends of every setting`() throws {
+        let model = try FirmwareFilmModel(files: .identity(), source: "identity")
+        #expect(model.simulationNames.count == FirmwareSimulation.allCases.count)
+        for simulation in FirmwareSimulation.allCases {
+            for (tone, color, dynamicRange, toning) in [(-2.0, -4, 100, -9), (4.0, 4, 400, 9)] {
+                let settings = FirmwareLookSettings(
+                    simulation: simulation, dynamicRange: dynamicRange, highlight: tone, shadow: 2 - tone,
+                    color: color, warmCool: toning, magentaGreen: toning,
+                )
+                _ = try FirmwareLook.table(settings, model: model, size: 3)
+            }
+        }
+    }
+
     @Test func `settings come within the camera's steps, and only black and white is toned`() {
         let color = FirmwareLookSettings(
             simulation: .standard, dynamicRange: 300, highlight: 9, shadow: -0.2, color: 7, warmCool: 3,
