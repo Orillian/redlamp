@@ -23,6 +23,24 @@ public struct CurvePoint: Codable, Sendable, Hashable {
     }
 }
 
+/// A point curve's channel, as Lightroom's are: RGB for all three channels, then red, green and
+/// blue, each with a curve of its own after the RGB one.
+public enum CurveChannel: String, CaseIterable, Sendable {
+    case rgb, red, green, blue
+
+    /// The channels with a curve of their own after the RGB curve.
+    public static let colors: [CurveChannel] = [.red, .green, .blue]
+
+    public var name: String {
+        switch self {
+        case .rgb: "RGB"
+        case .red: "Red"
+        case .green: "Green"
+        case .blue: "Blue"
+        }
+    }
+}
+
 /// Which shared recipe an edit came from. Provenance only: rendering never reads it.
 public struct AppliedRecipe: Codable, Sendable, Hashable {
     public var id: String
@@ -104,6 +122,10 @@ public struct EditRecipe: Sendable, Hashable {
         }
     }
 
+    /// Red's, green's and blue's own point curves, applied after `pointCurve` to their channel
+    /// alone; a channel is missing while its curve is straight. Set through `self[curve:]`.
+    public private(set) var channelCurves: [CurveChannel: [CurvePoint]] = [:]
+
     public private(set) var values: [ParameterID: Double] = [:]
     /// Point Color's swatches, right after the Color Mixer.
     public var pointColor: [PointColorSwatch] = [] {
@@ -166,6 +188,24 @@ public struct EditRecipe: Sendable, Hashable {
         values[parameter] == nil
     }
 
+    /// The point curve for `channel`: `pointCurve` for RGB, otherwise the channel's own.
+    public subscript(curve channel: CurveChannel) -> [CurvePoint] {
+        get {
+            channel == .rgb ? pointCurve : channelCurves[channel] ?? EditRecipe.linearPointCurve
+        }
+        set {
+            guard channel != .rgb else {
+                pointCurve = newValue
+                return
+            }
+            let previous = channelCurves[channel]
+            channelCurves[channel] = newValue == EditRecipe.linearPointCurve ? nil : newValue
+            if channelCurves[channel] != previous {
+                turnOn(.toneCurve)
+            }
+        }
+    }
+
     public mutating func reset(_ parameters: some Sequence<ParameterID>) {
         for parameter in parameters where values[parameter] != nil {
             values[parameter] = nil
@@ -191,7 +231,7 @@ public struct EditRecipe: Sendable, Hashable {
             && treatment == .color
             && baseLook == BuiltInBaseLook.color.reference
             && whiteBalanceMode == .asShot
-            && pointCurve == EditRecipe.linearPointCurve
+            && !hasPointCurve
             && pointColor.isEmpty
             && masks.isEmpty
             && spots.isEmpty
@@ -215,8 +255,9 @@ public struct EditRecipe: Sendable, Hashable {
         masks.first { $0.id == id }
     }
 
+    /// Whether any of the point curves isn't straight: RGB's, or a channel's own.
     public var hasPointCurve: Bool {
-        pointCurve != EditRecipe.linearPointCurve
+        pointCurve != EditRecipe.linearPointCurve || !channelCurves.isEmpty
     }
 }
 
@@ -225,9 +266,19 @@ public struct EditRecipe: Sendable, Hashable {
 extension EditRecipe: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case version, processVersion, treatment, baseLook, whiteBalance, pointCurve, values, pointColor, masks
+        case pointCurveRed, pointCurveGreen, pointCurveBlue
         case appliedRecipe, exposureAnchor, crop, orientation, spots, panelsOff
         /// Format version 1's name for `baseLook`; read, never written.
         case profile
+
+        static func curve(_ channel: CurveChannel) -> CodingKeys {
+            switch channel {
+            case .rgb: .pointCurve
+            case .red: .pointCurveRed
+            case .green: .pointCurveGreen
+            case .blue: .pointCurveBlue
+            }
+        }
     }
 
     public init(from decoder: Decoder) throws {
@@ -238,8 +289,10 @@ extension EditRecipe: Codable {
             ?? container.decodeIfPresent(BaseLookReference.self, forKey: .profile)
             ?? BuiltInBaseLook.color.reference
         whiteBalanceMode = try container.decodeIfPresent(WhiteBalanceMode.self, forKey: .whiteBalance) ?? .asShot
-        pointCurve = try container.decodeIfPresent([CurvePoint].self, forKey: .pointCurve)
-            ?? EditRecipe.linearPointCurve
+        for channel in CurveChannel.allCases {
+            self[curve: channel] = try container.decodeIfPresent([CurvePoint].self, forKey: .curve(channel))
+                ?? EditRecipe.linearPointCurve
+        }
         let raw = try container.decodeIfPresent([String: Double].self, forKey: .values) ?? [:]
         for (key, value) in raw {
             if let parameter = ParameterID(rawValue: key) {
@@ -276,8 +329,8 @@ extension EditRecipe: Codable {
         try container.encode(treatment, forKey: .treatment)
         try container.encode(baseLook, forKey: .baseLook)
         try container.encode(whiteBalanceMode, forKey: .whiteBalance)
-        if hasPointCurve {
-            try container.encode(pointCurve, forKey: .pointCurve)
+        for channel in CurveChannel.allCases where self[curve: channel] != EditRecipe.linearPointCurve {
+            try container.encode(self[curve: channel], forKey: .curve(channel))
         }
         let known = Dictionary(uniqueKeysWithValues: values.map { ($0.key.rawValue, $0.value) })
         try container.encode(unknownValues.merging(known) { _, value in value }, forKey: .values)

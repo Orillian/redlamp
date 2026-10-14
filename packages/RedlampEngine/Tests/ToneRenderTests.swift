@@ -85,6 +85,37 @@ struct ToneRenderTests {
         #expect(try texture(edit(process: 6)).contrast == untouched.contrast, "without Shadows the processes agree")
     }
 
+    /// Red's, green's and blue's own curves (TON-40): the kernel gets a table per channel only once
+    /// one of them is bent, and a straight channel's table is the one every channel had before.
+    @Test func `the kernel gets a table per channel only once a channel has its own curve`() {
+        var recipe = EditRecipe()
+        #expect(DevelopParameters.toneTables(recipe).isEmpty)
+        recipe.pointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.45), CurvePoint(x: 1, y: 1)]
+        let single = DevelopParameters.toneTables(recipe)
+        #expect(single == [ToneCurveMath.lut(for: recipe)])
+        recipe[curve: .red] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.65), CurvePoint(x: 1, y: 1)]
+        let tables = DevelopParameters.toneTables(recipe)
+        #expect(tables.count == 3 && tables[1] == single[0] && tables[2] == single[0])
+        #expect(tables[0] != single[0])
+        var alone = EditRecipe()
+        alone[curve: .blue] = recipe[curve: .red]
+        #expect(DevelopParameters.toneTables(alone).count == 3, "a channel's curve on its own is a curve")
+    }
+
+    @Test func `a channel's own curve changes that channel`() throws {
+        let session = try makeSession(width: 64, height: 32) { _, _ in SIMD3(repeating: 0.18) }
+        let centre = 16 * 64 + 32
+        var recipe = EditRecipe()
+        recipe.pointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.45), CurvePoint(x: 1, y: 1)]
+        let rgb = try render(recipe, session: session)[centre]
+        recipe[curve: .red] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.65), CurvePoint(x: 1, y: 1)]
+        let redder = try render(recipe, session: session)[centre]
+        let lift = redder - rgb
+        #expect(lift.x > 0.02, "red lifted: \(redder) from \(rgb)")
+        // The curve lifts red in the working space; the output's primaries mix a little of that in.
+        #expect(abs(lift.y) < 0.2 * lift.x && abs(lift.z) < 0.2 * lift.x, "mostly red: \(lift)")
+    }
+
     // MARK: - Helpers (as MaskRenderTests')
 
     private func render(_ recipe: EditRecipe, session: ImageSession) throws -> [SIMD3<Float>] {

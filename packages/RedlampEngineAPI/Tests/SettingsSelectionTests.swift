@@ -42,12 +42,15 @@ struct SettingsSelectionTests {
     @Test func `fields travel with their item`() {
         var source = EditRecipe()
         source.pointCurve = [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 0.9)]
+        source[curve: .green] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)]
         source.crop = CropRect(left: 0.1, top: 0.1, right: 0.6, bottom: 0.6)
         source[.cropAngle] = 3
         source.processVersion = 3
-        let target = EditRecipe()
+        var target = EditRecipe()
+        target[curve: .blue] = [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 1)]
         let defaults = target.pasting(source, .default)
         #expect(defaults.pointCurve == source.pointCurve)
+        #expect(defaults.channelCurves == source.channelCurves, "the Point Curve line carries every channel's curve")
         #expect(defaults.crop.isFull && defaults[.cropAngle] == 0, "crop is off the first time")
         #expect(defaults.processVersion == 3)
         let everything = target.pasting(source, .everything)
@@ -102,6 +105,9 @@ struct SettingsSelectionTests {
         var curve = new
         curve.pointCurve = [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 1)]
         #expect(SettingsSelection.changes(from: new, to: curve).items == ["toneCurve.point"])
+        var red = new
+        red[curve: .red] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.4), CurvePoint(x: 1, y: 1)]
+        #expect(SettingsSelection.changes(from: new, to: red).items == ["toneCurve.point"])
         let both = changes.union(SettingsSelection.changes(from: new, to: curve))
         #expect(both.items == ["basic.exposure", "toneCurve.point"] && both.includes(mask: added.id))
     }

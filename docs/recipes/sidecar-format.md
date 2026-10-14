@@ -98,6 +98,7 @@ Builds from before `customLabel`, `customLabelColor`, `mark`, `title`, `caption`
 | `baseLook` | Base Look | Redlamp Color | The look the edit renders with; see [Base Look](#base-look). Always written. |
 | `whiteBalance` | string | `asShot` | The white balance popup: `asShot`, `auto`, `daylight`, `cloudy`, `shade`, `tungsten`, `fluorescent`, `flash` or `custom`. Always written. See [White balance](#white-balance). |
 | `pointCurve` | [{x, y}] | straight line | The point curve: 2 or more points in increasing `x`, both coordinates 0…1, display-referred. Written only when it isn't the straight line from (0, 0) to (1, 1). |
+| `pointCurveRed`, `pointCurveGreen`, `pointCurveBlue` | [{x, y}] | straight line | Red's, green's and blue's own point curves, as Lightroom's point curve has, in the same form as `pointCurve`: each applies after `pointCurve` to its channel alone. Each is written only when it isn't straight. Builds from before them keep them as unknown keys and render without them. |
 | `values` | {key: number} | `{}` | The global sliders; see [Parameters](#parameters). Always written, even empty. |
 | `pointColor` | [swatch] | `[]` | Point Color's swatches, applied right after the Color Mixer; at most 8. Written only when there are some. See [Point Color](#point-color). |
 | `masks` | [mask] | `[]` | Local adjustments, applied in order on top of the global edit; at most 16. Written only when there are some. See [Masks](#masks). |
@@ -224,7 +225,7 @@ Followed from a pixel of the developed photo back to the image point it shows, t
 
 - **Detail:** no sharpening and no noise reduction, though `detail.sharpen.amount` and `detail.noise.color` have defaults that act.
 - **Lens Corrections:** none of its corrections: not the lens correction the photo's file carries (whatever `lens.profile` says), the manual Distortion and Vignetting, Remove Chromatic Aberration or Defringe.
-- **Tone Curve:** neither the parametric sliders nor `pointCurve`.
+- **Tone Curve:** neither the parametric sliders nor the point curves, `pointCurve` and red's, green's and blue's own.
 - **Color Mixer:** neither its bands nor the edit's `pointColor` swatches, which the panel shows. A mask's own swatches still apply.
 - **Color Grading, Transform, Effects** (the camera-recipe settings `basic.dynamicRange`, `effects.colorChrome`, `effects.colorChromeBlue` and `wb.shift.…` included) **and Calibration:** none of their settings.
 

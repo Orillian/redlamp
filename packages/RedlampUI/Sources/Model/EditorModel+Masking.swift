@@ -310,12 +310,12 @@ public extension EditorModel {
     // MARK: - Mask Curves
 
     /// The selected mask's curve for `channel`.
-    func maskCurve(_ channel: MaskCurves.Channel) -> [CurvePoint] {
+    func maskCurve(_ channel: CurveChannel) -> [CurvePoint] {
         selectedMask?.curves?[channel] ?? EditRecipe.linearPointCurve
     }
 
     /// Sets the selected mask's curve for `channel`: live during a drag, otherwise as a step.
-    func setMaskCurve(_ channel: MaskCurves.Channel, _ points: [CurvePoint]) {
+    func setMaskCurve(_ channel: CurveChannel, _ points: [CurvePoint]) {
         guard let mask = selectedMask else { return }
         mutateMask(mask.id, name: "\(mask.name) Curve") { layer in
             var curves = layer.curves ?? MaskCurves()

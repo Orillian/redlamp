@@ -68,7 +68,7 @@ extension BrushChoice: MenuChoice {
     }
 }
 
-extension MaskCurves.Channel: MenuChoice {
+extension CurveChannel: MenuChoice {
     var symbol: String {
         switch self {
         case .rgb: "circle.lefthalf.filled"

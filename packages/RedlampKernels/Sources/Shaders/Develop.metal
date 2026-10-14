@@ -330,10 +330,13 @@ static inline float pointColorWeight(PointColorGPU s, float lightness, float chr
     return weight.x * weight.y * weight.z * smoothstep(0.0f, 0.04f, chroma);
 }
 
+// Entries in each of the Tone Curve's tables (ToneCurveMath.lutSize).
+constant uint kToneLUTSize = 1024;
+
 static inline float sampleLUT(constant float *lut, float x) {
-    float position = clamp(x, 0.0f, 1.0f) * 1023.0f;
+    float position = clamp(x, 0.0f, 1.0f) * float(kToneLUTSize - 1);
     uint i = uint(position);
-    uint j = min(i + 1, 1023u);
+    uint j = min(i + 1, kToneLUTSize - 1);
     return mix(lut[i], lut[j], position - float(i));
 }
 
@@ -1082,7 +1085,11 @@ kernel void rl_develop(
     float3 encoded = srgbEncode3(max(okLabToRec2020(lab), 0.0f));
 
     if (p.tone2.z > 0.5f) {
-        encoded = float3(sampleLUT(toneLUT, encoded.r), sampleLUT(toneLUT, encoded.g), sampleLUT(toneLUT, encoded.b));
+        // One table for every channel, or red's, green's and blue's, one after another.
+        uint stride = p.tone2.z > 1.5f ? kToneLUTSize : 0u;
+        encoded = float3(
+            sampleLUT(toneLUT, encoded.r), sampleLUT(toneLUT + stride, encoded.g),
+            sampleLUT(toneLUT + 2 * stride, encoded.b));
     }
 
     // The masks' Curves, in mask order, each as far as its mask covers: the RGB curve on every

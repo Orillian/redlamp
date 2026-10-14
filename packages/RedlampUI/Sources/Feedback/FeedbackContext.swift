@@ -235,7 +235,7 @@ public extension FeedbackContext {
             whiteBalance: recipe.whiteBalanceMode.name,
             recipe: recipe.appliedRecipe.map { "\($0.name) (\(Int($0.amount.rounded())))" },
             settings: settings,
-            pointCurve: recipe.pointCurve != EditRecipe.linearPointCurve,
+            pointCurve: recipe.hasPointCurve,
             masks: recipe.masks.map(describe),
             crop: crop,
             orientation: orientation,

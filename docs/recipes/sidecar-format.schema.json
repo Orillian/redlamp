@@ -83,6 +83,27 @@
           "default": [{ "x": 0, "y": 0 }, { "x": 1, "y": 1 }],
           "description": "The point curve, in increasing x. Written only when it isn't the straight line."
         },
+        "pointCurveRed": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/curvePoint" },
+          "default": [{ "x": 0, "y": 0 }, { "x": 1, "y": 1 }],
+          "description": "Red's own point curve, applied after pointCurve to red alone, in increasing x. Written only when it isn't the straight line."
+        },
+        "pointCurveGreen": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/curvePoint" },
+          "default": [{ "x": 0, "y": 0 }, { "x": 1, "y": 1 }],
+          "description": "Green's own point curve, applied after pointCurve to green alone, in increasing x. Written only when it isn't the straight line."
+        },
+        "pointCurveBlue": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/curvePoint" },
+          "default": [{ "x": 0, "y": 0 }, { "x": 1, "y": 1 }],
+          "description": "Blue's own point curve, applied after pointCurve to blue alone, in increasing x. Written only when it isn't the straight line."
+        },
         "values": { "$ref": "#/$defs/values" },
         "pointColor": {
           "type": "array",

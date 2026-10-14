@@ -27,7 +27,8 @@ struct DevelopParams {
     float4 displayToOutput2;
     float4 wbRatio;           // xyz: user / as-shot multipliers
     float4 tone;              // x exposure gain, y contrast, z highlights, w shadows
-    float4 tone2;             // x white point, y black point, z curve on, w clipping overlay
+    float4 tone2;             // x white point, y black point, z the Tone Curve's tables (0 none, 1 for every
+                              // channel, 3 red's, green's and blue's), w clipping overlay
     float4 color;             // x vibrance, y saturation gain, z warmth, w monochrome
     float4 look;              // x green boost, y skin softening, z mixer on, w unused
     float4 gradeShadows;      // xy OKLab ab offset, z luminance

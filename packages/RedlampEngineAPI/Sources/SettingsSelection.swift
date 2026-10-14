@@ -10,6 +10,7 @@ public enum EditField: String, Sendable, Hashable, CaseIterable {
     /// stays the photo's own: whoever pastes writes it (`EditRecipe.anchored`).
     case baseLook
     case whiteBalanceMode
+    /// The point curve, red's, green's and blue's own curves with it.
     case pointCurve
     /// Point Color's swatches on the edit (a mask's own travel with the mask).
     case pointColor
@@ -360,7 +361,7 @@ public extension EditRecipe {
         case .treatment: treatment == other.treatment
         case .baseLook: baseLook == other.baseLook && appliedRecipe == other.appliedRecipe
         case .whiteBalanceMode: whiteBalanceMode == other.whiteBalanceMode
-        case .pointCurve: pointCurve == other.pointCurve
+        case .pointCurve: pointCurve == other.pointCurve && channelCurves == other.channelCurves
         case .pointColor: pointColor == other.pointColor
         case .crop: crop == other.crop
         case .orientation: orientation == other.orientation
@@ -376,7 +377,10 @@ public extension EditRecipe {
             baseLook = source.baseLook
             appliedRecipe = source.appliedRecipe
         case .whiteBalanceMode: whiteBalanceMode = source.whiteBalanceMode
-        case .pointCurve: pointCurve = source.pointCurve
+        case .pointCurve:
+            for channel in CurveChannel.allCases {
+                self[curve: channel] = source[curve: channel]
+            }
         case .pointColor: pointColor = source.pointColor
         case .crop: crop = source.crop
         case .orientation: orientation = source.orientation

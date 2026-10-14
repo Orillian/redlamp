@@ -43,12 +43,17 @@ struct HandCodedTypeTests {
         try check(everything, notWritten: ["session", "clearsHistory", "unsavedSessions"])
         try check(
             everything.recipe, renamed: ["whiteBalanceMode": "whiteBalance"],
-            notWritten: ["pointColor", "panelsOff", "unknownPanelsOff"],
+            notWritten: ["pointColor", "panelsOff", "unknownPanelsOff", "channelCurves"],
         )
         var colored = everything.recipe
         colored.pointColor = [Self.pickedSwatch]
         colored.panelsOff = [.detail, .lens]
-        try check(colored, renamed: ["whiteBalanceMode": "whiteBalance", "unknownPanelsOff": "panelsOff"])
+        for (index, channel) in CurveChannel.colors.enumerated() {
+            colored[curve: channel] = [CurvePoint(x: 0, y: 0.05 + 0.1 * Double(index)), CurvePoint(x: 1, y: 1)]
+        }
+        try check(colored, renamed: [
+            "whiteBalanceMode": "whiteBalance", "unknownPanelsOff": "panelsOff", "channelCurves": "pointCurveRed",
+        ])
         try check(#require(everything.recipe.exposureAnchor))
         try check(#require(everything.snapshots.first))
         var metadata = try #require(everything.metadata)
@@ -104,7 +109,7 @@ struct HandCodedTypeTests {
         try check(inverted, notWritten: ["curves", "pointColor"])
         var curved = masks[0]
         var curves = MaskCurves()
-        for (index, channel) in MaskCurves.Channel.allCases.enumerated() {
+        for (index, channel) in CurveChannel.allCases.enumerated() {
             curves[channel] = [
                 CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.25 + 0.125 * Double(index)), CurvePoint(x: 1, y: 1),
             ]

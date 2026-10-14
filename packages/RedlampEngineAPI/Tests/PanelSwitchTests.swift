@@ -59,12 +59,13 @@ struct PanelSwitchTests {
         recipe[.curveLights] = 40
         recipe[.curveSplitMidtones] = 60
         recipe.pointCurve = [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 1)]
+        recipe[curve: .blue] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)]
         recipe.setPanel(.toneCurve, on: false)
         let rendered = recipe.rendered
         #expect(rendered[.curveLights] == 0)
         #expect(rendered[.curveSplitMidtones] == 50)
-        #expect(!rendered.hasPointCurve)
-        #expect(recipe.hasPointCurve)
+        #expect(!rendered.hasPointCurve && rendered.channelCurves.isEmpty)
+        #expect(recipe.hasPointCurve && recipe[curve: .blue] != EditRecipe.linearPointCurve)
     }
 
     @Test func `Color Mixer off renders no bands and no Point Color on the edit, masks' kept`() {
@@ -119,6 +120,11 @@ struct PanelSwitchTests {
         recipe[.sharpenAmount] = 60
         #expect(recipe.isOn(.detail))
         recipe.pointCurve = [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 1)]
+        #expect(recipe.isOn(.toneCurve))
+        recipe.setPanel(.toneCurve, on: false)
+        recipe[curve: .green] = EditRecipe.linearPointCurve
+        #expect(!recipe.isOn(.toneCurve), "straightening a straight curve isn't a change")
+        recipe[curve: .green] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)]
         #expect(recipe.isOn(.toneCurve))
         recipe.pointColor = [PointColorSwatch(color: .oklch(OKLCh(lightness: 0.5, chroma: 0.1, hue: 30)))]
         #expect(recipe.isOn(.colorMixer))

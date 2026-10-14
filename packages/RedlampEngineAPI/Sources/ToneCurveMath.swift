@@ -6,14 +6,16 @@ import Foundation
 public enum ToneCurveMath {
     public static let lutSize = 1024
 
-    /// Samples the full curve at `count` evenly spaced inputs over 0...1.
-    public static func lut(for recipe: EditRecipe, count: Int = lutSize) -> [Float] {
+    /// Samples the full curve at `count` evenly spaced inputs over 0...1: the parametric curve, the
+    /// RGB point curve, and for red, green or blue that channel's own curve after them.
+    public static func lut(for recipe: EditRecipe, channel: CurveChannel = .rgb, count: Int = lutSize) -> [Float] {
         let point = pointCurve(recipe.pointCurve)
+        let own: (Double) -> Double = channel == .rgb ? { $0 } : pointCurve(recipe[curve: channel])
         var samples = [Float](repeating: 0, count: count)
         var previous = 0.0
         for index in 0 ..< count {
             let x = Double(index) / Double(count - 1)
-            let y = point(parametric(x, recipe: recipe))
+            let y = own(point(parametric(x, recipe: recipe)))
             previous = max(previous, min(max(y, 0), 1))
             samples[index] = Float(previous)
         }

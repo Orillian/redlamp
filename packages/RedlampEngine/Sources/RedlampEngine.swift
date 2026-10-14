@@ -570,7 +570,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
             encoder.setTexture(session.toneBase, index: 12)
             encoder.setTexture(session.refinedHaze, index: 13)
             encoder.setBytes(&inputs.params, length: MemoryLayout<DevelopParams>.stride, index: 0)
-            encoder.setBytes(&inputs.toneLUT, length: inputs.toneLUT.count * MemoryLayout<Float>.stride, index: 1)
+            try encoder.setArray(inputs.toneLUT, index: 1, device: device)
             encoder.setBytes(&inputs.mixer, length: inputs.mixer.count * MemoryLayout<Float>.stride, index: 2)
             encoder.setBytes(&inputs.layers, length: inputs.layers.count * MemoryLayout<MaskLayerGPU>.stride, index: 3)
             encoder.setBytes(

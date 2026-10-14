@@ -145,7 +145,7 @@ struct MaskColorSwatch: View {
 /// Lightroom's masks have.
 struct MaskCurvesEditor: View {
     @Environment(EditorModel.self) private var model
-    @State private var channel = MaskCurves.Channel.rgb
+    @State private var channel = CurveChannel.rgb
 
     var body: some View {
         let name = model.selectedMask?.name ?? "Mask"
@@ -178,7 +178,7 @@ struct MaskCurvesEditor: View {
     }
 }
 
-private extension MaskCurves.Channel {
+private extension CurveChannel {
     var tint: Color {
         switch self {
         case .rgb: Color(white: 0.9)

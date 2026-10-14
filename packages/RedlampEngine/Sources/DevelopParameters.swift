@@ -159,10 +159,11 @@ enum DevelopParameters {
         let blacks = recipe[.blacks] / 100
         let whitePoint = pow(2, -whites * 0.85)
         let blackPoint = blacks > 0 ? -0.012 * blacks : -0.008 * blacks
+        let toneTables = Self.toneTables(recipe)
         p.tone2 = SIMD4(
             Float(whitePoint),
             Float(blackPoint),
-            ToneCurveMath.isIdentity(recipe) ? 0 : 1,
+            Float(toneTables.count),
             showClipping ? 1 : 0,
         )
 
@@ -312,10 +313,9 @@ enum DevelopParameters {
             Float(pointColor.swatches.count), Float(pointColor.visualized), Float((pointColorCoverage ?? -1) + 1), 0,
         )
 
-        let lut = ToneCurveMath.isIdentity(recipe) ? [Float](repeating: 0, count: 4) : ToneCurveMath.lut(for: recipe)
         return DevelopInputs(
             params: p,
-            toneLUT: lut,
+            toneLUT: toneTables.isEmpty ? [Float](repeating: 0, count: 4) : toneTables.flatMap(\.self),
             mixer: mixer,
             layers: layers.isEmpty ? [.empty] : layers,
             components: components.isEmpty ? [.empty] : components,
@@ -382,13 +382,26 @@ enum DevelopParameters {
         return (layers, encoder.finished(), overlayIndex, curves)
     }
 
+    /// The Tone Curve's tables (`kToneLUTSize` entries each in the kernel): none while it changes
+    /// nothing, one for every channel, or, once a channel has a curve of its own, red's, green's and
+    /// blue's, each with the parametric and RGB curves in it.
+    static func toneTables(_ recipe: EditRecipe) -> [[Float]] {
+        if ToneCurveMath.isIdentity(recipe) {
+            return []
+        }
+        if recipe.channelCurves.isEmpty {
+            return [ToneCurveMath.lut(for: recipe)]
+        }
+        return CurveChannel.colors.map { ToneCurveMath.lut(for: recipe, channel: $0) }
+    }
+
     /// Entries in each of a mask's Curves tables (`kMaskCurveSize` in the kernels).
     static let maskCurveSize = 256
 
     /// A mask's four Curves tables (RGB, red, green, blue), each its point curve sampled evenly over
     /// 0...1 and kept rising, as the global Tone Curve's table is.
     static func curveTables(_ curves: MaskCurves) -> [Float] {
-        MaskCurves.Channel.allCases.flatMap { channel in
+        CurveChannel.allCases.flatMap { channel in
             let curve = ToneCurveMath.pointCurve(curves[channel])
             var previous = 0.0
             return (0 ..< maskCurveSize).map { index -> Float in

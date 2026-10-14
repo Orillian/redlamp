@@ -29,6 +29,28 @@ struct EditRecipeTests {
         #expect(decoded == recipe)
     }
 
+    /// Red's, green's and blue's own point curves (TON-40): each written only when it isn't
+    /// straight, and straightened curves leave nothing behind.
+    @Test func `channel curves round trip, each written only when it isn't straight`() throws {
+        var recipe = EditRecipe()
+        let lifted = [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)]
+        recipe[curve: .red] = lifted
+        recipe[curve: .blue] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 0.9)]
+        #expect(recipe.hasPointCurve && !recipe.isPristine)
+        #expect(recipe[curve: .green] == EditRecipe.linearPointCurve && recipe.pointCurve == EditRecipe
+            .linearPointCurve)
+        let data = try JSONEncoder().encode(recipe)
+        let keys = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
+        #expect(keys.contains("pointCurveRed") && keys.contains("pointCurveBlue"))
+        #expect(!keys.contains("pointCurveGreen") && !keys.contains("pointCurve"))
+        let decoded = try JSONDecoder().decode(EditRecipe.self, from: data)
+        #expect(decoded == recipe && decoded[curve: .red] == lifted)
+
+        recipe[curve: .red] = EditRecipe.linearPointCurve
+        recipe[curve: .blue] = EditRecipe.linearPointCurve
+        #expect(recipe.channelCurves.isEmpty && !recipe.hasPointCurve && recipe == EditRecipe())
+    }
+
     @Test func `round trips masks`() throws {
         var recipe = EditRecipe()
         var mask = MaskLayer(name: "Sky", components: [
@@ -130,6 +152,18 @@ struct EditRecipeTests {
         for (index, value) in lut.enumerated() {
             #expect(abs(Double(value) - Double(index) / 10) < 1e-6)
         }
+    }
+
+    @Test func `a channel's table is its own curve after the RGB curve`() {
+        var recipe = EditRecipe()
+        recipe.pointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.4), CurvePoint(x: 1, y: 1)]
+        recipe[curve: .red] = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.4, y: 0.6), CurvePoint(x: 1, y: 1)]
+        let red = ToneCurveMath.lut(for: recipe, channel: .red, count: 11)
+        #expect(abs(Double(red[5]) - 0.6) < 1e-6, "0.5 is 0.4 after the RGB curve, and red's makes it 0.6")
+        #expect(ToneCurveMath.lut(for: recipe, channel: .green) == ToneCurveMath.lut(for: recipe))
+        var alone = EditRecipe()
+        alone[curve: .blue] = recipe[curve: .red]
+        #expect(!ToneCurveMath.isIdentity(alone), "a channel's curve on its own is a curve")
     }
 
     @Test func `tone curve is monotonic`() {

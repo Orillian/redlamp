@@ -462,6 +462,13 @@ enum RichSidecar {
         recipe[.temperature] = 6150
         recipe[.tint] = 12
         recipe.pointCurve = [CurvePoint(x: 0, y: 0.04), CurvePoint(x: 0.5, y: 0.55), CurvePoint(x: 1, y: 0.97)]
+        for (index, channel) in CurveChannel.colors.enumerated() {
+            recipe[curve: channel] = [
+                CurvePoint(x: 0, y: 0),
+                CurvePoint(x: 0.5, y: 0.45 + 0.05 * Double(index)),
+                CurvePoint(x: 1, y: 1),
+            ]
+        }
         recipe[.exposure] = 0.65
         recipe[.highlights] = -40
         recipe[.gradeShadowsHue] = 215
@@ -603,7 +610,7 @@ enum RichSidecar {
         ]
         var every = layer("Every adjustment", reused, farEnds(of: ParameterID.localParameters))
         var curves = MaskCurves()
-        for (index, channel) in MaskCurves.Channel.allCases.enumerated() {
+        for (index, channel) in CurveChannel.allCases.enumerated() {
             curves[channel] = [
                 CurvePoint(x: 0, y: 0.05), CurvePoint(x: 0.4, y: 0.3 + 0.05 * Double(index)), CurvePoint(x: 1, y: 0.95),
             ]

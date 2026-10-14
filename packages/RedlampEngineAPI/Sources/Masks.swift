@@ -995,19 +995,6 @@ extension MaskLayer: Codable {
 /// A mask's Curves, as Lightroom's masks have: a point curve for all three channels, then one for
 /// each, on the display-referred values the global Tone Curve works on.
 public struct MaskCurves: Sendable, Hashable {
-    public enum Channel: String, CaseIterable, Sendable {
-        case rgb, red, green, blue
-
-        public var name: String {
-            switch self {
-            case .rgb: "RGB"
-            case .red: "Red"
-            case .green: "Green"
-            case .blue: "Blue"
-            }
-        }
-    }
-
     public var rgb = EditRecipe.linearPointCurve
     public var red = EditRecipe.linearPointCurve
     public var green = EditRecipe.linearPointCurve
@@ -1017,7 +1004,7 @@ public struct MaskCurves: Sendable, Hashable {
 
     public init() {}
 
-    public subscript(channel: Channel) -> [CurvePoint] {
+    public subscript(channel: CurveChannel) -> [CurvePoint] {
         get {
             switch channel {
             case .rgb: rgb
@@ -1038,7 +1025,7 @@ public struct MaskCurves: Sendable, Hashable {
 
     /// Every curve straight, and nothing a newer build wrote to keep.
     public var isIdentity: Bool {
-        unknownFields.isEmpty && Channel.allCases.allSatisfy { self[$0] == EditRecipe.linearPointCurve }
+        unknownFields.isEmpty && CurveChannel.allCases.allSatisfy { self[$0] == EditRecipe.linearPointCurve }
     }
 }
 
@@ -1061,7 +1048,7 @@ extension MaskCurves: Codable {
         var unknown = encoder.container(keyedBy: DynamicCodingKey.self)
         try unknown.encode(unknownFields)
         var container = encoder.container(keyedBy: CodingKeys.self)
-        for channel in Channel.allCases where self[channel] != EditRecipe.linearPointCurve {
+        for channel in CurveChannel.allCases where self[channel] != EditRecipe.linearPointCurve {
             try container.encode(self[channel], forKey: CodingKeys(rawValue: channel.rawValue)!)
         }
     }

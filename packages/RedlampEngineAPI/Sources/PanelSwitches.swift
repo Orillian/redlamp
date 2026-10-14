@@ -67,7 +67,7 @@ public enum SwitchablePanel: String, Codable, Sendable, Hashable, CaseIterable, 
         }
     }
 
-    /// The parts of an edit that aren't parameters the panel holds: Tone Curve's point curve, and
+    /// The parts of an edit that aren't parameters the panel holds: Tone Curve's point curves, and
     /// Point Color's swatches on the edit, which the Color Mixer panel shows.
     public var fields: Set<EditField> {
         switch self {
@@ -128,7 +128,9 @@ public extension EditRecipe {
                 result[parameter] = SwitchablePanel.neutralValue(parameter)
             }
             if panel.fields.contains(.pointCurve) {
-                result.pointCurve = EditRecipe.linearPointCurve
+                for channel in CurveChannel.allCases {
+                    result[curve: channel] = EditRecipe.linearPointCurve
+                }
             }
             if panel.fields.contains(.pointColor) {
                 result.pointColor = []
