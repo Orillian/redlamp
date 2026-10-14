@@ -290,6 +290,15 @@
             if (try? leaveFullScreen()) == true {
                 recorder.write("note", ["step": "the editor window was left in macOS full screen; taken out of it"])
             }
+            // Each scenario after would wait for photos that never come.
+            if let gone = try? main({ model -> String? in
+                guard let folder = model.folder,
+                      !FileManager.default.fileExists(atPath: folder.path) else { return nil }
+                return folder.path
+            }) {
+                try? showRunPhotos()
+                recorder.write("note", ["step": "the folder shown, \(gone), was gone; the run's photos shown again"])
+            }
             pause(0.2)
             return (try? main { model in !model.isModalDialogOpen && Views.editorWindow?.attachedSheet == nil }) ??
                 false

@@ -239,17 +239,14 @@
             self.names = names
         }
 
-        /// Stops and closes the window, takes the destination out of Folders and the folder away.
+        /// Stops and closes the window, takes what the import added out of Folders, and the folder away.
         func remove(_ app: RunningApp) {
-            let destination = destination
-            try? app.main { model in
+            try? app.main { _ in
                 ImportWindowController.current?.stop()
                 ImportWindowController.current?.close()
-                ImportWindowController.forget(destination, in: model)
                 ImportWindowController.ignoresVolumes = false
             }
-            try? FileManager.default.removeItem(at: root)
-            try? app.openWorking()
+            app.leaveScratch(root)
         }
     }
 
@@ -301,21 +298,32 @@
             self.originals = originals
         }
 
-        /// Stops and closes the window, takes the destination out of Folders and the card away.
+        /// Stops and closes the window, takes what the import added out of Folders, and the card away.
         func remove(_ app: RunningApp) {
-            let destination = destination
-            try? app.main { model in
+            try? app.main { _ in
                 ImportWindowController.current?.stop()
                 ImportWindowController.current?.close()
-                ImportWindowController.forget(destination, in: model)
                 ImportWindowController.ignoresVolumes = false
             }
-            try? FileManager.default.removeItem(at: root.deletingLastPathComponent())
-            try? app.openWorking()
+            app.leaveScratch(root.deletingLastPathComponent())
         }
     }
 
     extension RunningApp {
+        /// Takes the folders below `scratch` out of Folders and shows the run's photos again, then removes `scratch`:
+        /// an import adds the folder its photos went to, and the app left on a folder that's gone finds no photos.
+        func leaveScratch(_ scratch: URL) {
+            let below = scratch.standardizedFileURL.path + "/"
+            try? main { model in
+                for root in model.library.roots where root.url.standardizedFileURL.path.hasPrefix(below) {
+                    model.library.remove(root)
+                }
+            }
+            try? showRunPhotos()
+            try? FileManager.default.removeItem(at: scratch)
+            try? openWorking()
+        }
+
         func waitForImportWindow() throws {
             try wait("the import window", timeout: 30) { _ in
                 ImportWindowController.current?.window?.isVisible == true
