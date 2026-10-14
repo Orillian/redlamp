@@ -26,5 +26,17 @@ let project = Project(
                 "LD_RUNPATH_SEARCH_PATHS": ["@executable_path", "@executable_path/../Frameworks"],
             ]) { $1 }),
         ),
+        // The tool's commands run as a person runs them: the tool built beside the tests, in a process of its own.
+        .target(
+            name: "redlampTests",
+            destinations: [.mac],
+            product: .unitTests,
+            bundleId: "\(redlampBundlePrefix).cliTests",
+            deploymentTargets: .macOS(redlampMacOSVersion),
+            sources: ["Tests/**", .glob(.relativeToRoot("tests/support/**"))],
+            dependencies: [.target(name: "redlamp"), Module.engineAPI.dependency, Module.document.dependency],
+            settings: .settings(base: redlampBaseSettings),
+            environmentVariables: ["MTL_DEBUG_LAYER": "1"],
+        ),
     ],
 )
