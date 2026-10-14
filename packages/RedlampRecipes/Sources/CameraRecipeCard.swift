@@ -351,7 +351,7 @@ public extension CameraRecipeCard {
 
     /// A recipe built from the card, keeping the card as its source. `slotLooks` are looks
     /// that fill slots on this Mac in place of the bundled ones (`RecipeLibrary.filledSlots`);
-    /// `firmware`, the firmware model's prototype, fills every slot in their place.
+    /// `firmware`, the firmware model, fills every slot in their place.
     func recipe(
         id: String,
         name: String,

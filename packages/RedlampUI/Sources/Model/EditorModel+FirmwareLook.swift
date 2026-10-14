@@ -2,9 +2,9 @@ import Foundation
 import RedlampEngineAPI
 import RedlampRecipes
 
-/// The firmware model's prototype as the photo's Base Look (local fujisim-prototype branch only).
+/// The firmware model's looks as the photo's Base Look (TON-49).
 public extension EditorModel {
-    /// Whether the prototype's switch is on and its model read.
+    /// Whether the model's switch is on and the model read.
     var usesFirmwareModel: Bool {
         recipes.firmwareModel != nil
     }

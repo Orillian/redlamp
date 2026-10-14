@@ -2,7 +2,7 @@ import Foundation
 import RedlampEngineAPI
 
 public extension RecipeLibrary {
-    static let firmwareGroup = "Firmware Model (prototype)"
+    static let firmwareGroup = "Firmware Model"
 
     /// One recipe for each of the model's simulations at its neutral settings.
     static func firmwareRecipes(model: FirmwareFilmModel) -> [Recipe] {
@@ -13,7 +13,7 @@ public extension RecipeLibrary {
                 id: "\(RecipeNamespace.local)/firmware-model/\(simulation.rawValue)",
                 name: simulation.name,
                 group: firmwareGroup,
-                summary: "The firmware model's \(simulation.modelName) at its neutral settings (prototype).",
+                summary: "The firmware model's \(simulation.name) at its neutral settings.",
                 tags: ["firmware-model"] + (simulation.slot.map { [$0.rawValue] } ?? []),
                 includes: [.baseLook, .treatment],
                 settings: RecipeSettings(treatment: .color),

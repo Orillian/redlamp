@@ -1,8 +1,8 @@
 import Foundation
 import simd
 
-/// The film-simulation model derived from a camera's firmware, a prototype on the local
-/// fujisim-prototype branch only: a CPU port of the reference renderer's `render()`.
+/// The film-simulation model derived from a camera's firmware, an experiment behind a switch
+/// that's off by default (TON-49): a CPU port of the reference renderer's `render()`.
 ///
 /// Every number the model uses is read at runtime from its folder (`fsim_params.json`,
 /// `tone_gain_curves.json`, `calibration.json` and `fujisim_constants.json`); this file holds

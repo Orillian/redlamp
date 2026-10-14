@@ -87,7 +87,7 @@ enum RecipeCommands {
         // `--images` and `--references` take every following non-option argument.
         let rest = expandLists(Array(raw.dropFirst()), for: ["--images", "--references"])
         let library = RecipeLibrary()
-        // The firmware model's prototype (fujisim-prototype only), switched on for one run.
+        // The firmware model (TON-49), switched on for one run.
         if let folder = FirmwareFilmModel.environmentFolder {
             library.firmwareModel = try FirmwareFilmModel.shared(at: folder)
         }

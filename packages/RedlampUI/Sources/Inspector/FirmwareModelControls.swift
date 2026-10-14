@@ -3,7 +3,7 @@ import RedlampRecipes
 import SwiftUI
 
 /// The firmware model's simulation and settings in the Camera Recipe group, shown only while
-/// the prototype's switch is on (local fujisim-prototype branch only).
+/// the model's switch is on (TON-49).
 struct FirmwareModelControls: View {
     @Environment(EditorModel.self) private var model
 
@@ -13,25 +13,28 @@ struct FirmwareModelControls: View {
                 ControlRow(label: "Simulation") { simulationPicker }
                 if let settings = model.firmwareSettings {
                     ControlRow(label: "Highlight") {
-                        picker(settings.highlight, tones) { $0.highlight = $1 }
+                        picker("highlight", settings.highlight, tones) { $0.highlight = $1 }
                     }
                     ControlRow(label: "Shadow") {
-                        picker(settings.shadow, tones) { $0.shadow = $1 }
+                        picker("shadow", settings.shadow, tones) { $0.shadow = $1 }
                     }
                     ControlRow(label: "Color") {
-                        picker(settings.color, Array(FirmwareLookSettings.colorRange)) { $0.color = $1 }
+                        picker("color", settings.color, Array(FirmwareLookSettings.colorRange)) { $0.color = $1 }
                     }
                     ControlRow(label: "D-Range") {
-                        picker(settings.dynamicRange, FirmwareLookSettings.dynamicRanges, format: { "DR\($0)" }) {
-                            $0.dynamicRange = $1
-                        }
+                        picker(
+                            "dynamic-range", settings.dynamicRange, FirmwareLookSettings.dynamicRanges,
+                            format: { "DR\($0)" },
+                        ) { $0.dynamicRange = $1 }
                     }
                     if settings.simulation.isMonochrome {
                         ControlRow(label: "Warm/Cool") {
-                            picker(settings.warmCool, Array(FirmwareLookSettings.toningRange)) { $0.warmCool = $1 }
+                            picker("warm-cool", settings.warmCool, Array(FirmwareLookSettings.toningRange)) {
+                                $0.warmCool = $1
+                            }
                         }
                         ControlRow(label: "Magenta/Green") {
-                            picker(settings.magentaGreen, Array(FirmwareLookSettings.toningRange)) {
+                            picker("magenta-green", settings.magentaGreen, Array(FirmwareLookSettings.toningRange)) {
                                 $0.magentaGreen = $1
                             }
                         }
@@ -68,10 +71,9 @@ struct FirmwareModelControls: View {
             ForEach(FirmwareSimulation.allCases.filter { $0.slot != nil }, id: \.self) {
                 Text($0.name).tag(FirmwareSimulation?.some($0))
             }
-            Section("Prototype only") {
-                ForEach(FirmwareSimulation.allCases.filter { $0.slot == nil }, id: \.self) {
-                    Text($0.name).tag(FirmwareSimulation?.some($0))
-                }
+            Divider()
+            ForEach(FirmwareSimulation.allCases.filter { $0.slot == nil }, id: \.self) {
+                Text($0.name).tag(FirmwareSimulation?.some($0))
             }
         }
         .labelsHidden()
@@ -80,6 +82,7 @@ struct FirmwareModelControls: View {
     }
 
     private func picker<Value: Hashable & Comparable & SignedNumeric>(
+        _ id: String,
         _ value: Value,
         _ values: [Value],
         format: @escaping (Value) -> String = { "\($0 > 0 ? "+" : "")\($0)" },
@@ -93,5 +96,6 @@ struct FirmwareModelControls: View {
         }
         .labelsHidden()
         .controlSize(.small)
+        .accessibilityIdentifier("develop.firmware-model.\(id)")
     }
 }

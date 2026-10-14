@@ -4,7 +4,7 @@ import RedlampEngineAPI
 import simd
 
 /// The firmware model's simulations. Those Redlamp has a film slot for go by the slot's name;
-/// the others, which only the prototype offers, by the model's.
+/// the others, which only the model offers, by the model's.
 public enum FirmwareSimulation: String, CaseIterable, Sendable, Hashable {
     case standard
     case vividSlide = "vivid-slide"
@@ -31,7 +31,7 @@ public enum FirmwareSimulation: String, CaseIterable, Sendable, Hashable {
         self.init(rawValue: slot.rawValue)
     }
 
-    /// The slot recipe cards name it by; nil for the prototype's own.
+    /// The slot recipe cards name it by; nil for the model's own.
     public var slot: FilmSlot? {
         FilmSlot(rawValue: rawValue)
     }
@@ -214,7 +214,7 @@ public enum FirmwareLook {
         let look = try definition(settings, model: model)
         return BaseLookPackage(
             id: look.id, version: look.version, name: look.name,
-            summary: "Baked from the firmware-derived model (prototype); it stays on this Mac",
+            summary: "Baked from the firmware model, an experiment; it stays on this Mac",
             slot: settings.simulation.slot?.rawValue, parameters: look.parameters, table: look.table,
         )
     }

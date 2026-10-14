@@ -71,7 +71,7 @@ public struct FirmwareModelHost: Sendable {
         public var description: String {
             switch self {
             case .withdrawn: "The model has been withdrawn."
-            case .unreachable: "Redlamp couldn't reach the model's files; it stays off until it can."
+            case .unreachable: "Redlamp couldn't reach the model's files; turn this off and on to try again."
             case .notThisBuild: "This build can't open the hosted model."
             case .unopenable: "The model's file couldn't be opened."
             }

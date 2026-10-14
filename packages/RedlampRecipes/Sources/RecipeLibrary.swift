@@ -47,7 +47,7 @@ public final class RecipeLibrary {
     public private(set) var storedLooks: [BaseLookPackage] = []
     /// Files that couldn't be read, with the reasons.
     public private(set) var loadIssues: [URL: [RecipeIssue]] = [:]
-    /// The firmware model's prototype while its switch is on: card recipes resolve through it
+    /// The firmware model while its switch is on: card recipes resolve through it
     /// (`resolvingCard`), and `firmwareRecipes` offers each of its simulations.
     public var firmwareModel: FirmwareFilmModel? {
         didSet { firmwareRecipes = firmwareModel.map(Self.firmwareRecipes(model:)) ?? [] }

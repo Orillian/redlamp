@@ -47,8 +47,7 @@ public struct BaseLookReference: Sendable, Hashable {
         id.hasPrefix(Self.makerIDPrefix)
     }
 
-    /// The id prefix of looks baked from the firmware-derived film-simulation model, a
-    /// prototype on the local fujisim-prototype branch.
+    /// The id prefix of looks baked from the firmware-derived film-simulation model (TON-49).
     public static let firmwareIDPrefix = "local/firmware/"
 
     /// Whether the look was baked from the firmware-derived model.

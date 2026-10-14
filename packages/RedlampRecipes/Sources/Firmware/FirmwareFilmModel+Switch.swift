@@ -1,6 +1,6 @@
 import Foundation
 
-/// The prototype's switch, off by default: Settings' Prototype tab in the app, an environment
+/// The model's switch, off by default: Settings' Experimental tab in the app, an environment
 /// variable for the CLI and tests.
 public extension FirmwareFilmModel {
     /// A folder, or `1` for `defaultFolder`.

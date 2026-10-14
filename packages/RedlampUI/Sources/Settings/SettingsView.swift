@@ -11,19 +11,22 @@ public struct SettingsView: View {
     @Bindable var theme: ThemeSettings
     let engine: (any EditingEngine)?
     let library: LibraryService?
+    let recipes: RecipeCatalog?
     let checksForUpdates: Binding<Bool>?
     let showsWhatsNew: Binding<Bool>?
 
-    /// `library` is the library, when it's on. `checksForUpdates` is Sparkle's automatic-check setting,
-    /// from builds that update themselves; the app passes it in because this package doesn't link
+    /// `library` is the library, when it's on. `recipes` is the editor's, whose firmware model the
+    /// Experimental tab reports on. `checksForUpdates` is Sparkle's automatic-check setting, from
+    /// builds that update themselves; the app passes it in because this package doesn't link
     /// Sparkle. `showsWhatsNew` is whether What's New opens after an update, in those builds too.
     public init(
         theme: ThemeSettings, engine: (any EditingEngine)? = nil, library: LibraryService? = nil,
-        checksForUpdates: Binding<Bool>? = nil, showsWhatsNew: Binding<Bool>? = nil,
+        recipes: RecipeCatalog? = nil, checksForUpdates: Binding<Bool>? = nil, showsWhatsNew: Binding<Bool>? = nil,
     ) {
         self.theme = theme
         self.engine = engine
         self.library = library
+        self.recipes = recipes
         self.checksForUpdates = checksForUpdates
         self.showsWhatsNew = showsWhatsNew
     }
@@ -49,8 +52,8 @@ public struct SettingsView: View {
                     ModelsSettings(engine: engine)
                 }
             }
-            Tab("Prototype", systemImage: "flask") {
-                FirmwareModelSettings()
+            Tab("Experimental", systemImage: "flask") {
+                FirmwareModelSettings(recipes: recipes)
             }
             Tab("About", systemImage: "info.circle") {
                 AboutSettings(checksForUpdates: checksForUpdates, showsWhatsNew: showsWhatsNew)

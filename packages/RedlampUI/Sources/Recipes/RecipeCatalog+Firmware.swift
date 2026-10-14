@@ -2,8 +2,7 @@ import Foundation
 import RedlampEngineAPI
 import RedlampRecipes
 
-/// The firmware model's prototype (local fujisim-prototype branch only), switched in Settings'
-/// Prototype tab.
+/// The firmware model (TON-49), switched in Settings' Experimental tab.
 public extension RecipeCatalog {
     var firmwareModel: FirmwareFilmModel? {
         _ = revision
@@ -67,7 +66,7 @@ public extension RecipeCatalog {
                 firmwareStatus = "\(error)"
             }
         case let .hosted(addresses)?:
-            firmwareStatus = "Fetching the model…"
+            firmwareStatus = "Downloading the model…"
             let host = FirmwareModelHost(addresses: addresses)
             firmwareTask = Task { [weak self] in
                 let result = await host.open()
@@ -75,7 +74,7 @@ public extension RecipeCatalog {
                 switch result {
                 case let .success(model):
                     library.firmwareModel = model
-                    firmwareStatus = "\(model.simulationNames.count) simulations from the hosted file"
+                    firmwareStatus = "Ready: \(model.simulationNames.count) simulations."
                 case let .failure(failure):
                     firmwareStatus = failure.description
                 }

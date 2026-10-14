@@ -148,6 +148,7 @@ struct RedlampApp: App {
                 theme: theme,
                 engine: model.engine,
                 library: model.library.service,
+                recipes: model.recipes,
                 checksForUpdates: appDelegate.updates.map { updates in
                     Binding(get: { updates.checksAutomatically }, set: { updates.setChecksAutomatically($0) })
                 },
