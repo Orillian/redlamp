@@ -126,6 +126,15 @@ class StartAfresh(unittest.TestCase):
         self.assertEqual(report["problems"], problems)
 
 
+class Fixtures(unittest.TestCase):
+    def test_the_repository_files_scenarios_read_are_in_the_run(self):
+        run = Path(tempfile.mkdtemp(prefix="e2e-supervisor-"))
+        self.addCleanup(shutil.rmtree, run, ignore_errors=True)
+        e2e.prepare_fixtures(run)
+        for name, source in e2e.FIXTURES.items():
+            self.assertEqual((run / "fixtures" / name).read_bytes(), (e2e.ROOT / source).read_bytes())
+
+
 def scenario(name: str, status: str = "passed", stall: float | None = None, message: str | None = None) -> list[dict]:
     """A scenario's events as the driver writes them, with a stall in it when `stall` is its length."""
     events = [{"event": "scenario-start", "scenario": name}]

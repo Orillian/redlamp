@@ -196,6 +196,18 @@ def copy_photos(originals: Path, photos: Path) -> None:
     run(["cp", "-cR", str(originals), str(photos)])
 
 
+# The repository's files scenarios read from the run's fixtures folder: macOS's crash report on a crash of
+# Redlamp, which feedback.incidents-left leaves in the test home for the relaunch to find.
+FIXTURES = {"crash.ips": "packages/RedlampUI/Tests/Incidents/crash.ips"}
+
+
+def prepare_fixtures(run_dir: Path) -> None:
+    folder = run_dir / "fixtures"
+    folder.mkdir(exist_ok=True)
+    for name, source in FIXTURES.items():
+        shutil.copy(ROOT / source, folder / name)
+
+
 # Kept between runs on the checkout's volume, so each test home gets clones (no space, no
 # copying) of the models and their compiles, rather than a copy of every model compiled anew.
 CACHE = ROOT / "build/e2e/cache"
@@ -1028,6 +1040,7 @@ def main() -> int:
     seed_models(home)
     photos = prepare_photos(run_dir / "originals")
     copy_photos(run_dir / "originals", run_dir / "photos")
+    prepare_fixtures(run_dir)
     relay = Relay(run_dir / "relay")
     threading.Thread(target=relay.serve_forever, daemon=True).start()
     seed_defaults(relay.server_address[1])
