@@ -2,6 +2,7 @@
     import AppKit
     import Carbon.HIToolbox
     import RedlampEngineAPI
+    import RedlampLibrary
     @_spi(Harness) import RedlampUI
 
     extension RunningApp {
@@ -200,7 +201,17 @@
             defer { try? app.main { $0.libraryViews.revealInFinder = Revealed.finder } }
             try app.chooseInContextMenu("Show in Finder", at: NSPoint(x: third.midX, y: third.midY))
             let shown = try app.main { _ in Revealed.photos.map(\.lastPathComponent) }
-            try app.expect(shown == state.photos, "Show in Finder showed \(shown)")
+            if shown != state.photos {
+                let clicked = names[2]
+                let why = try app.main { model -> String in
+                    guard let url = model.items.first(where: { $0.url.lastPathComponent == clicked })?.url else {
+                        return "\(clicked) isn't listed"
+                    }
+                    guard let id = model.library.photoID(of: url) else { return "\(clicked) has no ID in the index" }
+                    return "\(clicked) is photo \(id), \(model.photoSelection.contains(id) ? "in" : "not in") the selection"
+                }
+                throw ScenarioFailure("Show in Finder showed \(shown) where \(state.photos) are selected: \(why)")
+            }
             app.covered(.action(.showInFinder), via: .mouse)
             try app.main { _ in Revealed.photos = [] }
             try app.choose(.showInFinder)
