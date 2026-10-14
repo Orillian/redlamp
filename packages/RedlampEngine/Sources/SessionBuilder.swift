@@ -65,6 +65,7 @@ struct SessionBuilder {
         // A look designed to follow the gain table map renders as meant only where the map applies.
         info.embeddedBaseLookProcess = embeddedLook != nil && decoded.dngProfile?.gainTableMap != nil ? 5 : nil
         info.lensCorrection = LensCorrectionReader.correction(for: decoded, profiles: lensProfiles)
+        info.baselineExposure = decoded.isRaw ? decoded.baselineExposure : nil
 
         return try ImageSession(
             info: info,

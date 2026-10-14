@@ -84,7 +84,8 @@ public extension EditorModel {
     /// for this camera, and gives it to the edit with Exposure 0, in one step.
     func calibrate(toReference lstar: Double) {
         guard let target = calibrationTarget, let info, info.isRaw, let camera = info.cameraName else { return }
-        let measured = target.recipe.exposureAnchor?.stops ?? ExposureAnchor.typicalStops
+        let measured = target.recipe.exposureAnchor?.stops(baseline: info.baselineExposure ?? 0)
+            ?? ExposureAnchor.typicalStops
         let stops = Self.stops(from: target, to: lstar) + target.recipe[.exposure] + measured
         do {
             try cameras.calibrate(CameraCalibrations.Entry(

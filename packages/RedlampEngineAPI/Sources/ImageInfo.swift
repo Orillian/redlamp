@@ -62,6 +62,9 @@ public struct ImageInfo: Codable, Sendable, Hashable {
     /// The lens correction the file carries (DNG opcodes or the maker's tags), applied by
     /// Enable Profile Corrections.
     public var lensCorrection: LensCorrection?
+    /// A raw's BaselineExposure (0 when it states none), which an estimated exposure anchor
+    /// carries when it renders (`ExposureAnchor.stops(baseline:)`); nil for bitmaps.
+    public var baselineExposure: Double?
     /// What the raw decode measured, for the camera bench (CAM-14); nil for bitmaps.
     public var diagnostics: DecodeDiagnostics?
 

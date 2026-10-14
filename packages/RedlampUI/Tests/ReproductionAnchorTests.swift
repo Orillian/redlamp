@@ -102,7 +102,11 @@ struct ReproductionAnchorTests {
         source.exposureAnchor = ExposureAnchor(stops: 0.5, source: .target, camera: "Nikon Z 8")
         editor.paste(source, SettingsSelection(items: ["look.baseLook"]), name: "Paste Settings")
         #expect(editor.recipe.baseLook.isReproduction)
-        #expect(editor.recipe.exposureAnchor == .typical(for: "Canon EOS R6"))
+        #expect(editor.recipe.exposureAnchor == ExposureAnchorTable.bundled.anchor(
+            make: "Canon",
+            model: "EOS R6",
+            format: "CR3",
+        ))
     }
 
     @Test func `a recipe with the look gives this photo's anchor, and its Amount stays adjustable`() async throws {
@@ -113,7 +117,7 @@ struct ReproductionAnchorTests {
             settings: RecipeSettings(), baseLook: BuiltInBaseLook.reproduction.reference,
         )
         editor.applyRecipe(recipe)
-        #expect(editor.recipe.exposureAnchor == .typical(for: "Canon EOS R5"))
+        #expect(editor.recipe.exposureAnchor == Self.estimate)
         #expect(editor.recipeAmount == 100)
         let captured = Recipe.capture(editor.recipe, name: "Mine", includes: Set(RecipeSettingGroup.allCases))
         #expect(captured.baseLook?.isReproduction == true)
@@ -141,7 +145,8 @@ struct ReproductionAnchorTests {
         #expect(anchor.source == .target && anchor.camera == "Canon EOS R5")
         #expect(editor.recipe[.exposure] == 0 && editor.history.count == steps + 1 && editor.calibrationTarget == nil)
         // The patch's light scales by the change in Exposure and anchor: it now reads L* 50's.
-        let now = 0.11 * pow(2, anchor.stops + editor.recipe[.exposure] - ExposureAnchor.typicalStops - 0.4)
+        let before = try #require(measured.exposureAnchor).stops
+        let now = 0.11 * pow(2, anchor.stops + editor.recipe[.exposure] - before - 0.4)
         #expect(abs(now - EditorModel.luminance(lstar: 50)) < 1e-9)
         #expect(cameras.entry(for: "Canon EOS R5")?.stops == anchor.stops)
         #expect(editor.calibrationStatus.hasPrefix("Calibrated for Canon EOS R5 from a target, "))
