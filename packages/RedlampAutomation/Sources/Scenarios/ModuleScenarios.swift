@@ -218,17 +218,15 @@
             claims: [.feature("library.filmstrip"), .feature("library.thumbnails")],
         ) { app in
             try app.openWorking()
-            let names = try app.photoNames()
-            try app.expect(names.count >= 6, "The folder has \(names.count) photos")
+            let found = try app.photoNames()
+            try app.expect(found.count >= 6, "The folder has \(found.count) photos")
             try app.main { model in model.select(model.items[0].url) }
             try app.settle()
             try app.press(.gridView)
             try app.wait("the grid to take the keyboard") { _ in
                 Views.editorWindow?.firstResponder.map { "\(type(of: $0))" } == "LibraryGridContentView"
             }
-            try app.wait("the grid's cells") { _ in
-                Views.editorWindow.flatMap { Views.find("grid.\(names[1])", in: $0) } != nil
-            }
+            let names = try app.gridNames()
 
             try app.press(.nextPhoto)
             try app.expect(try app.selectionState().active == names[1], "→ didn't move to \(names[1])")

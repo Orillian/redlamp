@@ -16,12 +16,26 @@
             try wait("the grid to take the keyboard") { _ in
                 Views.editorWindow?.firstResponder.map { "\(Swift.type(of: $0))" } == "LibraryGridContentView"
             }
-            try wait("the grid's cells") { _ in
-                Views.editorWindow.flatMap { Views.find("grid.\(names[1])", in: $0) } != nil
-            }
+            let shown = try gridNames()
             // Laid out for the size and style the scenario before left.
             try settle()
-            return names
+            return shown
+        }
+
+        /// The photos in the grid's order once each has a cell of its own: an open stack's photos follow its top,
+        /// which needn't come first in the folder (the JPEG of a pair, ahead of its HEIC). Stacks found after
+        /// `photoNames` opened them can start closed, so they're opened again until every photo has its cell.
+        func gridNames() throws -> [String] {
+            try wait("a cell in the grid for every photo", timeout: 30) { model in
+                model.gridStacks.openAll()
+                guard let window = Views.editorWindow, !model.items.isEmpty else { return false }
+                return model.items.allSatisfy { Views.find("grid.\($0.url.lastPathComponent)", in: window) != nil }
+            }
+            return try main { model in
+                model.gridStacks.list.map { list in
+                    list.compactMap { model.library.url(ofPhoto: $0)?.lastPathComponent }
+                } ?? model.items.map(\.url.lastPathComponent)
+            }
         }
 
         /// What a click at `point` (window points) reaches, for a failure's message.
