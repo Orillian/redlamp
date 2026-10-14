@@ -6,7 +6,7 @@ This document is the design built on the research in [the OTH-03 note](../resear
 
 Proposed tracker rows: OTH-05 to OTH-12 ([below](#proposed-rows)); OTH-03 becomes the research and design row.
 
-**Status (2026-10-14):** proposed, for the owner to decide which rows to accept and in which phase. Three things wait on others: the refinement brushes and any detection of lights on counsel's freedom-to-operate search (DEC-05); the iPhone's depth on the owner's iPhone set; and Amount's calibration and the `crs:LensBlur` import codes on the Lightroom Bench task and the XMP files.
+**Status (2026-10-14):** parked. The owner deferred lens blur the day it was written: it needs more research and calibration, and isn't a priority now. OTH-03 and OTH-05 to OTH-12 are Deferred, their phase Later. When it resumes, the owner decides which rows to accept and in which phase, and three things wait on others: the refinement brushes and any detection of lights on counsel's freedom-to-operate search (DEC-05); the iPhone's depth on the owner's iPhone set; and Amount's calibration and the `crs:LensBlur` import codes on the Lightroom Bench task and the XMP files.
 
 ## What the measurements settle
 
