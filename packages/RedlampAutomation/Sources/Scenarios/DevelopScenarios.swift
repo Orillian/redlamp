@@ -225,7 +225,8 @@
 
         static let toneCurve = Scenario(
             "develop.tone-curve",
-            "Tone Curve: the region sliders, the split points, a point curve, and Reset Tone Curve from its header",
+            "Tone Curve: the region sliders, the split points, a point curve, red's own curve dragged on the graph "
+                + "and undone, and Reset Tone Curve from its header",
             claims: [
                 .feature("develop.tone-curve"),
                 .parameter(.curveSplitShadows),
@@ -257,8 +258,27 @@
             try app.wait("Reset Tone Curve to reset the point curve") {
                 $0.pointCurve == EditRecipe.linearPointCurve && !$0.isEdited(.toneCurve)
             }
-            try app.choose(.resetAll)
             app.covered(.feature("develop.tone-curve"), via: .model)
+            // Red's own curve (TON-40): Point and Red from the panel's menus, a point dragged up the
+            // middle of the graph, the photo's reds lifted, and Undo.
+            try app.choose("Point", inMenuOf: .identifier("curve.mode"))
+            try app.choose("Red", inMenuOf: .identifier("curve.channel"))
+            let reds = try app.main { $0.histogram.red }
+            try app.expectRenders("a point dragged up red's curve") {
+                try app.drag(.identifier("curve.graph"), from: CGPoint(x: 0.5, y: 0.5), by: CGVector(dx: 0, dy: 40))
+            }
+            let red = try app.main { $0.pointCurve(.red) }
+            try app.expect(red.count == 3 && red[1].y > 0.55, "Red's curve is \(red), not raised in its middle")
+            try app.expect(
+                try app.main { $0.pointCurve } == EditRecipe.linearPointCurve, "Dragging red's curve moved the RGB one",
+            )
+            try app.wait("the photo's reds to lift") { $0.histogram.red != reds }
+            try app.press(.undo)
+            try app.wait("Undo to straighten red's curve") { $0.pointCurve(.red) == EditRecipe.linearPointCurve }
+            try app.choose("RGB", inMenuOf: .identifier("curve.channel"))
+            try app.choose("Parametric", inMenuOf: .identifier("curve.mode"))
+            app.covered(.feature("develop.tone-curve"), via: .mouse)
+            try app.choose(.resetAll)
         }
 
         static let colorMixer = Scenario(
