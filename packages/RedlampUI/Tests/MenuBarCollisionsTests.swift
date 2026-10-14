@@ -61,11 +61,28 @@ struct MenuBarCollisionsTests {
     @Test func `a submenu's items are met in their place`() {
         #expect(collisions([
             menu("Photo", [menu("Stacking", [item("Group into Stack", "g")])]),
-            menu("View", [item("Grid", "G")]),
+            menu("View", [item("Grid", "g")]),
         ]) ==
             [
                 "View › Grid and Photo › Stacking › Group into Stack both answer ⌘G; Photo › Stacking › Group into Stack comes first",
             ])
+    }
+
+    @Test func `an uppercase key holds ⇧, as AppKit reads it`() {
+        #expect(collisions([
+            menu("Photo", [item("Copy to Folder…", "y")]),
+            menu("Window", [item("Make New Sticky Note", "Y")]),
+        ]).isEmpty)
+        #expect(MenuBarCollisions.Item(path: "", title: "", key: "Y", modifiers: .command).display == "⇧⌘Y")
+    }
+
+    @Test func `the Services menu's items, other apps' with their own keys, are left out`() {
+        let services = menu("Services", [item("Make New Sticky Note", "y")])
+        let bar = NSMenu()
+        [menu("Redlamp", [services]), menu("Photo", [item("Copy to Folder…", "y")])].forEach(bar.addItem)
+        let items = MenuBarCollisions.items(in: bar, leavingOut: services.submenu)
+        #expect(items.map(\.path) == ["Photo › Copy to Folder…"])
+        #expect(MenuBarCollisions.collisions(in: items).isEmpty)
     }
 
     @Test func `an action whose item doesn't carry the key the menus give it is found`() {

@@ -18,7 +18,9 @@ import AppKit
             self.path = path
             self.title = title
             self.key = key.lowercased()
-            self.modifiers = modifiers.intersection(Self.keyModifiers).rawValue
+            // AppKit reads an uppercase key equivalent as holding ⇧: "Y" with ⌘ is ⇧⌘Y.
+            let held = key == self.key ? modifiers : modifiers.union(.shift)
+            self.modifiers = held.intersection(Self.keyModifiers).rawValue
         }
 
         static let keyModifiers: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
@@ -48,14 +50,17 @@ import AppKit
     }
 
     /// The items with key equivalents in `menu`, in the order AppKit's search meets them: each menu's items in turn, a
-    /// submenu's in its place, after `fill` brings each menu up to date as opening it does.
+    /// submenu's in its place, after `fill` brings each menu up to date as opening it does. The Services menu is left
+    /// out: macOS fills it with other apps' services, with the keys their owners or the Mac's owner gave them.
     @MainActor
-    public static func items(in menu: NSMenu, fill: (NSMenu) -> Void = { _ in }) -> [Item] {
+    public static func items(
+        in menu: NSMenu, leavingOut services: NSMenu? = NSApp?.servicesMenu, fill: (NSMenu) -> Void = { _ in },
+    ) -> [Item] {
         func walk(_ menu: NSMenu, _ path: [String]) -> [Item] {
             fill(menu)
             return menu.items.flatMap { item -> [Item] in
                 if let submenu = item.submenu {
-                    return walk(submenu, path + [item.title])
+                    return submenu === services ? [] : walk(submenu, path + [item.title])
                 }
                 guard !item.keyEquivalent.isEmpty, !item.isSeparatorItem else { return [] }
                 return [Item(
