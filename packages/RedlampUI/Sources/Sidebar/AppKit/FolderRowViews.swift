@@ -97,40 +97,50 @@ extension SidebarCellView {
     static func folderMenu(_ row: FolderRow, model: EditorModel, anchor: NSView) -> NSMenu {
         let menu = NSMenu()
         if !row.isMissing {
-            menu.addItem(NSMenuItem(title: "Show in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([row.url])
-            })
-            if let service = model.library.service, service.isReady {
-                let source = PhotoSource.folder(row.url, includingSubfolders: model.library.includesSubfolders)
-                menu.addItem(afterMenu("Show Summary…") { [weak anchor] in
-                    guard let anchor else { return }
-                    SourceSummaryPopover.show(
-                        row.name, relativeTo: anchor, summary: { await service.summary(of: source) },
-                        unreadable: { await service.unreadableCount(in: source) },
-                    )
-                })
-            }
-            let subfolders = NSMenuItem(title: ShortcutAction.showPhotosInSubfolders.title) {
-                if model.folder != row.url {
-                    model.showFolder(row.url)
-                }
-                model.perform(.showPhotosInSubfolders)
-            }
-            subfolders.state = model.library.includesSubfolders ? .on : .off
-            menu.addItem(subfolders)
+            addFolderItems(row, model: model, anchor: anchor, to: menu)
         }
         if row.isRoot {
-            menu.addItem(.separator())
-            if row.isMissing {
-                menu.addItem(NSMenuItem(title: "Locate…") { FolderActions.locate(row.root, model: model) })
-            } else if model.library.service?.isReady == true {
-                menu.addItem(NSMenuItem(title: ShortcutAction.moveEditsAndMetadata.title) {
-                    FolderActions.moveEdits(row.root, model: model)
-                })
-            }
-            menu.addItem(NSMenuItem(title: "Remove from Folders") { FolderActions.remove(row.root, model: model) })
+            addRootItems(row, model: model, to: menu)
         }
         return menu
+    }
+
+    /// Show in Finder, Show Summary… with the library open, and Show Photos in Subfolders.
+    private static func addFolderItems(_ row: FolderRow, model: EditorModel, anchor: NSView, to menu: NSMenu) {
+        menu.addItem(NSMenuItem(title: "Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([row.url])
+        })
+        if let service = model.library.service, service.isReady {
+            let source = PhotoSource.folder(row.url, includingSubfolders: model.library.includesSubfolders)
+            menu.addItem(afterMenu("Show Summary…") { [weak anchor] in
+                guard let anchor else { return }
+                SourceSummaryPopover.show(
+                    row.name, relativeTo: anchor, summary: { await service.summary(of: source) },
+                    unreadable: { await service.unreadableCount(in: source) },
+                )
+            })
+        }
+        let subfolders = NSMenuItem(title: ShortcutAction.showPhotosInSubfolders.title) {
+            if model.folder != row.url {
+                model.showFolder(row.url)
+            }
+            model.perform(.showPhotosInSubfolders)
+        }
+        subfolders.state = model.library.includesSubfolders ? .on : .off
+        menu.addItem(subfolders)
+    }
+
+    /// Locate… for a missing root, Move Edits and Metadata… with the library open, and Remove from Folders.
+    private static func addRootItems(_ row: FolderRow, model: EditorModel, to menu: NSMenu) {
+        menu.addItem(.separator())
+        if row.isMissing {
+            menu.addItem(NSMenuItem(title: "Locate…") { FolderActions.locate(row.root, model: model) })
+        } else if model.library.service?.isReady == true {
+            menu.addItem(NSMenuItem(title: ShortcutAction.moveEditsAndMetadata.title) {
+                FolderActions.moveEdits(row.root, model: model)
+            })
+        }
+        menu.addItem(NSMenuItem(title: "Remove from Folders") { FolderActions.remove(row.root, model: model) })
     }
 }
 
