@@ -24,9 +24,9 @@
             return Date().timeIntervalSince(start) * 1000
         }
 
-        /// Drags Exposure at 120 events a second for 3 s: the frames delivered a second, and the slowest 1% of the
-        /// main thread's iterations, in milliseconds.
-        func dragExposure() throws -> (fps: Double, p99: Double?) {
+        /// Drags Exposure at 120 events a second for `duration` seconds: the frames delivered a second, and the slowest
+        /// 1% of the main thread's iterations, in milliseconds.
+        func dragExposure(for duration: Double = 3) throws -> (fps: Double, p99: Double?) {
             let monitor = try MainThread.run { () -> MainThreadMonitorBox in
                 let monitor = MainThreadMonitor()
                 monitor.start()
@@ -36,7 +36,7 @@
             try main { $0.beginEdit(.exposure) }
             let start = Date()
             var step = 0
-            while Date().timeIntervalSince(start) < 3 {
+            while Date().timeIntervalSince(start) < duration {
                 let value = sin(Double(step) / 20) * 2
                 post { $0.setSliderValue(.exposure, value) }
                 step += 1
@@ -52,9 +52,9 @@
             return (Double(delivered) / seconds, summary?.p99)
         }
 
-        /// Scrolls the filmstrip shown from one end to the other and back, a step every 1/120 s for 3 s: the
-        /// slowest 1% of the main thread's iterations, in milliseconds.
-        func scrollFilmstrip() throws -> Double? {
+        /// Scrolls the filmstrip shown from one end to the other and back, a step every 1/120 s for `duration`
+        /// seconds (2.1 s goes there and back once): the slowest 1% of the main thread's iterations, in milliseconds.
+        func scrollFilmstrip(for duration: Double = 3) throws -> Double? {
             let strip = try main { _ in
                 Views.editorWindow.flatMap { FilmstripViews.strip(in: $0) }.map { FilmstripBox($0) }
             }
@@ -64,7 +64,7 @@
             let (summary, _) = try watchingMainThread("filmstrip") {
                 let start = Date()
                 var step = 0
-                while Date().timeIntervalSince(start) < 3 {
+                while Date().timeIntervalSince(start) < duration {
                     let fraction = (1 - cos(Double(step) / 40)) / 2
                     post { _ in FilmstripViews.scroll(strip.view, to: fraction) }
                     step += 1
@@ -152,6 +152,34 @@
             tiers: [.performance], claims: [],
         ) { app in
             try app.openWorking()
+            // Each raw four more times, so the batch outlasts both measurements made while it runs.
+            let shown = try app.main { $0.items.count }
+            let raws = try FileManager.default.contentsOfDirectory(atPath: app.photos.path)
+                .filter { ["arw", "raf", "cr3", "nef", "dng"].contains(($0 as NSString).pathExtension.lowercased()) }
+                .sorted()
+            var copies: [URL] = []
+            defer {
+                for copy in copies {
+                    try? FileManager.default.removeItem(at: copy)
+                }
+                try? app.main { $0.open([app.photos]) }
+                try? app.wait("the copies gone from the filmstrip", timeout: 60) { $0.items.count == shown }
+                try? app.openWorking()
+            }
+            for number in 2 ... 5 {
+                for raw in raws {
+                    let name = raw as NSString
+                    let copy = app.photos
+                        .appending(path: "\(name.deletingPathExtension) \(number).\(name.pathExtension)")
+                    try RenamePerformanceScratch.clone(app.photos.appending(path: raw), to: copy, ending: copies.count)
+                    copies.append(copy)
+                }
+            }
+            let total = shown + copies.count
+            try app.main { $0.open([app.photos]) }
+            try app.wait("the \(copies.count) copies in the filmstrip", timeout: 60) { $0.items.count == total }
+            try app.openWorking()
+            try app.settle()
             try app.main { model in
                 model.expandedPanels = Set(PanelID.allCases)
                 model.keepsFilmstripShown = true
@@ -159,6 +187,10 @@
             defer { try? app.main { $0.keepsFilmstripShown = false } }
             try app.choose(Menus.title(of: .selectAllPhotos))
             try app.wait("several photos selected", timeout: 30) { $0.selectedCount > 1 && $0.info != nil }
+            app.pause(0.5)
+            // The first drag and scroll after opening pay once for what the ones during the batch find made.
+            _ = try app.dragExposure(for: 1)
+            _ = try app.scrollFilmstrip(for: 2.1)
             app.pause(0.5)
             let idle = try app.dragExposure()
             let idleStrip = try app.scrollFilmstrip()

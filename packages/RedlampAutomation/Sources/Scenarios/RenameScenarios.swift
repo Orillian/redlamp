@@ -672,7 +672,7 @@
         }
 
         /// A clone of `source` at `copy`, ending in a box of its own length.
-        private static func clone(_ source: URL, to copy: URL, ending number: Int) throws {
+        static func clone(_ source: URL, to copy: URL, ending number: Int) throws {
             try FileManager.default.copyItem(at: source, to: copy)
             let handle = try FileHandle(forWritingTo: copy)
             try handle.seekToEnd()
