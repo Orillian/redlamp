@@ -3,9 +3,10 @@ import Foundation
 /// What happened in this session, oldest first, so a report can say what someone did before
 /// sending it.
 ///
-/// It stays in memory, and what it writes itself never names a file: photos are Photo A, Photo B
-/// and so on, in the order they were opened, and their file names are kept apart for a report
-/// that asks for them. Messages it copies from the UI can mention one, so reports redact them.
+/// It stays in memory and in the session's journal, never sent unless a report is, and what it
+/// writes itself never names a file: photos are Photo A, Photo B and so on, in the order they were
+/// opened, and their file names are kept apart for a report that asks for them. Messages it copies
+/// from the UI can mention one, so reports redact them.
 @MainActor
 public final class ActivityLog {
     public struct Event: Codable, Hashable, Sendable {
@@ -42,13 +43,42 @@ public final class ActivityLog {
         }
     }
 
-    public static let defaultCapacity = 500
+    public nonisolated static let defaultCapacity = 500
 
     public private(set) var events: [Event] = []
+    /// The folders the app shows: the open folder and the working set, to redact from a report.
+    public var folders: [String] = [] {
+        didSet {
+            if folders != oldValue {
+                journal?.folders(folders)
+            }
+        }
+    }
+
+    /// Keeps the session's activity on disk as it happens, for a report at the next launch if it
+    /// doesn't quit. What was recorded before it's set goes to it first.
+    public var journal: SessionJournal? {
+        didSet {
+            guard let journal else { return }
+            let first = appended - events.count
+            for (index, event) in events.enumerated() {
+                journal.record(event, seq: first + index)
+            }
+            for photo in photoNames {
+                journal.photo(PhotoName(alias: photo.alias, fileName: photo.fileName))
+            }
+            if !folders.isEmpty {
+                journal.folders(folders)
+            }
+        }
+    }
+
     private let capacity: Int
     private let now: () -> Date
     private var aliases: [URL: String] = [:]
     private var fileNames: [String] = []
+    /// How many events have been added this session, the first of `events` among them.
+    private var appended = 0
 
     public init(capacity: Int = ActivityLog.defaultCapacity, now: @escaping () -> Date = Date.init) {
         self.capacity = capacity
@@ -64,6 +94,7 @@ public final class ActivityLog {
         within window: TimeInterval = 2,
     ) {
         let time = now()
+        defer { journal?.record(events[events.count - 1], seq: appended - 1) }
         if var last = events.last {
             if let key, last.key == key, time.timeIntervalSince(last.time) < window {
                 events[events.count - 1] = Event(time: time, kind: kind, text: text, key: key)
@@ -76,6 +107,7 @@ public final class ActivityLog {
             }
         }
         events.append(Event(time: time, kind: kind, text: text, key: key))
+        appended += 1
         if events.count > capacity {
             events.removeFirst(events.count - capacity)
         }
@@ -93,6 +125,7 @@ public final class ActivityLog {
         let alias = "Photo \(Self.letters(aliases.count))"
         aliases[url] = alias
         fileNames.append(url.lastPathComponent)
+        journal?.photo(PhotoName(alias: alias, fileName: url.lastPathComponent))
         return alias
     }
 

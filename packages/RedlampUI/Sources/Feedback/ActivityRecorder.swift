@@ -92,6 +92,10 @@ final class ActivityRecorder {
         watch(model, { $0.stackWorkspace != nil }) { _, open in
             log.record(.view, open ? "Opened the Stack workspace" : "Closed the Stack workspace")
         }
+        trackers.append(Tracker { [weak model] in
+            guard let model else { return }
+            log.folders = ([model.folder] + model.library.roots.map(\.url)).compactMap { $0?.path }
+        })
 
         shown(model, .error, "Couldn't open the photo") { $0.errorMessage }
         shown(model, .error, "Save failed") { $0.saveError?.message }
