@@ -72,6 +72,24 @@
     "version" : 3
   },
   {
+    "file" : "base-chrome@4.look.lzma",
+    "id" : "redlamp/film/chrome",
+    "look" : {
+      "contrast" : 1,
+      "saturation" : 1,
+      "warmth" : 0
+    },
+    "name" : "Chrome",
+    "slot" : "chrome",
+    "summary" : "Muted, dense color with hard tone and cool, deep blues. Measured from 5 cameras' own renderings.",
+    "table" : {
+      "sha256" : "aa2ff45bea2e41379ec6fd603531baf6496b689d19a01794ad425165ce09e515",
+      "size" : 25,
+      "space" : "displayRec2020"
+    },
+    "version" : 4
+  },
+  {
     "file" : "base-cinema.look.lzma",
     "id" : "redlamp/film/cinema",
     "look" : {
@@ -347,6 +365,24 @@
     "version" : 3
   },
   {
+    "file" : "base-standard@4.look.lzma",
+    "id" : "redlamp/film/standard",
+    "look" : {
+      "contrast" : 1,
+      "saturation" : 1,
+      "warmth" : 0
+    },
+    "name" : "Standard",
+    "slot" : "standard",
+    "summary" : "Balanced slide-film color, the everyday default. Measured from 50 cameras' own renderings.",
+    "table" : {
+      "sha256" : "9331d0f0237ef741dd26727cd0542b8c177e33fa868a93b7815ca719aa405d76",
+      "size" : 25,
+      "space" : "displayRec2020"
+    },
+    "version" : 4
+  },
+  {
     "file" : "base-vivid-slide.look.lzma",
     "id" : "redlamp/film/vivid-slide",
     "look" : {
@@ -381,6 +417,24 @@
       "space" : "displayRec2020"
     },
     "version" : 2
+  },
+  {
+    "file" : "base-vivid-slide@3.look.lzma",
+    "id" : "redlamp/film/vivid-slide",
+    "look" : {
+      "contrast" : 1,
+      "saturation" : 1,
+      "warmth" : 0
+    },
+    "name" : "Vivid Slide",
+    "slot" : "vivid-slide",
+    "summary" : "Saturated, contrasty slide film with deep blues and greens. Measured from 12 cameras' own renderings.",
+    "table" : {
+      "sha256" : "4f9e56d90c9bfbb2b3b16149d69332786071cd36db367e4cf9dca7486e879f78",
+      "size" : 25,
+      "space" : "displayRec2020"
+    },
+    "version" : 3
   },
   {
     "file" : "stock-cinestill-50d.look.lzma",
