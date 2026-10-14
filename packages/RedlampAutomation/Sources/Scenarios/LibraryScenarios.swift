@@ -394,6 +394,17 @@
     enum ExportScenarios {
         static let all: [Scenario] = [formats, sizes, metadata, previous, shortWindow, chooseFolder, jpegXL]
 
+        /// The scenarios that choose from the Export dialog's menus find each by the pop-up button showing it, which
+        /// macOS 27's SwiftUI doesn't make: it draws the dialog's pickers itself.
+        static func choosesFromMenus() throws {
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+                throw ScenarioSkip(
+                    knownIssue: "UX-44",
+                    "on macOS 27, SwiftUI draws the Export dialog's menus itself, with no pop-up button to choose from",
+                )
+            }
+        }
+
         /// EDT-30 (#373): JPEG XL is under both of the Format menu's sections, with Quality under
         /// Lossy and without it under Lossless, and each writes a JPEG XL file of its kind.
         static let jpegXL = Scenario(
@@ -401,6 +412,7 @@
             "JPEG XL, chosen under Lossy or under Lossless in the Export dialog's Format menu, exports a JPEG XL file",
             claims: [.feature("export.formats"), .feature("export.dialog")],
         ) { app in
+            try choosesFromMenus()
             try app.openWorking()
             for (section, format) in [("Lossy", ExportFormat.jxl), ("Lossless", .jxlLossless)] {
                 let folder = try app.host.flatMap { host in
@@ -528,6 +540,7 @@
             claims: [.feature("export.dialog")],
             needsFocus: true,
         ) { app in
+            try choosesFromMenus()
             try app.openWorking()
             try app.focus()
             try app.choose(Menus.title(of: .export))
