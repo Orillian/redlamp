@@ -116,6 +116,9 @@ public final class FeedbackHistory {
 
     public private(set) var reports: [SentReport] = []
     public private(set) var queued: [QueuedReport] = []
+    /// Crashes and hangs found at launch and not reported yet, newest first: the banner offers the
+    /// first not dismissed, and Your Reports lists them for `incidentDays`.
+    public private(set) var incidents: [PendingIncident] = []
     public private(set) var isRefreshing = false
     public var checksForReplies: Bool {
         didSet { defaults.set(checksForReplies, forKey: Self.checksKey) }
@@ -125,6 +128,8 @@ public final class FeedbackHistory {
     public static let outboxLimit = 20
     /// How often, at most, the issues' state is checked without being asked.
     public static let refreshInterval: TimeInterval = 6 * 3600
+    /// How long a crash or a hang not reported stays in Your Reports.
+    public static let incidentDays = 30
     static let checksKey = "feedback.checksForReplies"
 
     @ObservationIgnored private let directory: URL
@@ -144,6 +149,38 @@ public final class FeedbackHistory {
         checksForReplies = defaults.object(forKey: Self.checksKey) as? Bool ?? true
         reports = Self.read([SentReport].self, from: directory.appending(path: "reports.json")) ?? []
         queued = Self.read([QueuedReport].self, from: directory.appending(path: "outbox.json")) ?? []
+        incidents = (Self.read([PendingIncident].self, from: directory.appending(path: "incidents.json")) ?? [])
+            .filter { now().timeIntervalSince($0.found) < TimeInterval(Self.incidentDays) * 86400 }
+    }
+
+    /// The crash or hang the banner offers to report.
+    public var offeredIncident: PendingIncident? {
+        incidents.first { !$0.dismissed }
+    }
+
+    /// What the launch check found; one already listed (a check cut short finds it again) isn't added twice.
+    public func add(_ found: [PendingIncident]) {
+        // Kept to the second, as reports.json keeps its dates.
+        for item in found where !incidents.contains(where: {
+            $0.incident.pid == item.incident.pid && abs($0.incident.time.timeIntervalSince(item.incident.time)) < 1
+        }) {
+            incidents.insert(item, at: 0)
+        }
+        save()
+    }
+
+    /// Not Now: it stays in Your Reports, and the banner doesn't offer it again.
+    public func dismiss(_ id: UUID) {
+        for index in incidents.indices where incidents[index].id == id {
+            incidents[index].dismissed = true
+        }
+        save()
+    }
+
+    /// Reported, or removed from Your Reports.
+    public func forgetIncident(_ id: UUID) {
+        incidents.removeAll { $0.id == id }
+        save()
     }
 
     /// Reports whose issue has news: a reply or a change of state since they were last seen.
@@ -227,6 +264,7 @@ public final class FeedbackHistory {
         encoder.dateEncodingStrategy = .iso8601
         try? encoder.encode(reports).write(to: directory.appending(path: "reports.json"), options: .atomic)
         try? encoder.encode(queued).write(to: directory.appending(path: "outbox.json"), options: .atomic)
+        try? encoder.encode(incidents).write(to: directory.appending(path: "incidents.json"), options: .atomic)
     }
 
     private static func read<T: Decodable>(_ type: T.Type, from url: URL) -> T? {

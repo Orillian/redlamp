@@ -209,6 +209,34 @@ struct FeedbackHistoryTests {
         #expect(queued?.dryRun == false)
         #expect(defaults.data(forKey: FeedbackSheetModel.draftKey) == nil)
     }
+
+    @Test func `crashes and hangs found at launch are offered until dismissed, and kept for 30 days`() {
+        let session = PreviousSession(
+            url: URL(fileURLWithPath: "/tmp/session.jsonl"), header: SessionJournalTests.header, events: [],
+            photos: [], folders: [], hangs: [], quit: nil, lastWritten: nil,
+        )
+        var crash = Incident(kind: .crash, time: clock.now - 60, pid: 4242, sources: [.crashReport])
+        let first = PendingIncident(incident: crash, session: session, found: clock.now)
+        crash.id = UUID()
+        let foundAgain = PendingIncident(incident: crash, session: session, found: clock.now)
+        let hang = PendingIncident(
+            incident: Incident(kind: .hang, time: clock.now - 30, pid: 4300, sources: [.watchdog]), session: session,
+            found: clock.now,
+        )
+
+        let history = history()
+        history.add([first])
+        history.add([foundAgain, hang])
+        #expect(history.incidents.map(\.id) == [hang.id, first.id], "a check cut short doesn't add one twice")
+        #expect(history.offeredIncident?.id == hang.id)
+        history.dismiss(hang.id)
+        #expect(history.offeredIncident?.id == first.id)
+        #expect(self.history().incidents.map(\.dismissed) == [true, false], "kept across launches")
+        history.forgetIncident(first.id)
+        #expect(history.offeredIncident == nil)
+        clock.now += 31 * 86400
+        #expect(self.history().incidents.isEmpty)
+    }
 }
 
 /// The relay client against a stubbed network: what it sends, and what it makes of each answer.

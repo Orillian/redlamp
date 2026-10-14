@@ -1,0 +1,95 @@
+import Foundation
+import Synchronization
+
+/// This session's record for the next launch, and what the sessions before it left to report.
+/// Started as the app finishes launching, it opens the session's journal for the activity log,
+/// watches for hangs, takes MetricKit's diagnostics and runs the launch check, whose crashes and
+/// hangs go to Your Reports. Stopped as the app quits, it writes the journal's last line.
+@MainActor
+public final class SessionRecorder {
+    /// Development builds offer reports only with this set, as the regression suite sets it:
+    /// Xcode's Stop button and the suite end them without quitting.
+    public static let offersInDevelopmentKey = "feedback.offersIncidentReports"
+
+    /// MetricKit's diagnostics as they arrive, for the launch check.
+    private final class Inbox: Sendable {
+        let incidents = Mutex<[Incident]>([])
+    }
+
+    public let journal: SessionJournal?
+    private let activity: ActivityLog
+    private let history: FeedbackHistory
+    private let offers: Bool
+    private let inbox = Inbox()
+    private var watchdog: HangWatchdog?
+    private var metricKit: MetricKitDiagnostics?
+
+    public init(
+        activity: ActivityLog, history: FeedbackHistory = .shared, development: Bool,
+        defaults: UserDefaults = .standard,
+    ) {
+        let info = Bundle.main.infoDictionary
+        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+        let header = SessionJournal.Header.current(
+            bundleID: Bundle.main.bundleIdentifier ?? "app.redlamp.mac", version: version, development: development,
+        )
+        journal = header.flatMap { try? SessionJournal(header: $0) }
+        self.activity = activity
+        self.history = history
+        offers = !development || defaults.bool(forKey: Self.offersInDevelopmentKey)
+    }
+
+    public func start() {
+        activity.journal = journal
+        let journal = journal
+        let activity = activity
+        let watchdog = HangWatchdog { hang in
+            journal?.hang(hang)
+            if hang.ended {
+                Task { @MainActor in
+                    activity.record(.system, "Not responding for \(Incident.seconds(hang.duration))")
+                }
+            }
+        }
+        watchdog.start()
+        self.watchdog = watchdog
+        guard let header = journal?.header else { return }
+        let inbox = inbox
+        let metricKit = MetricKitDiagnostics(bundleID: header.bundleID, appBinaries: Self.appBinaries) { incidents in
+            inbox.incidents.withLock { $0 += incidents }
+        }
+        metricKit.start()
+        self.metricKit = metricKit
+        Task.detached(priority: .utility) { [weak self] in
+            let found = await IncidentCheck.run(header: header, diagnostics: { inbox.incidents.withLock { $0 } })
+            await self?.found(found)
+        }
+    }
+
+    /// Stops watching for hangs, as the app begins to quit.
+    public func stop() {
+        watchdog?.stop()
+    }
+
+    /// The session has quit: the journal's last line.
+    public func quit() {
+        journal?.quit()
+    }
+
+    private func found(_ incidents: [PendingIncident]) {
+        if offers, !incidents.isEmpty {
+            history.add(incidents)
+        }
+    }
+
+    /// The names of Redlamp's own executables and frameworks, whose frames the release's dSYMs name.
+    nonisolated static var appBinaries: Set<String> {
+        let bundle = Bundle.main
+        let folders = [bundle.executableURL?.deletingLastPathComponent(), bundle.privateFrameworksURL]
+        let names = folders.compactMap(\.self).flatMap { folder in
+            ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+                .map { ($0 as NSString).deletingPathExtension }
+        }
+        return Set(names)
+    }
+}

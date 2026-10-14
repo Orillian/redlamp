@@ -88,6 +88,9 @@ struct RedlampApp: App {
                 .openCameraBenchIfRequested = { CameraBenchWindow.openIfRequested(currentFolder: { model.folder }) }
         #endif
         AppDelegate.launch = {
+            let session = SessionRecorder(activity: model.activity, development: Self.isDevelopmentBuild)
+            session.start()
+            AppDelegate.session = session
             #if DEBUG || REDLAMP_PROFILING
                 DebugDrawCounter.startIfRequested()
             #endif
@@ -172,6 +175,15 @@ struct RedlampApp: App {
         }
     }
 
+    /// Debug and profiling builds, which Xcode and the regression suite end without quitting.
+    private static var isDevelopmentBuild: Bool {
+        #if DEBUG || REDLAMP_PROFILING
+            true
+        #else
+            false
+        #endif
+    }
+
     /// `--folders-perf` and `--library-perf` measure folders and a library of their own: the working
     /// set, and the library over it, would compete with them.
     private static var isMeasuringFolders: Bool {
@@ -209,6 +221,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var openCameraBenchIfRequested: (@MainActor () -> Void)?
     static var isEditorBusy: (@MainActor () -> Bool)?
     static var performWhatsNew: (@MainActor (WhatsNewItem.Action) -> Void)?
+    /// This session's record for the next launch (`SessionRecorder`).
+    static var session: SessionRecorder?
     /// How long after launch the highlights may still open; later, they wait for the next launch.
     static let newsWait: TimeInterval = 10
     let updates = Updates()
@@ -332,12 +346,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Exiting while an AI model runs on the GPU crashes on the way out (`Inference`): the
-    /// predictions running finish first, and no other starts.
+    /// predictions running finish first, and no other starts. The session's journal is marked as
+    /// quit last, so the next launch still hears of a crash on the way out.
     func applicationWillTerminate(_: Notification) {
+        Self.session?.stop()
         if !RedlampEngine.stopModels(waitingAtMost: 10) {
             Logger(subsystem: "app.redlamp.mac", category: "models").error("Quit with an AI model still running")
         }
         Self.closeLibrary?()
+        Self.session?.quit()
     }
 
     private static func quitsWithout(_ photos: [URL]) -> Bool {
