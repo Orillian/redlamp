@@ -89,6 +89,38 @@
             }, appRuns: appRuns)
         }
 
+        private struct Listing: Sendable {
+            let folder: URL
+            let names: Set<String>
+        }
+
+        /// The Export dialog, or an export straight away with the last export's settings, which can write beside
+        /// the photo. What it wrote there is removed again: the scenarios after expect only the folder's own photos,
+        /// and an export of the working photo comes before it in the grid.
+        static func exportWithPrevious(_ action: ShortcutAction) -> ActionCheck {
+            let listed = Kept<Listing>()
+            return ActionCheck(action: action, setUp: { app in
+                let folder = try app.main { $0.selection?.deletingLastPathComponent() } ?? app.photos
+                let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+                listed.value.withLock { $0 = Listing(folder: folder, names: Set(names)) }
+            }, observe: { model in "\(sheetState()) \(model.exportStatus ?? "")" }, restore: { app in
+                if try app.sheetIsUp() {
+                    try app.pressInSheet(KeyCombo(.escape))
+                    try app.waitForNoSheet("the Export dialog")
+                }
+                try app.wait("the export to finish", timeout: 60) { $0.exportStatus == nil }
+                guard let listing = listed.value.withLock({ $0 }) else { return }
+                let written = Set((try? FileManager.default.contentsOfDirectory(atPath: listing.folder.path)) ?? [])
+                    .subtracting(listing.names).filter { !$0.hasPrefix(".") }
+                for name in written {
+                    try? FileManager.default.removeItem(at: listing.folder.appending(path: name))
+                }
+                try app.wait("\(written.sorted()) to leave the filmstrip", timeout: 20) { model in
+                    !model.items.contains { written.contains($0.url.lastPathComponent) }
+                }
+            }, appRuns: true)
+        }
+
         @MainActor static func sheetState() -> String {
             let sheet = NSApp.modalWindow ?? Views.editorWindow?.attachedSheet
             return sheet.map { "\(type(of: $0)) \($0.title)" } ?? "none"
@@ -507,20 +539,7 @@
                     try app.waitForNoSheet("the Open panel")
                 }, appRuns: true)
             case .export: .sheet(action, appRuns: true)
-            case .exportWithPrevious:
-                // The dialog, or straight away with the last export's settings.
-                ActionCheck(
-                    action: action,
-                    observe: { model in "\(sheetState()) \(model.exportStatus ?? "")" },
-                    restore: { app in
-                        if try app.sheetIsUp() {
-                            try app.pressInSheet(KeyCombo(.escape))
-                            try app.waitForNoSheet("the Export dialog")
-                        }
-                        try app.wait("the export to finish", timeout: 60) { $0.exportStatus == nil }
-                    },
-                    appRuns: true,
-                )
+            case .exportWithPrevious: .exportWithPrevious(action)
             case .mergeFocusStack:
                 ActionCheck(
                     action: action,
