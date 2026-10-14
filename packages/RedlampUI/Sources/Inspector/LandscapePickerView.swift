@@ -83,6 +83,8 @@ struct LandscapePickerView: View {
                     .monospacedDigit()
                     .foregroundStyle(Theme.secondaryLabel)
             }
+            // On macOS 27 a checkbox takes a click on its label only where the label draws something.
+            .contentShape(Rectangle())
         }
         .toggleStyle(.checkbox)
         .font(Theme.labelFont)
