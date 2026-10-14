@@ -10,16 +10,19 @@
                      [--reason …] [--applied …] [--reply-url … --release …] [--out-url …] [--tracked <ID>]
     room.py log <text>
 
-Reports are the issues people file on pdcgomes/redlamp: those labelled bug, in-app, enhancement or
-question, and open ones with no tracker ID, but never the issues the tracker mirrors (unless the room
-already follows them, as it does a suggestion once it's accepted). For each, GitHub gives its state,
+Reports are the issues people file on pdcgomes/redlamp: those labelled bug, in-app, enhancement,
+question, crash or hang, and open ones with no tracker ID, but never the issues the tracker mirrors (unless
+the room already follows them, as it does a suggestion once it's accepted). For each, GitHub gives its state,
 labels, the redlamp-feedback line the app writes, the reporter's words and the comments; git gives
 the commits naming #n on origin/main and on local branches (copies of commits already on main are
 ignored), and the first v* tag that holds those changing the app's code (its tests, when a fix changed
 nothing else). A commit on main that changes only the tracker and the roadmap documents, as accepting
-a suggestion does, isn't its fix. The room's notes, one JSON file per report in
-~/.cursor/projects/<workspace>/reports-room/reports/, hold what agents record; the owner's clicks are
-read from reports-room.canvas.data.json, which only the canvas writes.
+a suggestion does, isn't its fix. A crash or hang report (UX-11) is a bug whose redlamp-feedback line
+names its incident, or which is labelled crash or hang; the comment scripts/symbolicate-report.py
+--comment posts on it, which the owner's account writes with a redlamp-symbolicated line, says it's
+symbolicated and where it crashed, and isn't counted among the replies. The room's notes, one JSON file
+per report in ~/.cursor/projects/<workspace>/reports-room/reports/, hold what agents record; the owner's
+clicks are read from reports-room.canvas.data.json, which only the canvas writes.
 
 sync writes everything between the room's REPORTS:BEGIN and REPORTS:END lines. It rewrites the file
 only when something changed, or when the board's last check is over four minutes old.
@@ -42,11 +45,13 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 REPO = "pdcgomes/redlamp"
 OWNER = "pdcgomes"
-REPORT_LABELS = {"bug", "in-app", "enhancement", "question"}
+REPORT_LABELS = {"bug", "in-app", "enhancement", "question", "crash", "hang"}
 KIND_OF_LABEL = {"bug": "bug", "enhancement": "idea", "question": "question"}
+INCIDENTS = ("crash", "hang")
 TRACKER_ID = re.compile(r"^(?:[A-Z]{2,4}|P1)-\d{2,3}\b")
 ISSUE_IN_SUBJECT = re.compile(r"#(\d+)\b")
 MARKER = re.compile(r"<!-- redlamp-feedback v1 (\{.*?\}) -->")
+SYMBOLICATED = re.compile(r"<!-- redlamp-symbolicated v1 (\{.*?\}) -->")
 SECTIONS = ("What happened", "What I expected", "Steps to reproduce", "What I'd like to do", "How it could work", "Message")
 # A fix touching only these paths ships without a release: the site deploys and the cask updates from main.
 OUTSIDE_APP = ("web/", "Casks/", "docs/", "README.md", ".cursor/", ".github/", "research/", "video/", "CONTRIBUTING.md")
@@ -418,7 +423,28 @@ def kind_of(issue, parsed):
     for label in issue["labels"]:
         if label["name"] in KIND_OF_LABEL:
             return KIND_OF_LABEL[label["name"]]
-    return "unsorted"
+    return "bug" if incident_of(issue, parsed) else "unsorted"
+
+
+def incident_of(issue, parsed):
+    """"crash" or "hang" for a report the next launch offered after one (UX-11), by its hidden line or its label."""
+    named = parsed["meta"].get("incident")
+    if named in INCIDENTS:
+        return named
+    return next((label["name"] for label in issue["labels"] if label["name"] in INCIDENTS), None)
+
+
+def symbolication(comment):
+    """What scripts/symbolicate-report.py --comment recorded in the comment's hidden line, or None for any other comment."""
+    match = SYMBOLICATED.search(comment.get("body") or "")
+    if not match or comment["author"]["login"] != OWNER:
+        return None
+    try:
+        meta = json.loads(match[1])
+    except json.JSONDecodeError:
+        meta = {}
+    return {"url": comment.get("url"), "at": comment["createdAt"],
+            **{key: meta.get(key) for key in ("version", "binary", "culprit", "named", "unnamed", "note")}}
 
 
 def reporter(issue, parsed):
@@ -456,8 +482,9 @@ def build(offline):
         mark = marks.get(number)
         kind = kind_of(issue, parsed)
         who = reporter(issue, parsed)
+        symbolicated = [s for s in map(symbolication, issue.get("comments", [])) if s]
         comments = [{"by": c["author"]["login"], "you": c["author"]["login"] == OWNER, "at": c["createdAt"],
-                     "text": excerpt(c["body"]), "url": c.get("url")} for c in issue.get("comments", [])]
+                     "text": excerpt(c["body"]), "url": c.get("url")} for c in issue.get("comments", []) if not symbolication(c)]
         fix = [c for c in on_main.get(number, []) if c["sha"] not in planning]
         reopened = None
         if issue["state"] == "OPEN" and (fix or note.get("reply") or note.get("out") or note.get("stage") in ("replied", "closed")):
@@ -501,6 +528,8 @@ def build(offline):
             "title": issue["title"],
             "url": issue["url"],
             "kind": kind,
+            "incident": incident_of(issue, parsed),
+            "symbolicated": symbolicated[-1] if symbolicated else None,
             "area": parsed["area"] or parsed["meta"].get("area"),
             "often": parsed["often"],
             "from": parsed["from"],
@@ -597,12 +626,19 @@ def sync(offline, force=False, canvas=CANVAS):
 
 
 def describe(report):
-    bits = [f"#{report['number']:<4} {report['kind']:<8} {report['state']:<6}"]
+    bits = [f"#{report['number']:<4} {report['incident'] or report['kind']:<8} {report['state']:<6}"]
     if report["state"] == "closed" and report["stateReason"]:
         bits.append(f"({report['stateReason']})")
     bits.append(report["title"][:80])
     lines = [" ".join(bits)]
     detail = []
+    if report["incident"]:
+        done = report["symbolicated"]
+        if done:
+            where = done["culprit"] or done["note"] or "none of its frames is Redlamp's"
+            detail.append(f"symbolicated ({done['url']}): {where}")
+        else:
+            detail.append(f"not symbolicated yet: scripts/symbolicate-report.py {report['number']} --comment")
     if report["reopened"]:
         earlier = report["rounds"][-1] if report["rounds"] else {}
         detail.append(f"reopened {report['reopened']['at'][:16]} by {report['reopened']['by']}"

@@ -28,6 +28,7 @@ import type { SetCanvasState } from "cursor/canvas";
 // room.py reads and never writes.
 
 type Kind = "bug" | "idea" | "question" | "unsorted";
+type Incident = "crash" | "hang";
 type Decision = "fix" | "close" | "accept" | "reject" | "answer";
 
 interface Triage {
@@ -62,6 +63,19 @@ interface Report {
   title: string;
   url: string;
   kind: Kind;
+  /** A bug the next launch offered to report after Redlamp quit or stopped responding (UX-11). */
+  incident?: Incident | null;
+  /** What scripts/symbolicate-report.py --comment posted: where it crashed, or why Redlamp's frames aren't named. */
+  symbolicated?: {
+    url: string | null;
+    at: string;
+    version: string | null;
+    binary: string | null;
+    culprit: string | null;
+    named: number | null;
+    unnamed: number | null;
+    note: string | null;
+  } | null;
   area: string | null;
   often: string | null;
   from: string | null;
@@ -147,6 +161,7 @@ const DATA: Data = {
 
 const SKILL = ".cursor/skills/redlamp-reports/SKILL.md";
 const BRIEF = ".cursor/skills/redlamp-reports/bug-agent.md";
+const SYMBOLICATE = "scripts/symbolicate-report.py";
 const TABS = ["Triage", "Bugs", "Suggestions", "Released", "Log", "Decisions"] as const;
 type Tab = (typeof TABS)[number];
 type Tone = "good" | "bad" | "waiting" | "active" | "quiet";
@@ -154,6 +169,7 @@ type Marks = Record<string, Triage>;
 type SetMarks = SetCanvasState<Marks>;
 
 const KIND_LABEL: Record<Kind, string> = { bug: "Bug", idea: "Suggestion", question: "Question", unsorted: "Not sorted" };
+const INCIDENT_LABEL: Record<Incident, string> = { crash: "Crash report", hang: "Hang report" };
 
 function useNow(intervalMs = 30000): number {
   const [now, setNow] = useState(() => Date.now());
@@ -270,15 +286,25 @@ function reopenedText(report: Report): string {
   );
 }
 
+function symbolicateText(report: Report): string {
+  if (!report.incident) return "";
+  const where = report.symbolicated?.culprit ? ` (it ${report.incident === "hang" ? "hung" : "crashed"} in ${report.symbolicated.culprit})` : "";
+  return report.symbolicated
+    ? `It's a ${report.incident} report, already symbolicated on the issue${where}: start from those stacks. `
+    : `It's a ${report.incident} report: before anything else, symbolicate it with ${SYMBOLICATE} ${report.number} --comment, and start from the stacks it posts. `;
+}
+
 function fixPrompt(report: Report, token: string): string {
-  const short = report.title.replace(/^\[[^\]]*\]\s*/, "").slice(0, 60);
+  const short = report.title.replace(/^\[[^\]]*\]\s*/, "").replace(/^(Crash|Hang):\s*/, "").slice(0, 60);
+  const chat = report.incident === "crash" ? "Crash" : report.incident === "hang" ? "Hang" : "Bug";
   return (
-    `Fix bug #${report.number} from the reports room: "${report.title}" (${report.url}). ` +
+    `Fix ${report.incident ? `${report.incident} report` : "bug"} #${report.number} from the reports room: "${report.title}" (${report.url}). ` +
     reopenedText(report) +
+    symbolicateText(report) +
     `Follow ${BRIEF} from start to finish: claim it with room.py using the token ${token}, read the report and its diagnostics, ` +
     `reproduce it if it isn't obvious, fix it in a worktree of your own, push the fix to main through the push gate, ` +
     `then comment on #${report.number} with the cause, the fix and the release it's expected in, and close it. ` +
-    `Please rename this chat "Bug #${report.number}: ${short}". Record each step with room.py and sync the room.`
+    `Please rename this chat "${chat} #${report.number}: ${short}". Record each step with room.py and sync the room.`
   );
 }
 
@@ -286,6 +312,7 @@ function askPrompt(report: Report): string {
   return (
     `Look into #${report.number} in the reports room for me ("${report.title}", ${report.url}) and tell me what you find: what it is, ` +
     `whether something already tracks it, whether main has fixed it since ${report.version ?? "the reporter's version"}, and what you'd do. ` +
+    (report.incident ? `It's a ${report.incident} report: read its stacks with ${SYMBOLICATE} ${report.number}, without --comment, and say where it ${report.incident === "hang" ? "hung" : "crashed"}. ` : "") +
     `Don't change anything on GitHub or in the code. Follow ${SKILL}, write your read into the room with room.py note --read, and sync it.`
   );
 }
@@ -341,7 +368,7 @@ function Comments({ report, now, limit = 3 }: { report: Report; now: number; lim
 
 function Facts({ report, now }: { report: Report; now: number }) {
   const facts = [
-    KIND_LABEL[report.kind],
+    report.incident ? INCIDENT_LABEL[report.incident] : KIND_LABEL[report.kind],
     report.area,
     report.often,
     reporterText(report),
@@ -394,6 +421,27 @@ function Title({ report }: { report: Report }) {
   return (
     <Text weight="semibold">
       <Link href={report.url}>{`#${report.number}`}</Link> {report.title}
+    </Text>
+  );
+}
+
+/** For a crash or hang report: where the stacks scripts/symbolicate-report.py posted say it crashed, or that it hasn't run yet. */
+function Symbolicated({ report, now }: { report: Report; now: number }) {
+  const done = report.symbolicated;
+  if (!report.incident) return null;
+  if (!done) {
+    return (
+      <Text size="small" tone="secondary">
+        {`Not symbolicated yet: its agent posts the stacks with Redlamp's frames named (${SYMBOLICATE} ${report.number} --comment) before anything else.`}
+      </Text>
+    );
+  }
+  const where = done.culprit ? `${report.incident === "hang" ? "Hung" : "Crashed"} in ${done.binary ? `${done.binary}, ` : ""}${done.culprit}.` : null;
+  return (
+    <Text size="small" tone="secondary">
+      {done.url ? <Link href={done.url}>Symbolicated</Link> : "Symbolicated"}
+      {`${done.version ? ` from ${done.version}'s dSYMs` : ""}, ${ago(done.at, now)}. `}
+      {[where, done.note].filter(Boolean).join(" ")}
     </Text>
   );
 }
@@ -459,6 +507,7 @@ function TriageCard(props: {
           ) : null}
         </Stack>
         <Words report={report} />
+        <Symbolicated report={report} now={now} />
         <EarlierRound report={report} now={now} />
         {report.read ? (
           <div style={{ background: theme.fill.tertiary, borderRadius: 6, padding: "8px 10px" }}>
@@ -479,7 +528,8 @@ function TriageCard(props: {
         <Comments report={report} now={now} />
         {report.diagnostics ? (
           <Text size="small" tone="tertiary">
-            <Link href={report.diagnostics}>diagnostics.json</Link> has the photo's edit in the sidecar format, its activity and the Mac's details.
+            <Link href={report.diagnostics}>diagnostics.json</Link>
+            {report.incident ? " has the incident's stacks and binaries, the session's activity and the Mac's details." : " has the photo's edit in the sidecar format, its activity and the Mac's details."}
           </Text>
         ) : null}
         <Row gap={6} wrap>
@@ -662,6 +712,10 @@ function track(report: Report, marks: Marks): { label: string; state: StepState 
   if (report.reproduced === "not needed") labels[2] = "Not needed";
   if (report.reproduced === "couldn't") labels[2] = "Couldn't";
   if (report.fix) labels[6] = report.fix.state === "live" ? "Out" : report.fix.state === "released" ? `In ${report.fix.version}` : `Due ${report.fix.version}`;
+  if (report.incident) {
+    labels.splice(1, 0, "Symbolicated");
+    done.splice(1, 0, !!report.symbolicated);
+  }
   const first = done.findIndex((d) => !d);
   return labels.map((label, index) => ({
     label,
@@ -726,6 +780,7 @@ function BugRow({ report, marks, now }: { report: Report; marks: Marks; now: num
           <Facts report={report} now={now} />
         </Stack>
         <Track steps={track(report, marks)} />
+        <Symbolicated report={report} now={now} />
         {report.waiting && report.why ? <Text size="small" weight="medium">{report.why}</Text> : null}
         {latest ? (
           <Text size="small" tone="secondary">
@@ -1055,7 +1110,7 @@ export default function ReportsRoom() {
       )}
       <CollapsibleSection title="How this room works">
         <Text size="small" tone="secondary">
-          {`room.py sync writes this board from GitHub, git and the room's notes (${DATA.notesDir}); room.py watch keeps it current every 5 minutes. Fix it opens a chat for that bug alone, which follows ${BRIEF}. Accept, Reject and Close are recorded here; Apply decisions opens one chat that carries them out. Your clicks stay in this canvas's data file.`}
+          {`room.py sync writes this board from GitHub, git and the room's notes (${DATA.notesDir}); room.py watch keeps it current every 5 minutes. Fix it opens a chat for that bug alone, which follows ${BRIEF}; for a crash or hang report, that chat first posts its stacks with Redlamp's frames named (${SYMBOLICATE} --comment). Accept, Reject and Close are recorded here; Apply decisions opens one chat that carries them out. Your clicks stay in this canvas's data file.`}
         </Text>
       </CollapsibleSection>
     </Stack>
