@@ -6,8 +6,9 @@
     @_spi(Harness) import RedlampUI
 
     extension RunningApp {
-        /// The Library grid on screen and taking the keyboard, with its cells.
-        func showGrid() throws -> [String] {
+        /// The Library grid on screen and taking the keyboard, with its cells: the photos' names in the folder's order,
+        /// as Library's culling follows it, or `inGridOrder`, the cells'.
+        func showGrid(inGridOrder _: Bool = false) throws -> [String] {
             try openWorking()
             let names = try photoNames()
             try expect(names.count >= 6, "The folder has \(names.count) photos")
@@ -17,16 +18,20 @@
             try wait("the grid to take the keyboard") { _ in
                 Views.editorWindow?.firstResponder.map { "\(Swift.type(of: $0))" } == "LibraryGridContentView"
             }
-            let shown = try gridNames()
+            _ = try gridNames()
             // Laid out for the size and style the scenario before left.
             try settle()
-            return shown
+            return names
         }
 
         /// The photos in the grid's order once each has a cell of its own: an open stack's photos follow its top,
         /// which needn't come first in the folder (the JPEG of a pair, ahead of its HEIC). Stacks found after
         /// `photoNames` opened them can start closed, so they're opened again until every photo has its cell.
         func gridNames() throws -> [String] {
+            // Listed from the disk first, the folder has no stacks until the library shows it and finds them, and an
+            // open pair then shows its JPEG first, in the cell its other photo had.
+            try wait("the folder shown from the library", timeout: 90) { $0.library.isShownFromLibrary }
+            try? wait("its stacks found", timeout: 10) { $0.gridStacks.list != nil }
             try wait("a cell in the grid for every photo", timeout: 30) { model in
                 model.gridStacks.openAll()
                 guard let window = Views.editorWindow, !model.items.isEmpty else { return false }
@@ -176,7 +181,7 @@
                 + "Finder and opens one in the loupe; ⌘R shows them from the Photo menu",
             claims: [.action(.showInFinder), .feature("library.grid"), .feature("library.filmstrip")],
         ) { app in
-            let names = try app.showGrid()
+            let names = try app.showGrid(inGridOrder: true)
             let first = try app.frame(of: .identifier("grid.\(names[0])"))
             let third = try app.frame(of: .identifier("grid.\(names[2])"))
             let start = NSPoint(x: first.minX - 3, y: first.maxY + 3)
