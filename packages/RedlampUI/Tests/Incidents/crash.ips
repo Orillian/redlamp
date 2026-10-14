@@ -1,0 +1,185 @@
+{"app_name":"Redlamp","timestamp":"2026-10-14 10:08:11.00 +0100","app_version":"0.3.2-alpha","build_version":"431","platform":1,"bundleID":"app.redlamp.mac","bug_type":"309","os_version":"macOS 26.6.2 (25G83)","name":"Redlamp","incident_id":"11111111-2222-3333-4444-555555555555"}
+{
+  "uptime": 620000,
+  "procRole": "Foreground",
+  "version": 2,
+  "userID": 501,
+  "deployVersion": 210,
+  "modelCode": "Mac13,2",
+  "coalitionID": 189432,
+  "osVersion": {
+    "train": "macOS 26.6.2",
+    "build": "25G83",
+    "releaseType": "User"
+  },
+  "captureTime": "2026-10-14 10:08:08.3999 +0100",
+  "codeSigningMonitor": 2,
+  "incident": "11111111-2222-3333-4444-555555555555",
+  "pid": 4242,
+  "translated": false,
+  "cpuType": "ARM-64",
+  "procLaunch": "2026-10-14 10:08:05.5917 +0100",
+  "procStartAbsTime": 14916719916731,
+  "procExitAbsTime": 14916787085954,
+  "procName": "Redlamp",
+  "procPath": "/Applications/Redlamp.app/Contents/MacOS/Redlamp",
+  "bundleInfo": {
+    "CFBundleShortVersionString": "0.3.2-alpha",
+    "CFBundleVersion": "431",
+    "CFBundleIdentifier": "app.redlamp.mac"
+  },
+  "storeInfo": {
+    "deviceIdentifierForVendor": "78BDDDBE-09DE-5CEB-AA5B-AD72B350A206",
+    "thirdParty": true
+  },
+  "parentProc": "launchd",
+  "parentPid": 1,
+  "coalitionName": "app.redlamp.probe.metrickit",
+  "crashReporterKey": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+  "developerMode": 1,
+  "codeSigningID": "app.redlamp.probe.metrickit",
+  "codeSigningTeamID": "3JP75Z3F98",
+  "codeSigningFlags": 570503953,
+  "codeSigningValidationCategory": 6,
+  "codeSigningTrustLevel": 4294967295,
+  "bootSessionUUID": "99999999-8888-7777-6666-555555555555",
+  "sip": "enabled",
+  "vmRegionInfo": "0x10 is not in any region.\n  mapped file 104000000-105000000 [16M] r--/r-- /Users/someone/Pictures/Holiday/IMG_0001.CR3",
+  "exception": {
+    "codes": "0x0000000000000001, 0x0000000000000010",
+    "rawCodes": [
+      1,
+      16
+    ],
+    "type": "EXC_BAD_ACCESS",
+    "signal": "SIGSEGV",
+    "subtype": "KERN_INVALID_ADDRESS at 0x0000000000000010"
+  },
+  "termination": {
+    "flags": 0,
+    "code": 11,
+    "namespace": "SIGNAL",
+    "indicator": "Segmentation fault: 11",
+    "byProc": "exc handler",
+    "byPid": 4242
+  },
+  "vmregioninfo": "0x10 is not in any region.  Bytes before following region: 4332453872\n      REGION TYPE                    START - END         [ VSIZE] PRT/MAX SHRMOD  REGION DETAIL\n      UNUSED SPACE AT START\n--->  \n      __TEXT                      1023c0000-1023c8000    [   32K] r-x/r-x SM=COW  /tmp/*/MetricKitProbe.app/Contents/MacOS/MetricKitProbe",
+  "faultingThread": 0,
+  "threads": [
+    {
+      "triggered": true,
+      "id": 241046042,
+      "queue": "com.apple.main-thread",
+      "frames": [
+        {
+          "imageOffset": 17480,
+          "symbol": "partial apply for closure #1 in Delegate.applicationDidFinishLaunching(_:)",
+          "symbolLocation": 128,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 12456,
+          "symbol": "thunk for @escaping @callee_guaranteed () -> ()",
+          "symbolLocation": 28,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 111792,
+          "symbol": "_dispatch_client_callout",
+          "symbolLocation": 16,
+          "imageIndex": 1
+        },
+        {
+          "imageOffset": 25032,
+          "symbol": "_dispatch_continuation_pop",
+          "symbolLocation": 596,
+          "imageIndex": 1
+        },
+        {
+          "imageOffset": 102832,
+          "symbol": "_dispatch_source_latch_and_call",
+          "symbolLocation": 392,
+          "imageIndex": 1
+        },
+        {
+          "imageOffset": 97924,
+          "symbol": "_dispatch_source_invoke",
+          "symbolLocation": 844,
+          "imageIndex": 1
+        },
+        {
+          "imageOffset": 234260,
+          "symbol": "_dispatch_main_queue_drain.cold.6",
+          "symbolLocation": 612,
+          "imageIndex": 1
+        },
+        {
+          "imageOffset": 68068,
+          "symbol": "_dispatch_main_queue_drain",
+          "symbolLocation": 176,
+          "imageIndex": 1
+        }
+      ],
+      "threadState": {
+        "x": [
+          {
+            "value": 1
+          }
+        ],
+        "pc": {
+          "value": 4332471368
+        },
+        "flavor": "ARM_THREAD_STATE64"
+      }
+    },
+    {
+      "id": 241046304,
+      "frames": []
+    },
+    {
+      "id": 241046305,
+      "frames": []
+    },
+    {
+      "id": 241046310,
+      "frames": []
+    }
+  ],
+  "usedImages": [
+    {
+      "source": "P",
+      "arch": "arm64",
+      "base": 4332453888,
+      "CFBundleShortVersionString": "0.3.2-alpha",
+      "CFBundleIdentifier": "app.redlamp.mac",
+      "size": 32768,
+      "uuid": "36c86b66-fbc5-32a1-8382-a6fe8e59d8b4",
+      "path": "/Applications/Redlamp.app/Contents/MacOS/Redlamp",
+      "name": "Redlamp",
+      "CFBundleVersion": "431"
+    },
+    {
+      "source": "P",
+      "arch": "arm64e",
+      "base": 6577053696,
+      "size": 291392,
+      "uuid": "b2000cd5-f580-314a-a141-e036719d854e",
+      "path": "/usr/lib/system/libdispatch.dylib",
+      "name": "libdispatch.dylib"
+    }
+  ],
+  "roots_installed": 0,
+  "bug_type": "309",
+  "trmStatus": 8192,
+  "asi": {
+    "libsystem_c.dylib": [
+      "abort() called",
+      "while reading /Users/someone/Pictures/Holiday/IMG_0001.CR3"
+    ]
+  },
+  "vmSummary": "MALLOC 1.2G\n/Users/someone/Pictures/Holiday/IMG_0001.CR3 mapped",
+  "instructionByteStream": {
+    "beforePC": "AAAA",
+    "atPC": "BBBB"
+  }
+}

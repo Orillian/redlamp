@@ -1,0 +1,89 @@
+{
+  "version": "1.0.0",
+  "callStackTree": {
+    "callStacks": [
+      {
+        "threadAttributed": true,
+        "callStackRootFrames": [
+          {
+            "binaryUUID": "36C86B66-FBC5-32A1-8382-A6FE8E59D8B4",
+            "offsetIntoBinaryTextSegment": 17480,
+            "sampleCount": 1,
+            "subFrames": [
+              {
+                "binaryUUID": "36C86B66-FBC5-32A1-8382-A6FE8E59D8B4",
+                "offsetIntoBinaryTextSegment": 12456,
+                "sampleCount": 1,
+                "subFrames": [
+                  {
+                    "binaryUUID": "B2000CD5-F580-314A-A141-E036719D854E",
+                    "offsetIntoBinaryTextSegment": 111792,
+                    "sampleCount": 1,
+                    "subFrames": [
+                      {
+                        "binaryUUID": "B2000CD5-F580-314A-A141-E036719D854E",
+                        "offsetIntoBinaryTextSegment": 25032,
+                        "sampleCount": 1,
+                        "subFrames": [
+                          {
+                            "binaryUUID": "B2000CD5-F580-314A-A141-E036719D854E",
+                            "offsetIntoBinaryTextSegment": 102832,
+                            "sampleCount": 1,
+                            "subFrames": [
+                              {
+                                "binaryUUID": "B2000CD5-F580-314A-A141-E036719D854E",
+                                "offsetIntoBinaryTextSegment": 97924,
+                                "sampleCount": 1,
+                                "binaryName": "libdispatch.dylib",
+                                "address": 6577151620
+                              }
+                            ],
+                            "binaryName": "libdispatch.dylib",
+                            "address": 6577156528
+                          }
+                        ],
+                        "binaryName": "libdispatch.dylib",
+                        "address": 6577078728
+                      }
+                    ],
+                    "binaryName": "libdispatch.dylib",
+                    "address": 6577165488
+                  }
+                ],
+                "binaryName": "Redlamp",
+                "address": 4332466344
+              }
+            ],
+            "binaryName": "Redlamp",
+            "address": 4332471368
+          }
+        ]
+      },
+      {
+        "threadAttributed": false,
+        "callStackRootFrames": []
+      },
+      {
+        "threadAttributed": false,
+        "callStackRootFrames": []
+      }
+    ],
+    "callStackPerThread": true
+  },
+  "diagnosticMetaData": {
+    "platformArchitecture": "arm64e",
+    "exceptionType": 1,
+    "appBuildVersion": "431",
+    "isTestFlightApp": false,
+    "osVersion": "macOS 26.6.2 (25G83)",
+    "bundleIdentifier": "app.redlamp.mac",
+    "deviceType": "Mac13,2",
+    "exceptionCode": 1,
+    "virtualMemoryRegionInfo": "0x10 is not in any region.\n  mapped file /Users/someone/Pictures/Holiday/IMG_0001.CR3",
+    "signal": 11,
+    "regionFormat": "GB",
+    "appVersion": "0.3.2-alpha",
+    "pid": 4242,
+    "lowPowerModeEnabled": false
+  }
+}
