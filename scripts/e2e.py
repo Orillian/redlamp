@@ -891,6 +891,9 @@ def write_report(run_dir: Path, report: dict) -> None:
             lines += [f"- {item}" for item in perf["over"]]
         else:
             lines.append("Every metric is within its budget.")
+        if perf.get("load"):
+            lines += ["", f"Load average {perf['load']['before']:.1f} as it started, judged against {QUIET_LOAD:.0f}, "
+                          f"and {perf['load']['after']:.1f} as it ended, its own work included."]
         lines += ["", "| Metric | Value |", "| --- | --- |"] + [f"| `{k}` | {v:.1f} |" for k, v in sorted(perf["metrics"].items())]
     state = report["ownerState"]
     lines += ["", "## Isolation", "", state["summary"]]
@@ -1176,8 +1179,11 @@ def main() -> int:
         log(f"Performance: {len(performance_ids)} scenario(s), load average {current:.1f}")
         launches.run_group("performance", performance_ids)
         args.validation = validation
-        quiet = quiet and load() <= QUIET_LOAD
+        # Judged by the load before it: the load after counts the launch's own work, which on the build Mac alone
+        # passed QUIET_LOAD with nothing else running (the owner's call, 14 October 2026). Reported, not judged.
+        after = load()
         performance = judge_performance(run_dir, quiet)
+        performance["load"] = {"before": current, "after": after}
         if not quiet:
             if args.accept_busy:
                 performance["accepted"] = "--accept-busy"
