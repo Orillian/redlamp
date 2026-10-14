@@ -1,6 +1,6 @@
 ---
 name: redlamp-reports
-description: The reports room, where every report people file on GitHub (Report a Bug and Send Feedback from the app, and issues opened by hand) is followed from arrival to the release that ships its fix, in a canvas the owner triages from. A bug he marks Fix it gets its own agent chat that reproduces it, fixes it, pushes to main and replies on the issue with the cause, the fix and the release; a suggestion he accepts goes onto the roadmap, one he rejects is closed with his reason. Use when a bug report or feedback comes in, when triaging, fixing, answering or closing a report, applying the owner's triage decisions, replying to a reporter, after a release ships, or asking which reports are open, fixed or released.
+description: The reports room, where every report people file on GitHub (Report a Bug and Send Feedback from the app, and issues opened by hand) is followed from arrival to the release that ships its fix, in a canvas the owner triages from. A bug he marks Fix it gets its own agent chat that reproduces it, fixes it, pushes to main and replies on the issue with the cause, the fix and the release; a suggestion he accepts goes onto the roadmap, one he rejects is closed with his reason. Use when a bug report, a crash or hang report or feedback comes in, when triaging, fixing, answering or closing a report, symbolicating a crash report, applying the owner's triage decisions, replying to a reporter, after a release ships, or asking which reports are open, fixed or released.
 ---
 
 # The reports room
@@ -17,22 +17,24 @@ Every report is followed in one canvas, the reports room: the reporter's own wor
 | The script | [room.py](room.py): `status`, `sync`, `watch`, `claim`, `note`, `log` (its docstring has every option). Run the main checkout's copy, from anywhere. |
 | The bug agent's brief | [bug-agent.md](bug-agent.md), which Fix it hands each bug's agent |
 | How reports are filed | `packages/RedlampUI/Sources/Feedback` (the sheet and Your Reports), `web/lib/feedback.ts` (the relay), `.cursor/rules/tracker-issues.mdc` (Issues people file) |
+| Crash and hang reports | `scripts/symbolicate-report.py` (names their frames from the release's dSYMs, kept in `~/Library/Caches/Redlamp/dSYMs/<version>/`), `scripts/feedback-labels.py` (their `crash` and `hang` labels), `packages/RedlampUI/Sources/Feedback/Incidents` (what the app records); Crash and hang reports, below |
 
 Read `~/.cursor/skills-cursor/canvas/SKILL.md` once per session before the first edit of the room. Link the room in every reply that changes it: `[Reports room](/Users/pedrogomes/.cursor/projects/Users-pedrogomes-src-darkroom/canvases/reports-room.canvas.tsx)`.
 
 ## Every time: know where things stand
 
 1. **Run `python3 .cursor/skills/redlamp-reports/room.py status`.** Never take states from memory. It lists the reports waiting for triage, the decisions waiting to be applied, the agents at work, and the closed ones, with each one's commits on main and branches, the release it's expected or was released in, and the replies. It folds in the owner's clicks.
-2. **Write a read of each report waiting for triage** when the owner asks for one (Refresh, or Ask the agent): what the person says happened, the code it's likely about, whether main has fixed it since their version, whether something already tracks it. Two or three sentences, with no GitHub writes and no code changes: `room.py note <n> --read "…"`.
-3. **Give each suggestion a proposal**: what Accept would do. A new row (its ID, the next free one in the right section of `docs/research/research-tracker.md`, its item text and phase), `follows` an existing row, or a `duplicate` of one: `room.py note <n> --proposal '{"kind": "new row", "id": "TON-31", "text": "…", "phase": "P3"}'`.
-4. **After a release ships**, see After a release below.
-5. **Sync**: `room.py sync`, and say plainly what you didn't check.
+2. **Label crash and hang reports**: `scripts/feedback-labels.py`, then `--apply` when it lists reports to label. A label is the only thing written to GitHub before triage.
+3. **Write a read of each report waiting for triage** when the owner asks for one (Refresh, or Ask the agent): what the person says happened, the code it's likely about, whether main has fixed it since their version, whether something already tracks it, and for a crash or hang report where it crashed (Crash and hang reports, below). Two or three sentences, with no GitHub writes and no code changes: `room.py note <n> --read "…"`.
+4. **Give each suggestion a proposal**: what Accept would do. A new row (its ID, the next free one in the right section of `docs/research/research-tracker.md`, its item text and phase), `follows` an existing row, or a `duplicate` of one: `room.py note <n> --proposal '{"kind": "new row", "id": "TON-31", "text": "…", "phase": "P3"}'`.
+5. **After a release ships**, see After a release below.
+6. **Sync**: `room.py sync`, and say plainly what you didn't check.
 
 ## Triage: what each button does
 
 The owner decides on the Triage tab. Each card shows the report's own sections (What happened, What I expected, Steps to reproduce; What I'd like to do; Message), its area, how often, the version and Mac, the replies, a thumbnail of the first screenshot, a read and a proposal when an agent has written them.
 
-- **Fix it** (bugs): records `fix` with a token and opens a new chat for that bug alone, prompted to follow [bug-agent.md](bug-agent.md). The agent claims the report with the token, which ties the chat to the board.
+- **Fix it** (bugs): records `fix` with a token and opens a new chat for that bug alone, prompted to follow [bug-agent.md](bug-agent.md). The agent claims the report with the token, which ties the chat to the board. For a crash or hang report, it first posts the stacks with Redlamp's frames named (Crash and hang reports, below).
 - **Accept** (suggestions): records `accept`; its label says what the proposal does.
 - **Reject…** (suggestions) and **Close…** (bugs, questions): record `reject` or `close` with the owner's reason, in a sentence written for the reporter.
 - **Answer it** (questions): records `answer` and opens a chat that answers it (Questions, below).
@@ -65,6 +67,17 @@ Take each recorded decision in turn, then record it with `room.py note <n> --tri
 Its brief is [bug-agent.md](bug-agent.md): claim, read, reproduce when it isn't obvious, fix in a worktree of its own, push to main through the push gate, reply with the cause, the fix and the release, and close. It records every step with `room.py note` and syncs the room, so the Bugs tab shows each bug's track: Reported, Triaged, Reproduced (or not needed), Fixed, On main, Replied, Released. It stops and asks, flagged on the board, when the fix would change how existing edits render, when another session is rewriting the same code, while the release room is approved or releasing, and when it needs something only the owner has.
 
 The expected release is the upcoming version from `scripts/release-status.py`, or the one after it when the release room has already checked a candidate that doesn't hold the fix. A fix that changes nothing in the app (the site, the cask, the docs) is out once it's on main.
+
+## Crash and hang reports
+
+The launch after Redlamp quits unexpectedly or stops responding offers to report it (UX-11): a bug titled "Crash: …" or "Hang: …", whose hidden line names the incident (`"incident": "crash"` or `"hang"`). The relay files it with the labels any bug gets, and `scripts/feedback-labels.py --apply` adds `crash` or `hang`. The room takes the label or the hidden line for a crash or hang report: its card says Crash report or Hang report, and its track on the Bugs tab has a Symbolicated step after Reported.
+
+Its `diagnostics.json` holds the incident: each thread's frames as offsets into their binaries, Apple's named by the Mac and Redlamp's unnamed, since a release ships stripped. `scripts/symbolicate-report.py <n>` names Redlamp's frames from the dSYMs of the release the report came from, and prints the crashed thread, the main thread and an Objective-C exception's backtrace as Markdown (`--all` prints every thread). With `--comment` it also posts them on the issue, in place of an earlier run's comment, and the room shows the report as Symbolicated, with a link to the comment and the first of Redlamp's frames on the thread that crashed. Run the main checkout's copy, from anywhere. The first run for a version downloads its dSYMs, about 105 MB, into `~/Library/Caches/Redlamp/dSYMs/<version>/`, and later runs use them from there.
+
+- **A read** of one (Refresh, Ask the agent) runs it without `--comment` and says where it crashed: the first of Redlamp's frames on the thread that crashed, or on the main thread in a hang.
+- **Fix it's agent** runs it with `--comment` before anything else, unless the room already shows the report Symbolicated, and starts from those stacks ([bug-agent.md](bug-agent.md), step 2). The comment counts as a reply in the app's Your Reports, so its first line tells the reporter it's there to work out the fix and asks nothing of them.
+- **When Redlamp's frames can't be named**, the script says why, and so should the read and the reply: the version's release has no dSYMs (each release since 0.2.6-prealpha has them), or a binary's UUID matches none of the release's, as a development build's doesn't. Those frames keep only the names the Mac gave them, or their offsets.
+- **A hang only Redlamp's watchdog saw** has no stacks: the report says how long the main thread was away, and the session's activity in `diagnostics.json` and the person's words say what was happening.
 
 ## After a release
 

@@ -17,7 +17,7 @@ room claim <n> --token <the token in your prompt> --title "Bug #<n>: <short titl
 room sync
 ```
 
-The token lets the script find this chat, so the room's Open its chat button works. Rename the chat as your prompt asks.
+The token lets the script find this chat, so the room's Open its chat button works. Rename the chat as your prompt asks; a crash or hang report's title starts `Crash #<n>` or `Hang #<n>` instead.
 
 ### A reopened report
 
@@ -25,8 +25,16 @@ If your prompt says the report was reopened, an earlier agent's fix shipped and 
 
 ## 2. Read the report
 
-- The issue: `gh issue view <n> --repo pdcgomes/redlamp --comments`. A report from the app starts with a hidden `redlamp-feedback v1` line: the area, the kind and the Redlamp version it came from.
-- `diagnostics.json`, linked at the bottom of an in-app report (it lives in pdcgomes/redlamp-feedback): the photo's edit in the sidecar format (`docs/recipes/sidecar-format.md`), the recent activity, the log tail and the Mac's details. The photo itself is never sent.
+- **A crash or hang report** (the room calls it one: it's labelled `crash` or `hang`, or its hidden line names an `incident`): unless the room already shows it Symbolicated, name its frames and post them on the issue before anything else.
+
+  ```bash
+  "$HOME/src/darkroom/scripts/symbolicate-report.py" <n> --comment
+  room note <n> --text "Symbolicated: crashed in <the first of Redlamp's frames on the thread that crashed>"
+  ```
+
+  It names Redlamp's frames from the release's dSYMs (`SKILL.md`, Crash and hang reports) and posts the crashed thread, the main thread and an Objective-C exception's backtrace; `--all` prints every thread, here only. Start from the first of Redlamp's frames on the thread that crashed (the main thread's, in a hang), and read the reasons above the stacks: an exception's message often names what went wrong. The files and lines are the release's, so read the code as it was there: `git show v<version>:<path>`. When the script says the version has no dSYMs, or that a binary's UUID matches none of the release's (a development build), Redlamp's frames stay unnamed: work from the report and the code, and say so in your reply.
+- The issue: `gh issue view <n> --repo pdcgomes/redlamp --comments`. A report from the app starts with a hidden `redlamp-feedback v1` line: the area, the kind and the Redlamp version it came from, and for a crash or hang report the incident.
+- `diagnostics.json`, linked at the bottom of an in-app report (it lives in pdcgomes/redlamp-feedback): the photo's edit in the sidecar format (`docs/recipes/sidecar-format.md`), the recent activity, the log tail and the Mac's details. A crash or hang report's holds the incident instead, with its stacks and binaries, and the session's activity. The photo itself is never sent.
 - The screenshots and any video in the comments. Look at them; they often show what the words don't.
 - Whether main already fixes it: the reporter's version is in the report; `git log v<version>..origin/main` for the files the area covers. If main has fixed it, skip to step 6 and say so.
 
