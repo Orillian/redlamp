@@ -98,6 +98,10 @@ public extension FeedbackArea {
                     ],
                 ),
                 FeedbackFeature(
+                    "firmware-model", "Firmware Film Model",
+                    ["firmware", "film simulation", "simulation menu", "experimental", "acros", "reala"],
+                ),
+                FeedbackFeature(
                     "calibration",
                     "Calibration and Process Version",
                     ["process version", "primaries", "camera calibration"],

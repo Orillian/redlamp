@@ -4,20 +4,22 @@ import RedlampRecipes
 import Testing
 @testable import RedlampUI
 
-/// The firmware model's prototype in the editor: the Camera Recipe controls' look and recipe
-/// cards, with the switch on and off. Skipped on a Mac without the model's folder.
-/// The model's folder for these tests: `REDLAMP_FIRMWARE_MODEL`, or the default folder.
+/// The firmware model in the editor: the Camera Recipe controls' look and recipe cards, with
+/// the switch on and off, and what a report names.
+/// The model's folder for these tests: `REDLAMP_FIRMWARE_MODEL`, or the default folder; on a
+/// Mac without it, the identity model.
 private let firmwareFolder = FirmwareFilmModel.environmentFolder ?? FirmwareFilmModel.defaultFolder
 
 @MainActor
-@Suite(.enabled(if: FirmwareFilmModel.isAvailable(at: firmwareFolder)))
 struct FirmwareLookEditorTests {
     private func openEditor() async throws -> (EditorModel, RecipeCatalog, () -> Void) {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let engine = StubEngine()
         let recipes = RecipeCatalog(engine: engine, library: RecipeLibrary(root: root))
-        recipes.library.firmwareModel = try FirmwareFilmModel.shared(at: firmwareFolder)
+        recipes.library.firmwareModel = try FirmwareFilmModel.isAvailable(at: firmwareFolder)
+            ? FirmwareFilmModel.shared(at: firmwareFolder)
+            : FirmwareFilmModel(files: .identity(), source: "identity")
         let model = EditorModel(engine: engine, recipes: recipes)
         let photo = root.appending(path: "IMG_0001.ARW")
         model.select(photo)
@@ -48,6 +50,15 @@ struct FirmwareLookEditorTests {
         model.setTreatment(.blackAndWhite)
         model.setFirmwareLook(FirmwareLookSettings(simulation: .sepia))
         #expect(model.recipe.treatment == .color)
+    }
+
+    @Test func `a report after choosing a simulation is filed under the firmware model`() async throws {
+        let (model, _, cleanUp) = try await openEditor()
+        defer { cleanUp() }
+        model.setFirmwareLook(FirmwareLookSettings(simulation: .acros, highlight: 1))
+        #expect(FeedbackContext.suggestion(model) == "develop.firmware-model")
+        model.setFirmwareLook(nil)
+        #expect(FeedbackContext.suggestion(model) == "develop.treatment")
     }
 
     @Test func `camera recipes apply through the model while the switch is on`() async throws {

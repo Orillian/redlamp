@@ -2,6 +2,7 @@
     import AppKit
     import RedlampDesign
     import RedlampEngineAPI
+    import RedlampRecipes
     @_spi(Harness) import RedlampUI
 
     enum DevelopScenarios {
@@ -16,6 +17,7 @@
             detail,
             lensAndTransform,
             effectsAndCalibration,
+            firmwareModel,
             panelSwitches,
             histogram,
         ]
@@ -464,6 +466,48 @@
             )
         }
 
+        static let firmwareModel = Scenario(
+            "develop.firmware-model",
+            "The firmware film model turned on in Settings, a simulation and its settings from the Camera Recipe group",
+            claims: [.feature("develop.firmware-model")],
+        ) { app in
+            let folder = FileManager.default.temporaryDirectory.appending(path: "firmware-\(UUID().uuidString)")
+            try FirmwareFilmModel.Files.identity().write(to: folder)
+            // Left on, the switch would resolve later scenarios' recipe cards through the model.
+            defer {
+                try? app.main { _ in
+                    UserDefaults.standard.set(false, forKey: FirmwareFilmModel.enabledKey)
+                    UserDefaults.standard.removeObject(forKey: FirmwareFilmModel.folderKey)
+                }
+                try? FileManager.default.removeItem(at: folder)
+            }
+            try app.main { _ in UserDefaults.standard.set(folder.path, forKey: FirmwareFilmModel.folderKey) }
+            try app.openSettings(tab: "Experimental")
+            try app.clickInSettings("settings.firmware-model", fallback: 0)
+            try app.wait("the model read from its folder") { $0.usesFirmwareModel }
+            try app.closeSettings()
+            try app.openWorking()
+            try app.main { $0.expandedPanels.insert(.effects) }
+            try app.expectRenders("the Standard simulation") { try app.chooseFirmware("Standard", in: "simulation") }
+            try app.wait("Standard from the model") { $0.firmwareSettings?.simulation == .standard }
+            try app.expectRenders("Highlight +1") { try app.chooseFirmware("+1.0", in: "highlight") }
+            try app.wait("Highlight +1") { $0.firmwareSettings?.highlight == 1 }
+            try app.chooseFirmware("ACROS", in: "simulation")
+            try app.wait("ACROS, keeping Highlight") {
+                $0.firmwareSettings?.simulation == .acros && $0.firmwareSettings?.highlight == 1
+            }
+            try app.expectRenders("Warm/Cool +2") { try app.chooseFirmware("+2", in: "warm-cool") }
+            try app.wait("Warm/Cool +2") { $0.firmwareSettings?.warmCool == 2 }
+            try app.chooseFirmware("None", in: "simulation")
+            try app.wait("Redlamp Color again") { $0.baseLook == BuiltInBaseLook.color.reference }
+            try app.choose(.resetAll)
+            try app.openSettings(tab: "Experimental")
+            try app.clickInSettings("settings.firmware-model", fallback: 0)
+            try app.wait("the model put away") { !$0.usesFirmwareModel }
+            try app.closeSettings()
+            app.covered(.feature("develop.firmware-model"), via: .mouse)
+        }
+
         static let histogram = Scenario(
             "develop.histogram",
             "Dragging the histogram moves its region's slider; under it, the photo's values under the pointer",
@@ -859,6 +903,51 @@
             try app.openRaw(1)
             try app.choose(.resetAll)
             app.covered(.feature("history.reset"), via: .menu)
+        }
+    }
+
+    extension RunningApp {
+        /// Chooses `title` in the firmware model's pop-up `develop.firmware-model.<control>` in the
+        /// Camera Recipe group, as choosing it from its menu does.
+        func chooseFirmware(_ title: String, in control: String) throws {
+            let identifier = "develop.firmware-model.\(control)"
+            try wait("the \(identifier) pop-up") { _ in Self.firmwarePopUp(identifier) != nil }
+            try main { _ in
+                guard let popUp = Self.firmwarePopUp(identifier)
+                else { throw ScenarioFailure("No \(identifier) pop-up") }
+                guard let index = popUp.itemTitles.firstIndex(of: title) else {
+                    throw ScenarioFailure("\(identifier) has no \(title): \(popUp.itemTitles)")
+                }
+                popUp.selectItem(at: index)
+                _ = popUp.sendAction(popUp.action, to: popUp.target)
+            }
+            pause(0.05)
+        }
+
+        /// SwiftUI may give a picker's identifier to its accessibility element rather than to the
+        /// pop-up button, so the button is also found under that element's frame.
+        @MainActor private static func firmwarePopUp(_ identifier: String) -> NSPopUpButton? {
+            guard let window = Views.editorWindow, let root = window.contentView?.superview else { return nil }
+            let popUps = Views.all(NSPopUpButton.self, in: root)
+            if let popUp = popUps.first(where: { $0.accessibilityIdentifier() == identifier }) {
+                return popUp
+            }
+            guard let frame = accessibilityFrame(identifier, in: root) else { return nil }
+            let middle = NSPoint(x: frame.midX, y: frame.midY)
+            return popUps.first { window.convertToScreen($0.convert($0.bounds, to: nil)).contains(middle) }
+        }
+
+        @MainActor private static func accessibilityFrame(_ identifier: String, in element: Any) -> NSRect? {
+            guard let element = element as? NSAccessibilityProtocol else { return nil }
+            if element.accessibilityIdentifier() == identifier {
+                return element.accessibilityFrame()
+            }
+            for child in element.accessibilityChildren() ?? [] {
+                if let frame = accessibilityFrame(identifier, in: child) {
+                    return frame
+                }
+            }
+            return nil
         }
     }
 #endif

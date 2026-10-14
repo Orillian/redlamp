@@ -159,7 +159,11 @@ public extension FeedbackContext {
                 return id
             }
             guard model.history.indices.contains(model.historyIndex) else { return nil }
-            return FeedbackArea.featureID(for: model.history[model.historyIndex].action)
+            let action = model.history[model.historyIndex].action
+            if case .baseLook = action, model.recipe.baseLook.isFirmwareModel {
+                return "develop.firmware-model"
+            }
+            return FeedbackArea.featureID(for: action)
         }
     }
 

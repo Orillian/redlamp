@@ -67,6 +67,10 @@
           "title" : "Camera Recipe"
         },
         {
+          "id" : "develop.firmware-model",
+          "title" : "Firmware Film Model"
+        },
+        {
           "id" : "develop.calibration",
           "title" : "Calibration and Process Version"
         },
