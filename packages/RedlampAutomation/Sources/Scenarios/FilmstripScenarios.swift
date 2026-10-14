@@ -105,8 +105,16 @@
                 app.covered(.feature("library.filmstrip"), via: .model)
             }
             let medium = FilmstripSize.medium.title
-            try app.wait("Medium Thumbnails from the top edge, the photo fitted above them") { model in
-                model.filmstripSize == .medium && model.filmstripHeight == small + 34 && fitted(model)
+            do {
+                try app.wait("Medium Thumbnails from the top edge, the photo fitted above them") { model in
+                    model.filmstripSize == .medium && model.filmstripHeight == small + 34 && fitted(model)
+                }
+            } catch {
+                let state = try app.main { model in
+                    "\(model.filmstripSize?.title ?? "no size"), \(model.filmstripHeight) points tall where \(small + 34) were "
+                        + "expected, the photo \(fitted(model) ? "fitted" : "not fitted") above them"
+                }
+                throw ScenarioFailure("\(error): \(state)")
             }
             try app.wait("View › Filmstrip › \(medium) checked") { _ in Menus.isChecked(medium) == true }
             let size = try app.main { _ in UserDefaults.standard.double(forKey: "app.redlamp.filmstripCellHeight") }
