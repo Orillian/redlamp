@@ -135,9 +135,14 @@
             try app.choose(.acceptHealthProposals)
             try app.wait("the sheet with its plan", timeout: 30) { $0.healthSheet?.canAccept == true }
             let sheet = try app.main { $0.healthSheet }
+            let run = app.runDirectory.path
+            let acting = try app.main { model in
+                (sheet?.acting ?? [])
+                    .map { model.library.url(ofPhoto: $0)?.path.replacingOccurrences(of: run, with: "") }
+            }
             try app.expect(
                 sheet?.heading == "Move 1 copy to the Trash?",
-                "the sheet asks \(sheet?.heading ?? "nothing")",
+                "the sheet asks \(sheet?.heading ?? "nothing"), for \(acting.map { $0 ?? "a photo not found" })",
             )
             try app.expect(sheet?.choice != nil, "the sheet offers the selected copy left out")
             try app.expect(sheet?.leftOut.hasPrefix("1 stays where it is") == true, "left out: \(sheet?.leftOut ?? "")")

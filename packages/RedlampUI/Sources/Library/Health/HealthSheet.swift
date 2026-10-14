@@ -394,6 +394,8 @@ final class HealthSheetController: NSViewController {
     /// From the command to the sheet on screen, and to its plan in it.
     public var shownAfter: Duration?
     public var plannedAfter: Duration?
+    /// The photos its plan acts on, by their IDs in the index.
+    public var acting: [Int64]
 }
 
 @_spi(Harness) public extension EditorModel {
@@ -405,7 +407,7 @@ final class HealthSheetController: NSViewController {
             heading: model.heading, count: model.countLine, what: model.what, undo: model.undo,
             leftOut: model.leftOut, choice: model.selectedApart.isEmpty ? nil : model.choice, status: model.status,
             canAccept: model.canAccept, isRunning: model.isRunning, shownAfter: controller.shownAfter,
-            plannedAfter: model.planned,
+            plannedAfter: model.planned, acting: model.plan?.findings.map(\.photo) ?? [],
         )
     }
 
