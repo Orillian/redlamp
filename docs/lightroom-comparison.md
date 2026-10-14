@@ -61,7 +61,8 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Camera-matching looks | Yes | Done | Different | | TON-14 | Four looks measured from Fujifilm cameras' own JPEGs (one provisional), under Redlamp's own names |
 | More camera-matching looks (Eterna, Classic Negative, Acros and others) | Yes | In progress | | P3 | TON-14, TON-20, TON-35, TON-43, TON-44, TON-45, TON-49, TON-50 | Need more photos with the camera's JPEG beside the raw; Fujifilm's own LUTs for ten simulations, downloaded from Fujifilm, import in one step and fill the film slots; a model of the camera's own processing for twenty simulations, with their tone and colour settings, is an experiment turned on in Settings |
 | DNG camera profiles | Yes | Done | | | CAM-04, TON-09 | Dual-illuminant colour and the embedded HueSatMap; a profile's look is offered as a Base Look |
-| Custom `.dcp` camera profiles | Yes | Later | | | | Deferred on 2 October 2026 |
+| Custom `.dcp` camera profiles | Yes | Planned | | P2 | TON-51 | Your own `.dcp` files, and those Lightroom Classic and Camera Raw install, used on your Mac only; Redlamp doesn't ship Adobe's |
+| Adobe's profiles: Adobe Color, Portrait, Landscape and the others | Yes | Planned | | P2 | TON-52, EDT-33 | Your own copies, where Lightroom Classic or Camera Raw installs them, as Base Looks with their Amount, used on your Mac only; edits brought from Lightroom render in the Adobe profile they name when it's on your Mac |
 | ICC input profiles | No | Planned | | P2 | TON-10 | |
 | A scene-referred rendering for reproduction work, with exposure tied to the camera's metering | No | Done | | | TON-39, CAM-28 | The Base Look Redlamp Reproduction: no tone curve or look, and each camera's exposure calibrated from a target, so a metered grey scale exports at its own L*; Lightroom needs a custom linear profile for this |
 | Calibration panel | Yes | Done | | | | Shadows Tint and the red, green and blue primaries |
@@ -85,7 +86,8 @@ A high-level list of the features photographers know from Lightroom, and where R
 | --- | --- | --- | --- | --- | --- | --- |
 | Lens corrections the raw file carries | Yes | Done | | | LNS-01, LNS-02 | DNG opcodes, Sony's and Fujifilm's built-in corrections |
 | Lens corrections from Panasonic and OM System raws | Yes | In progress | | P3 | LNS-02 | |
-| Adobe LCP lens profiles | Yes | Done | Different | | LNS-04, LNS-11 | Profiles you put in Redlamp's Lens Profiles folder; Redlamp doesn't ship Adobe's |
+| Adobe LCP lens profiles | Yes | Done | Behind | | LNS-04, LNS-11 | Profiles you put in Redlamp's Lens Profiles folder, each used only on the body it was made on, where Lightroom uses it on other bodies too; Redlamp doesn't ship Adobe's |
+| Lens profiles made on other bodies, chosen by hand, from Camera Raw's folders, and for fisheye lenses | Yes | Planned | | P2 | LNS-14, LNS-15, LNS-16, LNS-17 | A profile made on another body whose sensor covers the photo's; Lightroom's Make, Model and Profile menus; the profiles Lightroom Classic and Camera Raw install, read where they are; fisheye profiles in Phase 3 |
 | A built-in lens profile database | Yes | Planned | | P2 | LNS-03 | The lensfun database, once a licence question is answered |
 | Manual distortion and vignetting | Yes | Done | | | | |
 | Remove Chromatic Aberration and Defringe | Yes | Done | | | LNS-09 | From the lens profile, or measured from the photo's own edges |
@@ -181,7 +183,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Batch export | Yes | Planned | | P4 | EDT-16 | |
 | Batch rename | Yes | In progress | | P4 | LIB-25, LIB-26 | Rename Photos (F2): naming templates shared with importing, batch export and capture sessions, a live preview of every new name, and Undo; Move to Folder and Copy to Folder from the menus, photos dragged onto a folder (⌥ to copy), and Stop partway |
 | Open photos edited in Lightroom | Yes | Planned | | P4 | EDT-12 | Converts Lightroom's XMP sidecars once, and never writes them |
-| Bring a Lightroom Classic catalog's edits across | Yes (Lightroom's migration from Classic) | Planned | | P4 | EDT-23 | Each photo's develop settings, converted once with a report, and its virtual copies as versions, read without changing the catalog; its ratings, keywords and collections come across with the library |
+| Bring a Lightroom Classic catalog's edits across | Yes (Lightroom's migration from Classic) | Planned | | P4 | EDT-23, EDT-33, EDT-34 | Each photo's develop settings, converted once with a report, and its virtual copies as versions, read without changing the catalog; its ratings, keywords and collections come across with the library; one window finds the catalog, its presets and your Adobe profiles, and edits render in those profiles when they're on your Mac |
 | Match Total Exposures | Yes (Classic) | Undecided | | | EDT-21 | |
 
 ## History and versions

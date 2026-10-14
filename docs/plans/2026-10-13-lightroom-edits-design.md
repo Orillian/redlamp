@@ -35,10 +35,10 @@ Lightroom keeps a photo's develop settings in three forms, all with the same Cam
 | White balance on a raw: As Shot, the named presets, Custom | The same mode; Custom with `Temperature` and `Tint` | Mapped. The same numbers give the same neutral only where Redlamp's temperature and tint agree with Lightroom's for that camera: measured below |
 | White balance Auto on a raw | Custom, with the temperature and tint Lightroom's Auto found, where the settings hold them | Approximated: Lightroom's result is kept, not measured again |
 | White balance on a JPEG, TIFF or HEIC (`IncrementalTemperature`, `IncrementalTint`) | Red and Blue Shift, as EDT-11 converts them | Approximated |
-| Treatment; the profile (`CameraProfile`, `Look` and its amount) | Treatment; the Base Look of the same name (Adobe Color to Color, and Vivid, Portrait, Landscape, Neutral, Monochrome) with its amount; Adobe Standard and the camera-matching profiles to the camera's embedded look where the file has one (TON-09), else the nearest by name; Fujifilm's simulations to Redlamp's film looks of that kind, or to the photographer's imported Fujifilm LUTs (TON-43 to TON-45); creative and third-party profiles to Color | Mapped by name, approximated otherwise. Adobe's profiles are never read or converted |
+| Treatment; the profile (`CameraProfile`, `Look` and its amount) | Treatment; the Base Look of the same name (Adobe Color to Color, and Vivid, Portrait, Landscape, Neutral, Monochrome) with its amount; Adobe Standard and the camera-matching profiles to the camera's embedded look where the file has one (TON-09), else the nearest by name; Fujifilm's simulations to Redlamp's film looks of that kind, or to the photographer's imported Fujifilm LUTs (TON-43 to TON-45); creative and third-party profiles to Color | Mapped by name, approximated otherwise. Since 14 October (DEC-85, EDT-33), the photographer's own Adobe profile renders the edit when it's on the Mac, and Redlamp's look of the same name stands in otherwise |
 | Crop and angle | `crop` and `crop.angle`, through `LightroomCrop` | Mapped. Exact when both apps see the same frame: Lightroom's frame is checked against the catalog's own record of the photo's size |
 | Rotate and flip (`Adobe_images.orientation`) | `orientation`, after the camera's own | Mapped, once the census settles Lightroom's codes from a real catalog |
-| Lens profile corrections and their amounts | `lens.profile`, `lens.profileDistortion`, `lens.profileVignetting`: the correction the file carries, or the photographer's LCP files (LNS-04) | Mapped. Approximated when Lightroom used a profile Redlamp doesn't have; the report says where an LCP can come from |
+| Lens profile corrections and their amounts | `lens.profile`, `lens.profileDistortion`, `lens.profileVignetting`: the correction the file carries, or the photographer's LCP files (LNS-04). Since 14 October (DEC-85), also those Lightroom Classic and Camera Raw install, read where they are (LNS-16), and profiles made on another body whose sensor covers the photo's (LNS-14); the profile the edit names (`LensProfileName`, `LensProfileFilename`) is the one chosen (LNS-15) | Mapped. Approximated when Lightroom used a profile Redlamp doesn't have; the report says where an LCP can come from |
 | Manual distortion and vignetting, Remove Chromatic Aberration, Defringe | `lens.distortion`, `lens.vignetting`, `lens.vignettingMidpoint`, `lens.removeChromaticAberration`, `lens.defringe…` | Mapped, scales to check. Process 2010's manual `ChromaticAberrationR` and `ChromaticAberrationB` are left out |
 | Transform sliders | `transform.vertical`, `.horizontal`, `.rotate`, `.aspect`, `.scale`, `.offsetX`, `.offsetY` | Mapped, scales to check |
 | Upright, Guided | Redlamp's Guided Upright, solved from the same guides | Approximated, close to exact |
@@ -132,7 +132,7 @@ This is the larger choice: every list and action of the library learns that a ph
 | Geometry: crop, angle, rotation, flip, Transform sliders, lens distortion, Guided Upright, where masks and spots sit | Exact, within about a pixel at 24 MP | Marks on the test photos, in Lightroom's exports and Redlamp's renders |
 | Global sliders | The same control at the same value. How far it moves the photo matches Lightroom only once EDT-24 fits it | The change each app's edit makes from its own default render, compared |
 | White balance | The same neutral for the same temperature and tint, where the colour models agree | Grey patches of the test photos |
-| Profile | Redlamp's look of the same name, not Adobe's | The whole-photo difference, recorded rather than targeted |
+| Profile | The photographer's own Adobe profile when it's on the Mac (EDT-33, DEC-85), else Redlamp's look of the same name | The whole-photo difference, recorded rather than targeted |
 | AI masks | The same kind of mask; the shape is Redlamp's model's | Overlap with Lightroom's mask, exported as the bench's mask recipe does |
 | Healing | The same places; the pixels are Redlamp's | Spot positions |
 | Process 2003 and 2010 | Approximated (option B) | Against Lightroom's own update |
@@ -147,7 +147,7 @@ The owner chose 2 (2026-10-13). EDT-24's fits need Lightroom's renders of the sy
 
 ## Decisions (2026-10-13, the owner)
 
-1. **How close:** measured sliders (2 above), through EDT-24; geometry exact; profiles become Redlamp's looks of the same name.
+1. **How close:** measured sliders (2 above), through EDT-24; geometry exact; profiles become Redlamp's looks of the same name. Amended on 14 October (DEC-85): the photographer's own Adobe profile when it's on the Mac (EDT-33).
 2. **Versions:** items of the library now, each with its own rating, flag, label, keywords and collections, as Lightroom's virtual copies are; chosen over the edit-only first step this draft leaned to. EDT-09 and LIB-48.
 3. **Process 2003 and 2010:** converted as Lightroom's Update to Current Process does (B above), EDT-31.
 4. **Photos already edited in Redlamp:** keep their edit; Lightroom's is added as a version named "Lightroom Classic".

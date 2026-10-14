@@ -1,7 +1,7 @@
 # What Redlamp Can Learn from RAWmakase
 
-**Date:** 7 October 2026. **Subject:** RAWmakase v0.2.0 (`main` at `cfe010d`, 7 October 2026), the LibRaw commit its releases ship (master at `4f01440`, 2 October 2026), its documentation, release notes and issues.
-**Decisions and status:** on 7 October 2026 the owner accepted the slider work (UX-28, UX-29) and asked for the study's other lessons as Proposed rows in the [research intake tracker](research-tracker.md), for a decision later ([section 8](#8-decisions-and-tracker-rows)). On 9 October 2026 the owner chose to move LibRaw to master's head (`7bfffe2`), and CAM-13 is done.
+**Date:** 7 October 2026; second pass 14 October 2026. **Subject:** RAWmakase v0.2.0 (`main` at `cfe010d`, 7 October 2026), the LibRaw commit its releases ship (master at `4f01440`, 2 October 2026), its documentation, release notes and issues; the second pass, v0.3.0 and `main` at `17b70e8a` (14 October 2026).
+**Decisions and status:** on 7 October 2026 the owner accepted the slider work (UX-28, UX-29) and asked for the study's other lessons as Proposed rows in the [research intake tracker](research-tracker.md), for a decision later ([section 8](#8-decisions-and-tracker-rows)). On 9 October 2026 the owner chose to move LibRaw to master's head (`7bfffe2`), and CAM-13 is done. On 14 October 2026 a second pass read RAWmakase 0.3.0, with camera and lens profiles first, and a reviewer's side-by-side ([section 9](#9-second-pass-14-october-2026)); the owner accepted its nine recommendations, Adobe's profiles on the photographer's Mac (DEC-85) and DEC-41 the same day.
 
 RAWmakase is an open-source raw editor by Piotr Chmolowski, written in Rust, for macOS, Linux and Windows. It was started on 26 September 2026 and shipped 17 releases in its first eleven days; on 7 October it had 249 stars, 1,327 commits and 296 pull requests, almost all from agent branches. Its aim is "close, not exact, Lightroom parity": Lightroom Classic's Develop module rebuilt control by control, its responses fitted to Camera Raw's renders, with a way in for a Lightroom user's catalog, presets and profiles. This study asked how it compares with Redlamp, what it does differently or better, how it uses LibRaw, and what Redlamp should take from it.
 
@@ -23,6 +23,7 @@ RAWmakase is an open-source raw editor by Piotr Chmolowski, written in Rust, for
 6. [What not to follow](#6-what-not-to-follow)
 7. [Licensing](#7-licensing)
 8. [Decisions and tracker rows](#8-decisions-and-tracker-rows)
+9. [Second pass, 14 October 2026](#9-second-pass-14-october-2026)
 
 ---
 
@@ -158,7 +159,7 @@ The value field is where the two meet. Redlamp's is the more capable (arithmetic
 | Lightroom catalogs | Imported, read-only, with develop history | Not tracked |
 | Lightroom sidecars | Read for metadata; never written | Import planned, never writing (EDT-12) |
 | Adobe profiles | The photographer's own DCP and XMP looks, found in Camera Raw's folder | DNG profiles; the photographer's own DCPs deferred on 2 October |
-| Lens profiles | The photographer's own LCP files | The same (LNS-04) |
+| Lens profiles | The photographer's own LCP files | The photographer's own LCP files (LNS-04), but each used only on the body it was made on ([§9.3](#93-lens-profiles), 14 October) |
 | Agents | A local control socket (off by default, a token in an owner-only file) and an MCP server of 16 tools inside the app; every edit can name the photo, generation and revision it expects, and is refused when they've moved | An internal MCP server for look development (EXT-01); a public one and App Intents planned (EXT-02) |
 | MIDI | Core MIDI on macOS: controls mapped to sliders and actions, absolute and relative encoders, a Loupedeck+ profile, following the selected mask | None |
 
@@ -215,7 +216,7 @@ Read a closed `.lrcat` (SQLite) without changing it, and write what it holds as 
 
 - **Adobe DNG SDK code in the app.** RAWmakase compiles the ACR3 tone table and the temperature table from the SDK's sources; Redlamp implements from the DNG specification, and the SDK's licence asks a commercial distributor to indemnify Adobe.
 - **RAWmakase's fitted tables and camera exposures.** They are MIT-licensed, but derived from Camera Raw's renders and Adobe DNG Converter's output. Redlamp measures its own (5.3, under DEC-41).
-- **Importing Adobe's profiles from Camera Raw's folder.** The photographer's own DCPs were deferred on 2 October; TON-09 keeps Redlamp's own look for new edits.
+- **Importing Adobe's profiles from Camera Raw's folder.** The photographer's own DCPs were deferred on 2 October; TON-09 keeps Redlamp's own look for new edits. Revisited in [§9.2](#92-camera-profiles) (14 October).
 - **sRGB-only output,** and colours clipped to sRGB before the photographer sees them.
 - **Edits that move to a newer engine when a preset is applied.**
 - **Keyboard control that only works under the pointer,** and an interface without an accessibility tree.
@@ -268,3 +269,140 @@ Read from GitHub's licence API and the repository's `licenses/` folder on 7 Octo
 | EXT-03 | MIDI controllers | Adopt | P4 | M | — |
 
 CAM-13 keeps its row, with the LibRaw master commit as its recommended route.
+
+---
+
+## 9. Second pass, 14 October 2026
+
+**Subject:** RAWmakase 0.3.0 (13 October 2026) and `main` at `17b70e8a` (14 October 2026), 472 commits after the first pass, read from the same clone: the release notes of 0.2.1 to 0.3.0, `docs/lightroom-profiles.md`, `docs/lens-corrections.md`, `docs/parity-gaps.md`, `src/app/onboarding.rs`, `crates/rawmakase-model/src/lens/lcp.rs`, and pull requests #361, #405, #428, #429, #431 and #458. Redlamp's side was checked against the tracker, the Lightroom comparison and the code on 14 October. As before, nothing was run.
+
+### 9.1 What changed in RAWmakase
+
+Five releases in a week:
+
+| Release | Date | What it added |
+| --- | --- | --- |
+| 0.2.1 | 7 October | The app split into bounded parts (#216); quitting saves the edit and asks before cutting off an export; Texture, Vibrance beyond ±50 and the black-and-white mix refitted to Camera Raw for new edits; values beyond a slider's range can be typed |
+| 0.2.2 | 8 October | Select Subject, Sky and Background, marked experimental: DETR finds people, animals and sky and SAM 2 outlines them, both Apache-2.0, on the CPU, 270 MB downloaded on request (IS-Net and BiRefNet were turned down for their training data's licences); Lightroom's panel shortcuts (Tab, ⇧Tab, F6 to F8); Standard and 1:1 previews, which also let offline photos zoom; Sony custom white balance from each body's own calibration |
+| 0.2.3 | 9 October | Canon sRAW and mRAW and Nikon's small raws; the A7R VI's calibration from Adobe DNG Converter; Lightroom catalogs over 1 GB |
+| 0.2.4 | 9 October | A first launch opens a Photos catalog; a setup screen for Lightroom users finds their catalog, camera profiles, lens profiles and presets, each with an Import button |
+| 0.3.0 | 13 October | A new layout; Synchronize Folder; a scene-referred tone stage fitted to Camera Raw, which moved the median distance from Camera Raw across its comparison sets from ΔE2000 1.73 to 1.48, and renders every existing edit anew; PNG export; colour noise reduction from each photo's own noise; more Adobe camera and lens profiles matched (#428, #429, #431, #458) |
+
+Two things the first pass found have grown. RAWmakase's edits move: with 0.3.0 "existing edits render with the new engine and look different", and earlier releases refuse a catalog 0.3.0 has saved. And its way in for Lightroom users is now one screen, which brings Adobe's own profiles across with the catalog.
+
+### 9.2 Camera profiles
+
+**RAWmakase renders a Lightroom user's photos with their own copy of Adobe's profiles.** The photographer chooses `.dcp` and `.xmp` files (the Profile menu, Preferences, `rawmakase import-profiles`), or accepts what the Profile menu and the setup screen find in Camera Raw's folder (`/Library/Application Support/Adobe/CameraRaw`): each catalog camera's Adobe Standard and Camera Matching DCPs, the Adobe Raw looks under `Settings/Adobe/Profiles/Adobe Raw`, and the photographer's own DCPs for those cameras. The files are copied into its data folder; none ships with the app.
+
+- **What renders:** an XMP look over its camera's DCP: the six Adobe Raw looks (Color, Portrait, Neutral, Landscape, Vivid, Monochrome), the creative looks (Artistic, B&W, Modern, Vintage), and the camera-matching XMPs that carry an RGB table. It decodes Adobe's big-table encoding (base85 and zlib) for HSV look tables and RGB tables (1D and 3D, interpolated tetrahedrally), and applies the look's own tone curve, the Profile Amount from 0 to 200% (fitted to Camera Raw: tables scale with it, a curve is applied twice at 200%, settings inside the look grow half as fast above 100%), and the develop settings a few looks carry (Exposure, Saturation, the colour mixer, the parametric curve, split toning, a vignette).
+- **What it refuses, with a message:** adaptive and AI profiles, Fujifilm's camera-matching XMPs (their tables are kept elsewhere), looks that need a DNG's own RGB tables, and settings it doesn't apply inside a look.
+- **Defaults:** a new photo opens in an imported Adobe Color, else Adobe Standard, else a DNG's own profile, else RAWmakase Color. Once a Lightroom user has imported Adobe's profiles, their photos open looking as they do in Lightroom.
+- **Edits keep the profile:** the resolved tables are stored in each edit, so it renders without the files.
+- **Matching:** Adobe's camera names are mapped to LibRaw's (26 of 270 validation photos had found no profile; 1 does now, #458), and phones' profiles for each camera module are chosen by focal length (#431).
+- **Measured:** on six X100F photos, against Lightroom Classic's exports, Adobe Color came 20% closer than its Adobe Standard baseline, Neutral 52% and Portrait 3% (encoded sRGB, mean absolute error).
+
+**Redlamp reads profiles that come inside DNGs, and nothing else.** TON-09 applies an embedded profile's matrices and HueSatMap (process 4), bakes its LookTable and tone curve into a Base Look offered under In This Photo, and applies Apple's ProfileGainTableMap with Apple's look (process 5). `DNGProfile` already parses `.dcp` files, but importing them (TON-09's third slice) was deferred on 2 October because the owner doesn't use DCP files, and the comparison lists custom `.dcp` profiles as Later. Adobe's XMP looks aren't read at all. The preset importer ignores `CameraProfile` and `Look` ([Lightroom presets](../recipes/lightroom-presets.md)), and the [Lightroom edits design](../plans/2026-10-13-lightroom-edits-design.md) of 13 October maps them by name to Redlamp's looks (Adobe Color to Color, and so on), noting that "Adobe's profiles are never read or converted". What Redlamp already has for it: a Base Look Amount from 0 to 200, as Lightroom's Profile Amount runs; LUT import; and DEC-73's route for Fujifilm's own LUTs, kept on the Mac they were imported on.
+
+**This is now the largest gap for a Lightroom user, and the accepted work doesn't close it.** EDT-23 and EDT-12 bring each photo's settings across, and EDT-24 will fit how far each slider moves the photo; but EDT-24 measures each app's change from its own default render, which by design "takes the difference between the profiles out". Lightroom has opened raws in Adobe Color since 2018, so nearly every imported photo will look different in Redlamp before any slider is touched, by the distance between Adobe Color and Redlamp Color. RAWmakase closes that distance with the photographer's own files.
+
+**Most of the engine work is done.** Calibration (the matrices and HueSatMap) is TON-09's first slice, a look as a Base Look its second, and the `.dcp` parser exists. What's new is Adobe's XMP encoding (documented by the DNG SDK's source and by RAWmakase's MIT reader), RGB tables, the Amount's rules, and a choice about the settings inside a few looks: carry them as offsets, or leave them out with a report. Redlamp's sliders stay Redlamp's: the photo starts as it looks in Lightroom, and how far each slider moves it is EDT-24's to fit.
+
+**It needs the owner's decision, and perhaps counsel's.** It reverses the 2 October deferral, which was a preference, and the edits design's "never read or converted", which is a rule; and AGENTS.md says Redlamp never ships or converts Adobe's files. Reading the photographer's own installed profiles to render their photos is neither shipping nor converting. Baking one into a Base Look on their Mac is close to what TON-09 already does with profiles inside DNGs, many of which are Adobe Standard, written by DNG Converter. Storing Adobe's tables in a sidecar that travels with the photo, as RAWmakase stores them in its edits, would be distributing them. DEC-73 is the model: the photographer's own files, used on the Mac they're on, never bundled, never in exported recipes or `.cube` exports; the sidecar names the profile and never holds its tables, and where the profile isn't on the Mac (another Mac, a photo someone shared) Redlamp's look of the same name stands in, with a notice. The DNG specification gives every profile an embed policy (ProfileEmbedPolicy: allow copying, embed if used, embed never, no restrictions), and Redlamp can honour it. Lightroom Classic and Photoshop's Camera Raw install the profiles; whether Adobe's free DNG Converter installs them too wasn't checked here.
+
+### 9.3 Lens profiles
+
+**The first pass called the two the same; they aren't.** Both read the photographer's LCP files with a reader of their own, but RAWmakase uses Adobe's collection as Lightroom does, and Redlamp in practice can't.
+
+| | RAWmakase | Redlamp |
+| --- | --- | --- |
+| Where profiles come from | Files imported by a command or the CLI, copied into its data folder; the setup screen takes Camera Raw's `LensProfiles/1.0` folders for the catalog's camera makers and 12 third-party brands, and the user's own `LensProfiles` | Only `~/Library/Application Support/Redlamp/Lens Profiles/`, filled by hand (LNS-04); nothing looks in Camera Raw's folders |
+| Which body's profile | Any body whose sensor covers the photo's: the photo's own make first, then makes sharing a mount (L-mount: Sigma, Panasonic, Leica; Micro Four Thirds: Olympus, OM System, Panasonic), then any make; a smaller sensor's profile is refused (`make_rank`) | Only a profile made on the photo's own body: `LCPProfileLibrary.correction` keeps the sub-profiles whose camera matches, and a test holds it ("another lens, camera or make … gives no correction") |
+| A file that names no lens | Nikon's matched by the maker note's lens ID (#429: a D600's photo takes Adobe's profile made on a D3) | No correction |
+| Choosing by hand | Lightroom's Setup (Default, Auto, Custom), Make, Model and Profile menus; Custom for an adapted or manual lens; `crs:LensProfileSetup`, `LensProfileName`, `LensProfileFilename` and `LensProfileDigest` read and written; a named profile that isn't imported is reported with what stands in | None. The panel names the matched profile (LNS-11), and the preset importer notes `LensProfileSetup` and `LensProfileName` without acting on them |
+| The model | Rectilinear distortion, lateral chromatic aberration and vignetting, interpolated in focal length and aperture at the farthest focus distance; PreferMetadataDistort honoured; no fisheye | The same model (Chen et al., 2010) and interpolation; fisheye profiles skipped and reported; no tangential terms or focus distance |
+| Built-in corrections | Fujifilm, Sony and DNG | Sony, Fujifilm and DNG, with Panasonic and OM System accepted for 0.3.2 (LNS-02). Redlamp's Sony reader takes the stated count and ignores the padding after it, so RAWmakase's #405 doesn't apply |
+| Checked against Camera Raw | 8 A7 II photos with profile corrections on: 0.0088 mean absolute error, corners within ±0.02 EV | The Sony sample's frame edge against the camera's JPEG (LNS-02) |
+
+Adobe makes each lens's profile on one body or a few (its files are named for them, as `NIKON D3 (Nikon AF-S VR Micro-Nikkor 105mm f2.8G IF-ED) - RAW.lcp`), and Lightroom applies it to other bodies. With Adobe's files, Redlamp corrects a lens only on the body Adobe happened to use. That leaves out the photographers LCP files serve most: Canon, Nikon and Pentax users, whose raws carry no correction Redlamp reads, and anyone with an adapted or third-party lens. Matching across bodies changes the render of any existing edit whose Lens Profiles folder holds such a profile, so it comes with a new process version.
+
+### 9.4 One place to bring Lightroom across
+
+RAWmakase's setup screen opens on a first launch when Lightroom's catalog (`~/Pictures/Lightroom`) or Camera Raw's folders are on the Mac, and later from the catalog menu: the catalog, camera profiles, lens profiles and presets, each with what was found and an Import button. Redlamp has or plans each piece in a different place: presets in the Recipes panel (EDT-11), the catalog's metadata (LIB-29, in progress) and its edits (EDT-23, planned as File › Import from Lightroom Classic…), sidecars (EDT-12), lens profiles by hand, camera profiles not at all. EDT-23's import window can be that one place: it finds the catalog, the presets in Camera Raw's `Settings` folder and, with the decision in 9.2, the profiles and lens profiles, and imports each on its own.
+
+### 9.5 Smaller gaps
+
+- **Small raws.** RAWmakase has opened Canon sRAW and mRAW and Nikon's small raws since 0.2.3, checked against the cameras' JPEGs. Redlamp's decoder takes LibRaw's three- and four-colour buffers as linear RGB (`RawDecoder`), so they may open, but the camera bench's seed run left reduced modes out, no sample is in the decode suite, and Sony's YCbCr files, the nearest case, render magenta (CAM-21). A raw.pixls.us sample of each through the camera bench would say.
+- **Sony white balance by body.** Bodies of one Sony model differ. Adobe's DNG Converter writes a calibration for each body, Camera Raw renders a custom Temperature and Tint with it, and RAWmakase now reads it from the file's own daylight preset (#361: custom white balance on two A7CR bodies at a median ΔE2000 of 0.45 to 1.01 from Camera Raw). Redlamp's Temperature and Tint come from the model's matrix, the same for every body, so two bodies may render the same setting differently. It matters for a shoot with two bodies, and for EDT-23's "same neutral for the same temperature and tint"; raws of one grey card from two bodies would show whether it's worth a row.
+- **The Targeted Adjustment Tool** is built in RAWmakase (the tone curve's regions, the Color Mixer and the black-and-white mix); Redlamp's UX-35 is Proposed.
+- **Fisheye lens profiles:** neither app reads them. The Adobe Camera Model paper LNS-04 follows describes the fisheye model too.
+- **Not gaps:** RAWmakase's AI masks (Subject finds people and animals only) are behind Redlamp's; Point Color, the point curve's presets and the panel switches are in both.
+
+### 9.6 Where the first pass's rows stand
+
+| State | Rows |
+| --- | --- |
+| Done | UX-28, UX-29, UX-30, UX-32, CAM-13 |
+| Accepted, not started | UX-39; EDT-23 and EDT-24 (13 October) |
+| Proposed | UX-31, UX-33, UX-34, UX-35, UX-36, EDT-21, EDT-22, EDT-25, EXT-03 |
+| Open decision | DEC-41, which EDT-24 has waited on since 13 October |
+
+### 9.7 Recommendations
+
+| # | What | Needs | Phase | Size |
+| --- | --- | --- | --- | --- |
+| 1 | **Lens profiles across bodies:** a profile of the photo's lens made on another body whose sensor is at least as large, preferring the photo's body, then its make, then makes sharing the mount; the lens ID where the file names no lens; camera names compared as LibRaw's canonical names; from a new process version | — | P2 | S |
+| 2 | **Choosing a lens profile by hand:** Lightroom's Setup, Make, Model and Profile menus, listing the profiles on the Mac that cover the photo's sensor; the choice stored by name and file name, as `crs:LensProfileName` and `LensProfileFilename` store it, so imported Lightroom edits keep theirs | 1 | P2 | M |
+| 3 | **Lens profiles where Adobe installs them:** Camera Raw's `LensProfiles/1.0` and the user's `LensProfiles`, read where they are, beside Redlamp's folder; the panel says which folder a profile came from | The decision below; 1's process version | P2 | S |
+| 4 | **The photographer's own camera profiles:** `.dcp` import (TON-09's third slice), then Adobe's XMP looks over their camera's Adobe Standard (the six Adobe Raw looks first, the creative looks after) with the Amount, chosen in the Base Look menu, kept on the Mac as DEC-73 keeps Fujifilm's LUTs | The decision below | P2 | L |
+| 5 | **Imported Lightroom edits use them:** a converted edit naming Adobe Color renders with the photographer's Adobe Color when it's on the Mac, else Redlamp's Color, as the design maps it now, with the report saying which | 4, EDT-23 | P4 | S |
+| 6 | **One import window for Lightroom:** EDT-23's window finds the catalog, Camera Raw's presets and, with the decision, the profiles and lens profiles | EDT-23 | P4 | S |
+| 7 | **Small raws through the camera bench:** Canon sRAW and mRAW and Nikon's small raws, refused or fixed as the bench finds | — | P2 | S |
+| 8 | **Fisheye lens profiles,** from the Adobe Camera Model paper | 1 | P3 | M |
+| 9 | **Sony white balance by body:** a check on two bodies of one model, then each body's own calibration if they differ | — | P3 | S |
+
+**Decided by the owner on 14 October 2026:**
+
+1. **Adobe's profiles on the photographer's Mac** (a new decision row, DEC-85): yes, camera and lens profiles both, read where Lightroom Classic or Camera Raw installs them or from files the photographer chooses, on DEC-73's terms: used on that Mac, never bundled, never in exported recipes, `.cube` exports or sidecars, each profile's embed policy honoured. Counsel is asked whether Adobe's terms for the installed profiles allow it, as DEC-73 asked about Fujifilm's.
+2. **All nine recommendations, as Accepted rows,** and UX-35, the Targeted Adjustment Tool, accepted.
+3. **DEC-41:** yes, as numbers only.
+4. **After the review in 9.8:** recommendations 1 and 3 join the process version planned for 0.3.2, with CAM-29, DN-12 and LNS-02's Panasonic and OM System corrections; recommendation 4's two parts, `.dcp` profiles and Adobe's XMP looks, are both Phase 2; EDT-23 comes in the releases right after 0.3.2, with recommendations 5 and 6 and versions (EDT-09, LIB-48), everything but masks and spots; raw defaults (EDT-06) may choose the photographer's own Adobe Color; ARC-16 stays Proposed.
+
+**Rows,** with the IDs free on 14 October:
+
+| ID | Recommendation | Phase | Size | Depends on |
+| --- | --- | --- | --- | --- |
+| DEC-85 | Adobe's camera and lens profiles on the photographer's Mac *(counsel)* | — | — | — |
+| LNS-14 | 1, lens profiles across bodies, in 0.3.2's process version | P2 | S | LNS-04 |
+| LNS-15 | 2, choosing a lens profile by hand | P2 | M | LNS-14 |
+| LNS-16 | 3, lens profiles where Adobe installs them, in 0.3.2's process version | P2 | S | LNS-14, DEC-85 |
+| LNS-17 | 8, fisheye lens profiles | P3 | M | LNS-04 |
+| TON-51 | 4, the photographer's own `.dcp` profiles (TON-09's third slice) | P2 | M | TON-09, DEC-85 |
+| TON-52 | 4, Adobe's XMP looks over their camera's Adobe Standard | P2 | L | TON-51 |
+| EDT-33 | 5, imported Lightroom edits in the photographer's Adobe profile | P4 | S | EDT-23, TON-52 |
+| EDT-34 | 6, one import window for Lightroom | P4 | S | EDT-23, LNS-16, TON-51 |
+| CAM-33 | 7, small raws through the camera bench | P2 | S | CAM-14 |
+| CAM-34 | 9, Sony white balance by body | P3 | S | CAM-14 |
+
+### 9.8 A reviewer's side-by-side
+
+On 14 October the owner heard of a video review that compared the two apps. It preferred Redlamp for its speed and interface, found RAWmakase's colours slightly better, and brought a Lightroom catalog into RAWmakase with its collections and edits. The video wasn't watched for this study, so its camera and photos are unknown; what follows is what the code and the tracker say could explain it.
+
+**Colour.** Four differences, any of which a side-by-side would show:
+
+- **Edited against unedited.** RAWmakase converts a catalog's develop settings along with its collections. Redlamp's import (LIB-29) brings the metadata and collections and lists the edits without converting them (EDT-23). Photos from a Lightroom catalog show their Lightroom edits in RAWmakase and Redlamp's defaults in Redlamp.
+- **The profile.** RAWmakase's setup screen imports the photographer's Adobe profiles with the catalog, and photos then open in Adobe Color, or in the profile each edit names; without them, RAWmakase Color makes hue shifts of the same kind (reds, skin, yellows, foliage, aqua, sky). Redlamp Color is the camera's matrix and Redlamp's tone curve, with no look table. For raws other than DNGs, nothing corrects the 3 × 3 matrix's errors per camera, as Adobe Standard's HueSatMap does (on the Pixel 4a it moved the render by a mean ΔE2000 of 3.0, worst patch 6.1), and nothing shifts hues for taste, as Adobe Color does.
+- **Brightness by camera.** RAWmakase sets each body's exposure from a table of 180 bodies. Redlamp applies a DNG's BaselineExposure and nothing for other raws, and the camera bench finds its default 1.7 stops darker than the Canon 5D Mark IV's own JPEG, 2.2 stops darker than the R6 Mark III's, and up to ±0.9 EV from Fujifilm bodies' (CAM-29, TON-14). A darker render reads as duller colour.
+- **Bright colours.** Redlamp's tone map takes bright colours towards white with their hue kept (TON-02, TON-03). Camera Raw clips each channel, and RAWmakase clips as Camera Raw does, which keeps bright skies, flowers and lit skin more saturated.
+
+Which of these the reviewer saw would take their photos, or ARC-16's comparison with Lightroom, which stays Proposed. What's planned addresses each: EDT-23 after 0.3.2; TON-51, TON-52 and EDT-33 for the profile, with EDT-06's raw defaults able to open new photos in the photographer's Adobe Color; CAM-29 in 0.3.2 for brightness; TON-14's chart matrix solve for Redlamp's own correction per camera. Bright colours are a matter of Redlamp's look, left as it is.
+
+**The catalog.** Redlamp isn't at RAWmakase's point yet:
+
+| From a Lightroom Classic catalog | RAWmakase | Redlamp |
+| --- | --- | --- |
+| Folders, ratings, flags, labels, keywords, descriptive metadata | Brought across | Brought across (LIB-29, on main since 11 October) |
+| Collections | Brought across | Brought across with their sets, and the smart collections whose rules map (LIB-29) |
+| Develop settings | Converted | Listed, not converted (EDT-23, after 0.3.2) |
+| Masks and spots | Converted; AI and colour range masks reported and left out | After EDT-23's first delivery, once the test catalog checks their placement |
+| Virtual copies | Brought across | Listed (EDT-09 and LIB-48, with EDT-23) |
+| History steps | Brought across | Left out by the edits design, and counted |

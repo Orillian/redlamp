@@ -57,7 +57,7 @@ Tokens are a budget: agent work is moving to fixed subscriptions with no on-dema
 - A feature lands with its regression scenario (`packages/RedlampAutomation/Sources/Scenarios/`), worked through the user's own input path: `RedlampAutomationTests` fail when an action, parameter, panel, tool, mask kind or Report a Bug feature has no scenario or exemption. After UI work, run `mise run e2e` (the smoke tier); it runs in the background in a home of its own.
 - No focus rings, on any screen: end the root view of every `NSHostingView`, `NSHostingController` and scene in `.focusEffectDisabled()`, and leave AppKit's rings to `FocusRings`, which removes them in every window. `scripts/check-focus-rings.py` checks both (`.cursor/rules/focus-rings.mdc`).
 - Docs are plain and precise, in complete sentences, with no superlatives.
-- Licences: implement from published specifications and papers. Never copy code from GPL projects, and never ship or convert Adobe's files.
+- Licences: implement from published specifications and papers. Never copy code from GPL projects, and never ship Adobe's files or anything made from them. Redlamp may read the photographer's own Adobe camera and lens profiles where they're installed or chosen, and use them on that Mac only (DEC-85).
 - Raw files: [`docs/raw-pipeline.md`](docs/raw-pipeline.md) describes how Redlamp decodes and develops them, from LibRaw to the demosaic and camera colour, and how to add a camera, update LibRaw or add a decoder. Read it before changing that code, and update it in the same change.
 
 ## Reporting during a wave
