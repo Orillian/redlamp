@@ -62,6 +62,7 @@
                 knownIssues: plan.knownIssues ?? [:], knownStalls: plan.knownStalls ?? [:], host: host,
             )
             Views.watchPopovers()
+            FullScreen.watch()
             let watchdog = Watchdog(recorder: recorder)
             let knownStalls = Array((plan.knownStalls ?? [:]).keys)
             MainThread.isInKnownStall = { watchdog.isMainThread(inAnyOf: knownStalls) }
@@ -239,6 +240,11 @@
                 if model.drawingKind != nil {
                     model.perform(.cancel)
                 }
+                // Esc, until there's nothing left to leave: a People or Landscape picker a scenario left open
+                // would take the masks panel's list from the next.
+                for _ in 0 ..< 6 {
+                    guard model.perform(.cancel) else { break }
+                }
                 model.activeTool = .edit
                 model.showShortcuts = false
                 // What every scenario starts from: the photo at Fit, the panels, filmstrip and toolbar
@@ -264,6 +270,9 @@
                     && window.level == .normal && window.title != "" && !window.isSheet {
                     window.close()
                 }
+            }
+            if (try? leaveFullScreen()) == true {
+                recorder.write("note", ["step": "the editor window was left in macOS full screen; taken out of it"])
             }
             pause(0.2)
             return (try? main { model in !model.isModalDialogOpen && Views.editorWindow?.attachedSheet == nil }) ??

@@ -275,7 +275,12 @@
                 ActionCheck(action: action, observe: { "\($0.lightsOut)" }, restore: { app in
                     try app.main { $0.lightsOut = 0 }
                 })
-            case .fullScreenPreview: .toggle(action) { "\($0.isPresenting)" }
+            case .fullScreenPreview:
+                ActionCheck(action: action, observe: { "\($0.isPresenting)" }, restore: { app in
+                    try app.settleFullScreen()
+                    try app.main { _ = $0.perform(action) }
+                    try app.settleFullScreen()
+                })
             case .toggleToolbar:
                 .toggle(action) { _ in "\(Views.editorWindow?.toolbar?.isVisible ?? false)" }
             // Panels

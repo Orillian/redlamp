@@ -154,9 +154,9 @@
             }
             try app.press(.toggleFilmstrip)
             try app.wait("F6 to bring it back, kept up", until: kept)
-            try app.press(.fullScreenPreview)
+            try app.pressFullScreenPreview()
             try app.wait("presenting on the whole window") { $0.isPresenting && $0.canvas.stageInsets == .zero }
-            try app.press(.fullScreenPreview)
+            try app.pressFullScreenPreview()
             try app.wait("presenting to put it back, kept up") { !$0.isPresenting && kept($0) }
 
             try app.choose(item)

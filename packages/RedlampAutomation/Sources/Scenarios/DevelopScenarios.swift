@@ -542,9 +542,9 @@
                 try app.press(.lightsOut)
                 try app.wait("step \(step) of the overlays") { $0.infoOverlay == step % 3 && $0.lightsOut == step % 3 }
             }
-            try app.press(.fullScreenPreview)
+            try app.pressFullScreenPreview()
             try app.wait("the full-screen preview") { $0.isPresenting }
-            try app.press(.fullScreenPreview)
+            try app.pressFullScreenPreview()
             try app.wait("the editor back") { !$0.isPresenting }
             app.covered(
                 [
