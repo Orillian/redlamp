@@ -288,7 +288,9 @@
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let photo = folder.appending(path: "Locked.ARW")
             if !FileManager.default.fileExists(atPath: photo.path) {
-                try FileManager.default.copyItem(at: app.photos.appending(path: app.workingPhoto()), to: photo)
+                // A file of its own, which Library Health doesn't take for a copy of the run's photo to trash.
+                let working = try Data(contentsOf: app.photos.appending(path: app.workingPhoto()))
+                try (working + HealthScenarios.freeBox).write(to: photo)
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
             defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
