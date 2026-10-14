@@ -494,9 +494,14 @@ struct LabInspectorView: View {
                         if group == .whiteBalance, let mode = recipe.settings.whiteBalanceMode {
                             Text("Mode: \(mode.name)").font(.caption2)
                         }
-                        if group == .toneCurve, let curve = recipe.settings.pointCurve {
-                            Text("Point curve: " + curve.map { String(format: "(%.2f, %.2f)", $0.x, $0.y) }
-                                .joined(separator: " ")).font(.caption2)
+                        if group == .toneCurve {
+                            ForEach(CurveChannel.allCases, id: \.self) { channel in
+                                if let curve = Self.curve(channel, recipe) {
+                                    Text("\(channel == .rgb ? "Point" : channel.name) curve: "
+                                        + curve.map { String(format: "(%.2f, %.2f)", $0.x, $0.y) }
+                                        .joined(separator: " ")).font(.caption2)
+                                }
+                            }
                         }
                         if group == .baseLook, let look = recipe.baseLook {
                             Text("\(look.name) at \(Int(look.amount))%").font(.caption2)
@@ -511,10 +516,15 @@ struct LabInspectorView: View {
         switch group {
         case .treatment: recipe.settings.treatment != nil
         case .whiteBalance: recipe.settings.whiteBalanceMode != nil
-        case .toneCurve: recipe.settings.pointCurve != nil
+        case .toneCurve: CurveChannel.allCases.contains { curve($0, recipe) != nil }
         case .baseLook: recipe.baseLook != nil
         default: false
         }
+    }
+
+    /// The point curve the recipe sets for `channel`, if it sets one.
+    private static func curve(_ channel: CurveChannel, _ recipe: Recipe) -> [CurvePoint]? {
+        channel == .rgb ? recipe.settings.pointCurve : recipe.settings.channelCurves[channel]
     }
 
     @ViewBuilder

@@ -34,19 +34,10 @@
         "whiteBalance": {
           "enum": ["asShot", "auto", "daylight", "cloudy", "shade", "tungsten", "fluorescent", "flash", "custom"]
         },
-        "pointCurve": {
-          "type": "array",
-          "minItems": 2,
-          "maxItems": 64,
-          "items": {
-            "type": "object",
-            "required": ["x", "y"],
-            "properties": {
-              "x": { "type": "number", "minimum": 0, "maximum": 1 },
-              "y": { "type": "number", "minimum": 0, "maximum": 1 }
-            }
-          }
-        }
+        "pointCurve": { "$ref": "#/$defs/pointCurve" },
+        "pointCurveRed": { "$ref": "#/$defs/pointCurve", "description": "Red's own curve, after pointCurve" },
+        "pointCurveGreen": { "$ref": "#/$defs/pointCurve", "description": "Green's own curve, after pointCurve" },
+        "pointCurveBlue": { "$ref": "#/$defs/pointCurve", "description": "Blue's own curve, after pointCurve" }
       }
     },
     "baseLook": { "$ref": "#/$defs/baseLookReference" },
@@ -66,6 +57,19 @@
   },
   "$defs": {
     "id": { "type": "string", "pattern": "^[a-z0-9._-]+(/[a-z0-9._-]+)+$", "maxLength": 200 },
+    "pointCurve": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["x", "y"],
+        "properties": {
+          "x": { "type": "number", "minimum": 0, "maximum": 1 },
+          "y": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
     "baseLookReference": {
       "type": "object",
       "required": ["id", "name"],

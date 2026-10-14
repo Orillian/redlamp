@@ -131,6 +131,7 @@ public struct Recipe: Sendable, Hashable, Identifiable {
             treatment: includes.contains(.treatment) ? edit.treatment : nil,
             whiteBalanceMode: includes.contains(.whiteBalance) ? edit.whiteBalanceMode : nil,
             pointCurve: includes.contains(.toneCurve) ? edit.pointCurve : nil,
+            channelCurves: includes.contains(.toneCurve) ? edit.channelCurves : [:],
         )
         let baseLook = includes.contains(.baseLook) ? edit.baseLook : nil
         return Recipe(
@@ -252,6 +253,8 @@ public struct RecipeSettings: Sendable, Hashable {
     public var treatment: Treatment?
     public var whiteBalanceMode: WhiteBalanceMode?
     public var pointCurve: [CurvePoint]?
+    /// Red's, green's and blue's own point curves, as the edit's (`EditRecipe.channelCurves`).
+    public var channelCurves: [CurveChannel: [CurvePoint]]
     /// Parameters a newer Redlamp knows, kept unchanged.
     public internal(set) var unknownValues: [String: Double] = [:]
     /// Setting groups a newer Redlamp knows, kept unchanged.
@@ -262,21 +265,37 @@ public struct RecipeSettings: Sendable, Hashable {
         treatment: Treatment? = nil,
         whiteBalanceMode: WhiteBalanceMode? = nil,
         pointCurve: [CurvePoint]? = nil,
+        channelCurves: [CurveChannel: [CurvePoint]] = [:],
     ) {
         self.values = values
         self.treatment = treatment
         self.whiteBalanceMode = whiteBalanceMode
         self.pointCurve = pointCurve
+        self.channelCurves = channelCurves
     }
 
     public subscript(parameter: ParameterID) -> Double {
         values[parameter] ?? parameter.spec.defaultValue
     }
+
+    /// The point curve the recipe sets for `channel`: straight where it sets none.
+    public subscript(curve channel: CurveChannel) -> [CurvePoint] {
+        (channel == .rgb ? pointCurve : channelCurves[channel]) ?? EditRecipe.linearPointCurve
+    }
 }
 
 extension RecipeSettings: Codable {
     private enum CodingKeys: String, CodingKey {
-        case values, treatment, whiteBalance, pointCurve
+        case values, treatment, whiteBalance, pointCurve, pointCurveRed, pointCurveGreen, pointCurveBlue
+
+        static func curve(_ channel: CurveChannel) -> CodingKeys {
+            switch channel {
+            case .rgb: .pointCurve
+            case .red: .pointCurveRed
+            case .green: .pointCurveGreen
+            case .blue: .pointCurveBlue
+            }
+        }
     }
 
     public init(from decoder: Decoder) throws {
@@ -293,6 +312,10 @@ extension RecipeSettings: Codable {
         treatment = try container.decodeIfPresent(Treatment.self, forKey: .treatment)
         whiteBalanceMode = try container.decodeIfPresent(WhiteBalanceMode.self, forKey: .whiteBalance)
         pointCurve = try container.decodeIfPresent([CurvePoint].self, forKey: .pointCurve)
+        channelCurves = [:]
+        for channel in CurveChannel.colors {
+            channelCurves[channel] = try container.decodeIfPresent([CurvePoint].self, forKey: .curve(channel))
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -302,6 +325,9 @@ extension RecipeSettings: Codable {
         try container.encodeIfPresent(treatment, forKey: .treatment)
         try container.encodeIfPresent(whiteBalanceMode, forKey: .whiteBalance)
         try container.encodeIfPresent(pointCurve, forKey: .pointCurve)
+        for channel in CurveChannel.colors {
+            try container.encodeIfPresent(channelCurves[channel], forKey: .curve(channel))
+        }
     }
 }
 
@@ -600,7 +626,7 @@ extension RecipeSettings {
         if settings.whiteBalanceMode != nil {
             groups.insert(.whiteBalance)
         }
-        if settings.pointCurve != nil {
+        if settings.pointCurve != nil || !settings.channelCurves.isEmpty {
             groups.insert(.toneCurve)
         }
         return groups

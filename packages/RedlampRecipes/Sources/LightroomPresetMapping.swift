@@ -16,8 +16,8 @@ enum LightroomRule: Sendable {
     /// Lightroom's relative white balance (−100…100), which it applies to JPEGs and other
     /// rendered photos only.
     case incremental
-    case pointCurve
-    case channelCurve
+    /// The point curve for RGB, or a channel's own.
+    case pointCurve(CurveChannel)
     case vignetteStyle
     case lensProfile
     case look
@@ -93,10 +93,10 @@ extension LightroomPreset {
     ]
 
     private static let curveRules: [(key: String, rule: LightroomRule)] = [
-        ("ToneCurvePV2012", .pointCurve),
-        ("ToneCurvePV2012Red", .channelCurve),
-        ("ToneCurvePV2012Green", .channelCurve),
-        ("ToneCurvePV2012Blue", .channelCurve),
+        ("ToneCurvePV2012", .pointCurve(.rgb)),
+        ("ToneCurvePV2012Red", .pointCurve(.red)),
+        ("ToneCurvePV2012Green", .pointCurve(.green)),
+        ("ToneCurvePV2012Blue", .pointCurve(.blue)),
         ("ParametricShadows", .parameter(.curveShadows)),
         ("ParametricDarks", .parameter(.curveDarks)),
         ("ParametricLights", .parameter(.curveLights)),
@@ -248,8 +248,6 @@ extension LightroomPreset {
             + "doesn't make one."
         static let luminanceInBlackAndWhite = "Lightroom doesn't apply HSL Luminance to a black-and-white photo; "
             + "Redlamp's Luminance sliders hold the B&W mix instead."
-        static let channelCurve = "Redlamp's point curve is one curve for all three channels."
-        static let straightChannelCurve = "A straight line, which Redlamp's single curve matches."
         static let pointCurveSize = "Redlamp's point curve holds up to 64 points."
         static let vignetteStyle = "Rendered as Highlight Priority, the only style Redlamp's vignette has."
         static let splitToningBlending = "Not in this Split Toning preset: Lightroom renders Split Toning with "

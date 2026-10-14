@@ -116,6 +116,34 @@ struct RecipeFormatTests {
         #expect(recipe.baseLook == nil)
     }
 
+    /// Red's, green's and blue's own point curves (TON-40) travel with the Tone Curve group: captured,
+    /// written, read and blended by Amount as the point curve is.
+    @Test func `channel curves travel with the tone curve`() throws {
+        let lifted = [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.7), CurvePoint(x: 1, y: 1)]
+        var edit = EditRecipe()
+        edit[curve: .red] = lifted
+        #expect(Recipe.capture(edit, name: "Mine", includes: [.tone]).settings.channelCurves.isEmpty)
+        let recipe = Recipe.capture(edit, name: "Mine", includes: [.toneCurve])
+        #expect(recipe.settings.channelCurves == [.red: lifted])
+        let text = try String(data: RecipeFile.encode(recipe), encoding: .utf8) ?? ""
+        #expect(text.contains("pointCurveRed") && !text.contains("pointCurveGreen"))
+        let (decoded, issues) = try RecipeValidator.decode(RecipeFile.encode(recipe))
+        #expect(decoded.settings == recipe.settings && issues.isEmpty)
+
+        #expect(recipe.apply(to: EditRecipe())[curve: .red] == lifted)
+        let half = recipe.apply(to: EditRecipe(), amount: 50)[curve: .red]
+        #expect(half.contains(CurvePoint(x: 0.5, y: 0.6)), "half way: \(half)")
+        var blue = EditRecipe()
+        blue[curve: .blue] = lifted
+        #expect(recipe.apply(to: blue)[curve: .blue] == EditRecipe.linearPointCurve, "a curve the recipe doesn't set")
+
+        let json = #"""
+        {"id":"local/x","name":"X","includes":["toneCurve"],"settings":{"pointCurveGreen":[{"x":0,"y":0}]}}
+        """#
+        let refusal = #expect(throws: RecipeValidationError.self) { try RecipeValidator.decode(Data(json.utf8)) }
+        #expect(refusal?.description == "the green curve is invalid")
+    }
+
     @Test func `legacy profile ids migrate to base looks`() throws {
         let json = #"{"version":1,"profile":{"id":"redlamp.portrait","name":"Redlamp Portrait","amount":100}}"#
         let edit = try JSONDecoder().decode(EditRecipe.self, from: Data(json.utf8))

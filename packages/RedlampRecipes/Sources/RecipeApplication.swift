@@ -72,11 +72,9 @@ public extension Recipe {
                 for parameter in group.parameters {
                     blend(parameter, to: settings[parameter])
                 }
-                result.pointCurve = Self.blendCurve(
-                    edit.pointCurve,
-                    settings.pointCurve ?? EditRecipe.linearPointCurve,
-                    t,
-                )
+                for channel in CurveChannel.allCases {
+                    result[curve: channel] = Self.blendCurve(edit[curve: channel], settings[curve: channel], t)
+                }
             default:
                 for parameter in group.parameters {
                     blend(parameter, to: settings[parameter])

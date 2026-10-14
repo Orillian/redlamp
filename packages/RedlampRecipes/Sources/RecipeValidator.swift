@@ -164,13 +164,25 @@ public enum RecipeValidator {
 
     private static func sanitizeCurveAndLook(_ recipe: inout Recipe) -> [RecipeIssue] {
         var issues: [RecipeIssue] = []
+        func sanitized(_ curve: [CurvePoint]) -> [CurvePoint]? {
+            guard curve.count >= 2, curve.count <= 64, curve.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
+                return nil
+            }
+            return curve.map { CurvePoint(x: min(max($0.x, 0), 1), y: min(max($0.y, 0), 1)) }.sorted { $0.x < $1.x }
+        }
         if let curve = recipe.settings.pointCurve {
-            if curve.count < 2 || curve.count > 64 || curve.contains(where: { !$0.x.isFinite || !$0.y.isFinite }) {
-                issues.append(RecipeIssue(.error, "the point curve is invalid"))
-            } else {
+            if let curve = sanitized(curve) {
                 recipe.settings.pointCurve = curve
-                    .map { CurvePoint(x: min(max($0.x, 0), 1), y: min(max($0.y, 0), 1)) }
-                    .sorted { $0.x < $1.x }
+            } else {
+                issues.append(RecipeIssue(.error, "the point curve is invalid"))
+            }
+        }
+        for channel in CurveChannel.colors {
+            guard let curve = recipe.settings.channelCurves[channel] else { continue }
+            if let curve = sanitized(curve) {
+                recipe.settings.channelCurves[channel] = curve
+            } else {
+                issues.append(RecipeIssue(.error, "the \(channel.name.lowercased()) curve is invalid"))
             }
         }
         if let look = recipe.baseLook {

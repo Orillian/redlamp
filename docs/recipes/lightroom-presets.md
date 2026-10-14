@@ -59,7 +59,7 @@ When a preset holds kelvin values, they are used and the relative ones are repor
 | Camera Raw setting | Redlamp | Outcome |
 | --- | --- | --- |
 | `ToneCurvePV2012` | the point curve: each `x, y` pair on 0 to 255 becomes a point on 0 to 1 | mapped |
-| `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, `ToneCurvePV2012Blue` | none | mapped when straight, from (0, 0) to (255, 255), which Redlamp's single curve matches; otherwise ignored, as Redlamp's point curve is one curve for all three channels |
+| `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, `ToneCurvePV2012Blue` | red's, green's and blue's own point curves, on the same scale as `ToneCurvePV2012`, which Redlamp applies after the RGB curve; a straight one leaves Redlamp's straight | mapped |
 | `ParametricShadows`, `ParametricDarks`, `ParametricLights`, `ParametricHighlights` | the parametric curve's Shadows, Darks, Lights and Highlights | mapped |
 | `ParametricShadowSplit`, `ParametricMidtoneSplit`, `ParametricHighlightSplit` | the three splits (10 to 40, 30 to 70, 60 to 90) | mapped; approximated when clamped to Redlamp's narrower ranges |
 | `ToneCurveName2012` | none | not reported: the points carry the curve |

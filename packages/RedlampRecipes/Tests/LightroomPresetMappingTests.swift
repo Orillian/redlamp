@@ -125,8 +125,7 @@ struct LightroomPresetMappingTests {
     }
 
     @Test(arguments: PresetXMP.Form.allCases)
-    func `the tone curve keeps its points, parametric sliders and straight channel curves`(form: PresetXMP
-        .Form) throws {
+    func `the tone curve keeps its points, parametric sliders and channel curves`(form: PresetXMP.Form) throws {
         let imported = try convert([
             ("ParametricShadows", "+10"), ("ParametricDarks", "-5"), ("ParametricLights", "+15"),
             ("ParametricHighlights", "-20"), ("ParametricShadowSplit", "30"), ("ParametricMidtoneSplit", "55"),
@@ -145,13 +144,14 @@ struct LightroomPresetMappingTests {
             .curveShadows: 10, .curveDarks: -5, .curveLights: 15, .curveHighlights: -20, .curveSplitShadows: 30,
             .curveSplitMidtones: 55, .curveSplitHighlights: 90,
         ])
+        #expect(imported.recipe.settings.channelCurves == [
+            .green: [CurvePoint(x: 0, y: 0), CurvePoint(x: 128 / 255, y: 140 / 255), CurvePoint(x: 1, y: 1)],
+        ], "a straight channel curve is Redlamp's straight one")
         #expect(imported.recipe.includes == [.toneCurve])
         let report = imported.report
-        #expect(report.outcome("ToneCurvePV2012") == .mapped)
-        #expect(report.outcome("ToneCurvePV2012Red") == .mapped)
-        #expect(report.note("ToneCurvePV2012Red") == Note.straightChannelCurve)
-        #expect(report.outcome("ToneCurvePV2012Green") == .ignored)
-        #expect(report.note("ToneCurvePV2012Green") == Note.channelCurve)
+        for key in ["ToneCurvePV2012", "ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue"] {
+            #expect(report.outcome(key) == .mapped && report.note(key) == nil, "\(key)")
+        }
         #expect(report.outcome("ParametricHighlightSplit") == .approximated)
         #expect(report.note("ParametricHighlightSplit") == Note.clamped("90"))
         #expect(report.outcome("ToneCurveName2012") == nil)

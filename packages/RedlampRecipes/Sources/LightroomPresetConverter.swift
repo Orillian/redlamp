@@ -58,6 +58,7 @@ struct LightroomPresetConverter {
     private(set) var treatment: Treatment?
     private(set) var whiteBalanceMode: WhiteBalanceMode?
     private(set) var pointCurve: [CurvePoint]?
+    private(set) var channelCurves: [CurveChannel: [CurvePoint]] = [:]
     private(set) var entries: [LightroomImportReport.Entry] = []
 
     init(_ settings: CameraRawSettings) {
@@ -69,7 +70,10 @@ struct LightroomPresetConverter {
     }
 
     var recipeSettings: RecipeSettings {
-        RecipeSettings(values: values, treatment: treatment, whiteBalanceMode: whiteBalanceMode, pointCurve: pointCurve)
+        RecipeSettings(
+            values: values, treatment: treatment, whiteBalanceMode: whiteBalanceMode, pointCurve: pointCurve,
+            channelCurves: channelCurves,
+        )
     }
 
     private var isBlackAndWhite: Bool {
@@ -108,10 +112,8 @@ struct LightroomPresetConverter {
             setKelvin(key, parameter)
         case .incremental:
             setIncremental(key)
-        case .pointCurve:
-            setPointCurve(key)
-        case .channelCurve:
-            setChannelCurve(key)
+        case let .pointCurve(channel):
+            setPointCurve(key, channel)
         case .vignetteStyle:
             setVignetteStyle(key)
         case .lensProfile:
@@ -198,19 +200,17 @@ struct LightroomPresetConverter {
 
     // MARK: - Tone curve and effects
 
-    private mutating func setPointCurve(_ key: String) {
+    private mutating func setPointCurve(_ key: String, _ channel: CurveChannel) {
         guard let curve = curve(key) else { return ignore(key, Note.unreadable) }
         guard curve.count <= 64 else { return ignore(key, Note.pointCurveSize) }
-        pointCurve = Self.isStraight(curve) ? nil : curve
+        let bent = Self.isStraight(curve) ? nil : curve
+        if channel == .rgb {
+            pointCurve = bent
+        } else {
+            channelCurves[channel] = bent
+        }
         includes.insert(.toneCurve)
         report(key, .mapped)
-    }
-
-    private mutating func setChannelCurve(_ key: String) {
-        guard let curve = curve(key) else { return ignore(key, Note.unreadable) }
-        guard Self.isStraight(curve) else { return ignore(key, Note.channelCurve) }
-        includes.insert(.toneCurve)
-        report(key, .mapped, Note.straightChannelCurve)
     }
 
     /// A point curve's `x, y` pairs on Lightroom's 0…255 scale, as 0…1, in order.

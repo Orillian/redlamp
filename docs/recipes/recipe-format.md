@@ -57,6 +57,7 @@ Parameters of an included group that the recipe doesn't list take their **defaul
 | `treatment` | `color` or `blackAndWhite`? | |
 | `whiteBalance` | mode? | `asShot`, `auto`, a preset (`daylight`, …) or `custom`. As Shot and Auto are resolved per photo. |
 | `pointCurve` | [{x, y}]? | 2 to 64 points in 0…1. |
+| `pointCurveRed`, `pointCurveGreen`, `pointCurveBlue` | [{x, y}]? | Red's, green's and blue's own point curves, applied after `pointCurve` to their channel alone, each 2 to 64 points in 0…1. A recipe that includes the Tone Curve group and leaves one out straightens it. |
 
 ### Base Look references and packages
 
