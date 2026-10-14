@@ -173,7 +173,8 @@ public final class BatchExport {
         case loaded(EditRecipe)
         /// Without them: they're read from the photo's sidecar.
         case unloaded(EditRecipe)
-        case unreadable
+        /// Why the photo isn't exported.
+        case unreadable(String)
     }
 
     /// Each photo's edit as it is now: `open`'s as given, the others' read from their sidecars off the main thread
@@ -191,7 +192,12 @@ public final class BatchExport {
                         return .loaded(open.recipe)
                     }
                     let read = sidecars.store(for: url).readForEditing(for: url)
-                    guard !read.failed else { return .unreadable }
+                    guard !read.failed else { return .unreadable("Its edit couldn't be read.") }
+                    if read.sidecar == nil, let protection = read.protection {
+                        return .unreadable(protection == .damaged
+                            ? "Its edit is damaged. Open it in Develop, where Start Over sets the edit aside."
+                            : "Its edit couldn't be read: a newer Redlamp may have written it.")
+                    }
                     var recipe = read.sidecar?.recipe ?? EditRecipe()
                     recipe.unloadMaskBitmaps()
                     return .unloaded(recipe)
@@ -225,8 +231,8 @@ public final class BatchExport {
             guard !recipe.maskBitmaps.contains(where: { $0.png == nil }) else {
                 throw Problem("Its masks changed while it waited. Export it again.")
             }
-        case .unreadable:
-            throw Problem("Its edit couldn't be read.")
+        case let .unreadable(reason):
+            throw Problem(reason)
         }
         engine.expect(recipe.rawRevision, for: url)
         let info = try await engine.open(url)

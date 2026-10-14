@@ -179,6 +179,16 @@ struct BatchExportTests {
         #expect(ExportActions.failureList(report.failures).hasPrefix("IMG_0002.ARW: It isn't there any more"))
     }
 
+    @Test func `a photo whose edit is damaged fails, named, rather than exporting as shot`() async throws {
+        let fixture = try fixture(2)
+        defer { fixture.cleanup() }
+        try Data("not an edit".utf8).write(to: SidecarStore().editURL(for: fixture.photos[0]))
+        let report = try await export(fixture, targets(fixture))
+        #expect(report.failures.map(\.photo) == [fixture.photos[0]])
+        #expect(report.failures.first?.reason.contains("damaged") == true)
+        #expect(fixture.worker.opened.withLock { $0 } == [fixture.photos[1]])
+    }
+
     @Test func `photos to skip aren't opened, and a file that doesn't open fails alone`() async throws {
         let fixture = try fixture()
         defer { fixture.cleanup() }
