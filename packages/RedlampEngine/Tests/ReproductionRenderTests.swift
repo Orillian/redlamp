@@ -88,17 +88,28 @@ struct ReproductionRenderTests {
         #expect(abs(Self.hue(above) - Self.hue(within)) < 0.5, "hue \(Self.hue(above))° from \(Self.hue(within))°")
     }
 
-    @Test func `its Amount mixes the curve in: 0 is Redlamp Color, 100 or more has none`() throws {
+    @Test(arguments: [15, 16])
+    func `its Amount mixes the curve in: 0 is Redlamp Color, 100 or more has none`(process: Int) throws {
         let row = Self.greyRow
         let session = try makeRaw(width: Self.block * row.count, height: Self.block) { x, _ in
             SIMD3(repeating: row[x / Self.block])
         }
-        let color = try render(EditRecipe(), session: session)
-        let none = try render(Self.reproduction(amount: 0), session: session)
+        func at(_ recipe: EditRecipe) -> EditRecipe {
+            var recipe = recipe
+            recipe.processVersion = process
+            recipe.exposureAnchor = Self.reproduction().exposureAnchor
+            return recipe
+        }
+        let color = try render(at(EditRecipe()), session: session)
+        let none = try render(at(Self.reproduction(amount: 0)), session: session)
         let worst = zip(color, none).map { simd_reduce_max(simd_abs($0 - $1)) }.max() ?? 1
         #expect(worst <= 1e-6, "Amount 0 differs from Redlamp Color by \(worst)")
-        let half = try patches(render(Self.reproduction(amount: 50), session: session), count: row.count)
-        let full = try render(Self.reproduction(), session: session)
+        let full = try render(at(Self.reproduction()), session: session)
+        let double = try render(at(Self.reproduction(amount: 200)), session: session)
+        #expect(double == full, "Amount 200 renders as 100")
+        // From process 16 the Amount mixes the base exposure in as well as the curve.
+        guard process < 16 else { return }
+        let half = try patches(render(at(Self.reproduction(amount: 50)), session: session), count: row.count)
         for ((curved, straight), mixed) in zip(
             zip(patches(color, count: row.count), patches(full, count: row.count)),
             half,
@@ -108,8 +119,6 @@ struct ReproductionRenderTests {
                 "\(mixed) between \(curved) and \(straight)",
             )
         }
-        let double = try render(Self.reproduction(amount: 200), session: session)
-        #expect(double == full, "Amount 200 renders as 100")
     }
 
     @Test func `without an anchor a grey the typical camera meters renders at 18%`() throws {
@@ -139,14 +148,25 @@ struct ReproductionRenderTests {
         }
     }
 
-    @Test func `Auto measures the light at the exposure the look renders with`() throws {
+    @Test(arguments: [15, 16])
+    func `Auto measures the light at the exposure the look renders with`(process: Int) throws {
         let session = try makeRaw(width: 64, height: 64, baselineExposure: 0.5) { x, y in
             SIMD3(repeating: (x + y) % 2 == 0 ? 0.02 : 0.08)
         }
-        let color = ImageAnalysis.autoTone(session: session, recipe: EditRecipe())[.exposure]
-        let matched = ImageAnalysis.autoTone(session: session, recipe: Self.reproduction(anchor: 0.5))[.exposure]
-        let brighter = ImageAnalysis.autoTone(session: session, recipe: Self.reproduction(anchor: 1.5))[.exposure]
-        #expect(color != nil && matched == color, "an anchor equal to BaselineExposure measures the same")
+        // Redlamp Color's base exposure: BaselineExposure, and from process 16 the anchor less the
+        // typical one's distance from the look's.
+        let base = process < 16 ? 0.5 : 0.5 - (ExposureAnchor.typicalStops - ExposureAnchor.lookStops)
+        func auto(_ recipe: EditRecipe) -> Double? {
+            var recipe = recipe
+            recipe.processVersion = process
+            return ImageAnalysis.autoTone(session: session, recipe: recipe)[.exposure]
+        }
+        var plain = EditRecipe()
+        plain.exposureAnchor = ExposureAnchor(stops: 0.5, source: .target, camera: nil)
+        let color = auto(plain)
+        let matched = auto(Self.reproduction(anchor: base))
+        let brighter = auto(Self.reproduction(anchor: base + 1))
+        #expect(color != nil && matched == color, "an anchor at Redlamp Color's base exposure measures the same")
         #expect(
             (brighter ?? 0) < (color ?? 0),
             "a stop more anchor asks for less Exposure: \(brighter ?? 0) from \(color ?? 0)",

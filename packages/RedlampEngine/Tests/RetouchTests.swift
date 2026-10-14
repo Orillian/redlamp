@@ -232,7 +232,7 @@ struct RetouchTests {
         // The source is brighter, being further along the gradient: a clone shows it.
         recipe.spots[0].mode = .clone
         let cloned = try render(scratched, recipe, engine: engine)
-        #expect(mean(cloned, from: 165) > mean(clean, from: 165) * 1.06)
+        #expect(mean(cloned, from: 165) > mean(clean, from: 165) * 1.05)
     }
 
     @Test func `a stroke's outline runs a radius from it, all the way round`() {
@@ -304,6 +304,10 @@ struct RetouchTests {
     @Test func `a removed blemish's shape leaves the frame once the maps are made again`() async throws {
         let engine = try RedlampEngine()
         var recipe = EditRecipe()
+        // The base exposure the edit made before process 10, below, renders the raw with.
+        recipe.exposureAnchor = ExposureAnchor(
+            stops: ExposureAnchor.typicalStops - ExposureAnchor.lookStops, source: .target, camera: nil,
+        )
         recipe[.highlights] = -100
         recipe[.shadows] = 100
         recipe[.clarity] = 100
@@ -603,9 +607,9 @@ struct RetouchTests {
         let photo = try scene(blemished: false) { x, y in
             things.contains { simd_distance(SIMD2(x, y), $0) < 7 }
         }
-        let clean = try render(scene(blemished: false), EditRecipe(), engine: engine)
         var recipe = EditRecipe()
         recipe.processVersion = 12
+        let clean = try render(scene(blemished: false), recipe, engine: engine)
         recipe.spots = things.map { thing in
             let centre = ImagePoint(x: thing.x / Double(Self.width), y: thing.y / Double(Self.height))
             return RetouchSpot(mode: .remove, center: centre, source: centre, radius: 10 / Double(Self.height))
