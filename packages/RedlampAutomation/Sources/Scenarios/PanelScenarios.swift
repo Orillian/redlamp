@@ -348,14 +348,8 @@
                 }
                 try app.clickControl("keywording.completion.0")
                 try app.waitForPanels()
-                // The three had it already, so the entry keeps the keyword it completed, and the keyboard: deleted as
-                // a person would, so the scenarios after don't type after it.
-                if let left = try app.main({ _ in RunningApp.editedText("keywording.entry") }) {
-                    for _ in left.utf16 {
-                        try app.pressInWindow(KeyCombo(.delete))
-                    }
-                    try app.wait("the entry emptied") { _ in RunningApp.editedText("keywording.entry") == "" }
-                }
+                // The three had it already: the entry empties all the same.
+                try app.wait("the entry emptied") { _ in (RunningApp.editedText("keywording.entry") ?? "").isEmpty }
                 try app.clickControl("keywording.remove.E2E Trips/2007")
                 try app.wait("⊖ to take it off") { model in
                     model.libraryPanels.selection.hasEverywhere(KeywordPath("E2E Trips/2007")!) == false

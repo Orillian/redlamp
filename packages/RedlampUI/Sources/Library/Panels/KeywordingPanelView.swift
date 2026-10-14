@@ -267,7 +267,7 @@ final class KeywordingPanelView: PanelStackView, NSTextFieldDelegate {
     private func commit() {
         let text = entry.stringValue
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        if panels.addKeywords(text) {
+        if panels.addKeywords(text) || panels.hasEverywhere(entered: text) {
             entry.stringValue = ""
         }
         matches = []

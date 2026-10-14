@@ -170,6 +170,19 @@ struct LibraryPanelsTests {
         #expect(KeywordingPanelView.summary(of: folder.panels.selection) == "On 2 selected photos")
     }
 
+    @Test func `keywords every photo selected has already are entered with nothing to add`() async throws {
+        let folder = Folder()
+        defer { folder.close() }
+        try await folder.open(keywords: [0: ["Places/Portugal/Lisbon"], 1: ["Places/Portugal/Lisbon"]])
+        let panels = folder.panels
+        try await folder.select([0, 1])
+        #expect(!panels.addKeywords("Lisbon"), "nothing to add")
+        #expect(panels.hasEverywhere(entered: "Lisbon"))
+        #expect(!panels.hasEverywhere(entered: "Lisbon, Trips > 2007"), "one of them still to add")
+        try await folder.select([0, 1, 2])
+        #expect(!panels.hasEverywhere(entered: "Lisbon"), "a photo without it")
+    }
+
     @Test func `keywords typed are completed and added as one batch, with Undo and Redo`() async throws {
         let folder = Folder()
         defer { folder.close() }

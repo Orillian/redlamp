@@ -46,6 +46,14 @@ public extension LibraryPanels {
         return add(list.entered(text))
     }
 
+    /// Whether the keywords in `text` are on every photo selected already, so adding them changes nothing.
+    func hasEverywhere(entered text: String) -> Bool {
+        let list = keywordList ?? KeywordList(counts: [:], definitions: KeywordDefinitions())
+        let keywords = list.entered(text)
+        return !keywords.isEmpty && !selection.ids.isEmpty && keywords
+            .allSatisfy { selection.hasEverywhere($0) == true }
+    }
+
     @discardableResult
     func add(_ keywords: [KeywordPath]) -> Bool {
         let ids = selection.ids
