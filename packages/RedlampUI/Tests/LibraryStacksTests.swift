@@ -94,8 +94,9 @@ struct LibraryStacksTests {
 
     /// The folder indexed, open in an editor from the library, with its grid and filmstrip shown in a window, which
     /// the test keeps until it ends, once its stacks are found. `others` go in its subfolder Other, which it's shown
-    /// without.
-    private func open(others: [Photo] = []) async throws -> Shown {
+    /// without. `listedFirst` opens it as the library starts, before it can show it: it's listed from the disk, and
+    /// shown from the library once indexed with the IDs given here, as a launch on a new folder does.
+    private func open(others: [Photo] = [], listedFirst: Bool = false) async throws -> Shown {
         for photo in Self.photos + others.map({ Photo(path: "Other/" + $0.path, time: $0.time, type: $0.type) }) {
             try write(photo)
         }
@@ -111,7 +112,7 @@ struct LibraryStacksTests {
         opened.service = service
         library.attach(service)
         let deadline = ContinuousClock.now + .seconds(30)
-        while await !service.canShow(root, includingSubfolders: true), ContinuousClock.now < deadline {
+        while !listedFirst, await !service.canShow(root, includingSubfolders: true), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         let model = EditorModel(engine: StubEngine(), library: library)
@@ -291,6 +292,51 @@ struct LibraryStacksTests {
         model.perform(.autoAdvance)
         model.gridStacks.closeAll()
         model.setGroupKey(.ungrouped)
+    }
+
+    /// The pair's JPEG comes first when it's open, ahead of the HEIC the folder lists first.
+    @Test(arguments: [false, true])
+    func `each photo of an open pair has its own cell's menu, tooltip and rubber band, by the index's IDs or the folder's own`(
+        listedFirst: Bool,
+    ) async throws {
+        defer { cleanUp() }
+        let shown = try await open(listedFirst: listedFirst)
+        let (model, grid, window) = (shown.model, shown.grid, shown.window)
+        defer { window.contentView = nil }
+        try #require(model.library.showsIndexIDs != listedFirst, "listed first, the folder keeps the IDs given here")
+        model.gridStacks.openAll()
+        #expect(cells(grid, model) == ["B01.JPG", "B02.JPG", "B03.JPG", "P01.JPG", "P01.HEIC"] + Self.photos[5...]
+            .map(\.path))
+        var revealed: [URL] = []
+        model.libraryViews.revealInFinder = { revealed = $0 }
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: grid.content.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                pressure: type == .leftMouseUp ? 0 : 1,
+            ))
+        }
+        for item in 0 ..< grid.shownCount {
+            let photo = try #require(grid.cells[item]?.item?.url, "item \(item) has a cell")
+            let name = photo.lastPathComponent
+            let frame = grid.gridLayout.frame(forItem: item)
+            let middle = CGPoint(x: frame.midX, y: frame.midY)
+            let gap = max(grid.gridLayout.spacing / 2, 2)
+            try grid.content.mouseDown(with: mouse(
+                .leftMouseDown,
+                at: CGPoint(x: frame.minX - gap, y: frame.minY - gap),
+            ))
+            try grid.content.mouseDragged(with: mouse(.leftMouseDragged, at: middle))
+            try grid.content.mouseUp(with: mouse(.leftMouseUp, at: middle))
+            #expect(model.selectedPhotos == [photo], "a rubber band over \(name)'s cell selects \(name)")
+            let tip = grid.view(grid.content, stringForToolTip: 0, point: middle, userData: nil)
+            #expect(tip.hasPrefix(name), "\(name)'s cell's tooltip names it: \(tip)")
+            let menu = try #require(grid.content.menu(for: mouse(.rightMouseDown, at: middle)))
+            let finder = try #require(menu.items.firstIndex { $0.title.hasPrefix("Show in Finder") })
+            menu.performActionForItem(at: finder)
+            grid.content.didCloseMenu(menu, with: nil)
+            #expect(revealed == [photo], "\(name)'s cell's menu shows \(name) in Finder")
+        }
     }
 }
 
