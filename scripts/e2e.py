@@ -31,6 +31,7 @@ attempt but don't count against the run.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import datetime as dt
 import fcntl
 import http.server
@@ -71,6 +72,89 @@ def screen_locked() -> bool:
     except (subprocess.SubprocessError, plistlib.InvalidFileException, ValueError):
         return False
     return any(user.get("CGSSessionScreenIsLocked") for user in users)
+
+
+def displays_asleep() -> bool | None:
+    """Whether every display online is asleep, as CoreGraphics says; None when it can't say."""
+    try:
+        graphics = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+    except OSError:
+        return None
+    ids, count = (ctypes.c_uint32 * 16)(), ctypes.c_uint32(0)
+    if graphics.CGGetOnlineDisplayList(16, ids, ctypes.byref(count)) != 0 or count.value == 0:
+        return None
+    graphics.CGDisplayIsAsleep.restype = ctypes.c_uint32
+    return all(graphics.CGDisplayIsAsleep(ids[index]) for index in range(count.value))
+
+
+# They move and resize the test app's windows, and can put another app in front of it.
+WINDOW_MANAGERS = ["OmniWM", "AeroSpace", "yabai", "Amethyst", "Rectangle", "Magnet", "Moom"]
+
+
+def window_managers() -> list[str]:
+    out = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True).stdout
+    running = {Path(line.strip()).name.lower() for line in out.splitlines()}
+    return [name for name in WINDOW_MANAGERS if name.lower() in running]
+
+
+def key_display(key: str) -> str:
+    """A Services key as its menu shows it: "Y" is ⇧⌘Y, "$^@C" ⌃⇧⌘C; ⌘ is always held."""
+    symbols = {"^": "⌃", "~": "⌥", "$": "⇧", "@": "⌘"}
+    held = {"⌘"} | {symbols[c] for c in key[:-1] if c in symbols}
+    if key[-1:].isupper():
+        held.add("⇧")
+    return "".join(symbol for symbol in "⌃⌥⇧⌘" if symbol in held) + key[-1:].upper()
+
+
+def services_with_keys() -> list[str]:
+    """The Services items with a key, as "Make Sticky (Stickies), ⇧⌘Y": macOS's cache of every service with its own
+    key, less those System Settings turns off or gives another key (`pbs`'s NSServicesStatus)."""
+    try:
+        cache = plistlib.loads((HOME / "Library/Caches/com.apple.nsservicescache.plist").read_bytes())
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return []
+    try:
+        exported = subprocess.run(["defaults", "export", "pbs", "-"], capture_output=True, timeout=10).stdout
+        status = plistlib.loads(exported).get("NSServicesStatus", {})
+    except (subprocess.SubprocessError, plistlib.InvalidFileException, ValueError):
+        status = {}
+    found = []
+    for path, entry in (cache.get("ServicesCache") or {}).items():
+        try:
+            bundle = plistlib.loads((Path(path) / "Contents/Info.plist").read_bytes()).get("CFBundleIdentifier", "")
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            bundle = ""
+        for service in entry.get("service_dicts", []) if isinstance(entry, dict) else []:
+            title = (service.get("NSMenuItem") or {}).get("default", "")
+            key = (service.get("NSKeyEquivalent") or {}).get("default", "")
+            chosen = status.get(f"{bundle} - {title} - {service.get('NSMessage', '')}", {})
+            if chosen.get("enabled_services_menu") in (False, 0):
+                continue
+            key = chosen.get("key_equivalent", key)
+            if title and key:
+                found.append(f"{title} ({Path(path).stem}), {key_display(key)}")
+    return sorted(set(found))
+
+
+def preflight(focus: bool) -> None:
+    """Says what on this Mac would fail the run, before it builds: every display asleep stops a run with focus, as a
+    locked screen does; a window manager and the Services items with keys are only named."""
+    # Declaring the user active wakes them.
+    subprocess.run(["caffeinate", "-u", "-t", "2"], capture_output=True)
+    if displays_asleep():
+        if focus:
+            sys.exit("Every display is asleep and didn't wake for the run: clicks on SwiftUI's buttons won't arrive "
+                     "and the app can't come to the front; wake the Mac, then leave it alone while the run takes focus")
+        log("Every display is asleep: clicks on SwiftUI's buttons won't arrive until one wakes, "
+            "so the scenarios that make them will fail")
+    for name in window_managers():
+        log(f"{name} is running: it can move and resize the test app's windows and bring another app to the "
+            "front, which fails the scenarios that need them where they put them; quit it for a run with focus")
+    services = services_with_keys()
+    if services:
+        log("Services with keys, which take a key from the app's own menus when they share it and the service "
+            "applies (System Settings › Keyboard › Keyboard Shortcuts › Services turns them off): "
+            + "; ".join(services))
 
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -1014,6 +1098,7 @@ def main() -> int:
     if args.focus and screen_locked():
         sys.exit("The screen is locked, and the app can't come to the front until it's unlocked: unlock it, "
                  "then leave the Mac alone while the run takes focus")
+    preflight(args.focus)
     run_lock = hold_run_lock()  # noqa: F841: held until main returns
 
     sha, dirty = commit()
