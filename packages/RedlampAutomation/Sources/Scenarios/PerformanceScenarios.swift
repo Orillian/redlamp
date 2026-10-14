@@ -282,6 +282,10 @@
                     try app.press(.commandPalette)
                     try app.wait("the palette") { $0.commandPalette != nil }
                 })
+                // Esc closes it from its field; pressed sooner, it goes to the window behind.
+                try app.wait("the palette's field to take the keyboard") { _ in
+                    Views.editorWindow?.firstResponder is NSTextView
+                }
                 try app.press(KeyCombo(.escape))
                 try app.wait("the palette to close") { $0.commandPalette == nil }
             }
