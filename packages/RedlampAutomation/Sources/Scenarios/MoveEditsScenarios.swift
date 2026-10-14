@@ -313,7 +313,7 @@
 
     /// A root of 10,000 copies of a JPEG in twenty folders, each copy a clone ending in bytes of its own so each has
     /// its own content key, each with a sidecar holding a rating, one in ten an edit too: in a folder of its own where
-    /// `REDLAMP_PERF_SCRATCH` says, `/Volumes/SSD/redlamp-tmp` by default, removed after.
+    /// `REDLAMP_PERF_SCRATCH` says, the scratch folder (`RunningApp.scratch`) by default, removed after.
     struct MoveEditsPerformanceScratch: Sendable {
         static let photos = 10000
         static let folders = 20
@@ -325,8 +325,7 @@
 
         init(_ app: RunningApp) throws {
             let scratch = ProcessInfo.processInfo.environment["REDLAMP_PERF_SCRATCH"]
-                .map { URL(fileURLWithPath: $0, isDirectory: true) }
-                ?? URL(fileURLWithPath: "/Volumes/SSD/redlamp-tmp", isDirectory: true)
+                .map { URL(fileURLWithPath: $0, isDirectory: true) } ?? app.scratch
             base = scratch.appending(path: "move-edits-performance-\(UUID().uuidString)", directoryHint: .isDirectory)
             root = base.appending(path: "Shoot", directoryHint: .isDirectory)
             let source = base.appending(path: "Bitmap.jpg")

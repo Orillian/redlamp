@@ -154,16 +154,18 @@
         }
     }
 
-    /// A folder of small JPEGs of the run's own on the external disk's scratch folder, each its own colour (a
-    /// name with a slash in a subfolder), and empty files written ten minutes ago, added to Folders; taken out of
+    /// A folder of small JPEGs of the run's own in the scratch folder (`RunningApp.scratch`), each its own colour
+    /// (a name with a slash in a subfolder), and empty files written ten minutes ago, added to Folders; taken out of
     /// Folders and removed afterwards.
     struct SourcesScratch: Sendable {
         let folder: URL
         let names: [String]
 
-        init(_: RunningApp, photos: [String], empty: [String] = []) throws {
-            folder = URL(fileURLWithPath: "/Volumes/SSD/redlamp-tmp", isDirectory: true)
-                .appending(path: "e2e-sources-\(UUID().uuidString.prefix(8))", directoryHint: .isDirectory)
+        init(_ app: RunningApp, photos: [String], empty: [String] = []) throws {
+            folder = app.scratch.appending(
+                path: "e2e-sources-\(UUID().uuidString.prefix(8))",
+                directoryHint: .isDirectory,
+            )
             names = photos
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             for (number, name) in photos.enumerated() {
@@ -216,6 +218,7 @@
                 }
             }
             try? FileManager.default.removeItem(at: folder)
+            try? app.showRunPhotos()
         }
 
         static func jpeg(number: Int) throws -> Data {

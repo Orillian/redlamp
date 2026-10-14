@@ -129,8 +129,9 @@ RECORDING = re.compile(r"TEST_RUNNER_REDLAMP_(?:RECORD|UPDATE)_")
 LEVELS = ("checks", "reference", "suite", "full")
 FINAL = ("passed", "failed", "cancelled", "lost")
 JOB_ID = re.compile(r"\d{8}-\d{6}-[a-z0-9]+-[0-9a-f]{7}")
-# What a regression run's folder keeps that each run makes again: left on the build Mac.
-LEFT_THERE = ("home", "photos", "originals", "exports")
+# What a regression run's folder keeps that each run makes again: left on the build Mac. Its scenarios make their
+# scratch folders in scratch/ there, having no external disk for them (RunningApp.scratch).
+LEFT_THERE = ("home", "photos", "originals", "exports", "scratch")
 # Starts the last line the build Mac's side of a command prints: what came of it, as JSON.
 MARK = b"@@build-mac "
 KEPT_JOBS = 30

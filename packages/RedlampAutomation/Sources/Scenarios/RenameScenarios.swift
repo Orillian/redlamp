@@ -111,7 +111,7 @@
                 + "the Photo menu too, and ⌘Z moves the copies to the Trash",
             claims: [.action(.copyToFolder)],
         ) { app in
-            let scratch = try DragScratch()
+            let scratch = try DragScratch(app)
             defer { scratch.remove(app) }
             try scratch.show(app)
             let (a, b) = (scratch.photo("A.jpg"), scratch.photo("B.jpg"))
@@ -174,7 +174,7 @@
             claims: [.feature("library.rename")],
         ) { app in
             let names = (1 ... 12).map { String(format: "S%02d.jpg", $0) }
-            let scratch = try DragScratch(names: names)
+            let scratch = try DragScratch(app, names: names)
             defer { scratch.remove(app) }
             try scratch.show(app)
             func renamed() -> [String] {
@@ -598,6 +598,7 @@
                 ImportWindowController.forget(folder, in: model)
             }
             try? FileManager.default.removeItem(at: root)
+            try? app.showRunPhotos()
             try? app.openWorking()
         }
     }
@@ -717,6 +718,7 @@
                 ImportWindowController.forget(thousand, in: model)
             }
             try? FileManager.default.removeItem(at: root)
+            try? app.showRunPhotos()
             try? app.openWorking()
         }
     }

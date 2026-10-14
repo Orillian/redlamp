@@ -33,7 +33,9 @@
             tiers: [.performance], claims: [.feature("performance.slow-editing")],
         ) { app in
             let raws = ["arw", "raf", "cr3", "nef", "dng"]
+            try app.showRunPhotos()
             let names = try app.photoNames().filter { raws.contains(($0 as NSString).pathExtension.lowercased()) }
+            try app.expect(!names.isEmpty, "The run's folder shows no raws")
             var times: [Double] = []
             for name in names + names {
                 try app.open(names.first { $0 != name } ?? name)

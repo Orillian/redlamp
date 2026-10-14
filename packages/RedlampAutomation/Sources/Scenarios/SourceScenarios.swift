@@ -13,8 +13,8 @@
         /// Photos a batch of the library's moved to the Trash: Recently Trashed from the palette, the photos put
         /// back from the grid's menu, by ⌘⌫, from the Photo menu and the palette, Develop off for them, the
         /// Folders panel's line saying what it holds once it's empty, and the last Put Back taken back by ⌘Z and
-        /// made again by ⇧⌘Z. The photos are copies made on the
-        /// external disk's scratch folder, which the Trash there holds while they're in it; none is left there.
+        /// made again by ⇧⌘Z. The photos are copies made in the scratch folder (`RunningApp.scratch`), which the
+        /// Trash holds while they're in it; none is left there.
         static let recentlyTrashed = Scenario(
             "library.recently-trashed",
             "Recently Trashed from the palette, and Put Back from the grid's menu, ⌘⌫, the Photo menu and the palette, "
@@ -29,8 +29,7 @@
             ],
         ) { app in
             let token = UUID().uuidString.prefix(8)
-            let folder = URL(fileURLWithPath: "/Volumes/SSD/redlamp-tmp", isDirectory: true)
-                .appending(path: "e2e-trashed-\(token)", directoryHint: .isDirectory)
+            let folder = app.scratch.appending(path: "e2e-trashed-\(token)", directoryHint: .isDirectory)
             let names = ["A", "B", "C"].map { "Trashed \($0) \(token).jpg" }
             let photos = names.map { folder.appending(path: $0, directoryHint: .notDirectory) }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

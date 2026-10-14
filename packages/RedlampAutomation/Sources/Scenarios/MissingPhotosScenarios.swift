@@ -4,8 +4,7 @@
     import RedlampLibrary
     @_spi(Harness) import RedlampUI
 
-    /// Library Health's Missing check (DEC-59), on photos of the run's own in the external disk's scratch folder: a
-    /// photo
+    /// Library Health's Missing check (DEC-59), on photos of the run's own in the scratch folder: a photo
     /// deleted outside Redlamp leaves its folder's list for Missing Photos, chosen in the Library panel; Remove from
     /// Library from its menu, taken back by ⌘Z; and Locate… from the Photo menu relinking a photo to a copy with its
     /// content, and the other found beside it, taken back by ⌘Z.

@@ -20,7 +20,7 @@
                 + "there, ⌘Z moving the copies to the Trash and ⇧⌘Z copying them again",
             claims: [.feature("library.folders")],
         ) { app in
-            let scratch = try DragScratch()
+            let scratch = try DragScratch(app)
             defer { scratch.remove(app) }
             try scratch.show(app)
             try app.simulateLibraryDrags(true)
@@ -85,7 +85,7 @@
                 + "smart collection refuses them",
             claims: [.feature("library.collections")],
         ) { app in
-            let scratch = try DragScratch()
+            let scratch = try DragScratch(app)
             defer { scratch.remove(app) }
             try scratch.show(app)
             try app.simulateLibraryDrags(true)
@@ -136,7 +136,7 @@
                 + "selection when the photo is in it, each one change that ⌘Z takes back",
             claims: [.feature("library.keywords")],
         ) { app in
-            let scratch = try DragScratch()
+            let scratch = try DragScratch(app)
             defer { scratch.remove(app) }
             try scratch.show(app)
             try app.simulateLibraryDrags(true)
@@ -194,7 +194,7 @@
                 + "and the toolbar's button put the painter away",
             claims: [.action(.keywordPainter), .feature("library.keywords")],
         ) { app in
-            let scratch = try DragScratch()
+            let scratch = try DragScratch(app)
             defer { scratch.remove(app) }
             try scratch.show(app)
             let text = "Painted-\(UUID().uuidString.prefix(6))"
@@ -245,19 +245,19 @@
         }
     }
 
-    /// Small JPEGs of the run's own on the external disk's scratch folder, A to D (or `names`), the first with a
-    /// sidecar, and an empty folder beside them, Picked, each added to Folders as a folder of its own so both rows are
-    /// on screen; taken out of Folders and removed afterwards, with what the library's batches put in the Trash.
+    /// Small JPEGs of the run's own in the scratch folder (`RunningApp.scratch`), A to D (or `names`), the first
+    /// with a sidecar, and an empty folder beside them, Picked, each added to Folders as a folder of its own so both
+    /// rows are on screen; taken out of Folders and removed afterwards, with what the library's batches put in the
+    /// Trash.
     struct DragScratch: Sendable {
         let base: URL
         let folder: URL
         let picked: URL
         let names: [String]
 
-        init(names: [String] = ["A.jpg", "B.jpg", "C.jpg", "D.jpg"]) throws {
+        init(_ app: RunningApp, names: [String] = ["A.jpg", "B.jpg", "C.jpg", "D.jpg"]) throws {
             self.names = names
-            base = URL(fileURLWithPath: "/Volumes/SSD/redlamp-tmp", isDirectory: true)
-                .appending(path: "e2e-drags-\(UUID().uuidString.prefix(8))", directoryHint: .isDirectory)
+            base = app.scratch.appending(path: "e2e-drags-\(UUID().uuidString.prefix(8))", directoryHint: .isDirectory)
             folder = base.appending(path: "Photos", directoryHint: .isDirectory)
             picked = base.appending(path: "Picked", directoryHint: .isDirectory)
             for directory in [folder, picked] {
@@ -331,6 +331,7 @@
                 }
             }
             try? FileManager.default.removeItem(at: base)
+            try? app.showRunPhotos()
             try? app.openWorking()
         }
     }

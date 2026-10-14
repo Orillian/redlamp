@@ -43,6 +43,16 @@
             self.host = host
         }
 
+        /// Where scenarios make folders of their own: the external disk's `redlamp-tmp` where it's mounted, as on the
+        /// main Mac, which keeps scratch there (AGENTS.md), and otherwise `scratch` in the run's directory, as on the
+        /// build Mac, which has no such disk.
+        public var scratch: URL {
+            let disk = URL(fileURLWithPath: "/Volumes/SSD", isDirectory: true)
+            return FileManager.default.isWritableFile(atPath: disk.path)
+                ? disk.appending(path: "redlamp-tmp", directoryHint: .isDirectory)
+                : runDirectory.appending(path: "scratch", directoryHint: .isDirectory)
+        }
+
         // MARK: - The main thread
 
         /// Reads (or sets up) the model on the main thread, and waits for it.

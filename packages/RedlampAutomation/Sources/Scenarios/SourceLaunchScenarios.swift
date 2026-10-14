@@ -12,7 +12,7 @@
         /// the smoke tier's relaunch expects to find it: the catalogue keeps these last before the smoke tier's pair.
         static let all: [Scenario] = [unreadableInFolder, sourceAtQuit, sourceAtLaunch]
 
-        /// Two photos and a file Redlamp may not read, in the external disk's scratch folder: the file in the folder's
+        /// Two photos and a file Redlamp may not read, in the scratch folder: the file in the folder's
         /// grid among the photos, marked No Access; Folders counting it; its menu saying what's wrong, offering nothing
         /// to the Trash, and showing it in Library Health's Damaged Files; and All Photographs leaving it out.
         static let unreadableInFolder = Scenario(

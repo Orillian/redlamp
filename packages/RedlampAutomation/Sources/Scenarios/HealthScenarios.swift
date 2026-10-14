@@ -11,7 +11,7 @@
         static let all: [Scenario] = [health]
 
         /// Three copies of one JPEG, a raw and its JPEG, an empty file and a HEIC named .jpg, copies made in the
-        /// external disk's scratch folder: the duplicates confirmed in the background; each check's marks in the grid;
+        /// scratch folder: the duplicates confirmed in the background; each check's marks in the grid;
         /// Keep Anyway from a copy's menu, taken back by ⌘Z and made again by ⇧⌘Z; List Again from Kept Anyway's list;
         /// a copy rated, left out of the batch; the duplicates' batch from the Library menu, its sheet's words read,
         /// accepted, and taken back by ⌘Z; the pairs' batch from the palette, cancelled; and Keep Anyway from the Photo
