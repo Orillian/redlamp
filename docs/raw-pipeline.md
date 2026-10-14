@@ -167,7 +167,7 @@ Panasonic's and OM System's tags hold the polynomial the camera corrected its ow
 | Noise reduction's inverse transform reads a strongly denoised noisy shadow's mean low: with Luminance at 60 at 1:1, 2.5 to 5% at shadows of 0.05 to 0.1 and ISO 12800 to 51200-like noise, and up to a quarter in the darkest tones at ISO 51200 | DN-16 |
 | Highlight reconstruction fits one colour offset per photo, on the rims of all its clipped areas, so two differently coloured clipped surfaces share it; an area clipped in every colour is the lowest consistent neutral, not a continuation of what's around it | CAM-09 |
 | Focus stacks' frames keep raw revision 1 | — |
-| Panasonic's and OM System's raws are corrected for distortion only: the ORF's chromatic aberration (0x150C) and shading (0x0801) tags and the RW2's 0x011B don't match their cameras' JPEGs in any layout tried, and Fujifilm's 1.25× crop modes aren't read | LNS-02 |
+| Panasonic's and OM System's raws are corrected for distortion only: the ORF's chromatic aberration (0x150C) and shading (0x0801) tags and the RW2's 0x011B don't match their cameras' JPEGs in any layout tried, and Fujifilm's 1.25× crop modes aren't read | LNS-18 |
 | Auto white balance, the white-balance eyedropper, Upright and newly computed AI masks read the open photo at the current raw revision, an older edit's too (the engine's API gives them no edit) | — |
 
 ## 14. Procedures
