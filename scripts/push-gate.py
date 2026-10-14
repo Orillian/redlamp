@@ -34,6 +34,11 @@ build Mac (scripts/build-mac.py gate) is remembered here the same way. One gate 
 at a time: a second push waits for the first, and gives up if origin's main moved meanwhile,
 since git would refuse it then. Tests stop at the first bundle that fails.
 
+On the build Mac, scripts/build-mac.py runs each gate in a lane of its own and names the lane as
+its worktree (REDLAMP_PUSH_GATE_SRC), with a lock of its own, so gates run side by side there. It
+also names the screen its regression suite drives alone (REDLAMP_SCREEN_LOCK) and the test targets
+that put windows on it (REDLAMP_SCREEN_TARGETS): a step that runs them waits for the screen.
+
 It exits with 1 when a step fails, and git then stops the push. `git push --no-verify` skips it.
 """
 
@@ -41,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
 import datetime as dt
 import fcntl
 import json
@@ -121,7 +127,12 @@ def git(*args: str, cwd: Path = ROOT, check: bool = True) -> str:
 
 CHECKOUT = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).parent
 GATE = CHECKOUT / "build/push-gate"
-SRC = CHECKOUT.parent / f"{CHECKOUT.name}-push-gate"
+# The build Mac (scripts/build-mac.py) gives each lane's gate the lane as its worktree, with a lock of its own.
+SRC = Path(os.environ.get("REDLAMP_PUSH_GATE_SRC") or CHECKOUT.parent / f"{CHECKOUT.name}-push-gate")
+LOCK = GATE / (f"lock-{SRC.name}" if os.environ.get("REDLAMP_PUSH_GATE_SRC") else "lock")
+# The build Mac's screen, which its regression suite drives alone, and the test targets that put windows on it.
+SCREEN = os.environ.get("REDLAMP_SCREEN_LOCK")
+WINDOWED = set(filter(None, os.environ.get("REDLAMP_SCREEN_TARGETS", "").split(",")))
 
 
 def known(name: str) -> bool:
@@ -284,9 +295,9 @@ def remember(tree: str, commit: str, level: str) -> None:
 
 
 def lock(commit: str):
-    """Waits for any other gate to finish: (the lock, held until it's closed, and whether it waited)."""
+    """Waits for any other gate in the worktree to finish: (the lock, held until it's closed, and whether it waited)."""
     GATE.mkdir(parents=True, exist_ok=True)
-    handle = open(GATE / "lock", "a+")
+    handle = open(LOCK, "a+")
     waited = False
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -353,6 +364,31 @@ def prepare(commit: str, level: str) -> None:
                            stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if fetch.returncode != 0:
         say("Some sample raws couldn't be fetched; the tests that need them skip")
+
+
+@contextlib.contextmanager
+def screen(name: str, command: list[str]):
+    """On the build Mac, its screen, shared with other tests, while a step runs tests that put windows on it, after
+    any regression run there, which drives it alone. Its turnstile (the lock's path with .turnstile) is held while
+    waiting, as scripts/build-mac.py's take_screen holds it, so a regression run waiting for these tests isn't
+    passed by more of them."""
+    targets = {part.split(":", 1)[1].split("/")[0] for part in command if part.startswith("-only-testing:")}
+    tests = command[:1] == ["xcodebuild"] and bool({"test", "test-without-building"} & set(command))
+    if not SCREEN or not tests or (targets and not targets & WINDOWED):
+        yield
+        return
+    with open(f"{SCREEN}.turnstile", "a+") as turnstile, open(SCREEN, "a+") as handle:
+        told = False
+        for held, how in ((turnstile, fcntl.LOCK_EX), (handle, fcntl.LOCK_SH)):
+            try:
+                fcntl.flock(held, how | fcntl.LOCK_NB)
+            except BlockingIOError:
+                if not told:
+                    say(f"{name}: waiting for the build Mac's screen, which a regression run drives")
+                    told = True
+                fcntl.flock(held, how)
+        fcntl.flock(turnstile, fcntl.LOCK_UN)
+        yield
 
 
 def run(name: str, command: list[str], log, long: bool) -> bool:
@@ -474,7 +510,8 @@ def check(commit: str, theirs: str | None, asked: str, remote: str | None) -> bo
                 if RESULTS in command:
                     shutil.rmtree(SRC / RESULTS, ignore_errors=True)
                     (SRC / RESULTS).parent.mkdir(parents=True, exist_ok=True)
-                passed = run(name, command, log, long)
+                with screen(name, command):
+                    passed = run(name, command, log, long)
                 if RESULTS in command:
                     summarise(log_path)
                 if not passed:

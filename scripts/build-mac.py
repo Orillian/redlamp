@@ -31,12 +31,18 @@ xcodebuild's, the tests' results (tests.json, which scripts/test-results.py comp
 here) and, when tests fail, their result bundle; a gate's pass comes back into
 build/push-gate/passed, so a push of that commit, by the owner or an agent, goes straight through.
 
-The build Mac runs several jobs at once, each in a lane of its own: 3 short jobs (test with --only,
-and app) and 2 long jobs (a gate, or test for a whole scheme). The lane of a test or an app is a
-worktree beside the clone whose DerivedData stays warm between jobs, and a job takes the lane its
-checkout used last when it's free. The regression suite drives the screen, so it runs alone: it
-waits for the jobs running, and jobs that come meanwhile wait for it. A job whose lanes are all
-taken waits there, saying what for, rather than running here (the owner's choice, 13 October 2026).
+The build Mac runs several jobs at once, each in a lane of its own: 6 short jobs (test with --only,
+and app) and 4 long ones (a gate, or test for a whole scheme), and a long job or a regression run
+starts only while its load is below 12, 20 s after the last one started, so the load shows it (the
+owner's choice, 14 October 2026). A lane is a worktree beside the clone whose DerivedData stays warm
+between jobs, and a job takes the lane its checkout used last when it's free; a gate's lane is the
+push gate's worktree, so gates run side by side. The regression suite drives the screen, so it takes
+the screen alone: tests that put windows on it (RedlampUITests' and RedlampAutomationTests') wait
+for it, and it waits for them, while builds and other tests run beside it. A test job builds those
+tests first and waits for the screen only to run them, and the push gate waits for it only in the
+steps that run them. A regression run with --focus, as a release's is, asks for a Mac nobody is
+using, so it keeps the Mac to itself, as a performance record would. A job whose lanes are all
+taken waits there, saying what for (status shows it), rather than running here.
 
 test runs xcodebuild test for the scheme unsigned, as CI and the push gate do, and shows failures,
 errors and each bundle's result. e2e runs scripts/e2e.py, with the arguments after --, and brings
@@ -61,9 +67,10 @@ match. --there waits for the build Mac instead, and gate --there checks a commit
 passed here; --here doesn't try it.
 
 The build Mac is the host build-mac in ~/.ssh/config; REDLAMP_BUILD_MAC names another. Under its
-~/src/build-mac: the clone, the push gate's worktree beside it (redlamp-push-gate), lanes/, with a
-worktree for each short and long lane, and jobs/, with a folder per job (job.json and its log, and
-an app job's app) and a copy of this script, sent with each command, which runs its side of them.
+~/src/build-mac: the clone; the push gate's worktree beside it (redlamp-push-gate), which the gates
+of commits from before 14 October use, one at a time; lanes/, with a worktree for each short and
+long lane and the locks; and jobs/, with a folder per job (job.json and its log, and an app job's
+app) and a copy of this script, sent with each command, which runs its side of them.
 """
 
 from __future__ import annotations
@@ -97,8 +104,15 @@ LANES_THERE = f"{BASE_THERE}/lanes"
 # relay gives it to answer. A connection that stops answering for a minute has dropped.
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "-o", "ServerAliveInterval=15",
        "-o", "ServerAliveCountMax=4"]
-# How many jobs of each size run there at once, each in a lane of its own (the owner's choice).
-LANES = {"short": 3, "long": 2}
+# How many jobs of each size run there at once, each in a lane of its own, and the load below which a long job or
+# a regression run starts, LOAD_SPACING seconds after the last so the load has begun to show it (the owner's
+# choice, 14 October 2026).
+LANES = {"short": 6, "long": 4}
+LOAD_LIMIT = 12
+LOAD_SPACING = 20
+# The test targets whose tests put windows on screen, where the regression suite drives its app: they share the
+# screen, which it takes alone.
+WINDOWED = ("RedlampUITests", "RedlampAutomationTests")
 # What a test lane takes from the clone, as the push gate takes them from the main checkout.
 FIXTURES = ("tests/fixtures/raw", "tests/fixtures/cameras", "tests/fixtures/shoots")
 BUILT = ("vendor/build", "vendor/cache", "Tuist/.build")
@@ -353,8 +367,9 @@ def send(commit: str, job: str) -> None:
 
 def start(kind: str, commit: str, command: list[str], detach: bool, size: str, into: Path | None = None,
           opens: bool = False) -> int:
-    """Starts a job there, in a lane of its size (short, long, or alone); a regression run's folder
-    comes back into `into`'s build/e2e/ when it ends, and an app job's app is launched here if `opens`."""
+    """Starts a job there, in a lane of its size (short or long), or with the screen to itself (a
+    regression run) or the Mac (alone); a regression run's folder comes back into `into`'s build/e2e/
+    when it ends, and an app job's app is launched here if `opens`."""
     job = new_job(kind, commit)
     say(f"On the build Mac, as {job}")
     send(commit, job)
@@ -621,7 +636,9 @@ def e2e(args: argparse.Namespace, replace: bool = True) -> int:
     commit = snapshot()
     # Generated at each commit, which may add or remove source files.
     command = ["bash", "-c", 'mise run generate && exec scripts/e2e.py "$@"', "e2e", *args.options]
-    return start("e2e", commit, command, args.detach, size="alone", into=ROOT)
+    # --focus asks for a Mac nobody is using, as a release's regression run does, so it keeps the Mac to itself.
+    size = "alone" if "--focus" in args.options else "screen"
+    return start("e2e", commit, command, args.detach, size=size, into=ROOT)
 
 
 def app(args: argparse.Namespace) -> int:
@@ -649,20 +666,31 @@ def xcodebuild_app(derived: Path) -> list[str]:
             "CODE_SIGN_IDENTITY=-", "CODE_SIGN_STYLE=Manual", "DEVELOPMENT_TEAM="]
 
 
-def xcodebuild_test(args: argparse.Namespace, derived: Path, bundle: Path) -> list[str]:
-    """xcodebuild test for the scheme and the tests asked for, unsigned, as the push gate and CI run it."""
-    return ["xcodebuild", "test", "-workspace", "Redlamp.xcworkspace", "-scheme", args.scheme,
-            "-destination", "platform=macOS,arch=arm64", "-derivedDataPath", str(derived),
-            "-resultBundlePath", str(bundle), "CODE_SIGNING_ALLOWED=NO",
-            *[f"-only-testing:{name}" for name in args.only], *[f"-skip-testing:{name}" for name in args.skip]]
+def xcodebuild_test(args: argparse.Namespace, derived: Path, bundle: Path, action: str = "test") -> list[str]:
+    """xcodebuild for the scheme and the tests asked for, unsigned, as the push gate and CI run it: test, or
+    build-for-testing and then test-without-building."""
+    command = ["xcodebuild", action, "-workspace", "Redlamp.xcworkspace", "-scheme", args.scheme,
+               "-destination", "platform=macOS,arch=arm64", "-derivedDataPath", str(derived), "CODE_SIGNING_ALLOWED=NO"]
+    if action == "build-for-testing":
+        return command
+    return [*command, "-resultBundlePath", str(bundle), *[f"-only-testing:{name}" for name in args.only],
+            *[f"-skip-testing:{name}" for name in args.skip]]
 
 
-def logged(root: Path, command: list[str], folder: Path, generate: bool, title: str) -> int:
+def windowed(root: Path, scheme: str, only: list[str]) -> bool:
+    """Whether the tests asked for put windows on screen: a WINDOWED target's, or every test of a scheme that isn't
+    one package's."""
+    if only:
+        return any(name.split("/")[0] in WINDOWED for name in only)
+    return f"{scheme}Tests" in WINDOWED or not (root / "packages" / scheme).is_dir()
+
+
+def logged(root: Path, command: list[str], folder: Path, generate: bool, title: str, append: bool = False) -> int:
     """xcodebuild in the checkout at root, after generating its workspace if asked, showing failures, errors and
     each bundle's result, and keeping its whole output in the folder's xcodebuild.log."""
     folder.mkdir(parents=True, exist_ok=True)
     started = beat = time.monotonic()
-    with (folder / "xcodebuild.log").open("w") as log:
+    with (folder / "xcodebuild.log").open("a" if append else "w") as log:
         if generate:
             say("Generating the workspace")
             code = subprocess.run(["mise", "run", "generate"], cwd=root, env=ENV, stdin=subprocess.DEVNULL,
@@ -688,14 +716,24 @@ def logged(root: Path, command: list[str], folder: Path, generate: bool, title: 
             raise
 
 
-def run_tests(root: Path, args: argparse.Namespace, derived: Path, folder: Path, generate: bool) -> int:
+def run_tests(root: Path, args: argparse.Namespace, derived: Path, folder: Path, generate: bool,
+              screen: bool = False) -> int:
     """xcodebuild test in the checkout at root, as logged runs it, keeping in the job's folder the tests' results
-    (tests.json) too and, when it fails, the result bundle (tests.xcresult)."""
+    (tests.json) too and, when it fails, the result bundle (tests.xcresult). With `screen`, on the build Mac, tests
+    that put windows on screen are built first, and run once they share the screen."""
     bundle = folder / "tests.xcresult"
     shutil.rmtree(bundle, ignore_errors=True)
     tests = [*args.only, *(f"all but {name}" for name in args.skip)]
-    code = logged(root, xcodebuild_test(args, derived, bundle), folder, generate,
-                  f"xcodebuild test {args.scheme}: {', '.join(tests) or 'every test'}")
+    title = f"xcodebuild test {args.scheme}: {', '.join(tests) or 'every test'}"
+    if screen and windowed(root, args.scheme, args.only):
+        code = logged(root, xcodebuild_test(args, derived, bundle, "build-for-testing"), folder, generate,
+                      f"xcodebuild build-for-testing {args.scheme}, whose tests put windows on screen")
+        if code == 0:
+            with take_screen(args.job, exclusive=False):
+                code = logged(root, xcodebuild_test(args, derived, bundle, "test-without-building"), folder, False,
+                              title, append=True)
+    else:
+        code = logged(root, xcodebuild_test(args, derived, bundle), folder, generate, title)
     summary = root / "scripts/test-results.py"
     if bundle.exists() and summary.exists():
         found = subprocess.run([sys.executable, str(summary), "summary", str(bundle), "--out", str(folder / "tests.json")],
@@ -857,7 +895,8 @@ def status(_args: argparse.Namespace) -> int:
         ran = between(job.get("started"), job.get("finished") or now())
         spent = f" {'for' if job['state'] == 'running' else 'in'} {took(ran)}" if ran is not None else ""
         lane = f" (lane {job['lane']})" if job.get("lane") else ""
-        print(f"    {job['id']}: {job['state']}{spent}{lane}")
+        waiting = f": {job['waiting'][0].lower()}{job['waiting'][1:]}" if job.get("waiting") else ""
+        print(f"    {job['id']}: {job['state']}{spent}{lane}{waiting}")
     return 0
 
 
@@ -1005,19 +1044,63 @@ def take_lane(job: str, size: str, source: str, log) -> tuple[str, object]:
         time.sleep(1)
 
 
-def wait_turn(job: str, state: dict, log) -> tuple[str | None, list]:
-    """Waits for the job's turn; returns its lane (none for a job that runs alone) and the locks it holds.
+def admit(job: str, tell) -> None:
+    """Waits for room on the build Mac: a load below LOAD_LIMIT, LOAD_SPACING seconds after the last job let in."""
+    with lock_there("admission") as handle:
+        if not locked(handle, fcntl.LOCK_EX):
+            tell("Waiting for room on the build Mac, behind another long job")
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        told = False
+        while True:
+            load = os.getloadavg()[0]
+            since = between(noted("admission").get("used"), now())
+            if load < LOAD_LIMIT and (since is None or since >= LOAD_SPACING):
+                note("admission", job)
+                return
+            if load >= LOAD_LIMIT and not told:
+                tell(f"Waiting for the build Mac's load ({load:.1f}) to fall below {LOAD_LIMIT}")
+                told = True
+            time.sleep(2)
 
-    A gate or a regression run puts the clone at its commit, so they take the clone one at a time. A
-    job that runs alone holds the turnstile, which stops the jobs that come after it, until the jobs
-    running have finished. The locks are taken in one order (the clone, a lane, the turnstile, the
-    Mac), so jobs can't end up waiting for each other in a circle.
+
+def take_screen(job: str, exclusive: bool, tell=say):
+    """The build Mac's screen, held: alone by a regression run, which drives it, or shared by tests that put windows
+    on it. A regression run waiting for those tests holds the screen's turnstile, so tests that come meanwhile wait
+    for it; scripts/push-gate.py takes the screen the same way, given its path."""
+    handle = lock_there("screen")
+    turnstile = open(f"{handle.name}.turnstile", "a+")
+    how = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    if not locked(turnstile, fcntl.LOCK_EX):
+        tell(f"Waiting for the screen, which {noted('screen').get('job', 'a regression run')} has or waits for")
+        fcntl.flock(turnstile, fcntl.LOCK_EX)
+    if exclusive:
+        note("screen", job)
+    if not locked(handle, how):
+        tell("Waiting for the tests on the screen to finish" if exclusive else
+             f"Waiting for the screen, which {noted('screen').get('job', 'a regression run')} has")
+        fcntl.flock(handle, how)
+    turnstile.close()
+    return handle
+
+
+def wait_turn(job: str, state: dict, log) -> tuple[str | None, list]:
+    """Waits for the job's turn; returns its lane (none for a regression run or a job that runs alone) and the locks
+    it holds.
+
+    A regression run puts the clone at its commit, so regression runs take the clone one at a time. A job that
+    runs alone holds the turnstile, which stops the jobs that come after it, until the jobs running have finished.
+    A long job or a regression run then waits for room (admit), and a regression run for the screen, which tests
+    that put windows on it share (take_screen). The locks are taken in one order (the clone, a lane, the turnstile,
+    the Mac, the screen), so jobs can't end up waiting for each other in a circle.
     """
+    def tell(text: str) -> None:
+        log.write(f"==> {text}\n".encode())
+
     held, size = [], state.get("size", "long")
-    if state["kind"] in ("gate", "e2e"):
+    if state["kind"] == "e2e":
         clone = lock_there("clone")
         if not locked(clone, fcntl.LOCK_EX):
-            log.write(f"==> Waiting for the clone, which {noted('clone').get('job', 'another job')} has\n".encode())
+            tell(f"Waiting for the clone, which {noted('clone').get('job', 'another job')} has")
             fcntl.flock(clone, fcntl.LOCK_EX)
         note("clone", job)
         held.append(clone)
@@ -1026,23 +1109,26 @@ def wait_turn(job: str, state: dict, log) -> tuple[str | None, list]:
         lane, handle = take_lane(job, size, state.get("source", ""), log)
         held.append(handle)
     turnstile = lock_there("turnstile")
-    alone = noted("alone").get("job", "a job")
     if not locked(turnstile, fcntl.LOCK_EX):
-        log.write(f"==> Waiting for {alone}, which runs alone\n".encode())
+        tell(f"Waiting for {noted('alone').get('job', 'a job')}, which runs alone")
         fcntl.flock(turnstile, fcntl.LOCK_EX)
     mac = lock_there("mac")
-    if size in LANES:
+    if size != "alone":
         if not locked(mac, fcntl.LOCK_SH):
-            log.write(f"==> Waiting for {noted('alone').get('job', 'a job')}, which runs alone\n".encode())
+            tell(f"Waiting for {noted('alone').get('job', 'a job')}, which runs alone")
             fcntl.flock(mac, fcntl.LOCK_SH)
     else:
         note("alone", job)
         if not locked(mac, fcntl.LOCK_EX):
-            running = ", ".join(running_jobs()) or "the jobs running"
-            log.write(f"==> This runs alone, so it waits for {running}\n".encode())
+            tell(f"This runs alone, so it waits for {', '.join(running_jobs()) or 'the jobs running'}")
             fcntl.flock(mac, fcntl.LOCK_EX)
     turnstile.close()
-    return lane, [*held, mac]
+    held.append(mac)
+    if size in ("long", "screen"):
+        admit(job, tell)
+    if size == "screen":
+        held.append(take_screen(job, exclusive=True, tell=tell))
+    return lane, held
 
 
 def prepare_lane(place: Path, commit: str, env: dict, log) -> bool:
@@ -1078,8 +1164,8 @@ def prepare_lane(place: Path, commit: str, env: dict, log) -> bool:
 
 
 def supervise(job: str) -> None:
-    """Runs the job at its commit once it's its turn, a test or an app in its lane's worktree and a gate
-    or a regression run in the clone, and records what came of it."""
+    """Runs the job at its commit once it's its turn, a test, an app or a gate in its lane's worktree and
+    a regression run in the clone, and records what came of it."""
     state = update_job(job, supervisor=os.getpid())
     clone = Path.home() / CLONE_THERE
     env = environment_there()
@@ -1089,11 +1175,25 @@ def supervise(job: str) -> None:
             update_job(job, state="cancelled", finished=now())
             return
         update_job(job, state="running", started=now(), **({"lane": lane} if lane else {}))
-        if state["kind"] in ("test", "app"):
+        if lane:
             log.write(f"==> In lane {lane}\n".encode())
             place = Path.home() / LANES_THERE / lane
             ready = prepare_lane(place, state["commit"], env, log)
             command = [sys.executable, str(Path(__file__).resolve()), f"_{state['kind']}", job, *state["command"]]
+            if state["kind"] == "gate":
+                # origin/main as GitHub has it now, which the push gate measures the commit's changes from.
+                subprocess.run(["git", "fetch", "--quiet", "origin"], cwd=place, env=env, stdin=subprocess.DEVNULL,
+                               stdout=log, stderr=subprocess.STDOUT)
+                # The lane is the gate's worktree, warm from the lane's tests, so gates run side by side.
+                command = state["command"]
+                env = {**env, "REDLAMP_PUSH_GATE_SRC": str(place),
+                       "REDLAMP_SCREEN_LOCK": str(Path.home() / LANES_THERE / "screen.lock"),
+                       "REDLAMP_SCREEN_TARGETS": ",".join(WINDOWED)}
+                if ready and "REDLAMP_SCREEN_LOCK" not in (place / "scripts/push-gate.py").read_text():
+                    # An older commit's push gate shares neither, so it runs in its own worktree, one at a time, and
+                    # holds the screen throughout.
+                    held.append(take_screen(job, exclusive=False,
+                                            tell=lambda text: log.write(f"==> {text}\n".encode())))
         else:
             place, command = clone, state["command"]
             # origin/main as GitHub has it now, which the push gate measures the commit's changes from.
@@ -1248,6 +1348,17 @@ def status_there() -> int:
     gate = clone.parent / f"{clone.name}-push-gate"
     folders = sorted((path for path in (Path.home() / JOBS_THERE).glob("*")
                       if path.is_dir() and JOB_ID.fullmatch(path.name)), reverse=True)
+    jobs = [current(path.name) for path in folders[:KEPT_JOBS]]
+    for state in jobs:
+        try:
+            with (folder_there(state["id"]) / "log").open("rb") as log:
+                log.seek(max(0, log.seek(0, os.SEEK_END) - 4096))
+                last = log.read().decode(errors="replace").strip().splitlines()[-1:]
+        except OSError:
+            last = []
+        if last and (last[0].startswith("==> Waiting") and state["state"] == "running"
+                     or last[0].startswith("==> ") and state["state"] == "queued"):
+            state["waiting"] = last[0][4:]
     emit({
         "gpu": f"{gpus[0].get('_name')} ({gpus[0].get('sppci_cores')} GPU cores)" if gpus else "no GPU listed",
         "macos": output("sw_vers", "-productVersion").strip(),
@@ -1260,7 +1371,7 @@ def status_there() -> int:
         "clone": output("git", "-C", str(clone), "log", "-1", "--format=%h %s").strip()[:90],
         "samples": samples(gate if (gate / "tests/fixtures").is_dir() else clone),
         "models": models(),
-        "jobs": [current(path.name) for path in folders[:KEPT_JOBS]],
+        "jobs": jobs,
     })
     return 0
 
@@ -1292,7 +1403,7 @@ def test_there(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     ENV.update(setting.split("=", 1) for setting in args.env)
     root = Path.cwd()
-    return run_tests(root, args, root / "build/DerivedData", folder_there(args.job), generate=True)
+    return run_tests(root, args, root / "build/DerivedData", folder_there(args.job), generate=True, screen=True)
 
 
 def app_there(argv: list[str]) -> int:
