@@ -1,3 +1,4 @@
+import RedlampDesign
 import RedlampEngineAPI
 import SwiftUI
 
@@ -10,6 +11,7 @@ import SwiftUI
     }
 
     @State private var mode: Mode = .parametric
+    @State private var channel = CurveChannel.rgb
 
     public var body: some View {
         PanelSection(panel: .toneCurve) {
@@ -19,7 +21,15 @@ import SwiftUI
             }
             .padding(.bottom, 6)
 
-            CurveEditor(mode: mode)
+            if mode == .point {
+                ControlRow(label: "Channel") {
+                    ChoiceMenu("Channel", selection: $channel)
+                        .controlSize(.small)
+                }
+                .padding(.bottom, 6)
+            }
+
+            CurveEditor(mode: mode, channel: channel)
                 .aspectRatio(1, contentMode: .fit)
 
             if mode == .parametric {
@@ -35,15 +45,17 @@ import SwiftUI
                 ParameterSlider(parameter: .curveDarks)
                 ParameterSlider(parameter: .curveShadows)
             } else {
-                PointCurvePresets().padding(.top, 6)
+                PointCurvePresets(channel: channel).padding(.top, 6)
             }
         }
     }
 }
 
-/// The curve graph. In point mode, drag points, click to add, double-click to remove.
+/// The curve graph. In point mode, drag points of the chosen channel's curve, click to add,
+/// double-click to remove.
 struct CurveEditor: View {
     let mode: ToneCurvePanel.Mode
+    let channel: CurveChannel
 
     @Environment(EditorModel.self) private var model
     @State private var dragIndex: Int?
@@ -55,10 +67,10 @@ struct CurveEditor: View {
                 Canvas { context, canvasSize in
                     drawBackground(context, size: canvasSize)
                     drawHistogram(context, size: canvasSize)
-                    drawCurve(context, size: canvasSize)
+                    drawCurves(context, size: canvasSize)
                 }
                 if mode == .point {
-                    ForEach(Array(model.pointCurve.enumerated()), id: \.offset) { index, point in
+                    ForEach(Array(model.pointCurve(channel).enumerated()), id: \.offset) { index, point in
                         CurveHandle(selected: dragIndex == index)
                             .position(point.location(in: size))
                             .onTapGesture(count: 2) { removePoint(index) }
@@ -78,7 +90,7 @@ struct CurveEditor: View {
                     x: min(max(gesture.location.x / size.width, 0), 1),
                     y: min(max(1 - gesture.location.y / size.height, 0), 1),
                 )
-                var points = model.pointCurve.sorted { $0.x < $1.x }
+                var points = model.pointCurve(channel).sorted { $0.x < $1.x }
                 if dragIndex == nil {
                     model.beginEdit()
                     let start = CGPoint(
@@ -105,19 +117,19 @@ struct CurveEditor: View {
                 let upper = index < points.count - 1 ? points[index + 1].x - 0.01 : 1
                 let x = isEndpoint ? points[index].x : min(max(location.x, lower), upper)
                 points[index] = CurvePoint(x: x, y: location.y)
-                model.setPointCurve(points)
+                model.setPointCurve(points, channel: channel)
             }
             .onEnded { _ in
                 dragIndex = nil
-                model.endEdit(.toneCurve, "Point Curve")
+                model.endEdit(.toneCurve, channel.curveTitle)
             }
     }
 
     private func removePoint(_ index: Int) {
-        var points = model.pointCurve.sorted { $0.x < $1.x }
+        var points = model.pointCurve(channel).sorted { $0.x < $1.x }
         guard index > 0, index < points.count - 1 else { return }
         points.remove(at: index)
-        model.setPointCurve(points)
+        model.setPointCurve(points, channel: channel)
     }
 
     private func drawBackground(_ context: GraphicsContext, size: CGSize) {
@@ -153,7 +165,8 @@ struct CurveEditor: View {
     }
 
     private func drawHistogram(_ context: GraphicsContext, size: CGSize) {
-        let bins = model.histogram.luminance
+        let shown = mode == .point ? channel : .rgb
+        let bins = model.histogram.bins(shown)
         let peak = bins.dropFirst().dropLast().max() ?? 0
         guard peak > 0 else { return }
         var path = Path()
@@ -166,21 +179,114 @@ struct CurveEditor: View {
             ))
         }
         path.addLine(to: CGPoint(x: size.width, y: size.height))
-        context.fill(path, with: .color(Color.white.opacity(0.07)))
+        context.fill(path, with: .color(shown.histogramFill.color))
     }
 
-    private func drawCurve(_ context: GraphicsContext, size: CGSize) {
-        let lut = ToneCurveMath.lut(for: model.toneCurve, count: 256)
+    private func drawCurves(_ context: GraphicsContext, size: CGSize) {
+        let curves = CurveGraphCurves(model.toneCurve, mode: mode, channel: channel)
+        for curve in curves.faint {
+            context.stroke(path(curve.samples, size: size), with: .color(curve.color.color), lineWidth: 1)
+        }
+        context.stroke(path(curves.shown.samples, size: size), with: .color(curves.shown.color.color), lineWidth: 1.5)
+    }
+
+    private func path(_ samples: [Double], size: CGSize) -> Path {
         var path = Path()
-        for (index, value) in lut.enumerated() {
-            let point = CGPoint(x: Double(index) / 255 * size.width, y: (1 - Double(value)) * size.height)
+        for (index, value) in samples.enumerated() {
+            let point = CGPoint(
+                x: Double(index) / Double(samples.count - 1) * size.width, y: (1 - value) * size.height,
+            )
             if index == 0 {
                 path.move(to: point)
             } else {
                 path.addLine(to: point)
             }
         }
-        context.stroke(path, with: .color(Color(white: 0.9)), lineWidth: 1.5)
+        return path
+    }
+}
+
+/// The curves a Tone Curve graph draws, the same in both panels: the one being edited (the RGB
+/// curve with the parametric one in it, or a channel's own), and in point mode the other bent
+/// curves, faint and without points.
+struct CurveGraphCurves {
+    struct Curve {
+        let samples: [Double]
+        let color: RGBA
+    }
+
+    let shown: Curve
+    let faint: [Curve]
+
+    init(_ recipe: EditRecipe, mode: ToneCurvePanel.Mode, channel: CurveChannel, count: Int = 256) {
+        func samples(_ channel: CurveChannel) -> [Double] {
+            if channel == .rgb {
+                return ToneCurveMath.lut(for: recipe, count: count).map { Double($0) }
+            }
+            return ToneCurveMath.risingSamples(recipe[curve: channel], count: count)
+        }
+        let channel = mode == .point ? channel : .rgb
+        shown = Curve(samples: samples(channel), color: channel.tint)
+        var plain = recipe
+        for color in CurveChannel.colors {
+            plain[curve: color] = EditRecipe.linearPointCurve
+        }
+        var faint: [Curve] = []
+        for other in CurveChannel.allCases where mode == .point && other != channel {
+            let bent = other == .rgb
+                ? !ToneCurveMath.isIdentity(plain) : recipe[curve: other] != EditRecipe.linearPointCurve
+            if bent {
+                faint.append(Curve(samples: samples(other), color: other.tint.opacity(0.4)))
+            }
+        }
+        self.faint = faint
+    }
+}
+
+extension CurveChannel {
+    /// The curve's name in history and on its reset: the point curve, or a channel's own.
+    var curveTitle: String {
+        self == .rgb ? "Point Curve" : "\(name) Curve"
+    }
+
+    /// The colour a graph draws the curve in.
+    var tint: RGBA {
+        switch self {
+        case .rgb: RGBA(white: 0.9)
+        case .red: RGBA(red: 0.95, green: 0.35, blue: 0.35)
+        case .green: RGBA(red: 0.4, green: 0.85, blue: 0.4)
+        case .blue: RGBA(red: 0.4, green: 0.6, blue: 1)
+        }
+    }
+
+    /// The histogram's fill behind the curve: the photo's luminance in white, a channel's own in its colour.
+    var histogramFill: RGBA {
+        self == .rgb ? RGBA(white: 1, alpha: 0.07) : tint.opacity(0.12)
+    }
+}
+
+extension Histogram {
+    /// The bins a graph draws behind `channel`'s curve: the luminance behind the RGB curve.
+    func bins(_ channel: CurveChannel) -> [UInt32] {
+        switch channel {
+        case .rgb: luminance
+        case .red: red
+        case .green: green
+        case .blue: blue
+        }
+    }
+}
+
+extension ToneCurveMath {
+    /// `points` on their own at `count` evenly spaced inputs over 0...1, kept rising as the tables
+    /// the kernel reads are.
+    static func risingSamples(_ points: [CurvePoint], count: Int) -> [Double] {
+        let curve = pointCurve(points)
+        var previous = 0.0
+        return (0 ..< count).map { index in
+            previous = max(previous, min(max(curve(Double(index) / Double(count - 1)), 0), 1))
+            return previous
+        }
     }
 }
 
@@ -350,19 +456,21 @@ struct SplitHandles: View {
 
 /// The point curve's preset menu and hint, shared with the AppKit panel.
 struct PointCurvePresets: View {
+    /// The curve the presets set: RGB's, or a channel's own.
+    let channel: CurveChannel
     @Environment(EditorModel.self) private var model
 
     var body: some View {
         HStack {
             Menu("Curve Presets") {
-                Button("Linear") { model.resetPointCurve() }
+                Button("Linear") { model.resetPointCurve(channel) }
                 Button("Medium Contrast") {
                     model.setPointCurve([
                         .init(x: 0, y: 0),
                         .init(x: 0.25, y: 0.21),
                         .init(x: 0.75, y: 0.8),
                         .init(x: 1, y: 1),
-                    ])
+                    ], channel: channel)
                 }
                 Button("Strong Contrast") {
                     model.setPointCurve([
@@ -370,10 +478,12 @@ struct PointCurvePresets: View {
                         .init(x: 0.25, y: 0.17),
                         .init(x: 0.75, y: 0.84),
                         .init(x: 1, y: 1),
-                    ])
+                    ], channel: channel)
                 }
                 Button("Matte Fade") {
-                    model.setPointCurve([.init(x: 0, y: 0.08), .init(x: 0.3, y: 0.28), .init(x: 1, y: 0.96)])
+                    model.setPointCurve(
+                        [.init(x: 0, y: 0.08), .init(x: 0.3, y: 0.28), .init(x: 1, y: 0.96)], channel: channel,
+                    )
                 }
             }
             .controlSize(.small)

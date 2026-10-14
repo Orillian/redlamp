@@ -168,23 +168,12 @@ struct MaskCurvesEditor: View {
                 .help("Reset the mask's Curves")
             }
             PointCurveGraph(
-                points: model.maskCurve(channel), tint: channel.tint,
+                points: model.maskCurve(channel), tint: channel.tint.color,
                 begin: { model.beginEdit() },
                 change: { model.setMaskCurve(channel, $0) },
                 end: { model.endEdit(.mask(nil), "\(name) Curve") },
             )
             .frame(height: 210)
-        }
-    }
-}
-
-private extension CurveChannel {
-    var tint: Color {
-        switch self {
-        case .rgb: Color(white: 0.9)
-        case .red: Color(red: 0.95, green: 0.35, blue: 0.35)
-        case .green: Color(red: 0.4, green: 0.85, blue: 0.4)
-        case .blue: Color(red: 0.4, green: 0.6, blue: 1)
         }
     }
 }

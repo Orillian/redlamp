@@ -5,13 +5,20 @@ import RedlampEngineAPI
 import SwiftUI
 
 /// The Tone Curve panel: a parametric curve (region sliders and split handles) or a point
-/// curve (drag points, click to add, double-click to remove), over the luminance histogram.
+/// curve for RGB, red, green or blue (drag points, click to add, double-click to remove), over
+/// the histogram of what it changes.
 @MainActor
 @_spi(Harness) public enum ToneCurvePanelView {
     public static func make(model: EditorModel) -> PanelSectionView {
         let state = ToneCurveState()
         let picker = PaddingView(
             ControlRowView(label: "Curve", controls: [HostedControl(model: model, ToneCurveModePicker(state: state))]),
+            bottom: 6,
+        )
+        let channel = PaddingView(
+            ControlRowView(
+                label: "Channel", controls: [HostedControl(model: model, ToneCurveChannelPicker(state: state))],
+            ),
             bottom: 6,
         )
         let graph = CurveGraphView(model: model, state: state)
@@ -28,12 +35,12 @@ import SwiftUI
         }
         let point: [NSView] = [
             PointValuesView(model: model, state: state),
-            HostedControl(model: model, PointCurvePresets().padding(.top, 6)),
+            HostedControl(model: model, ToneCurvePresetsRow(state: state).padding(.top, 6)),
         ]
 
         let panel = PanelSectionView(panel: .toneCurve, model: model, rows: [picker, graph] + parametric)
         state.onModeChange = { [weak panel] mode in
-            panel?.setRows([picker, graph] + (mode == .parametric ? parametric : point))
+            panel?.setRows(mode == .parametric ? [picker, graph] + parametric : [picker, channel, graph] + point)
         }
         return panel
     }
@@ -46,6 +53,15 @@ final class ToneCurveState {
         didSet {
             if mode != oldValue {
                 onModeChange(mode)
+            }
+        }
+    }
+
+    /// The point curve shown in point mode: RGB's, or a channel's own.
+    var channel = CurveChannel.rgb {
+        didSet {
+            if channel != oldValue {
+                selectedPoint = nil
             }
         }
     }
@@ -63,10 +79,30 @@ private struct ToneCurveModePicker: View {
     var body: some View {
         ChoiceMenu("Curve", selection: $state.mode)
             .controlSize(.small)
+            .automationIdentifier("curve.mode")
     }
 }
 
-/// The square curve graph: grid, the luminance histogram, and the curve.
+private struct ToneCurveChannelPicker: View {
+    @Bindable var state: ToneCurveState
+
+    var body: some View {
+        ChoiceMenu("Channel", selection: $state.channel)
+            .controlSize(.small)
+            .automationIdentifier("curve.channel")
+    }
+}
+
+/// The presets for the curve shown.
+private struct ToneCurvePresetsRow: View {
+    let state: ToneCurveState
+
+    var body: some View {
+        PointCurvePresets(channel: state.channel)
+    }
+}
+
+/// The square curve graph: grid, the histogram of what the curve changes, and the curves.
 final class CurveGraphView: LayerDrawnView, HeightProviding {
     private let model: EditorModel
     private let state: ToneCurveState
@@ -76,6 +112,7 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
     private var curve = EditRecipe()
     private var points: [CurvePoint] = []
     private var mode = ToneCurvePanel.Mode.parametric
+    private var channel = CurveChannel.rgb
     private var selected: Int?
     private var dragIndex: Int? {
         didSet {
@@ -89,6 +126,7 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
         self.model = model
         self.state = state
         super.init(frame: .zero)
+        setAccessibilityIdentifier("curve.graph")
     }
 
     @available(*, unavailable)
@@ -107,10 +145,11 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
         guard window != nil else { return }
         tracker = Tracker { [weak self] in
             guard let self else { return }
-            histogram = model.histogram.luminance
-            curve = model.toneCurve
-            points = curve.pointCurve
             mode = state.mode
+            channel = mode == .point ? state.channel : .rgb
+            histogram = model.histogram.bins(channel)
+            curve = model.toneCurve
+            points = curve[curve: channel]
             selected = state.selectedPoint
             setNeedsContentDisplay()
         }
@@ -154,17 +193,11 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
 
         drawHistogram(size: size, context: context)
 
-        let lut = ToneCurveMath.lut(for: curve, count: 256)
-        let path = CGMutablePath()
-        for (index, value) in lut.enumerated() {
-            let point = CGPoint(x: Double(index) / 255 * size.width, y: (1 - Double(value)) * size.height)
-            if index == 0 {
-                path.move(to: point)
-            } else {
-                path.addLine(to: point)
-            }
+        let curves = CurveGraphCurves(curve, mode: mode, channel: channel)
+        for faint in curves.faint {
+            stroke(path(faint.samples, size: size), color: faint.color, width: 1, context: context)
         }
-        stroke(path, color: RGBA(white: 0.9), width: 1.5, context: context)
+        stroke(path(curves.shown.samples, size: size), color: curves.shown.color, width: 1.5, context: context)
         context.restoreGState()
 
         if mode == .point {
@@ -198,8 +231,21 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
         }
         path.addLine(to: CGPoint(x: size.width, y: size.height))
         context.addPath(path)
-        context.setFillColor(RGBA(white: 1, alpha: 0.07).cgColor)
+        context.setFillColor(channel.histogramFill.cgColor)
         context.fillPath()
+    }
+
+    private func path(_ samples: [Double], size: CGSize) -> CGPath {
+        let path = CGMutablePath()
+        for (index, value) in samples.enumerated() {
+            let point = CGPoint(x: Double(index) / Double(samples.count - 1) * size.width, y: (1 - value) * size.height)
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        return path
     }
 
     private func stroke(_ path: CGPath, color: RGBA, width: CGFloat, dash: [CGFloat] = [], context: CGContext) {
@@ -233,7 +279,7 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
             guard hit > 0, hit < sorted.count - 1 else { return }
             sorted.remove(at: hit)
             state.selectedPoint = nil
-            model.setPointCurve(sorted)
+            model.setPointCurve(sorted, channel: channel)
             return
         }
         model.beginEdit()
@@ -257,7 +303,7 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
     override func mouseUp(with _: NSEvent) {
         guard dragIndex != nil else { return }
         dragIndex = nil
-        model.endEdit(.toneCurve, "Point Curve")
+        model.endEdit(.toneCurve, channel.curveTitle)
     }
 
     private func move(to location: CGPoint, in sorted: [CurvePoint]) {
@@ -269,7 +315,7 @@ final class CurveGraphView: LayerDrawnView, HeightProviding {
         let upper = index < points.count - 1 ? points[index + 1].x - 0.01 : 1
         let x = isEndpoint ? points[index].x : min(max(location.x, lower), upper)
         points[index] = CurvePoint(x: x, y: location.y)
-        model.setPointCurve(points)
+        model.setPointCurve(points, channel: channel)
     }
 }
 
@@ -441,7 +487,7 @@ final class PointValuesView: NSView {
         for (field, axis) in [(input, Axis.input), (output, .output)] {
             field.onBegin = { model.beginEdit() }
             field.onChange = { [weak self] in self?.move(axis, to: $0) }
-            field.onEnd = { model.endEdit(.toneCurve, "Point Curve") }
+            field.onEnd = { model.endEdit(.toneCurve, state.channel.curveTitle) }
             field.onCommit = { [weak self] in self?.move(axis, to: $0) }
         }
     }
@@ -467,7 +513,7 @@ final class PointValuesView: NSView {
         guard window != nil else { return }
         tracker = Tracker { [weak self] in
             guard let self else { return }
-            let points = model.toneCurve.pointCurve.sorted { $0.x < $1.x }
+            let points = model.pointCurve(state.channel).sorted { $0.x < $1.x }
             guard let index = state.selectedPoint, points.indices.contains(index) else {
                 row.hint = "Click a point to type its Input and Output"
                 return
@@ -480,7 +526,7 @@ final class PointValuesView: NSView {
 
     /// Moves the selected point, keeping it between its neighbours; the end points keep their Input.
     private func move(_ axis: Axis, to value: Double) {
-        var points = model.toneCurve.pointCurve.sorted { $0.x < $1.x }
+        var points = model.pointCurve(state.channel).sorted { $0.x < $1.x }
         guard let index = state.selectedPoint, points.indices.contains(index) else { return }
         let t = min(max(value / 255, 0), 1)
         var point = points[index]
@@ -492,6 +538,6 @@ final class PointValuesView: NSView {
             point = CurvePoint(x: point.x, y: t)
         }
         points[index] = point
-        model.setPointCurve(points)
+        model.setPointCurve(points, channel: state.channel)
     }
 }

@@ -152,7 +152,7 @@ public final class EditorModel {
             if newValue.whiteBalanceMode != old.whiteBalanceMode {
                 withMutation(keyPath: \.whiteBalanceMode) {}
             }
-            if newValue.pointCurve != old.pointCurve {
+            if newValue.pointCurve != old.pointCurve || newValue.channelCurves != old.channelCurves {
                 withMutation(keyPath: \.pointCurve) {}
             }
             if newValue.panelsOff != old.panelsOff {
@@ -215,6 +215,12 @@ public final class EditorModel {
         return storedRecipe.pointCurve
     }
 
+    /// The point curve for `channel`. Reading any of the four observes them all, as `pointCurve` does.
+    public func pointCurve(_ channel: CurveChannel) -> [CurvePoint] {
+        access(keyPath: \.pointCurve)
+        return storedRecipe[curve: channel]
+    }
+
     public var masks: [MaskLayer] {
         access(keyPath: \.masks)
         return storedRecipe.masks
@@ -252,7 +258,9 @@ public final class EditorModel {
     /// Just the tone curve, observing only the parameters that shape it.
     public var toneCurve: EditRecipe {
         var curve = EditRecipe()
-        curve.pointCurve = pointCurve
+        for channel in CurveChannel.allCases {
+            curve[curve: channel] = pointCurve(channel)
+        }
         for parameter in PanelID.toneCurve.parameters {
             curve[parameter] = value(parameter)
         }
@@ -1808,23 +1816,23 @@ public final class EditorModel {
 
     // MARK: - Tone curve
 
-    public func setPointCurve(_ points: [CurvePoint]) {
+    public func setPointCurve(_ points: [CurvePoint], channel: CurveChannel = .rgb) {
         var next = recipe
-        next.pointCurve = points
+        next[curve: channel] = points
         guard next != recipe else { return }
         let previous = recipe
         recipe = next
         requestRender()
         scheduleSave()
         if editStart == nil {
-            recordHistory(.toneCurve, "Point Curve", from: previous)
+            recordHistory(.toneCurve, channel.curveTitle, from: previous)
         }
     }
 
-    public func resetPointCurve() {
+    public func resetPointCurve(_ channel: CurveChannel = .rgb) {
         var next = recipe
-        next.pointCurve = EditRecipe.linearPointCurve
-        commit(next, .reset, "Reset Point Curve")
+        next[curve: channel] = EditRecipe.linearPointCurve
+        commit(next, .reset, "Reset \(channel.curveTitle)")
     }
 
     // MARK: - Snapshots
@@ -1937,14 +1945,14 @@ public final class EditorModel {
             case .treatment: treatment != .color
             case .baseLook: baseLook != BuiltInBaseLook.color.reference
             case .whiteBalanceMode: whiteBalanceMode != .asShot
-            case .pointCurve: pointCurve != EditRecipe.linearPointCurve
+            case .pointCurve: CurveChannel.allCases.contains { pointCurve($0) != EditRecipe.linearPointCurve }
             case .pointColor: hasPointColor
             case .crop, .orientation, .processVersion, .spots: false
             }
         }
     }
 
-    /// Resets a panel from its header, in one step: the Tone Curve's point curve with its sliders,
+    /// Resets a panel from its header, in one step: the Tone Curve's point curves with its sliders,
     /// and the panel's switch back on.
     public func resetPanel(_ panel: PanelID) {
         guard let switchable = panel.switchable else {
@@ -1954,7 +1962,9 @@ public final class EditorModel {
         var next = recipe
         next.reset(panel.parameters)
         if panel == .toneCurve {
-            next.pointCurve = EditRecipe.linearPointCurve
+            for channel in CurveChannel.allCases {
+                next[curve: channel] = EditRecipe.linearPointCurve
+            }
         }
         next.setPanel(switchable, on: true)
         commit(next, .reset, "Reset \(panel.title)")
