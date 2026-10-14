@@ -153,12 +153,17 @@
             }
         }
 
-        /// Drags from `start` (0...1 in the target's frame) by `offset` points, in `steps` moves.
+        /// Drags from `start` (0...1 in the target's frame) by `offset` points, in `steps` moves; `hovering`, with the
+        /// pointer brought there first and left a moment, as a person's comes to an edge before pressing it.
         func drag(
             _ target: Target, from start: CGPoint = CGPoint(x: 0.5, y: 0.5), by offset: CGVector,
-            steps: Int = 8, modifiers: NSEvent.ModifierFlags = [],
+            steps: Int = 8, modifiers: NSEvent.ModifierFlags = [], hovering: Bool = false,
         ) throws {
             let (window, from) = try place(start, on: target)
+            if hovering {
+                try mouse([(.mouseMoved, NSPoint(x: from.x, y: from.y + 12), 0), (.mouseMoved, from, 0)], in: window)
+                pause(0.3)
+            }
             var events: [(NSEvent.EventType, NSPoint, Int)] = [(.leftMouseDown, from, 1)]
             for step in 1 ... steps {
                 let t = Double(step) / Double(steps)

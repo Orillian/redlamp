@@ -100,6 +100,7 @@
                         dx: 0,
                         dy: -(146 - 104),
                     ),
+                    hovering: true,
                 )
                 app.covered(.feature("library.filmstrip"), via: .mouse)
             } else {
