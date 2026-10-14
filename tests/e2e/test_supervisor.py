@@ -222,6 +222,28 @@ class Retries(unittest.TestCase):
         self.assertEqual(self.launches.results["smoke.export"]["status"], "flaky")
         self.assertEqual(self.launches.results["smoke.export"]["message"], "passed on retry; first: first")
 
+    def test_a_launch_that_cant_bring_the_app_to_the_front_stops_the_run_there(self):
+        reason = "UserNotificationCenter holds it: an alert is open, such as a crash dialog"
+        self.scripted = [([{"event": "ready"}, {"event": "focus-unavailable", "reason": reason},
+                           {"event": "launch-end"}], 0)]
+        self.assertFalse(self.launches.run_group("main", ["smoke.export", "masking.brush"]))
+        self.assertEqual(self.launches.refused, reason)
+        self.assertFalse(self.launches.run_group("performance", ["performance.open"]))
+        self.assertEqual(self.launched, [("main", ["smoke.export", "masking.brush"])])
+        self.assertEqual(self.launches.results, {})
+
+    def test_a_launch_that_crashes_partway_marks_its_scenario_and_runs_the_rest_in_a_fresh_one(self):
+        self.scripted = [
+            (scenario("import.performance") + [{"event": "scenario-start", "scenario": "performance.open"}], -5),
+            (scenario("performance.drag"), 0),
+        ]
+        ids = ["import.performance", "performance.open", "performance.drag"]
+        self.assertTrue(self.launches.run_group("performance", ids))
+        self.assertEqual(self.launched, [("performance", ids), ("performance", ["performance.drag"])])
+        self.assertEqual(self.launches.results["performance.open"],
+                         {"status": "failed", "message": "The app crashed (exit -5) during this scenario"})
+        self.assertEqual(self.launches.results["performance.drag"]["status"], "passed")
+
     def test_a_launch_reads_its_own_events_after_one_cut_short_midway_through_a_line(self):
         path = self.run / "events-main.jsonl"
         path.write_text(json.dumps(scenario("smoke.export")[0]) + "\n" + '{"event": "hang", "sec')

@@ -586,6 +586,15 @@ def outcomes(run_dir: Path, group: str, start: int = 0) -> tuple[dict[str, dict]
     return results, hangs, open_scenario
 
 
+def focus_refused(run_dir: Path, group: str, start: int = 0) -> str | None:
+    """Why the launch of `group` whose events begin at byte `start` couldn't bring the app to the front, if it
+    couldn't: a run with focus checks before its first scenario, and runs none of them then."""
+    for event in read_events(run_dir / f"events-{group}.jsonl", start):
+        if event.get("event") == "focus-unavailable":
+            return event.get("reason") or "no reason given"
+    return None
+
+
 class Launches:
     """A run's launches and what they found: each scenario's latest result and its count of attempts, the crash
     reports, and the main-thread stalls, each launch's once, marked with the attempt they belong to. A scenario
@@ -601,12 +610,14 @@ class Launches:
         self.hangs: list[dict] = []
         self.retried_hangs: list[dict] = []
         self.crashes: list[str] = []
+        # Why a launch couldn't bring the app to the front; the run launches nothing more once it's set.
+        self.refused: str | None = None
 
     def run_group(self, group: str, ids: list[str], attempt: int = 1) -> bool:
         """Runs `ids` in launches of `group`, as attempt `attempt` of each; returns whether each got a result."""
         remaining = ids
         tries = 0
-        while remaining and tries < 4:
+        while remaining and tries < 4 and not self.refused:
             tries += 1
             log(f"Launch '{group}': {len(remaining)} scenario(s)")
             outcome = self.start(group, remaining)
@@ -616,6 +627,10 @@ class Launches:
                 target.parent.mkdir(exist_ok=True)
                 shutil.copy(path, target)
                 self.crashes.append(str(target))
+            self.refused = focus_refused(self.run_dir, group, outcome["events"])
+            if self.refused:
+                log(f"{group}: the app couldn't come to the front ({self.refused}), so the run stops here")
+                return False
             stopped = unfinished or outcome["timedOut"]
             if stopped and stopped in ids:
                 if outcome["timedOut"]:
@@ -1038,23 +1053,20 @@ def main() -> int:
                  if launches.results.get(i, {}).get("status") == "failed" and launches.attempts.get(i, 0) < 2]
     earlier: list[str] = []
     for group, ids, afresh in later_launches(main_ids, relaunch_ids, retry):
+        if launches.refused:
+            break
         if afresh:
             log("Starting the retry as the first attempt started: the photos, the home and the defaults afresh")
             earlier += start_afresh(run_dir, relay.server_address[1], attempt=2)
         launches.run_group(group, ids, attempt=2 if afresh else 1)
-    results, attempts, hangs, crashes = launches.results, launches.attempts, launches.hangs, launches.crashes
 
     performance = None
-    if performance_ids:
+    if performance_ids and not launches.refused:
         quiet, current = wait_for_quiet(args.quiet_wait)
         validation, args.validation = args.validation, False
         log(f"Performance: {len(performance_ids)} scenario(s), load average {current:.1f}")
-        launch(app, run_dir, "performance", performance_ids, args)
+        launches.run_group("performance", performance_ids)
         args.validation = validation
-        perf_results, perf_hangs, _ = outcomes(run_dir, "performance")
-        hangs += perf_hangs
-        for scenario_id in performance_ids:
-            results[scenario_id] = perf_results.get(scenario_id, {"status": "failed", "message": "never ran"})
         quiet = quiet and load() <= QUIET_LOAD
         performance = judge_performance(run_dir, quiet)
         if not quiet:
@@ -1067,7 +1079,8 @@ def main() -> int:
         if args.record:
             subprocess.run([str(ROOT / "scripts/perf-history.py"), "append", "--e2e", str(run_dir / "metrics.json"),
                             "--source", "e2e", "--load-before", f"{load_before:.2f}", "--load-after", f"{load():.2f}"])
-        chosen += [s for s in catalogue["scenarios"] if s["id"] in performance_ids]
+    chosen += [s for s in catalogue["scenarios"] if s["id"] in performance_ids]
+    results, attempts, hangs, crashes = launches.results, launches.attempts, launches.hangs, launches.crashes
 
     relay.shutdown()
     load_after = load()
@@ -1084,10 +1097,12 @@ def main() -> int:
 
     cover = coverage(run_dir, catalogue, {s["id"] for s in chosen})
     coverage_required = tier in ("full", "release") and not args.scenario
+    unrun = (f"didn't run: the app couldn't come to the front ({launches.refused})" if launches.refused
+             else "never ran")
     scenarios = []
     by_id = {s["id"]: s for s in chosen}
     for scenario_id, info in by_id.items():
-        result = results.get(scenario_id, {"status": "failed", "message": "never ran"})
+        result = results.get(scenario_id, {"status": "failed", "message": unrun})
         scenarios.append({"id": scenario_id, "title": info["title"], "status": result["status"],
                           "seconds": result.get("seconds", 0), "message": result.get("message"),
                           "snapshot": result.get("snapshot"), "mainP99ms": result.get("mainP99ms"),
@@ -1100,6 +1115,8 @@ def main() -> int:
     flaky = [s for s in scenarios if s["status"] == "flaky"]
     skipped = [s for s in scenarios if s["status"] == "skipped"]
     problems = []
+    if launches.refused:
+        problems.append(f"the app couldn't come to the front ({launches.refused})")
     if failed:
         problems.append(f"{len(failed)} failed")
     if crashes:

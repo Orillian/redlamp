@@ -112,6 +112,17 @@
                 finish()
                 return
             }
+            // Every scenario that needs the app in front would fail, one after another.
+            if app.allowsFocus {
+                do {
+                    try app.focus()
+                } catch {
+                    let reason = (try? MainThread.run { Displays.whatHoldsTheFront }) ?? "\(error)"
+                    recorder.write("focus-unavailable", ["reason": reason])
+                    finish()
+                    return
+                }
+            }
             for id in ids {
                 guard usable else {
                     recorder.write("launch-abandoned", ["reason": "a dialog wouldn't close", "next": id])
