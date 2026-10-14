@@ -3,9 +3,20 @@ import RedlampEngineAPI
 import simd
 
 /// The lens correction a raw file carries (LNS-02): a DNG's OpcodeList3 warp and vignetting
-/// opcodes (DNG specification 1.7, "Opcode List Processing"), or the correction tables Sony
-/// writes into every ARW and Fujifilm into every RAF. Positions come out EXIF-oriented.
+/// opcodes (DNG specification 1.7, "Opcode List Processing"), the correction tables Sony
+/// writes into every ARW and Fujifilm into every RAF, or the distortion polynomials Panasonic
+/// writes into the RW2 and Olympus and OM System into the ORF. Positions come out EXIF-oriented.
 public enum LensCorrectionReader {
+    /// LibRaw's image within the raw data a file's tags describe: its size, and the photosites
+    /// it leaves out to the left and above. Panasonic's and Olympus's corrections are about the
+    /// area the camera's JPEG shows, which the file states in these coordinates.
+    struct Frame {
+        var width: Int
+        var height: Int
+        var left = 0
+        var top = 0
+    }
+
     /// The correction a raw photo opens with: the one its file carries, as Lightroom prefers a
     /// raw's built-in profile, else the user's matching lens profile (LNS-04). The sandboxed
     /// decode service can't reach the user's profiles, so this runs after decoding.
@@ -19,10 +30,18 @@ public enum LensCorrectionReader {
         )
     }
 
-    static func read(_ data: Data, url: URL, orientation: Int) -> LensCorrection? {
+    static func read(_ data: Data, url: URL, orientation: Int, frame: Frame? = nil) -> LensCorrection? {
         let kind = url.pathExtension.lowercased()
         if kind == "raf" {
             return data.withUnsafeBytes(fujifilm)
+        }
+        if ["rw2", "rwl", "orf", "ori"].contains(kind) {
+            guard let frame else { return nil }
+            return data.withUnsafeBytes { bytes -> LensCorrection? in
+                guard let reader = TIFFReader(bytes: bytes) else { return nil }
+                return kind.hasPrefix("r") ? panasonic(reader, frame: frame, orientation: orientation)
+                    : omSystem(reader, frame: frame, orientation: orientation)
+            }
         }
         guard kind == "dng" || kind == "arw" else { return nil }
         return data.withUnsafeBytes { bytes -> LensCorrection? in
@@ -151,6 +170,92 @@ public enum LensCorrectionReader {
             distortion: knots(0x7037, groups: 1), chromaticAberration: knots(0x7035, groups: 2),
             vignetting: knots(0x7032, groups: 1),
         )
+    }
+
+    // MARK: - Panasonic and OM System
+
+    /// The RW2's first IFD holds the distortion tag 0x0119 (16 signed words; word 7's low four
+    /// bits are 1 where the camera corrected its JPEG) and the sensor's borders (0x0004 to
+    /// 0x0007, top, left, bottom and right), the active area the correction is about.
+    private static func panasonic(_ reader: TIFFReader, frame: Frame, orientation: Int) -> LensCorrection? {
+        guard let directory = reader.imageFileDirectories().first,
+              let entry = directory.first(where: { $0.tag == 0x0119 }), entry.count >= 32
+        else { return nil }
+        let start = Int(reader.u32(entry.valueOffset))
+        guard start >= 0, start + 32 <= reader.bytes.count else { return nil }
+        let words = (0 ..< 16).map { Int(Int16(bitPattern: reader.u16(start + $0 * 2))) }
+        guard words[7] & 0xF == 1, words[12] > 0 else { return nil }
+        func value(_ tag: UInt16) -> Int? {
+            directory.first { $0.tag == tag }.flatMap { reader.integers($0).first }
+        }
+        let top = value(0x0004) ?? frame.top, left = value(0x0005) ?? frame.left
+        let bottom = value(0x0006) ?? frame.top + frame.height, right = value(0x0007) ?? frame.left + frame.width
+        guard let placement = placed(
+            area: (left, top, right - left, bottom - top), radius: Double(words[12]), in: frame,
+            orientation: orientation,
+        ) else { return nil }
+        return LensCorrection.panasonic(words: words, center: placement.center, unit: placement.unit)
+    }
+
+    /// The ORF's maker note ("OLYMPUS\0II…" or "OM SYSTEM\0\0\0II…", its offsets counting from
+    /// its start) points at the ImageProcessing IFD (0x2040), which holds the distortion the
+    /// camera corrected its JPEG for (0x150A, four floats) and the area that JPEG shows
+    /// (0x0612 to 0x0615: left, top, width and height). Older notes ("OLYMP\0") carry neither.
+    private static func omSystem(_ reader: TIFFReader, frame: Frame, orientation: Int) -> LensCorrection? {
+        func entry(_ tag: UInt16, in entries: [TIFFReader.Entry]?) -> TIFFReader.Entry? {
+            entries?.first { $0.tag == tag }
+        }
+        guard let exif = entry(0x8769, in: reader.imageFileDirectories().first),
+              let note = entry(0x927C, in: reader.entries(at: Int(reader.u32(exif.valueOffset)))),
+              note.count > 16
+        else { return nil }
+        let noteStart = Int(reader.u32(note.valueOffset))
+        guard noteStart >= 0, noteStart + note.count <= reader.bytes.count else { return nil }
+        let bytes = UnsafeRawBufferPointer(rebasing: reader.bytes[noteStart ..< noteStart + note.count])
+        let (order, directory) = if bytes.starts(with: Array("OLYMPUS\0".utf8)) {
+            (8, 12)
+        } else if bytes.starts(with: Array("OM SYSTEM\0".utf8)) {
+            (12, 16)
+        } else {
+            (0, 0)
+        }
+        guard directory > 0, bytes[order] == bytes[order + 1], [0x49, 0x4D].contains(bytes[order]) else { return nil }
+        let makerNote = TIFFReader(makerNote: bytes, littleEndian: bytes[order] == 0x49)
+        guard let pointer = entry(0x2040, in: makerNote.entries(at: directory)),
+              [TIFFReader.ifdType, TIFFReader.longType].contains(pointer.type),
+              let processing = makerNote.entries(at: Int(makerNote.u32(pointer.valueOffset))),
+              let distortion = entry(0x150A, in: processing)
+        else { return nil }
+        let k = makerNote.floats(distortion).map(Double.init)
+        func value(_ tag: UInt16) -> Int? {
+            entry(tag, in: processing).flatMap { makerNote.integers($0).first }
+        }
+        let area = (
+            value(0x0612) ?? frame.left, value(0x0613) ?? frame.top,
+            value(0x0614) ?? frame.width, value(0x0615) ?? frame.height,
+        )
+        guard let placement = placed(
+            area: area, radius: hypot(Double(area.2), Double(area.3)) / 2, in: frame, orientation: orientation,
+        ) else { return nil }
+        return LensCorrection.omSystem(coefficients: k, center: placement.center, unit: placement.unit)
+    }
+
+    /// The centre of a file's active area (left, top, width and height in its raw data) in the
+    /// EXIF-oriented photo, and a radius of photosites in units of the photo's farthest corner
+    /// from that centre; nil where the area doesn't lie within LibRaw's image.
+    private static func placed(
+        area: (left: Int, top: Int, width: Int, height: Int), radius: Double, in frame: Frame, orientation: Int,
+    ) -> (center: SIMD2<Double>, unit: Double)? {
+        let size = SIMD2(Double(frame.width), Double(frame.height))
+        let centre = SIMD2(
+            Double(area.left - frame.left) + Double(area.width) / 2,
+            Double(area.top - frame.top) + Double(area.height) / 2,
+        )
+        guard area.width > 0, area.height > 0, centre.min() > 0, (size - centre).min() > 0, radius > 0 else {
+            return nil
+        }
+        let reach = simd_length(simd_max(centre, size - centre))
+        return (oriented(centre / size, orientation), radius / reach)
     }
 }
 

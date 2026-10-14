@@ -126,4 +126,31 @@ struct LensProfileRenderTests {
         }, off)
         #expect(zip(plain, unprofiled).allSatisfy { simd_abs($0 - $1).max() == 0 }, "turned off, nothing changes")
     }
+
+    /// The camera samples whose corrections process 16 reads (LNS-02).
+    static let process16Samples = CameraGoldenTests.cameras.filter {
+        ["Panasonic_DC-S5M2.RW2", "OM-System_OM-1-Mark-II.orf"].contains($0.lastPathComponent)
+    }
+
+    @Test(
+        .enabled(if: EngineSmokeTests.canRender && !process16Samples.isEmpty),
+        .serialized,
+        arguments: process16Samples,
+    )
+    func `a process 15 edit of a Panasonic or OM System raw renders without its correction`(sample: URL) async throws {
+        let engine = try RedlampEngine()
+        let info = try await engine.open(sample)
+        #expect(info.lensCorrection?.source.process == 16)
+        func render(process: Int, profile: Bool) async throws -> Data {
+            var recipe = EditRecipe()
+            recipe.processVersion = process
+            recipe[.lensProfile] = profile ? 1 : 0
+            let image = try await engine.renderStill(StillRequest(
+                recipe: recipe, maxLongEdge: 384, colorSpace: .sRGB, bitsPerComponent: 16, purpose: .export,
+            ))
+            return try #require(image.dataProvider?.data) as Data
+        }
+        #expect(try await render(process: 15, profile: true) == render(process: 15, profile: false))
+        #expect(try await render(process: 16, profile: true) != render(process: 16, profile: false))
+    }
 }

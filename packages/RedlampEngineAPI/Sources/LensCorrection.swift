@@ -14,6 +14,10 @@ public struct LensCorrection: Codable, Sendable, Hashable {
         case sony
         /// Fujifilm's correction tags in the RAF.
         case fujifilm
+        /// Panasonic's correction tags in the RW2 (and Leica's RWL, which Panasonic makes).
+        case panasonic
+        /// Olympus's and OM System's correction tags in the ORF.
+        case omSystem
         /// Measured from the photo's own edges (Remove Chromatic Aberration).
         case measured
         /// A lens profile the user supplied (an Adobe LCP file, LNS-04), for a raw that carries none.
@@ -24,6 +28,8 @@ public struct LensCorrection: Codable, Sendable, Hashable {
             case .dng: "DNG"
             case .sony: "Sony"
             case .fujifilm: "Fujifilm"
+            case .panasonic: "Panasonic"
+            case .omSystem: "OM System"
             case .measured: "Measured"
             case .profile: "lens profile"
             }
@@ -31,7 +37,11 @@ public struct LensCorrection: Codable, Sendable, Hashable {
 
         /// The first process version that applies corrections from this source.
         public var process: Int {
-            self == .fujifilm ? 6 : 5
+            switch self {
+            case .fujifilm: 6
+            case .panasonic, .omSystem: 16
+            case .dng, .sony, .measured, .profile: 5
+            }
         }
     }
 
@@ -213,6 +223,65 @@ public extension LensCorrection {
         }
         return LensCorrection(
             source: .sony, center: SIMD2(0.5, 0.5), radii: radii, distortion: scales, vignetting: gains,
+        )
+    }
+
+    /// Radii of the tables made from a maker's polynomial, in units of the farthest corner.
+    private static let polynomialRadii = (0 ... 64).map { Double($0) / 64 * 1.05 }
+
+    /// Panasonic's distortion tag (0x0119, 16 signed words): a recorded radius r is corrected to
+    /// r(1 + (w₈r² + w₄r⁴ + w₁₁r⁶)·2⁻¹⁵) / (1 + w₅·2⁻¹⁵), in units of word 12 (the sensor's
+    /// half-diagonal in photosites) about the active area's centre, which `unit` gives in units
+    /// of the photo's farthest corner from `center`. Tabulated by inverting that, so it must keep
+    /// increasing out to the corners.
+    static func panasonic(words: [Int], center: SIMD2<Double>, unit: Double) -> LensCorrection? {
+        guard words.count >= 13, unit > 0.5, unit < 2 else { return nil }
+        let (a, b, c) = (Double(words[8]), Double(words[4]), Double(words[11]))
+        let scale = 1 + Double(words[5]) / 32768
+        guard scale > 0.8, scale < 1.25, a != 0 || b != 0 || c != 0 || scale != 1 else { return nil }
+        func corrected(_ r: Double) -> Double {
+            let r2 = r * r
+            return r * (1 + (a * r2 + b * r2 * r2 + c * r2 * r2 * r2) / 32768) / scale
+        }
+        // Where the correction stops increasing, past which it has no inverse.
+        var limit = 0.0
+        while limit < 2, corrected(limit + 1e-3) > corrected(limit) {
+            limit += 1e-3
+        }
+        guard corrected(limit) * unit >= 1 else { return nil }
+        let scales = polynomialRadii.map { radius -> SIMD3<Double> in
+            let target = min(radius / unit, corrected(limit))
+            guard target > 0 else { return SIMD3(repeating: scale) }
+            var (low, high) = (0.0, limit)
+            for _ in 0 ..< 60 {
+                let middle = (low + high) / 2
+                if corrected(middle) < target {
+                    low = middle
+                } else {
+                    high = middle
+                }
+            }
+            return SIMD3(repeating: (low + high) / 2 / target)
+        }
+        return LensCorrection(
+            source: .panasonic, center: center, radii: polynomialRadii, distortion: scales, vignetting: [],
+        )
+    }
+
+    /// Olympus's and OM System's distortion tag (ImageProcessing 0x150A: k₁, k₂, k₃ and a scale
+    /// s): a corrected radius r was recorded at x(1 + k₁x² + k₂x⁴ + k₃x⁶), x = s·r, in units of the
+    /// camera crop's half-diagonal about its centre, which `unit` gives in units of the photo's
+    /// farthest corner from `center`.
+    static func omSystem(coefficients k: [Double], center: SIMD2<Double>, unit: Double) -> LensCorrection? {
+        guard k.count >= 4, k.allSatisfy(\.isFinite), k[0 ... 2].allSatisfy({ abs($0) < 1 }), k[3] > 0.8, k[3] < 1.25,
+              unit > 0.5, unit < 2, k[0 ... 2].contains(where: { $0 != 0 }) || k[3] != 1
+        else { return nil }
+        let scales = polynomialRadii.map { radius -> SIMD3<Double> in
+            let x = k[3] * radius / unit, x2 = x * x
+            return SIMD3(repeating: k[3] * (1 + k[0] * x2 + k[1] * x2 * x2 + k[2] * x2 * x2 * x2))
+        }
+        return LensCorrection(
+            source: .omSystem, center: center, radii: polynomialRadii, distortion: scales, vignetting: [],
         )
     }
 }

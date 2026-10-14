@@ -1,7 +1,8 @@
 import Foundation
 
-/// Reads tags from TIFF-based files (DNG, and DNG camera profiles, whose magic is "RC" rather
-/// than 42) for the few things LibRaw doesn't expose.
+/// Reads tags from TIFF-based files (DNG; DNG camera profiles, whose magic is "RC" rather than
+/// 42; Panasonic's RW2, 0x55; Olympus's ORF, "RO" or "RS") for the few things LibRaw doesn't
+/// expose.
 struct TIFFReader {
     let bytes: UnsafeRawBufferPointer
     let littleEndian: Bool
@@ -13,6 +14,8 @@ struct TIFFReader {
     static let ifdType: UInt16 = 13
     static let floatType: UInt16 = 11
     static let profileMagic: UInt16 = 0x4352
+    static let panasonicMagic: UInt16 = 0x55
+    static let olympusMagics: [UInt16] = [0x4F52, 0x5352]
 
     struct Entry {
         var tag: UInt16
@@ -30,7 +33,15 @@ struct TIFFReader {
         case (0x4D, 0x4D): littleEndian = false
         default: return nil
         }
-        guard u16(2) == 42 || u16(2) == Self.profileMagic else { return nil }
+        guard [42, Self.profileMagic, Self.panasonicMagic].contains(u16(2)) || Self.olympusMagics.contains(u16(2))
+        else { return nil }
+    }
+
+    /// A maker note's IFDs, whose offsets count from the note's start and whose byte order its
+    /// own header gives.
+    init(makerNote bytes: UnsafeRawBufferPointer, littleEndian: Bool) {
+        self.bytes = bytes
+        self.littleEndian = littleEndian
     }
 
     /// Every image file directory: the main chain and the SubIFDs hanging off it.

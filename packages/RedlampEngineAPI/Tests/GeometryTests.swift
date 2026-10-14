@@ -293,6 +293,18 @@ struct GeometryTests {
         #expect(GeometryMap(recipe: recipe, imageSize: size, lens: Self.pincushion).isIdentity)
     }
 
+    @Test func `Panasonic's and OM System's corrections apply from process 16`() {
+        for source in [LensCorrection.Source.panasonic, .omSystem] {
+            var lens = Self.pincushion
+            lens.source = source
+            var recipe = EditRecipe()
+            recipe.processVersion = 15
+            #expect(GeometryMap(recipe: recipe, imageSize: size, lens: lens).isIdentity, "\(source)")
+            recipe.processVersion = 16
+            #expect(GeometryMap(recipe: recipe, imageSize: size, lens: lens).lensProfile != nil, "\(source)")
+        }
+    }
+
     @Test func `a profiled map round-trips, and fills the frame`() throws {
         var recipe = EditRecipe()
         recipe[.cropAngle] = 4
