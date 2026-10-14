@@ -125,6 +125,8 @@ NAMED_KEYS = {
     "right": "→",
     "up": "↑",
     "down": "↓",
+    "home": "Home",
+    "end": "End",
 }
 
 
@@ -142,7 +144,7 @@ def _combo(source: str) -> list[str]:
         keys.append("Space" if character == " " else character.upper())
     elif f := re.search(r"\.function\((\d+)\)", source):
         keys.append(f"F{f.group(1)}")
-    elif n := re.match(r"KeyCombo\(\.(\w+)", source):
+    elif (n := re.match(r"KeyCombo\(\.(\w+)", source)) and n.group(1) in NAMED_KEYS:
         keys.append(NAMED_KEYS[n.group(1)])
     else:
         raise SystemExit(f"error: can't read the key combo {source!r} in {SHORTCUTS}")
