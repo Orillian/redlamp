@@ -18,6 +18,7 @@
             + FilmstripScenarios.all
             + SyncScenarios.all + ExportScenarios.all
             + RecipeScenarios.all + StackScenarios.all + RawScenarios.all + FeedbackScenarios.all
+            + IncidentScenarios.left
             + ImportScenarios.all
             + ImportRollbackScenarios.all
             + LightroomScenarios.all
@@ -49,6 +50,8 @@
             // Last before the smoke pair: its main launch's scenario leaves a collection shown at quit.
             + SourceLaunchScenarios.all
             + SmokeScenarios.last
+            // The relaunch's after the pair's, which read what it reopened before the banner's reports open over it.
+            + IncidentScenarios.found
 
         /// What the app offers, from its own catalogues: every action, parameter, panel, left
         /// panel, tool, mask kind and Report a Bug feature.
