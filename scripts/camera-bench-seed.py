@@ -9,10 +9,14 @@ are merged into one, in the format the app sends (docs/camera-bench.schema.json)
 
     scripts/camera-bench-seed.py --redlamp <path to redlamp> [-o build/camera-bench/seed.json]
         [--max-mb 60] [--pause 2] [--limit N] [--pairs <dir>] [--recheck decode.black,decode.edges]
+        [--files <dir>]
 
 Build the CLI in Release first (`xcodebuild ... -scheme redlamp -configuration Release`). A run
 that stops part way resumes: photos already in the output report are skipped. `--recheck` runs again
 the cameras whose photos failed the named checks, after a check changes, replacing their results.
+`--files` keeps the downloads in a folder, with the list of files chosen, so that a later run, such
+as the same files at a new process version, benches exactly those files without downloading them
+again. Delete the folder once the comparison is done.
 """
 
 import argparse
@@ -75,6 +79,7 @@ def main():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--pairs", help="keep side-by-side pairs here")
     parser.add_argument("--recheck", help="comma-separated check IDs: run again the cameras that failed them")
+    parser.add_argument("--files", help="keep the downloads here, and bench the files chosen the first time")
     options = parser.parse_args()
 
     output = pathlib.Path(options.output)
@@ -87,7 +92,16 @@ def main():
         recheck = {photo["fileHash"] for photo in merged["photos"]
                    if any(c["id"] in ids and c["verdict"] == "fail" for c in photo["checks"])}
         done -= recheck
-    chosen = candidates(options.max_mb)[: options.limit]
+    kept = pathlib.Path(options.files) if options.files else None
+    listing = kept / "chosen.json" if kept else None
+    if listing and listing.exists():
+        chosen = json.loads(listing.read_text())[: options.limit]
+    else:
+        chosen = candidates(options.max_mb)
+        if listing:
+            kept.mkdir(parents=True, exist_ok=True)
+            listing.write_text(json.dumps(chosen, indent=1))
+        chosen = chosen[: options.limit]
     print(f"{len(chosen)} cameras without a verified sample, {sum(c['megabytes'] for c in chosen):,.0f} MB")
 
     failures = []
@@ -96,22 +110,25 @@ def main():
             if entry["sha256"] in done or (recheck is not None and entry["sha256"] not in recheck):
                 continue
             name = re.sub(r"[^A-Za-z0-9._-]+", "-", entry["camera"]) + "." + entry["url"].rsplit(".", 1)[-1]
-            path = pathlib.Path(folder) / name
-            try:
-                data = urllib.request.urlopen(entry["url"], timeout=600).read()
-            except Exception as error:
-                failures.append((entry["camera"], f"download: {error}"))
-                continue
-            if hashlib.sha256(data).hexdigest() != entry["sha256"]:
-                failures.append((entry["camera"], "checksum mismatch"))
-                continue
-            path.write_bytes(data)
+            path = (kept or pathlib.Path(folder)) / name
+            if not (kept and path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"]):
+                try:
+                    data = urllib.request.urlopen(entry["url"], timeout=600).read()
+                except Exception as error:
+                    failures.append((entry["camera"], f"download: {error}"))
+                    continue
+                if hashlib.sha256(data).hexdigest() != entry["sha256"]:
+                    failures.append((entry["camera"], "checksum mismatch"))
+                    continue
+                path.write_bytes(data)
+                time.sleep(options.pause)
             report = pathlib.Path(folder) / "report.json"
             command = [options.redlamp, "camera-bench", str(path), "--all", "-o", str(report)]
             if options.pairs:
                 command += ["--pairs", options.pairs]
             run = subprocess.run(command, capture_output=True, text=True, timeout=900)
-            path.unlink()
+            if not kept:
+                path.unlink()
             if not report.exists():
                 failures.append((entry["camera"], f"no report (status {run.returncode}): {run.stderr.strip()[-200:]}"))
                 continue
@@ -128,7 +145,6 @@ def main():
             verdicts = ", ".join(f"{c['id']} {c['verdict']}" for p in result["photos"] for c in p["checks"]
                                  if c["verdict"] in ("warn", "fail"))
             print(f"[{number}/{len(chosen)}] {entry['camera']}: {verdicts or 'pass'}", flush=True)
-            time.sleep(options.pause)
     for camera, reason in failures:
         print(f"not benched: {camera}: {reason}", file=sys.stderr)
     print(f"wrote {output}")
