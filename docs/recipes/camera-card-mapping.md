@@ -34,6 +34,10 @@ Fujifilm's published LUTs, downloaded by the user and imported ([recipe format](
 
 A card resolved on that Mac (made or edited in the Recipe Lab) pins the imported look; slots with no imported LUT keep the bundled look. The Base Look browser lists the filled slots under *Recipe Cards*, each with a switch back to Redlamp's own look, kept in `Recipes/slots.json` (`RecipeLibrary.filledSlots`). Edits made before keep the looks they pinned. Bundled camera recipes keep their bundled looks.
 
+### Slots filled by the firmware model
+
+While the experimental firmware model is on (Settings › Experimental, [TON-49](../research/research-tracker.md#4-color-tone-and-detail)), every card resolves through it instead, bundled camera recipes included (`RecipeLibrary.resolvingCard`): the card's slot names the model's simulation, and its Highlight and Shadow Tone, Color, dynamic range and monochrome toning go into the look rather than into Redlamp's sliders, with the treatment kept colour so the toning shows. The look is baked for those settings and kept on that Mac ([look ids](sidecar-format.md)). Turned off, cards resolve to the looks that fill their slots as above; edits made while it was on keep the looks they pinned. The model's five simulations without a slot (ACROS, ACROS + Yellow, ACROS + Red, ACROS + Green and Reala Ace) aren't reached from cards, only from the Camera Recipe group's Simulation menu.
+
 ## Mapping, version 1
 
 `mappingVersion` records which mapping a recipe was resolved with. Improving a row means bumping the version; recipes are only re-resolved when the user edits their card.
