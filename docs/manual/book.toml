@@ -7,7 +7,7 @@ title = "Redlamp User Manual"
 edition = "Photographers' edition"
 subject = "Redlamp, the raw photo editor for the Mac: masking, from drawn gradients to AI masks, with every control, range and shortcut"
 summary = "How to develop raw photos with Redlamp on the Mac, panel by panel and tool by tool: every control, its range and default, its shortcut, and what it's for."
-contents_note = "This sample holds Part 3, Masking, and the reference pages that go with it. The other parts are listed as the plan for the whole book, in grey where they're not written yet."
+contents_note = "This sample holds Part 3, Masking, with the reference pages that go with it, and section 7.4, on reporting a bug or sending feedback. The rest is listed as the plan for the whole book, in grey where it isn't written yet."
 
 [[front]]
 id = "how-to-use"
@@ -111,7 +111,7 @@ sections = [
   { id = "files.cameras", title = "Photos and cameras" },
   { id = "files.sidecars", title = "Sidecars, iCloud and other disks" },
   { id = "files.settings", title = "Settings and AI models" },
-  { id = "files.feedback", title = "Reporting a bug or sending feedback" },
+  { id = "files.feedback", title = "Reporting a bug or sending feedback", file = "files/feedback.md" },
 ]
 
 [[part]]
