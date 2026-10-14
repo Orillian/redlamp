@@ -66,6 +66,7 @@ private struct FilmstripTopEdge: View {
         Color.clear
             .frame(height: 6)
             .frame(maxWidth: .infinity)
+            .automationIdentifier("filmstrip.top-edge")
             .contentShape(Rectangle())
             .pointerStyle(.frameResize(position: .top))
             .gesture(

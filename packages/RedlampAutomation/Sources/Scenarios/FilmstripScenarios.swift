@@ -94,11 +94,13 @@
 
             // The top edge dragged down to Medium (cells 146 to 104 points tall), staying under the pointer.
             if try app.focus() {
-                let around = try app.main { model in filmstrip(around: last, model) }
-                guard let around else { throw ScenarioFailure("No filmstrip around \(last)") }
-                let cell = try app.frame(of: .filmstrip(last))
-                let edge = CGPoint(x: 0.5, y: (cell.maxY - (around.maxY - 3)) / cell.height)
-                try app.drag(.filmstrip(last), from: edge, by: CGVector(dx: 0, dy: -(146 - 104)))
+                // From the edge itself: worked out from the filmstrip's height, the press missed it on macOS 27.
+                try app.drag(
+                    .identifier("filmstrip.top-edge"), from: CGPoint(x: 0.5, y: 0.5), by: CGVector(
+                        dx: 0,
+                        dy: -(146 - 104),
+                    ),
+                )
                 app.covered(.feature("library.filmstrip"), via: .mouse)
             } else {
                 try app.main { $0.filmstripSize = .medium }
