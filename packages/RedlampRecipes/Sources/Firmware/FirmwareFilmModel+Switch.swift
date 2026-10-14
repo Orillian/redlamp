@@ -11,7 +11,7 @@ public extension FirmwareFilmModel {
     static let folderKey = "app.redlamp.firmwareFilmModelFolder"
 
     static var defaultFolder: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("src/redlamp-fujix100v/model")
+        URL.homeDirectory.appendingPathComponent("src/redlamp-fujix100v/model")
     }
 
     /// The folder `REDLAMP_FIRMWARE_MODEL` names, if it's set.
