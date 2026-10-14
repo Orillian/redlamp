@@ -1304,9 +1304,7 @@ public final class EditorModel {
             metadataChangesWhileOpening = []
         }
         photoMetadata = metadata
-        // A new edit keeps the anchor its camera has now, so a later table renders it the same.
-        let fresh = EditRecipe().anchored(photoAnchor(for: opened, process: EditRecipe.currentProcessVersion))
-        let loaded = Self.asShot(sidecar?.recipe ?? fresh, opened)
+        let loaded = withPhotoAnchor(Self.asShot(sidecar?.recipe ?? EditRecipe(), opened), of: opened)
         recipe = loaded
         snapshots = sidecar?.snapshots ?? []
         startSession(opening: opened.url, recipe: loaded, hasSidecar: sidecar != nil)
@@ -1355,7 +1353,7 @@ public final class EditorModel {
     func showOtherWriters(_ theirs: Sidecar) -> Bool {
         guard let info, !isReadOnly, editStart == nil, !hasUnsavedChange else { return false }
         let previous = recipe
-        recipe = Self.asShot(theirs.recipe, info)
+        recipe = withPhotoAnchor(Self.asShot(theirs.recipe, info), of: info)
         snapshots = theirs.snapshots
         var metadata = theirs.metadata ?? PhotoMetadata()
         keepCullingShown(in: &metadata)
@@ -1928,6 +1926,7 @@ public final class EditorModel {
         autoSyncs: Bool = true,
     ) {
         guard next != recipe else { return }
+        let next = info.map { withPhotoAnchor(next, of: $0) } ?? next
         let previous = recipe
         recipe = next
         recordHistory(action, title, from: previous, value: value, autoSyncs: autoSyncs)

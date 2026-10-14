@@ -147,6 +147,14 @@ extension EditorModel {
         return edit.anchored(photoAnchor(for: info, process: edit.processVersion))
     }
 
+    /// `edit` of the photo `info` describes with the photo's anchor when it has none from process 16,
+    /// new or written without one by another writer: an edit keeps the anchor its camera has when
+    /// it's made (CAM-29), and one read from disk without it is the same edit.
+    func withPhotoAnchor(_ edit: EditRecipe, of info: ImageInfo) -> EditRecipe {
+        guard edit.processVersion >= 16, edit.exposureAnchor == nil else { return edit }
+        return edit.anchored(photoAnchor(for: info, process: edit.processVersion))
+    }
+
     /// The anchor an edit at `process` of a photo that isn't open gets: its camera's calibration,
     /// else its estimate from process 16 and the typical one before, its camera read from the file
     /// off the main thread; nil when it isn't raw.
