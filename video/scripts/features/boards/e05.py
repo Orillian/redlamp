@@ -577,6 +577,10 @@ def report_lines():
     return deep + half
 
 
+# LOOK alone under IGNORED reads as the preset's whole look being dropped; the app's own line for it begins "Look:
+# The profile".
+SHOWN_AS = {"Look": "Look: The profile"}
+
 # The tally's outcomes, in its order, as the card colours them: each section's title, and its count and LEDs.
 OUTCOMES = {"MAPPED": "green", "APPROXIMATED": "gold", "IGNORED": "text"}
 COUNTED = {"MAPPED": "green.light", "APPROXIMATED": "gold.light", "IGNORED": "text"}
@@ -620,7 +624,7 @@ def report_card(c, r, b):
         c.text(x, r.y + 19, title, OUTCOMES[title])
         for k, name in enumerate(names):
             if k < up:
-                c.text(x + 4, r.y + 26 + 7 * k, name, "white" if title == "IGNORED" else "text")
+                c.text(x + 4, r.y + 26 + 7 * k, SHOWN_AS.get(name, name), "white" if title == "IGNORED" else "text")
     top = r.y + 26 + 7 * deep + 2
     c.text(r.x + 8, top, "MAPPED", OUTCOMES["MAPPED"])
     for column, x in zip(columns, (r.x + 12, r.x + 72)):
@@ -713,7 +717,7 @@ def basic_card(c, r, b):
 # Each card over the dashboard: where it comes up, from the beat it comes up on to the beat it goes, its title and
 # accent, and what it draws.
 CARDS = [(REPORT, s2, s3, f"IMPORTED {len(PRESETS)} LIGHTROOM PRESETS", "lime", report_card),
-         (FINDER, TABLE_DRAG.drop, s4, "LOOK TABLE", "cyan", table_card),
+         (FINDER, TABLE_DRAG.drop, s4, "LUT", "cyan", table_card),
          (FINDER, CLICK.press, CUE["result"], "BASIC", "sky", basic_card)]
 
 
