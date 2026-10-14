@@ -127,25 +127,31 @@
             app.covered(.feature("library.filmstrip"), via: .mouse)
 
             // Settings › Appearance: its switch turns it off and on, and follows the View menu.
-            let settings = try app.main { _ -> String in
-                NSApp.mainMenu?.items.first?.submenu?.items.first { $0.title.hasPrefix("Settings") }?.title ?? ""
+            if !app.settingsControlsDrawnBySwiftUI {
+                let settings = try app.main { _ -> String in
+                    NSApp.mainMenu?.items.first?.submenu?.items.first { $0.title.hasPrefix("Settings") }?.title ?? ""
+                }
+                try app.choose(settings)
+                try app.wait("Settings › Appearance") { _ in Views.window(titled: "Appearance") != nil }
+                try app.expect(try app.isOn(toggle, inWindowTitled: "Appearance"), "Settings' switch is off")
+                try app.click(toggle, inWindowTitled: "Appearance")
+                try app.wait("Settings' switch to keep the filmstrip up", until: kept)
+                try app.wait("View › Filmstrip › \(item) unchecked") { _ in Menus.isChecked(item) == false }
+                try app.choose(item)
+                try app.wait("the View menu to let it hide", until: floats)
+                try app.wait("Settings' switch to follow the View menu") { _ in
+                    Views.window(titled: "Appearance").flatMap { Views.accessible(toggle, in: $0) as? NSControl }?
+                        .integerValue == 1
+                }
+                try app.click(toggle, inWindowTitled: "Appearance")
+                try app.wait("Settings' switch to keep the filmstrip up again", until: kept)
+                try app.main { _ in Views.window(titled: "Appearance")?.close() }
+                app.covered(.feature("library.filmstrip"), via: .mouse)
+            } else {
+                // Kept up, as the switch leaves it, for what follows.
+                try app.choose(item)
+                try app.wait("the View menu to keep it up, as the switch would", until: kept)
             }
-            try app.choose(settings)
-            try app.wait("Settings › Appearance") { _ in Views.window(titled: "Appearance") != nil }
-            try app.expect(try app.isOn(toggle, inWindowTitled: "Appearance"), "Settings' switch is off")
-            try app.click(toggle, inWindowTitled: "Appearance")
-            try app.wait("Settings' switch to keep the filmstrip up", until: kept)
-            try app.wait("View › Filmstrip › \(item) unchecked") { _ in Menus.isChecked(item) == false }
-            try app.choose(item)
-            try app.wait("the View menu to let it hide", until: floats)
-            try app.wait("Settings' switch to follow the View menu") { _ in
-                Views.window(titled: "Appearance").flatMap { Views.accessible(toggle, in: $0) as? NSControl }?
-                    .integerValue == 1
-            }
-            try app.click(toggle, inWindowTitled: "Appearance")
-            try app.wait("Settings' switch to keep the filmstrip up again", until: kept)
-            try app.main { _ in Views.window(titled: "Appearance")?.close() }
-            app.covered(.feature("library.filmstrip"), via: .mouse)
 
             // Kept up, F6 hides the filmstrip and gives its room back, and presenting takes the whole window.
             try app.press(.toggleFilmstrip)
@@ -161,6 +167,9 @@
 
             try app.choose(item)
             try app.wait("hiding automatically, as at first", until: floats)
+            if app.settingsControlsDrawnBySwiftUI {
+                throw app.leftOutSettingsStep("Settings › Appearance's Hide automatically switch")
+            }
         }
 
         static let subfolders = Scenario(
@@ -1010,6 +1019,22 @@
                 }
             try app.main { _ in NSApp.windows.first { $0.title == "Film Looks" }?.close() }
             app.covered(.feature("recipes.film-looks"), via: .menu)
+        }
+    }
+
+    extension RunningApp {
+        /// Whether SwiftUI draws Settings' switches and pickers itself, as on macOS 27, with no AppKit control for the
+        /// driver to find (UX-44): the scenarios leave out the steps that use them.
+        var settingsControlsDrawnBySwiftUI: Bool {
+            ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+        }
+
+        /// How a scenario that left out such a step ends once the rest has passed: the known issue, in the report.
+        func leftOutSettingsStep(_ control: String) -> ScenarioSkip {
+            ScenarioSkip(
+                knownIssue: "UX-44",
+                "on macOS 27, SwiftUI draws \(control) itself, with no AppKit control to use; the rest passed",
+            )
         }
     }
 #endif

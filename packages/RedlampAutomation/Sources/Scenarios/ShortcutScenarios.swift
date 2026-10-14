@@ -204,25 +204,29 @@
             }
             try app.expect(titles == ["Grid    E", "Loupe"], "The View menu shows \(titles)")
 
-            try app.openSettings(tab: "Shortcuts")
-            try app.choosePreset(.photoMechanic)
-            do {
-                try app.wait("Photo Mechanic's keys to ask about the keys changed") { _ in
-                    RunningApp.settingsWindow?.attachedSheet != nil
+            if app.settingsControlsDrawnBySwiftUI {
+                try app.main { _ in ShortcutKeymap.shared.keymap = Keymap(preset: .photoMechanic) }
+            } else {
+                try app.openSettings(tab: "Shortcuts")
+                try app.choosePreset(.photoMechanic)
+                do {
+                    try app.wait("Photo Mechanic's keys to ask about the keys changed") { _ in
+                        RunningApp.settingsWindow?.attachedSheet != nil
+                    }
+                } catch {
+                    let shown = try app.main { _ -> String in
+                        let windows = NSApp.windows.filter(\.isVisible).map { "\(Swift.type(of: $0)) “\($0.title)”" }
+                        let keymap = ShortcutKeymap.shared.keymap
+                        return "windows \(windows), keymap \(keymap.preset.title) with \(keymap.changes.count) changed"
+                    }
+                    throw ScenarioFailure("Choosing Photo Mechanic's keys over changed ones didn't ask: \(shown)")
                 }
-            } catch {
-                let shown = try app.main { _ -> String in
-                    let windows = NSApp.windows.filter(\.isVisible).map { "\(Swift.type(of: $0)) “\($0.title)”" }
-                    let keymap = ShortcutKeymap.shared.keymap
-                    return "windows \(windows), keymap \(keymap.preset.title) with \(keymap.changes.count) changed"
+                try app.confirmInSettings("Photo Mechanic's keys, over the keys changed")
+                try app.wait("Photo Mechanic's keys") { _ in
+                    ShortcutKeymap.shared.keymap == Keymap(preset: .photoMechanic)
                 }
-                throw ScenarioFailure("Choosing Photo Mechanic's keys over changed ones didn't ask: \(shown)")
+                try app.closeSettings()
             }
-            try app.confirmInSettings("Photo Mechanic's keys, over the keys changed")
-            try app.wait("Photo Mechanic's keys") { _ in
-                ShortcutKeymap.shared.keymap == Keymap(preset: .photoMechanic)
-            }
-            try app.closeSettings()
             let photo = names[0]
             try app.main { model in
                 if let url = model.items.first(where: { $0.url.lastPathComponent == photo })?.url {
@@ -238,6 +242,9 @@
                 model.items.first { $0.url.lastPathComponent == photo }?.metadata.rating == 0
             }
             app.covered([.feature("workspace.shortcuts"), .feature("workspace.settings")], via: .key)
+            if app.settingsControlsDrawnBySwiftUI {
+                throw app.leftOutSettingsStep("Settings › Shortcuts' Keys From menu")
+            }
         }
 
         /// The palette in Library: what can be done to the photos selected listed first and run on all of them, the
