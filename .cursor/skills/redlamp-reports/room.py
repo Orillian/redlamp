@@ -55,7 +55,7 @@ TESTS = re.compile(r"^tests/|^packages/[^/]+/Tests/")
 # A commit that changes the tracker and nothing past these adds or updates rows, such as an accepted
 # suggestion's: it plans the work and never fixes the report it names.
 TRACKER_DOC = "docs/research/research-tracker.md"
-ROADMAP_DOCS = {TRACKER_DOC, "README.md", "docs/lightroom-comparison.md"}
+ROADMAP_DOCS = {TRACKER_DOC, "README.md", "docs/lightroom-comparison.md", "docs/lightroom-feature-inventory.md"}
 FIXED_CANDIDATE = ("awaiting approval", "approved", "releasing")
 STAGES = ("reading", "reproducing", "fixing", "testing", "pushing", "landed", "replied", "closed")
 
