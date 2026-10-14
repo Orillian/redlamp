@@ -53,6 +53,14 @@ enum RecipeCommands {
                                                one image per filter instead of 3 charts and 8 photos)
       app-import <folder|export> --name <name> [--app prequel|lightroom] [--filter <name>] [--kit <folder>]
                  [--install]                   measure a phone app's filter from exports of the kit
+      firmware-pack --out <folder> --config <kept config> [--model <folder>] [--team <Team ID>]
+                                               seal the firmware model for release builds (TON-50):
+                                               tables.bin and key.bin into --out, to host; the secret is
+                                               the kept config's when it exists, or new and written there;
+                                               --team defaults to REDLAMP_TEAM_ID
+      firmware-pack --check --config <kept config> [--team <Team ID>]
+                                               open the hosted files with the kept config's secret, as a
+                                               release would
 
     <recipe> is a .redrecipe path, an id (redlamp/essentials/punchy), a bundled slug
     (essentials/punchy) or a name. <list> is `all`, `group:<Group>` or comma-separated recipes.
@@ -84,7 +92,10 @@ enum RecipeCommands {
             library.firmwareModel = try FirmwareFilmModel.shared(at: folder)
         }
         let context = try Context(
-            arguments: Arguments(rest, valued: valued.union(FilmCommand.valued).union(AppLookCommands.valued)),
+            arguments: Arguments(
+                rest, valued: valued.union(FilmCommand.valued).union(AppLookCommands.valued)
+                    .union(FirmwarePackCommand.valued),
+            ),
             library: library,
         )
         switch command {
@@ -109,6 +120,7 @@ enum RecipeCommands {
         case "icons": try await IconSheet.run(context)
         case "app-kit": try await AppLookCommands.kit(context)
         case "app-import": try await AppLookCommands.importLook(context)
+        case "firmware-pack": try await FirmwarePackCommand.run(context)
         default: throw CLIError(description: usage)
         }
     }
