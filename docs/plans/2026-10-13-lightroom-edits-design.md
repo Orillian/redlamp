@@ -12,7 +12,7 @@ A photographer moving from Lightroom Classic brings years of edits: a catalog wh
 
 **Redlamp's edit already has a place for most of Lightroom's develop module,** under the same names and ranges: crop with angle, rotate and flip (LNS-06); the Transform sliders and Upright, Guided included (LNS-05, LNS-08); lens profile corrections from the file or the user's LCP files, manual distortion and vignetting, Remove Chromatic Aberration and Defringe (LNS-01, LNS-02, LNS-04, LNS-09); the calibration sliders; masks with Lightroom's components (linear, radial, brush, luminance, colour and depth ranges, Subject, Sky, Background, People and their parts, Objects, Landscape; add, subtract, intersect and invert); curves and Point Color inside masks (MSK-20, TON-29); Remove, Heal and Clone spots (RM-01, RM-07); snapshots; and Base Looks named as Adobe's profiles are (Color, Vivid, Portrait, Landscape, Neutral, Monochrome).
 
-**What it lacks becomes the report's "left out",** each with the row that would close it: red, green and blue curves in the global Tone Curve (TON-40, [#379](https://github.com/pdcgomes/redlamp/issues/379)), Lens Blur (OTH-03, [#138](https://github.com/pdcgomes/redlamp/issues/138)), red-eye (OTH-01, [#136](https://github.com/pdcgomes/redlamp/issues/136)), HDR editing (TON-42, [#381](https://github.com/pdcgomes/redlamp/issues/381)), grain inside masks, more than 16 masks or 64 components on one photo, and the pixels Generative Remove made. Lightroom's Intersect may combine masks differently from Redlamp's product (MSK-02, [#48](https://github.com/pdcgomes/redlamp/issues/48); DEC-08).
+**What it lacks becomes the report's "left out",** each with the row that would close it: Lens Blur (OTH-03, [#138](https://github.com/pdcgomes/redlamp/issues/138)), red-eye (OTH-01, [#136](https://github.com/pdcgomes/redlamp/issues/136)), HDR editing (TON-42, [#381](https://github.com/pdcgomes/redlamp/issues/381)), grain inside masks, more than 16 masks or 64 components on one photo, and the pixels Generative Remove made. Lightroom's Intersect may combine masks differently from Redlamp's product (MSK-02, [#48](https://github.com/pdcgomes/redlamp/issues/48); DEC-08).
 
 ## One converter for three sources
 
@@ -31,7 +31,7 @@ Lightroom keeps a photo's develop settings in three forms, all with the same Cam
 | Lightroom | Redlamp | Outcome |
 | --- | --- | --- |
 | Basic, Presence, Color Mixer, B&W mix, Color Grading, Detail, Effects, the parametric curve and the composite point curve | As EDT-11 maps them ([mapping](../recipes/lightroom-presets.md#mapping)). A photo's settings are complete, so every value is written | Mapped; the B&W mix approximated |
-| Red, green and blue point curves | None until TON-40 | Left out when not straight |
+| Red, green and blue point curves | Red's, green's and blue's own point curves (TON-40), as EDT-11 maps them | Mapped |
 | White balance on a raw: As Shot, the named presets, Custom | The same mode; Custom with `Temperature` and `Tint` | Mapped. The same numbers give the same neutral only where Redlamp's temperature and tint agree with Lightroom's for that camera: measured below |
 | White balance Auto on a raw | Custom, with the temperature and tint Lightroom's Auto found, where the settings hold them | Approximated: Lightroom's result is kept, not measured again |
 | White balance on a JPEG, TIFF or HEIC (`IncrementalTemperature`, `IncrementalTint`) | Red and Blue Shift, as EDT-11 converts them | Approximated |

@@ -110,7 +110,7 @@ Lightroom defined how millions of photographers edit, but it is a cross-platform
 - [x] **White balance:** Temp and Tint, the presets, Auto, and the eyedropper.
 - [x] **Basic:** Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Vibrance, and Saturation, plus the **Auto** button.
 - [x] **Treatment** (Color or B&W) and **Base Looks** (Lightroom's profiles) with an Amount slider (0–200) and a browser that renders every look on the photo. There are six built-in looks (Redlamp Color, Neutral, Vivid, Landscape, Portrait and Monochrome) and 15 film-style looks built on 3D look tables: slide, chrome, negative, cinema, bleach and black and white through color filters. Four of them are measured from cameras' own renderings by the look profiler (see [Recipes and looks](#recipes-and-looks)). The Base Look menu lists these, Redlamp Reproduction and a photo's own camera look; film looks and imported LUTs are recipes, and the menu shows one first only while it's the photo's look (DEC-74).
-- [x] **Tone Curve:** a parametric curve with split points, and a point curve with presets.
+- [x] **Tone Curve:** a parametric curve with split points, and a point curve with presets, for all three channels together or for red, green and blue on their own.
 - [x] **Color Mixer:** HSL (Hue, Saturation, Luminance, and All) and a per-color mode, working in OKLCh.
 - [x] **Color Grading:** 3-way and individual wheels, Blending, and Balance. It also tints B&W images for split-toning.
 - [x] **Effects:** post-crop vignette (amount, midpoint, roundness, feather, and Highlights to keep bright areas bright under a darkening vignette) and zoom-stable film grain.
