@@ -255,8 +255,11 @@ private struct BrushCanvas: View {
     }
 
     /// The pen's pressure when the stroke comes from a tablet; mice paint at full pressure.
+    /// Only a mouse event has a subtype: reading one from a key event raises.
     private static var penPressure: Double? {
-        guard let event = NSApp.currentEvent, event.subtype == .tabletPoint else { return nil }
+        guard let event = NSApp.currentEvent, [.leftMouseDown, .leftMouseDragged, .leftMouseUp].contains(event.type),
+              event.subtype == .tabletPoint
+        else { return nil }
         return Double(event.pressure)
     }
 }
