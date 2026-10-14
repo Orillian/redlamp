@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 let usage = """
 usage: redlamp info <image>
        redlamp render <image> -o <output.{jpg,png,tif,heic,jxl}> [options]
+       redlamp export <photos…> …   export photos with their own edits, named by a template (redlamp export --help)
        redlamp recipe <command> …   recipes and look development (redlamp recipe help)
        redlamp stack <frames…> …    merge a focus stack (redlamp stack --help)
        redlamp mask <image> …       write an AI mask as a PNG (redlamp mask --help)
@@ -381,6 +382,8 @@ func run(_ arguments: [String]) async throws {
 do {
     let arguments = Array(CommandLine.arguments.dropFirst())
     switch arguments.first {
+    case "export":
+        try await ExportCommand.run(Array(arguments.dropFirst()))
     case "recipe":
         try await RecipeCommands.run(Array(arguments.dropFirst()))
     case "stack":
