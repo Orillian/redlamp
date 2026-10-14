@@ -47,7 +47,7 @@ check a scene's build.
 | `layered_truth.py`, 12 scenes at 1024x683, PyTorch on MPS | 5 min 51 s | 2.4 GB with the 2x scenes |
 | `layered_truth.py --2x`, 3 scenes at 2048x1366 | 2 min 45 s | (included above) |
 | `fetch_polyhaven.py` | about 1 min | 172 MB |
-| `blender_scenes.py render`, 8 scenes at 720x480, Cycles on Metal | 19 min for the first 7 scenes (1 min 52 s to 3 min 52 s each, 7 to 23 s a render); the meadow's alpha-textured grass takes about 115 s a render, about 25 min in all | 386 MB exported, 413 MB raw (7 scenes) |
+| `blender_scenes.py render`, 8 scenes at 720x480, Cycles on Metal | 64 min: 19 min for 7 scenes (1 min 52 s to 3 min 52 s each, 7 to 23 s a render) and 45 min for the meadow, whose alpha-textured grass takes about 115 s a render and 12 min for a depth pass | 459 MB exported, 442 MB raw |
 | `baseline_gaussian.py`, all variants | 58 s for the layered set alone; 9 min 30 s for all 206 while Cycles rendered | 1.5 GB, and 1.2 GB for `--clipped` (layered only) |
 | `score.py`, all variants with LPIPS on MPS | about 3 min | |
 
@@ -61,6 +61,72 @@ check a scene's build.
 | `blender_scenes.py` | Set B: 3D scenes in bpy, rendered with Cycles' thin-lens camera; `render` then `export` |
 | `baseline_gaussian.py` | The floor: a per-pixel Gaussian whose sigma is the exact CoC / 4, no occlusion handling |
 | `score.py` | PSNR, SSIM, LPIPS, the same in the edge band, colour bleeding and light energy; `score.json` and `score.md` |
+| `depth_estimate.py` | The depth bake-off's models on the benchmark's inputs (or on MSK-25 photos), raw output and timings |
+| `depth_mattes.py` | Realistic subject mattes: ViTMatte-base from a trimap made from the true alpha |
+| `depth_eval.py` | Refines, aligns and measures each raw estimate; writes `estimated/<label>/…/depth.exr` and `metrics.json` |
+| `render_depth.py` | Renders the baseline on an estimated depth and scores it with `score.py` |
+| `depth_report.py` | The bake-off's tables, from `metrics.json` and the renders' `score.json` |
+| `depth_sheets.py` | Contact sheets of the depth maps, on the benchmark and on MSK-25 photos |
+
+## Depth bake-off
+
+Which depth model, input size, refinement and stored format a lens blur needs, measured on the two
+sets' exact depth. Findings: `build/proto-out/lens_blur/depth.md`. The models run in a venv of their
+own, since Depth Anything 3 and MoGe pin different packages:
+
+```bash
+uv venv --python 3.12 build/lens-blur-depth-venv
+mkdir -p build/depth-src && cd build/depth-src
+git clone --depth 1 https://github.com/ByteDance-Seed/Depth-Anything-3 da3
+git clone --depth 1 https://github.com/microsoft/MoGe moge
+cd ../..
+VIRTUAL_ENV=build/lens-blur-depth-venv uv pip install torch==2.7.0 torchvision==0.22.0 "numpy<2.3" \
+    opencv-python-headless OpenEXR scipy scikit-image pillow huggingface_hub safetensors einops omegaconf \
+    addict imageio trimesh tqdm requests matplotlib "transformers==4.49.0" timm==0.9.1 click e3nn plyfile \
+    pillow_heif moviepy==1.0.3 evo pycolmap typer gdown \
+    "utils3d_moge @ git+https://github.com/EasternJournalist/utils3d-moge.git@62f09d58509485564e24d5d9f6aac9ee9ebc0c37"
+VIRTUAL_ENV=build/lens-blur-depth-venv uv pip install --no-deps build/depth-src/da3 build/depth-src/moge
+```
+
+(MoGe's own dependencies include FlexGEMM, a CUDA library that its v3 needs and v2 doesn't, so MoGe is
+installed without them.) Then, with `V=build/lens-blur-depth-venv/bin/python`,
+`P=research/prototypes/lens_blur` and `PYTORCH_ENABLE_MPS_FALLBACK=1`:
+
+```bash
+$V $P/depth_estimate.py da3-mono-l@app da3-mono-l@2x moge2-b@2x …   # every <model>@<size>
+$V $P/depth_mattes.py
+$V $P/depth_eval.py moge2-b@2x --refine none,guided,app,wmf --align disparity,depth,map
+$V $P/depth_eval.py moge2-b@2x --refine layers-oracle,layers-vitmatte [--base wmf]
+$V $P/depth_eval.py moge2-b@2x --refine none --align pinned
+$V $P/depth_eval.py moge2-b@2x --refine wmf --store 8:1536,16:1536,16:1536:wmf,…
+build/research-venv/bin/python $P/render_depth.py truth moge2-b@2x+wmf …
+build/research-venv/bin/python $P/depth_report.py metrics|renders [<label glob>…]
+$V $P/depth_estimate.py da3-mono-l@app moge2-b@2x --photos hair-curly-01 …
+$V $P/depth_sheets.py benchmark|photos
+```
+
+Estimated depths go to `build/proto-data/lens_blur/estimated/<label>/<set>/<scene>/<focus>/depth.exr`,
+in metres after alignment, the truth's convention, so any renderer can read them in place of
+`depth.exr`. A label is `<model>@<size>+<refinement>[/<base>][~<alignment>][#<bits>b<size>]`.
+
+| Step | Time, with the load average beside it |
+| --- | --- |
+| `depth_estimate.py`, 14 sources on 40 inputs | 4 min (load 45 to 62); per photo, see `depth.md` |
+| `depth_mattes.py`, 40 mattes at full size | 1 min (0.1 to 0.3 s a matte) |
+| `depth_eval.py`, one source, 4 refinements, 3 alignments | 2.5 min (load 30 to 60); the weighted median takes 3 to 6 s an image |
+| `render_depth.py`, one label (104 circular variants) and its score | 5 to 10 min (load 35 to 190) |
+| `depth_sheets.py photos`, 12 photos, 4 combinations | 5 min (load 170) |
+| `render_common.py` | The renderers' shared pieces: variant lists, aperture shapes and kernels, pull-push fill, the subject matte, light detection and clip recovery |
+| `render_gather.py` | Per-pixel gather with scatter-as-gather weights, near and far fields; `--sprites`, `--matte`, `--clipped` |
+| `render_layers.py` | Depth slices 1 px of CoC apart, blurred by FFT and composited: `--mode plain`, `fill` or `oracle` (`--matte coarse`); `--sprites`, `--clipped` |
+| `apple_depth_blur.py`, `apple_depth_blur.swift` | Core Image's `CIDepthBlurEffect` as a reference, its aperture searched per variant against the truth |
+| `metal/main.swift`, `metal/Gather.metal` | Standalone Metal harness for the gather: checks against the Python render, times it at editor and export sizes |
+| `metal/fft_layer.swift` | Times one FFT layer of `render_layers.py` with MPSGraph |
+| `metal_check.py` | The harness's check scene, and its output against the Python gather |
+| `summarise.py` | Score tables for several renderers over the variants they share |
+| `contact_sheets.py` | Crops of hair, foregrounds and lights for the truth and each renderer, into `docs/research/images/` |
+| `run_renderers.sh` | Renders and scores every renderer configuration, in chains that run side by side |
+| `bench_assets.py` | The Lightroom bench task's 20 assets in `build/proto-out/lens_blur/bench-assets/`: ten benchmark inputs as 16-bit sRGB TIFFs (clipped at white), four CC0 MSK-25 portraits, the iPhone ProRAW and Pixel raw fixtures, and four labelled copies of the night portrait for the bokeh shapes. The task is `oth-03-lens-blur-lightroom` (`redlamp task new --draft …/draft.json`) |
 
 ## Set A: layered scenes (`layered/`)
 
@@ -239,8 +305,7 @@ and overall for each set:
 ## Baseline scores (`baseline-gaussian`)
 
 The first entry, to show the scorer works and give a floor. `baseline-gaussian` reads `input.exr`;
-`baseline-gaussian-clipped` reads `input_clipped.exr` (scored on set A only). Set B covers the 7
-scenes finished when this was written (56 variants); the meadow was still rendering.
+`baseline-gaussian-clipped` reads `input_clipped.exr` (scored on set A only).
 
 | | Variants | PSNR | SSIM | LPIPS | Band PSNR | Band SSIM | Band LPIPS | Bleed dE2000 | Energy | Energy, lights > 1.0 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -248,9 +313,9 @@ scenes finished when this was written (56 variants); the meadow was still render
 | Set A, focus on subject | 75 | 32.71 | 0.935 | 0.158 | 28.18 | 0.798 | 0.339 | 4.81 | 0.987 | 0.984 |
 | Set A, focus on background | 75 | 31.60 | 0.936 | 0.123 | 26.54 | 0.771 | 0.348 | – | 1.000 | 1.000 |
 | Set A, clipped input | 150 | 31.71 | 0.935 | 0.146 | 27.24 | 0.785 | 0.348 | 4.96 | 0.410 | 0.356 |
-| Set B, overall | 56 | 36.08 | 0.945 | 0.147 | 33.43 | 0.932 | 0.148 | 1.07 | 1.002 | 1.002 |
-| Set B, focus on subject | 28 | 33.78 | 0.933 | 0.193 | 31.32 | 0.922 | 0.191 | 1.07 | 1.006 | 1.006 |
-| Set B, focus on background | 28 | 38.39 | 0.957 | 0.100 | 35.55 | 0.941 | 0.105 | – | 1.000 | 1.000 |
+| Set B, overall | 64 | 35.83 | 0.944 | 0.152 | 33.13 | 0.927 | 0.159 | 1.10 | 1.002 | 1.002 |
+| Set B, focus on subject | 32 | 33.62 | 0.934 | 0.192 | 31.06 | 0.919 | 0.195 | 1.10 | 1.006 | 1.006 |
+| Set B, focus on background | 32 | 38.04 | 0.954 | 0.113 | 35.20 | 0.935 | 0.123 | – | 1.000 | 1.000 |
 
 What they show:
 
@@ -267,7 +332,122 @@ What they show:
 - Set B's higher scores come from its 50 mm lens and smaller CoCs (up to about 50 px against 181 in
   set A) and from its noise, which a blur averages away on both sides.
 
-Per-scene rows are in `build/proto-out/lens_blur/baseline-gaussian/score.md`.
+Per-scene rows are in `build/proto-out/lens_blur/baseline-gaussian/score.md`. Since the meadow was
+exported, `baseline-gaussian-all` (links to the same outputs) scores set B's 64 variants: 35.83 dB,
+band 33.13, bleeding 1.10.
+
+## Renderers
+
+Prototypes in PyTorch on MPS, written from the papers each names; the findings, scores and timings
+are in `build/proto-out/lens_blur/renderers.md`, the contact sheets in
+`docs/research/images/lens-blur-renderers-*.jpg`.
+
+```bash
+P=research/prototypes/lens_blur
+PY=build/research-venv/bin/python
+$PY $P/render_gather.py [--sprites] [--matte exact|coarse] [--clipped] [--kappa 16] [--set S --scene S --focus F --variant V]
+$PY $P/render_layers.py --mode plain|fill|oracle [--matte coarse] [--sprites] [--clipped] [--step 1.0]
+$PY $P/score.py <renderer> [--set layered]
+$PY $P/summarise.py baseline-gaussian-all gather layers-fill [--set layered] [--by focus|type|scene]
+$PY $P/contact_sheets.py
+```
+
+Each writes `build/proto-out/lens_blur/<renderer>/`, the renderer's name built from its options
+(`gather-sprites-clipped`, `layers-oracle-coarse`). `run_renderers.sh <chain>` runs a chain of them
+and their scores; don't edit it while a chain runs, since `sh` reads the script as it goes.
+
+Core Image's depth blur, as a reference (set A only):
+
+```bash
+$PY $P/apple_depth_blur.py prep
+swiftc -O $P/apple_depth_blur.swift -o build/proto-out/lens_blur/apple-depth-blur/apple_depth_blur
+build/proto-out/lens_blur/apple-depth-blur/apple_depth_blur build/proto-out/lens_blur/apple-depth-blur/raw/jobs.json --grid
+$PY $P/apple_depth_blur.py collect
+$PY $P/score.py apple-depth-blur --set layered
+```
+
+Run it compiled: under `swift` its PSNR loop takes about 20 s a variant. The focus rectangle has to
+be normalised to the image; in pixels the filter returns its input unchanged.
+
+The Metal harness (nothing in it is linked into the app):
+
+```bash
+swiftc -O "$PWD/$P/metal/main.swift" -o build/proto-out/lens_blur/metal/gather   # absolute path: it finds Gather.metal beside it
+swiftc -O "$PWD/$P/metal/fft_layer.swift" -o build/proto-out/lens_blur/metal/fft_layer
+$PY $P/metal_check.py prep                    # portrait-leafy, subject, f/1.4
+build/proto-out/lens_blur/metal/gather check build/proto-out/lens_blur/metal/check
+$PY $P/metal_check.py compare
+build/proto-out/lens_blur/metal/gather time build/proto-out/lens_blur/metal/check --kappa 16,0 --dense-max 30000
+build/proto-out/lens_blur/metal/fft_layer
+```
+
+`gather check` renders one variant and writes it beside the Python render for `metal_check.py
+compare`: on portrait-leafy, subject, f/1.4, Metal matches Python to 91.6 dB (largest difference
+0.0022), and both score 30.73 dB against the truth.
+
+### Timings
+
+On this Mac (M1 Ultra, 48-core GPU, 128 GB), shared with other sessions. The Python prototypes,
+for a whole run (set A at 1024×683 and set B at 720×480, file reading and writing included):
+
+| Renderer | Variants | Wall time | Per variant | Load average (1 min) at start |
+| --- | --- | --- | --- | --- |
+| `gather` | 214 | 413 s | 1.9 s | 32.2 |
+| `gather-matte-coarse` | 214 | 404 s | 1.9 s | 32.5 |
+| `gather-sprites` | 214 | 875 s | 4.1 s | 28.2 |
+| `layers-plain` | 214 | 487 s | 2.3 s | 31.3 |
+| `layers-fill` | 214 | 366 s | 1.7 s | 41.1 |
+| `layers-oracle` | 214 | 512 s | 2.4 s | 145.9 |
+| `apple-depth-blur` (one `CIDepthBlurEffect` render) | 150 | 12.8 ms median | 19 renders a variant for the search | 33.4 |
+
+Two or three of these ran at once on the GPU, so their times compare only roughly.
+
+The Metal gather (`gather time`, at 0:51 with load average 11.1 at the start and 10.2 at the end,
+nothing else of this session's on the GPU): the GPU time of one frame (`GPUStartTime` to
+`GPUEndTime`, summed over its bands, the median of five runs after a warm-up, three at the two
+largest sizes). The CoC is the largest circle of confusion's diameter, as a fraction of the long
+edge; κ = 16 is the dense lattice out to 16 px and rings beyond, κ = 0 the dense lattice throughout
+(timed up to 30,000 million pixel-samples). Memory is the frame's textures and buffers.
+
+| Size | MP | CoC | Largest CoC | Samples (κ 16) | Gather, κ 16 | Samples (dense) | Gather, dense | Memory |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1280×800 | 1.0 | 2% | 26 px | 641 | 8.5 ms | 641 | 8.5 ms | 68 MB |
+| 1280×800 | 1.0 | 4% | 51 px | 1,758 | 28.3 ms | 2,313 | 45.5 ms | 68 MB |
+| 1500×1000 | 1.5 | 2% | 30 px | 861 | 17.4 ms | 861 | 17.5 ms | 102 MB |
+| 1500×1000 | 1.5 | 4% | 60 px | 1,960 | 51.2 ms | 3,125 | 81.9 ms | 102 MB |
+| 2560×1600 | 4.1 | 2% | 51 px | 1,758 | 100.7 ms | 2,313 | 131.4 ms | 269 MB |
+| 2560×1600 | 4.1 | 4% | 102 px | 2,768 | 170.7 ms | – | – | 269 MB |
+| 3000×2000 | 6.0 | 2% | 60 px | 1,960 | 164.0 ms | 3,125 | 250.3 ms | 399 MB |
+| 3000×2000 | 6.0 | 4% | 120 px | 3,071 | 267.1 ms | – | – | 399 MB |
+| 6000×4000 | 24.0 | 2% | 120 px | 3,071 | 904 ms | – | – | 1.6 GB |
+| 6000×4000 | 24.0 | 4% | 240 px | 4,182 | 1,262 ms | – | – | 1.6 GB |
+| 8064×6048 | 48.8 | 2% | 161 px | 3,576 | 2,091 ms | – | – | 3.2 GB |
+| 8064×6048 | 48.8 | 4% | 323 px | 4,687 | 2,828 ms | – | – | 3.2 GB |
+| 11648×8736 | 101.8 | 2% | 233 px | 4,182 | 5,001 ms | – | – | 6.7 GB |
+| 11648×8736 | 101.8 | 4% | 466 px | 5,293 | 6,512 ms | – | – | 6.7 GB |
+
+The gather runs at about 12 to 14 ps per pixel-sample at every size. The dense lattice's samples
+grow with CoC²; from 2% to 4% at 1280×800 (CoC² ×4) they grow ×3.6 and its time ×5.4, since wider
+samples miss the cache more often. With rings beyond 16 px the samples grow with the radius's
+logarithm: ×2.7 and ×3.3 over the same step, and ×1.3 to ×1.4 from 2% to 4% at the largest sizes.
+
+One layer of `render_layers.py` by FFT (`fft_layer`, at 0:54 with load average 8.3 at the start and
+8.1 at the end): four channels forward and back, padded by the largest CoC to a size with no prime
+factor over 5 (a factor of 43 made one size three times slower), wall time from encoding to
+completion, the median of five runs after a warm-up; two runs agreed within 0.5 ms.
+
+| Size | Padded (2%) | Layer, 2% | Layer, 4% | Memory |
+| --- | --- | --- | --- | --- |
+| 2560×1600 | 2880×1728 | 5.1 ms | 5.0 ms | 323 MB |
+| 3000×2000 | 3072×2304 | 7.6 ms | 8.2 ms | 459 MB |
+| 6000×4000 | 6144×4608 | 43.7 ms | 45.4 ms | 1.8 GB |
+| 8064×6048 | 8640×6400 | 53.7 ms | 53.9 ms | 3.6 GB |
+| 11648×8736 | 12288×9216 | 155.8 ms | 153.0 ms | 7.3 GB |
+
+A frame takes one layer per pixel of CoC its depth spans, plus a one-channel transform of each
+layer's kernel. A frame blurred only behind focus up to the largest CoC takes that many layers: 120
+at 3000×2000 and 4% (about 1 s), 240 at 6000×4000 and 4% (about 11 s); one blurred as much in front
+of focus takes twice as many.
 
 ## Licences
 
