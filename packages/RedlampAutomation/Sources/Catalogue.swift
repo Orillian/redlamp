@@ -18,7 +18,6 @@
             + FilmstripScenarios.all
             + SyncScenarios.all + ExportScenarios.all
             + RecipeScenarios.all + StackScenarios.all + RawScenarios.all + FeedbackScenarios.all
-            + IncidentScenarios.left
             + ImportScenarios.all
             + ImportRollbackScenarios.all
             + LightroomScenarios.all
@@ -47,6 +46,9 @@
             + MenuPerformanceScenarios.all
             + ArrowPartsScenarios.all
             + LeftSideShotsScenarios.all
+            // Late in the main launch: one carrying on after it on the same home, as after a crash, finds the
+            // sessions this leaves and offers them over the photo.
+            + IncidentScenarios.left
             // Last before the smoke pair: its main launch's scenario leaves a collection shown at quit.
             + SourceLaunchScenarios.all
             + SmokeScenarios.last
