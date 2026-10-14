@@ -350,5 +350,45 @@ class PassingReport(unittest.TestCase):
         self.assertIn("after, in the background.", (run / "report.md").read_text())
 
 
+class KnownIssues(unittest.TestCase):
+    """A scenario skipped for a known issue, with a tracker row of its own, is listed as one and isn't held against
+    the run's coverage."""
+
+    def setUp(self):
+        self.run = Path(tempfile.mkdtemp(prefix="e2e-supervisor-"))
+        self.addCleanup(shutil.rmtree, self.run, ignore_errors=True)
+        (self.run / "coverage-main.json").write_text(json.dumps({"claims": {"feature.healing.spots": ["mouse"]}}))
+        self.catalogue = {
+            "required": ["feature.healing.spots", "feature.healing.generative", "feature.crop.crop"],
+            "scenarios": [
+                {"id": "healing.spots", "claims": ["feature.healing.spots"]},
+                {"id": "healing.generative", "claims": ["feature.healing.generative"]},
+                {"id": "crop.tool", "claims": ["feature.crop.crop"]},
+            ],
+        }
+
+    def test_its_claims_arent_missing_and_are_listed_with_its_row(self):
+        ran = {"healing.spots", "healing.generative", "crop.tool"}
+        cover = e2e.coverage(self.run, self.catalogue, ran, {"healing.generative": "ARC-20"})
+        self.assertEqual(cover["missing"], ["feature.crop.crop"])
+        self.assertEqual(cover["knownIssues"], {"feature.healing.generative": "ARC-20"})
+        self.assertEqual(e2e.coverage(self.run, self.catalogue, ran)["missing"],
+                         ["feature.healing.generative", "feature.crop.crop"])
+
+    def test_the_report_lists_it_with_its_row(self):
+        item = {"id": "healing.generative", "title": "", "status": "skipped", "seconds": 0,
+                "message": "on macOS 27, Metal's validation layer stops the app", "knownIssue": "ARC-20"}
+        report = {"tier": "release", "commit": "595a48e", "dirty": False, "verdict": "Passed", "summary": "",
+                  "started": "", "seconds": 60, "machine": "", "load": {"before": 1.0, "after": 1.0},
+                  "scenarios": [item], "crashes": [], "hangs": [], "ownerState": {"summary": ""},
+                  "coverage": {"covered": 1, "required": 2, "exempt": 0, "missing": [],
+                               "knownIssues": {"feature.healing.generative": "ARC-20"}},
+                  "coverageRequired": True}
+        e2e.write_report(self.run, report)
+        text = (self.run / "report.md").read_text()
+        self.assertIn("- `healing.generative` (ARC-20): on macOS 27, Metal's validation layer stops the app", text)
+        self.assertIn("1 held by a known issue (`feature.healing.generative`), 0 missing.", text)
+
+
 if __name__ == "__main__":
     unittest.main()

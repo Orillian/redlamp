@@ -609,6 +609,13 @@
             "healing.generative", "Generative Remove: a spot's three fills, the arrows, and back to Content-Aware",
             claims: [.feature("healing.remove"), .feature("healing.generative")],
         ) { app in
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27,
+               ProcessInfo.processInfo.environment["MTL_DEBUG_LAYER"] == "1" {
+                throw ScenarioSkip(
+                    knownIssue: "ARC-20",
+                    "on macOS 27, Metal's validation layer stops the app at MLX's setBytes with an empty vector",
+                )
+            }
             try app.openWorking()
             try app.click(.tool(.heal))
             try app.wait("the healing tool") { $0.activeTool == .heal }

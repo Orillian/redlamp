@@ -151,11 +151,13 @@
             let before = Memory.footprint()
             var status = "passed"
             var message = ""
+            var knownIssue: String?
             do {
                 try scenario.run(app)
             } catch let skip as ScenarioSkip {
                 status = "skipped"
                 message = skip.reason
+                knownIssue = skip.knownIssue
             } catch {
                 status = "failed"
                 message = "\(error)"
@@ -184,6 +186,9 @@
             ]
             if !message.isEmpty {
                 fields["message"] = message
+            }
+            if let knownIssue {
+                fields["knownIssue"] = knownIssue
             }
             if let summary = summary ?? nil {
                 fields["mainP99ms"] = summary.p99

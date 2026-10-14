@@ -708,7 +708,9 @@ def judge_performance(run_dir: Path, quiet: bool) -> dict:
 
 # ---------------------------------------------------------------- the report
 
-def coverage(run_dir: Path, catalogue: dict, ran: set[str]) -> dict:
+def coverage(run_dir: Path, catalogue: dict, ran: set[str], known: dict[str, str] | None = None) -> dict:
+    """The claims the scenarios in `ran` exercised; those only scenarios skipped for a known issue (`known`, a
+    scenario's tracker row by its ID) would have aren't missing, and are listed with the row."""
     claims: dict[str, set[str]] = {}
     menu_items: set[str] = set()
     for path in run_dir.glob("coverage-*.json"):
@@ -722,12 +724,15 @@ def coverage(run_dir: Path, catalogue: dict, ran: set[str]) -> dict:
     # the claims of the scenarios it ran.
     claimed = {claim for scenario in catalogue["scenarios"] if scenario["id"] in ran for claim in scenario["claims"]}
     required = catalogue["required"]
+    held = {claim: row for scenario in catalogue["scenarios"] if (row := (known or {}).get(scenario["id"]))
+            for claim in scenario["claims"]}
     missing = [claim for claim in required if claim in claimed and claim not in claims and claim not in exempt]
     return {
         "required": len(required),
         "covered": len([c for c in required if c in claims]),
         "exempt": len([c for c in required if c not in claims and c in exempt]),
-        "missing": missing,
+        "knownIssues": {claim: held[claim] for claim in missing if claim in held},
+        "missing": [claim for claim in missing if claim not in held],
         "paths": {claim: sorted(paths) for claim, paths in sorted(claims.items())},
         "menuItems": sorted(menu_items),
     }
@@ -760,6 +765,10 @@ def write_report(run_dir: Path, report: dict) -> None:
         if len(note) > 400:
             note = note[:400] + "…"
         lines.append(f"| `{item['id']}` | {item['status']} | {item.get('seconds', 0):.1f} s | {p99} | {note} |")
+    known = [item for item in report["scenarios"] if item.get("knownIssue")]
+    if known:
+        lines += ["", "## Known issues", "", "Skipped for an issue with a tracker row of its own, so not counted against the run:", ""]
+        lines += [f"- `{item['id']}` ({item['knownIssue']}): {item.get('message') or ''}" for item in known]
     if report["crashes"]:
         lines += ["", "## Crashes", ""] + [f"- `{path}`" for path in report["crashes"]]
     retried = report.get("retriedHangs", [])
@@ -770,9 +779,11 @@ def write_report(run_dir: Path, report: dict) -> None:
             lines += [stall_line(hang, attempt=True) for hang in retried]
     cover = report.get("coverage")
     if cover:
+        held = cover.get("knownIssues") or {}
         lines += ["", "## Coverage", "",
                   f"{cover['covered']} of {cover['required']} claims exercised, {cover['exempt']} exempt with a reason, "
-                  f"{len(cover['missing'])} missing."]
+                  + (f"{len(held)} held by a known issue ({', '.join(f'`{c}`' for c in held)}), " if held else "")
+                  + f"{len(cover['missing'])} missing."]
         if cover["missing"] and report["coverageRequired"]:
             lines += [""] + [f"- `{claim}`" for claim in cover["missing"]]
     perf = report.get("performance")
@@ -1095,7 +1106,8 @@ def main() -> int:
         state_summary = f"The run changed {len(changed)} of the owner's Redlamp files or preferences: " + ", ".join(changed[:10])
     isolation_failed = bool(changed) and not (owner_running or OTHER_REDLAMP_SEEN or owner_app_running())
 
-    cover = coverage(run_dir, catalogue, {s["id"] for s in chosen})
+    known = {i: r["knownIssue"] for i, r in results.items() if r.get("status") == "skipped" and r.get("knownIssue")}
+    cover = coverage(run_dir, catalogue, {s["id"] for s in chosen}, known)
     coverage_required = tier in ("full", "release") and not args.scenario
     unrun = (f"didn't run: the app couldn't come to the front ({launches.refused})" if launches.refused
              else "never ran")
@@ -1105,6 +1117,7 @@ def main() -> int:
         result = results.get(scenario_id, {"status": "failed", "message": unrun})
         scenarios.append({"id": scenario_id, "title": info["title"], "status": result["status"],
                           "seconds": result.get("seconds", 0), "message": result.get("message"),
+                          "knownIssue": result.get("knownIssue"),
                           "snapshot": result.get("snapshot"), "mainP99ms": result.get("mainP99ms"),
                           "footprintMB": result.get("footprintMB"), "attempts": attempts.get(scenario_id, 0)})
     for item in scenarios:

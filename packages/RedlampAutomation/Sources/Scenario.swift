@@ -95,8 +95,17 @@
     /// A scenario that can't run here, such as one whose model isn't downloaded.
     public struct ScenarioSkip: Error, CustomStringConvertible {
         public var reason: String
+        /// The tracker row of a known issue that keeps it from running here: the report lists it as one, and its
+        /// claims aren't counted missing.
+        public var knownIssue: String?
+
         public init(_ reason: String) {
             self.reason = reason
+        }
+
+        public init(knownIssue row: String, _ reason: String) {
+            self.reason = reason
+            knownIssue = row
         }
 
         public var description: String {
