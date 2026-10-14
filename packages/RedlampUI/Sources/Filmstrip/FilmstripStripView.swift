@@ -788,6 +788,21 @@ final class FilmstripScrollView: NSScrollView {
         clip.scroll(to: CGPoint(x: width * fraction, y: 0))
         strip.scrollView.reflectScrolledClipView(clip)
     }
+
+    /// The strip `window` shows: each module has a filmstrip of its own, and the one not shown is hidden.
+    @MainActor public static func strip(in window: NSWindow) -> NSView? {
+        func find(_ view: NSView) -> FilmstripStripView? {
+            (view as? FilmstripStripView).flatMap { $0.isHiddenOrHasHiddenAncestor ? nil : $0 }
+                ?? view.subviews.lazy.compactMap(find).first
+        }
+        return (window.contentView?.superview ?? window.contentView).flatMap(find)
+    }
+
+    /// How far a strip made by `make` or found by `strip(in:)` scrolls from one end to the other, in points.
+    @MainActor public static func scrollWidth(_ view: NSView) -> CGFloat {
+        guard let strip = view as? FilmstripStripView else { return 0 }
+        return max(strip.collectionView.frame.width - strip.scrollView.contentView.bounds.width, 0)
+    }
 }
 
 /// Hosts the AppKit strip under the SwiftUI header, its cells `cellHeight` tall as the filmstrip's frame is set.
