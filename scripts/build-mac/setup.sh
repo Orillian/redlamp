@@ -21,9 +21,10 @@
 # commands run over SSH; mise's tools (mise.toml); the sample raws (2.1 GB); `mise run generate`;
 # and the settings a Mac left on its own needs (--no-settings leaves them out): no sleep on the
 # charger or with the lid closed, a virtual screen at each login (virtual-screen.sh), no screen
-# lock, automatic login, Remote Login, and no automatic macOS or App Store updates, since macOS and
-# Xcode change on both Macs together. --gate then runs the push gate on origin/main, which builds
-# everything and runs the reference tests (a few minutes).
+# lock, crash reports as notifications rather than dialogs, automatic login, Remote Login, and no
+# automatic macOS or App Store updates, since macOS and Xcode change on both Macs together. --gate
+# then runs the push gate on origin/main, which builds everything and runs the reference tests (a
+# few minutes).
 #
 # XCODE_VERSION and XCODE_BUILD are the main Mac's Xcode (`xcodebuild -version`), and MACOS_VERSION
 # its macOS (`sw_vers -productVersion`); set them when it moves on. Xcode has to match, since it's
@@ -328,6 +329,12 @@ settings() {
     sysadminctl -screenLock off -password - \
         || note "turn off the password after the screen saver or display (System Settings › Lock Screen)"
     defaults -currentHost write com.apple.screensaver idleTime -int 0
+
+    # A crash dialog takes the front until someone closes it, so with nobody at the Mac every
+    # regression scenario after a crash that needs the app in front would fail. Crash reports are
+    # still written to ~/Library/Logs/DiagnosticReports, where the suite collects them.
+    say "Crash reports: shown as notifications rather than dialogs"
+    defaults write com.apple.CrashReporter UseUNC -int 1
 
     say "Updates: no automatic macOS or App Store installs"
     sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates -bool false
