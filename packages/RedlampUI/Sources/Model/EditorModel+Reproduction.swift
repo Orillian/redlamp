@@ -16,11 +16,20 @@ public struct CalibrationTarget: Equatable, Sendable {
 /// Redlamp Reproduction's exposure anchor on the open photo, and Calibrate from Target (CAM-28,
 /// `docs/plans/2026-10-09-reproduction-design.md`).
 public extension EditorModel {
-    /// The anchor this photo's edit gets under Redlamp Reproduction: its camera's calibration, or
-    /// else the typical one; nil for a photo that isn't raw.
+    /// The anchor this photo's edit gets: its camera's calibration, or else its estimate from the
+    /// table Redlamp ships at process 16 and the typical anchor before (CAM-29); nil for a photo
+    /// that isn't raw.
     var photoAnchor: ExposureAnchor? {
-        guard let info, info.isRaw else { return nil }
-        return cameras.anchor(for: info.cameraName)
+        guard let info else { return nil }
+        return photoAnchor(for: info, process: recipe.processVersion)
+    }
+
+    /// The anchor an edit at `process` of the photo `info` describes gets.
+    func photoAnchor(for info: ImageInfo, process: Int) -> ExposureAnchor? {
+        guard info.isRaw else { return nil }
+        guard process >= 16,
+              cameras.entry(for: info.cameraName) == nil else { return cameras.anchor(for: info.cameraName) }
+        return ExposureAnchorTable.bundled.anchor(for: info)
     }
 
     /// The camera's calibration in the store, when it has one.
@@ -45,7 +54,8 @@ public extension EditorModel {
     var calibrationStatus: String {
         guard let info, info.isRaw else { return "Not a raw photo: shown in its file's own light" }
         guard let anchor = recipe.exposureAnchor, anchor.source == .target else {
-            return "Not calibrated: typical exposure"
+            guard recipe.exposureAnchor?.source == .estimated else { return "Not calibrated: typical exposure" }
+            return "Not calibrated: exposure estimated for \(info.cameraName ?? "this camera")"
         }
         let camera = anchor.camera ?? info.cameraName ?? "this camera"
         guard let entry = cameras.entry(for: anchor.camera), abs(entry.stops - anchor.stops) < 1e-9 else {
@@ -132,16 +142,20 @@ extension EditorModel {
 
     /// `edit` with this photo's anchor (`EditRecipe.anchored`); as it is while no photo is open.
     func anchored(_ edit: EditRecipe) -> EditRecipe {
-        info == nil ? edit : edit.anchored(photoAnchor)
+        guard let info else { return edit }
+        return edit.anchored(photoAnchor(for: info, process: edit.processVersion))
     }
 
-    /// The anchor a photo that isn't open gets: its camera's calibration or the typical one, its
-    /// camera read from the file off the main thread; nil when it isn't raw.
-    func anchor(forPhotoAt url: URL) async -> ExposureAnchor? {
+    /// The anchor an edit at `process` of a photo that isn't open gets: its camera's calibration,
+    /// else its estimate from process 16 and the typical one before, its camera read from the file
+    /// off the main thread; nil when it isn't raw.
+    func anchor(forPhotoAt url: URL, process: Int) async -> ExposureAnchor? {
         guard let inspector = engine as? any RawFileInspecting else { return .typical(for: nil) }
         let identity = await Task.detached { inspector.identify(url) }.value
         guard let identity else { return nil }
-        return cameras.anchor(for: ImageInfo.cameraName(make: identity.make, model: identity.model))
+        let camera = ImageInfo.cameraName(make: identity.make, model: identity.model)
+        guard process >= 16, cameras.entry(for: camera) == nil else { return cameras.anchor(for: camera) }
+        return ExposureAnchorTable.bundled.anchor(make: identity.make, model: identity.model, format: url.pathExtension)
     }
 
     /// A click on the photo with Calibrate from Target on: measures the patch there, over the

@@ -360,7 +360,10 @@ func run(_ arguments: [String]) async throws {
     if let anchor {
         recipe.exposureAnchor = ExposureAnchor(stops: anchor, source: .target, camera: info.cameraName)
     }
-    recipe = recipe.anchored(info.isRaw ? .typical(for: info.cameraName) : nil)
+    recipe = recipe.anchored(
+        recipe.processVersion >= 16 ? ExposureAnchorTable.bundled.anchor(for: info)
+            : info.isRaw ? .typical(for: info.cameraName) : nil,
+    )
     if coverage {
         guard let last = recipe.masks.last else { throw CLIError(description: "--coverage needs a mask") }
         request.maskOverlay = last.id

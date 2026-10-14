@@ -12,6 +12,8 @@ import Testing
 struct ReproductionAnchorTests {
     private let folder = FileManager.default.temporaryDirectory.appending(path: "reproduction-\(UUID().uuidString)")
 
+    /// What the shipped table estimates for the stub engine's camera (CAM-29).
+    private static let estimate = ExposureAnchorTable.bundled.anchor(make: "Canon", model: "EOS R5", format: "CR3")
     private static let calibrated = CameraCalibrations.Entry(
         camera: "Canon EOS R5", stops: 0.82, iso: 100, date: Date(timeIntervalSince1970: 1_791_500_000),
         photo: "target.CR3",
@@ -57,12 +59,16 @@ struct ReproductionAnchorTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let cameras = CameraCalibrations(file: nil)
         let editor = try await open(cameras: cameras)
+        #expect(editor.recipe.exposureAnchor == Self.estimate, "a new edit gets its camera's estimate (CAM-29)")
+        #expect(editor.recipe.isPristine)
         let steps = editor.history.count
         editor.setBaseLook(BuiltInBaseLook.reproduction.reference)
-        #expect(editor.recipe.exposureAnchor == .typical(for: "Canon EOS R5"))
+        #expect(editor.recipe.exposureAnchor == Self.estimate)
         #expect(editor.history.count == steps + 1)
         editor.setBaseLook(BuiltInBaseLook.color.reference)
-        #expect(editor.recipe.exposureAnchor == nil)
+        #expect(editor.recipe.exposureAnchor == Self.estimate, "from process 16 every look keeps it")
+        editor.setProcessVersion(15)
+        #expect(editor.recipe.exposureAnchor == nil, "before it, only Redlamp Reproduction anchors")
         try cameras.calibrate(Self.calibrated)
         editor.setBaseLook(BuiltInBaseLook.reproduction.reference)
         #expect(editor.recipe.exposureAnchor == ExposureAnchor(stops: 0.82, source: .target, camera: "Canon EOS R5"))
@@ -75,17 +81,17 @@ struct ReproductionAnchorTests {
         editor.setBaseLook(BuiltInBaseLook.reproduction.reference)
         #expect(!editor.canUpdateCalibration)
         try cameras.calibrate(Self.calibrated)
-        #expect(editor.recipe.exposureAnchor?.source == .typical, "the edit keeps the anchor it was given")
+        #expect(editor.recipe.exposureAnchor?.source == .estimated, "the edit keeps the anchor it was given")
         #expect(editor.canUpdateCalibration)
         editor.updateCalibration()
         #expect(editor.recipe.exposureAnchor?.stops == 0.82 && !editor.canUpdateCalibration)
         editor.undo()
-        #expect(editor.recipe.exposureAnchor?.source == .typical)
+        #expect(editor.recipe.exposureAnchor?.source == .estimated)
         editor.redo()
         editor.forgetCalibration()
         #expect(cameras.entries.isEmpty)
         #expect(editor.recipe.exposureAnchor?.stops == 0.82, "forgetting leaves the edit alone")
-        #expect(editor.canUpdateCalibration, "and offers the typical anchor back")
+        #expect(editor.canUpdateCalibration, "and offers the estimate back")
     }
 
     @Test func `a paste brings the look with this photo's anchor, never the source's`() async throws {
@@ -153,8 +159,8 @@ struct ReproductionAnchorTests {
         )
         editor.setExposure(toReference: 50)
         #expect(editor.recipe[.exposure] == 1)
-        #expect(editor.recipe.exposureAnchor == .typical(for: "Canon EOS R5") && cameras.entries.isEmpty)
-        #expect(editor.calibrationStatus == "Not calibrated: typical exposure")
+        #expect(editor.recipe.exposureAnchor == Self.estimate && cameras.entries.isEmpty)
+        #expect(editor.calibrationStatus == "Not calibrated: exposure estimated for Canon EOS R5")
     }
 
     @Test func `the status line names what bends the rendering, and only that`() {
@@ -199,7 +205,7 @@ struct ReproductionAnchorTests {
         let editor = try await open("A.CR3")
         let (b, c) = (folder.appending(path: "B.NEF"), folder.appending(path: "C.JPG"))
         [b, c].forEach { editor.library.insert(LibraryItem(url: $0)) }
-        editor.settingsSync.photoAnchor = { url in
+        editor.settingsSync.photoAnchor = { url, _ in
             url == c ? nil : ExposureAnchor(stops: 0.7, source: .target, camera: "Nikon Z 8")
         }
         editor.setBaseLook(BuiltInBaseLook.reproduction.reference)

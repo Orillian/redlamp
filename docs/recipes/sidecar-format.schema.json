@@ -306,14 +306,14 @@
       "additionalProperties": false
     },
     "exposureAnchor": {
-      "description": "Under Redlamp Reproduction (redlamp/base/reproduction), where the photo's camera puts a metered 18% grey: the stops added to Exposure, in place of a DNG's BaselineExposure, that take it to scene 0.18. Always the photo's own camera's, never copied from another photo; written only with that look. Without one, the look renders with the typical anchor, 1.03.",
+      "description": "Where the photo's camera puts a metered 18% grey: the stops added to Exposure, in place of a DNG's BaselineExposure, that take it to scene 0.18. Before process 16 only under Redlamp Reproduction (redlamp/base/reproduction), written only with that look; from process 16 every raw photo's edit has one, under every look (other looks render at its distance from the typical anchor plus 0.26 stops). Always the photo's own camera's, never copied from another photo. Without one, an edit renders with the typical anchor, 1.03, before process 16, and with its camera's estimate from it.",
       "type": "object",
       "required": ["stops", "source"],
       "properties": {
         "stops": { "type": "number", "description": "The anchor in stops." },
         "source": {
           "type": "string",
-          "description": "target: measured with Calibrate from Target. typical: the camera has no calibration. A value a newer Redlamp wrote is kept."
+          "description": "target: measured with Calibrate from Target. typical: the camera has no calibration, before process 16. estimated: from process 16, the camera's value in the table Redlamp measures from cameras' own JPEGs; a DNG's BaselineExposure is added to it when it renders. A value a newer Redlamp wrote is kept."
         },
         "camera": { "type": "string", "description": "The camera it belongs to: the model the file states, after its make unless the model names it." }
       },

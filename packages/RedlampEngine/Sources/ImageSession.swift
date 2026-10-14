@@ -261,10 +261,19 @@ final class ImageSession: @unchecked Sendable {
     }
 
     /// The stops added to Exposure: a DNG's BaselineExposure or, under Redlamp Reproduction, the
-    /// edit's anchor (the typical one when it has none). A bitmap has neither.
+    /// edit's anchor (the typical one when it has none). A bitmap has neither. From process 16
+    /// every look anchors a raw (CAM-29): Redlamp Reproduction at the anchor, every other look at
+    /// its distance from the typical anchor plus `ExposureAnchor.lookStops`, with the photo's
+    /// estimate when the edit has no anchor.
     func baseExposure(for recipe: EditRecipe) -> Double {
-        guard recipe.baseLook.isReproduction else { return baselineExposure }
-        return isRaw ? recipe.exposureAnchor?.stops ?? ExposureAnchor.typicalStops : 0
+        guard recipe.processVersion >= 16 else {
+            guard recipe.baseLook.isReproduction else { return baselineExposure }
+            return isRaw ? recipe.exposureAnchor?.stops ?? ExposureAnchor.typicalStops : 0
+        }
+        guard isRaw else { return 0 }
+        let anchor = recipe.exposureAnchor ?? ExposureAnchorTable.bundled.anchor(for: info) ?? .typical(for: nil)
+        let stops = anchor.stops(baseline: baselineExposure)
+        return recipe.baseLook.isReproduction ? stops : stops - ExposureAnchor.typicalStops + ExposureAnchor.lookStops
     }
 
     /// Per-channel gains that move the as-shot balance to the requested white balance.

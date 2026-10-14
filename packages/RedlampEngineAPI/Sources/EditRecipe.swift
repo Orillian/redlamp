@@ -236,7 +236,8 @@ public struct EditRecipe: Sendable, Hashable {
             && masks.isEmpty
             && spots.isEmpty
             && appliedRecipe == nil
-            && exposureAnchor == nil
+            // From process 16 every raw's edit gets its camera's anchor when it's made (CAM-29).
+            && (exposureAnchor == nil || processVersion >= 16)
             && crop.isFull
             && orientation.isIdentity
             && panelsOff.isEmpty

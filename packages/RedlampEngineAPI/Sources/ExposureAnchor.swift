@@ -17,11 +17,27 @@ public struct ExposureAnchor: Codable, Sendable, Hashable {
         public static let target = Source(rawValue: "target")
         /// The camera has no calibration: `typicalStops`.
         public static let typical = Source(rawValue: "typical")
+        /// From the table Redlamp measures from cameras' own JPEGs (`ExposureAnchorTable`, CAM-29);
+        /// a DNG's BaselineExposure is added to it when it renders.
+        public static let estimated = Source(rawValue: "estimated")
     }
 
     /// A metered grey 3.5 stops below clip, the middle of the 3.3 to 3.7 stops cameras' ISO
     /// calibrations put it at; on those cameras it lands between L* 46.5 and 52.6.
     public static let typicalStops = 1.03
+
+    /// From process 16, the stops every look but Redlamp Reproduction adds beyond the anchor's
+    /// distance from the typical one, so that a typical camera's metered grey opens as bright as
+    /// cameras' own JPEGs render it (CAM-29): the camera bench's median offset at process 15, 0.36
+    /// stops in its midtones, which the curve's contrast moves 1.37 times as far as the exposure.
+    /// Process 16's, fixed with it.
+    public static let lookStops = 0.26
+
+    /// The stops it puts a metered grey at for a file whose BaselineExposure is `baseline`: an
+    /// estimate was measured with the files' BaselineExposure applied, so it carries this one's.
+    public func stops(baseline: Double) -> Double {
+        source == .estimated ? stops + baseline : stops
+    }
 
     public var stops: Double
     public var source: Source
@@ -43,12 +59,13 @@ public struct ExposureAnchor: Codable, Sendable, Hashable {
 }
 
 public extension EditRecipe {
-    /// This edit with its photo's anchor, `photo` (the camera's calibration or the typical anchor;
-    /// nil for a photo that isn't raw): under Redlamp Reproduction, `photo` unless the edit already
-    /// has one for that camera; under any other look, none.
+    /// This edit with its photo's anchor, `photo` (the camera's calibration, else its estimate from
+    /// process 16 and the typical anchor before; nil for a photo that isn't raw): `photo` unless
+    /// the edit already has one for that camera, under Redlamp Reproduction and, from process 16,
+    /// under every look (CAM-29); under any other look at an older process, none.
     func anchored(_ photo: ExposureAnchor?) -> EditRecipe {
         var result = self
-        guard baseLook.isReproduction, let photo else {
+        guard baseLook.isReproduction || processVersion >= 16, let photo else {
             result.exposureAnchor = nil
             return result
         }

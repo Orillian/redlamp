@@ -127,7 +127,7 @@ public final class SettingsSync {
     @ObservationIgnored var makeEngine: () -> (any EditingEngine)?
     /// The exposure anchor a photo's edit gets under Redlamp Reproduction (nil when it isn't raw),
     /// set by the editor; without it, the typical anchor.
-    @ObservationIgnored var photoAnchor: (@MainActor (URL) async -> ExposureAnchor?)?
+    @ObservationIgnored var photoAnchor: (@MainActor (URL, Int) async -> ExposureAnchor?)?
     /// Where each photo's sidecar is read and written: the editor's, set by it.
     @ObservationIgnored var sidecars: SidecarPlacement
     /// The library's locator for photos in its folders; any other photo's sidecar is beside it.
@@ -692,10 +692,10 @@ public final class SettingsSync {
     /// `edit` with the photo's own exposure anchor (`EditRecipe.anchored`), its camera read from the
     /// file only when the edit needs an anchor it hasn't got.
     private func anchored(_ edit: EditRecipe, _ url: URL) async -> EditRecipe {
-        guard edit.baseLook.isReproduction,
+        guard edit.baseLook.isReproduction || edit.processVersion >= 16,
               edit.exposureAnchor == nil else { return edit.anchored(edit.exposureAnchor) }
         let photo: ExposureAnchor? = if let photoAnchor {
-            await photoAnchor(url)
+            await photoAnchor(url, edit.processVersion)
         } else {
             .typical(for: nil)
         }

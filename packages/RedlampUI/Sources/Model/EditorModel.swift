@@ -843,7 +843,7 @@ public final class EditorModel {
         canvas.onRenderSizeChange = { [weak self] _ in self?.requestRender() }
         settingsSync.makeEngine = { [weak self] in self?.makeWorkerEngine?() }
         settingsSync.sidecars = self.library.sidecars
-        settingsSync.photoAnchor = { [weak self] url in await self?.anchor(forPhotoAt: url) }
+        settingsSync.photoAnchor = { [weak self] url, process in await self?.anchor(forPhotoAt: url, process: process) }
         settingsSync.saves = saves
         settingsSync.editor = self
         connectBatchExport()
@@ -1304,7 +1304,9 @@ public final class EditorModel {
             metadataChangesWhileOpening = []
         }
         photoMetadata = metadata
-        let loaded = Self.asShot(sidecar?.recipe ?? EditRecipe(), opened)
+        // A new edit keeps the anchor its camera has now, so a later table renders it the same.
+        let fresh = EditRecipe().anchored(photoAnchor(for: opened, process: EditRecipe.currentProcessVersion))
+        let loaded = Self.asShot(sidecar?.recipe ?? fresh, opened)
         recipe = loaded
         snapshots = sidecar?.snapshots ?? []
         startSession(opening: opened.url, recipe: loaded, hasSidecar: sidecar != nil)
@@ -1731,7 +1733,7 @@ public final class EditorModel {
         var next = recipe
         next.processVersion = version
         constrainCrop(&next)
-        commit(next, .edit, "Process Version") { "Version \($0.processVersion)" }
+        commit(anchored(next), .edit, "Process Version") { "Version \($0.processVersion)" }
     }
 
     public func setTreatment(_ treatment: Treatment) {

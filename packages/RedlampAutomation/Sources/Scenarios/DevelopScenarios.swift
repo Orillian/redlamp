@@ -100,14 +100,14 @@
             try app.paletteKey(.submit)
             var anchored = false
             for _ in 0 ..< 50 where !anchored {
-                anchored = try app.main { $0.baseLook.isReproduction && $0.recipe.exposureAnchor?.source == .typical }
+                anchored = try app.main { $0.baseLook.isReproduction && $0.recipe.exposureAnchor?.source == .estimated }
                 app.pause(0.1)
             }
             let state = try app.main { model in
                 "\(model.baseLook.name), anchor \(String(describing: model.recipe.exposureAnchor)), "
                     + "steps \(model.history.map(\.title)), palette \(model.commandPalette == nil ? "closed" : "open")"
             }
-            try app.expect(anchored, "Redlamp Reproduction with the camera's typical anchor, not \(state)")
+            try app.expect(anchored, "Redlamp Reproduction with the camera's estimated anchor, not \(state)")
             if try app.main({ $0.commandPalette != nil }) {
                 try app.paletteKey(.escape)
             }
