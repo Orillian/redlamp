@@ -59,7 +59,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Color Grading | Yes | Done | | | | Shadows, midtones, highlights and global wheels, with Blending and Balance |
 | Profiles | Yes | Done | Different | | EDT-04 | Profiles are Base Looks inside Recipes: six built-in looks and 15 film styles, each with an Amount slider (0–200); film looks and LUTs are recipes, each of which can set its look alone |
 | Camera-matching looks | Yes | Done | Different | | TON-14 | Four looks measured from Fujifilm cameras' own JPEGs (one provisional), under Redlamp's own names |
-| More camera-matching looks (Eterna, Classic Negative, Acros and others) | Yes | In progress | | P3 | TON-14, TON-20, TON-35, TON-43, TON-44, TON-45 | Need more photos with the camera's JPEG beside the raw; Fujifilm's own LUTs for ten simulations, downloaded from Fujifilm, import in one step and fill the film slots |
+| More camera-matching looks (Eterna, Classic Negative, Acros and others) | Yes | In progress | | P3 | TON-14, TON-20, TON-35, TON-43, TON-44, TON-45, TON-49, TON-50 | Need more photos with the camera's JPEG beside the raw; Fujifilm's own LUTs for ten simulations, downloaded from Fujifilm, import in one step and fill the film slots; a model of the camera's own processing for twenty simulations, with their tone and colour settings, is an experiment turned on in Settings |
 | DNG camera profiles | Yes | Done | | | CAM-04, TON-09 | Dual-illuminant colour and the embedded HueSatMap; a profile's look is offered as a Base Look |
 | Custom `.dcp` camera profiles | Yes | Later | | | | Deferred on 2 October 2026 |
 | ICC input profiles | No | Planned | | P2 | TON-10 | |
