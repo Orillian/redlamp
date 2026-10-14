@@ -75,7 +75,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Feature | Lightroom | Redlamp | vs Lightroom | Phase | Tracker | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Sharpening | Yes | Done | | | SHP-01 | Lightroom's four controls; the photo's noise and grain aren't sharpened |
-| Noise reduction | Yes | Done | | | DN-01, DN-02 | Lightroom's six controls, scaled to each photo's measured noise; calibrated profiles for the first ten bodies wait on calibration shots |
+| Noise reduction | Yes | Done | | | DN-01, DN-02, DN-12 | Lightroom's six controls, scaled to each photo's measured noise. From process 16, values below black are kept until after noise reduction, so the deepest shadows at high ISO keep their colour; strong Luminance still reads the noisiest of them a little dark (DN-16). Calibrated profiles for the first ten bodies wait on calibration shots |
 | AI Denoise | Yes | Planned | | P3 | DN-06, DN-07, DN-08 | On the Mac, working on the raw data, as an edit rather than a new file, as Lightroom has done since June 2025; proposed as one network that demosaics and denoises Bayer and X-Trans ([DN-11](research/notes/DN-11-lightroom-raw-denoise.md)) |
 | Super Resolution | Yes | Planned | | P4 | SR-01, SR-02 | 2x and 4x, faithful to the photo rather than inventing detail |
 | Raw Details | Yes | Later | | | DEC-36 | Proposed as the noise-free mode of the AI Denoise network; a learned demosaic measured 4.5 dB better than Redlamp's on Bayer photos, mostly in fine colour detail ([DN-11](research/notes/DN-11-lightroom-raw-denoise.md)) |
