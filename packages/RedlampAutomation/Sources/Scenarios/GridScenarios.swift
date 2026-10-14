@@ -2,13 +2,13 @@
     import AppKit
     import Carbon.HIToolbox
     import RedlampEngineAPI
-    import RedlampLibrary
     @_spi(Harness) import RedlampUI
 
     extension RunningApp {
         /// The Library grid on screen and taking the keyboard, with its cells: the photos' names in the folder's order,
-        /// as Library's culling follows it, or `inGridOrder`, the cells'.
-        func showGrid(inGridOrder _: Bool = false) throws -> [String] {
+        /// as Library's culling follows it.
+        @discardableResult
+        func showGrid() throws -> [String] {
             try openWorking()
             let names = try photoNames()
             try expect(names.count >= 6, "The folder has \(names.count) photos")
@@ -181,24 +181,28 @@
                 + "Finder and opens one in the loupe; ⌘R shows them from the Photo menu",
             claims: [.action(.showInFinder), .feature("library.grid"), .feature("library.filmstrip")],
         ) { app in
-            let names = try app.showGrid(inGridOrder: true)
-            let first = try app.frame(of: .identifier("grid.\(names[0])"))
-            let third = try app.frame(of: .identifier("grid.\(names[2])"))
+            // By the cells the band meets, each with its photos: a closed stack's cell selects all of them.
+            try app.showGrid()
+            let cells = try app.gridCells()
+            try app.expect(cells.count >= 5, "The grid has \(cells.count) cells")
+            let first = try app.frame(of: .identifier("grid.\(cells[0][0])"))
+            let third = try app.frame(of: .identifier("grid.\(cells[2][0])"))
             let start = NSPoint(x: first.minX - 3, y: first.maxY + 3)
             try app.dragView(from: start, to: NSPoint(x: third.midX, y: third.midY))
             var state = try app.selectionState()
             let reached = try app.hitView(at: start)
+            let banded = Set(cells[0 ... 2].joined())
             try app.expect(
-                state.photos == Array(names[0 ... 2]) && state.active == names[0],
-                "The band from \(start) (\(reached), the first cell at \(first)) gave \(state)",
+                Set(state.photos) == banded && state.active == cells[0][0],
+                "The band from \(start) (\(reached), the first cell at \(first)) over \(Array(cells[0 ... 2])) gave \(state)",
             )
-            let fifth = try app.frame(of: .identifier("grid.\(names[4])"))
+            let fifth = try app.frame(of: .identifier("grid.\(cells[4][0])"))
             try app.dragView(
                 from: NSPoint(x: fifth.minX - 3, y: fifth.maxY + 3), to: NSPoint(x: fifth.midX, y: fifth.midY),
                 modifiers: .shift,
             )
             state = try app.selectionState()
-            try app.expect(state.photos == Array(names[0 ... 2]) + [names[4]], "⇧ with the band gave \(state)")
+            try app.expect(Set(state.photos) == banded.union(cells[4]), "⇧ with the band gave \(state)")
             app.covered(.feature("library.filmstrip"), via: .mouse)
 
             try app.main { _ in Revealed.photos = [] }
@@ -206,25 +210,18 @@
             defer { try? app.main { $0.libraryViews.revealInFinder = Revealed.finder } }
             try app.chooseInContextMenu("Show in Finder", at: NSPoint(x: third.midX, y: third.midY))
             let shown = try app.main { _ in Revealed.photos.map(\.lastPathComponent) }
-            if shown != state.photos {
-                let clicked = names[2]
-                let why = try app.main { model -> String in
-                    guard let url = model.items.first(where: { $0.url.lastPathComponent == clicked })?.url else {
-                        return "\(clicked) isn't listed"
-                    }
-                    guard let id = model.library.photoID(of: url) else { return "\(clicked) has no ID in the index" }
-                    return "\(clicked) is photo \(id), \(model.photoSelection.contains(id) ? "in" : "not in") the selection"
-                }
-                throw ScenarioFailure("Show in Finder showed \(shown) where \(state.photos) are selected: \(why)")
-            }
+            try app.expect(
+                Set(shown) == Set(state.photos),
+                "Show in Finder showed \(shown) where \(state.photos) are selected",
+            )
             app.covered(.action(.showInFinder), via: .mouse)
             try app.main { _ in Revealed.photos = [] }
             try app.choose(.showInFinder)
             try app.expect(try app.main { _ in Revealed.photos.count } == state.photos.count, "⌘R's menu item")
 
             try app.chooseInContextMenu("Open in Loupe", at: NSPoint(x: third.midX, y: third.midY))
-            try app.wait("the loupe on \(names[2])") { $0.libraryView == .loupe }
-            try app.expect(try app.selectionState().active == names[2], "The loupe shows another photo")
+            try app.wait("the loupe on \(cells[2][0])") { $0.libraryView == .loupe }
+            try app.expect(try app.selectionState().active == cells[2][0], "The loupe shows another photo")
             app.covered(.feature("library.grid"), via: .mouse)
             try app.press(.gridView)
             try app.wait("the grid") { $0.libraryView == .grid }
