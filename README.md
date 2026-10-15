@@ -960,7 +960,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [ ] **Coming from Lightroom:** a Lightroom Classic catalog's ratings, keywords and collections, and other apps' libraries <!-- tracker: LIB-29, LIB-30 -->
 - [ ] Library research, and a design measured against a stress harness of up to two million photos on simulated spinning and network disks, with budgets that fail on regressions <!-- internal; tracker: LIB-01, LIB-02, LIB-03, LIB-04 -->
 - [ ] The app in the App Sandbox, which the Mac App Store requires, so that it reaches only the files you give it <!-- internal; tracker: ARC-17 -->
-- [ ] Accessibility, usability testing, and the Mac App Store release <!-- internal -->
+- [ ] Accessibility, usability testing, and the Mac App Store release <!-- internal; tracker: ARC-22, ARC-23, ARC-24, ARC-25, ARC-26, ARC-27, UX-50, UX-51, UX-52 -->
 
 ### Phase 5: iPad and iPhone
 - [ ] The iPhone design, decided before it's built: a study of how photographers edit on a phone, and concepts tried in the harness on the Mac and on the iPhone <!-- internal; tracker: MOB-01, MOB-02, MOB-03, MOB-04 -->
