@@ -159,8 +159,8 @@ struct LightroomCensusTally: Sendable {
                     .compactMap(LightroomCensusNames.rangeMask).first
                 kinds[kind + LightroomCensusNames.range(range), default: 0] += 1
             }
-            for (kind, count) in kinds {
-                earlierMasks[kind, default: Held()].add(count)
+            for (name, count) in kinds {
+                earlierMasks[name, default: Held()].add(count)
             }
         }
     }

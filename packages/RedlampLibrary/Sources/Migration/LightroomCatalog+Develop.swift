@@ -57,7 +57,7 @@ extension LightroomCatalog.Snapshot {
 }
 
 extension LightroomCatalogReader {
-    /// Photos whose settings are read and handed on together: about 2 MB of a real catalog's settings.
+    /// Photos whose settings are read and handed on together: about 2 MB of settings at 4 KB a photo.
     static let developPart = 500
 
     /// Every photo's and virtual copy's Develop settings, in the catalog's order, handed to `make` in parts of
@@ -71,8 +71,8 @@ extension LightroomCatalogReader {
         let settings = try settingsRows(notes: &notes)
         let snapshots = try snapshotRows(notes: &notes)
         let history = try historyCounts(notes: &notes)
-        let settingsText = try settingsStatement()
-        let snapshotText = try snapshotStatement()
+        let fetchSettings = try settingsStatement()
+        let fetchSnapshot = try snapshotStatement()
 
         let made = MadeParts<Part>()
         let running = DispatchGroup()
@@ -96,26 +96,26 @@ extension LightroomCatalogReader {
                 image: image.id, master: image.master, orientation: image.orientation, fileWidth: image.width,
                 fileHeight: image.height,
             )
-            if let row = settings[image.id], let settingsText {
-                try settingsText.bind(row, at: 1)
-                if try settingsText.step() {
-                    develop.text = settingsText.string(at: 0).flatMap(Self.settingsText)
-                    develop.processVersion = settingsText.string(at: 1).flatMap(Self.text)
-                    develop.digest = settingsText.string(at: 2).flatMap(Self.text)
+            if let row = settings[image.id], let fetchSettings {
+                try fetchSettings.bind(row, at: 1)
+                if try fetchSettings.step() {
+                    develop.text = fetchSettings.string(at: 0).flatMap(Self.settingsText)
+                    develop.processVersion = fetchSettings.string(at: 1).flatMap(Self.text)
+                    develop.digest = fetchSettings.string(at: 2).flatMap(Self.text)
                 }
-                settingsText.reset()
+                fetchSettings.reset()
             }
-            if let rows = snapshots[image.id], let snapshotText {
+            if let rows = snapshots[image.id], let fetchSnapshot {
                 develop.snapshots = try rows.compactMap { row in
-                    try snapshotText.bind(row, at: 1)
-                    defer { snapshotText.reset() }
-                    guard try snapshotText.step() else { return nil }
+                    try fetchSnapshot.bind(row, at: 1)
+                    defer { fetchSnapshot.reset() }
+                    guard try fetchSnapshot.step() else { return nil }
                     return LightroomCatalog.Snapshot(
-                        id: row, globalID: snapshotText.string(at: 0).flatMap(Self.text),
-                        snapshotID: snapshotText.string(at: 1).flatMap(Self.text),
-                        name: snapshotText.string(at: 2).flatMap(Self.text),
-                        text: snapshotText.string(at: 3).flatMap(Self.settingsText),
-                        digest: snapshotText.string(at: 4).flatMap(Self.text),
+                        id: row, globalID: fetchSnapshot.string(at: 0).flatMap(Self.text),
+                        snapshotID: fetchSnapshot.string(at: 1).flatMap(Self.text),
+                        name: fetchSnapshot.string(at: 2).flatMap(Self.text),
+                        text: fetchSnapshot.string(at: 3).flatMap(Self.settingsText),
+                        digest: fetchSnapshot.string(at: 4).flatMap(Self.text),
                     )
                 }
             }

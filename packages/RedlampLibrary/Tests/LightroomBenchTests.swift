@@ -17,8 +17,8 @@ struct LightroomBenchTests {
         let library: TemporaryFolder
         let index: LibraryIndex
         let catalog: URL
-        /// With `edits`, the photos' Develop settings' average size, in bytes.
-        var settingsSize = 0
+        /// With `edits`, the size of each photo's Develop settings, in bytes.
+        var settingsSizes: [Int] = []
 
         var paths: LibraryPaths {
             LibraryPaths(root: library.url)
@@ -58,7 +58,7 @@ struct LightroomBenchTests {
         }
 
         let maker = try LightroomCatalogMaker(at: library.url.appending(path: "Lightroom Catalog.lrcat"))
-        var settingsBytes = 0
+        var settingsSizes: [Int] = []
         try maker.transaction {
             let top = try maker.root(root + "/")
             var keywords: [Int64] = []
@@ -93,7 +93,7 @@ struct LightroomBenchTests {
                     orientation: edits ? (turned ? "BC" : "AB") : nil, size: size,
                 )
                 if edits {
-                    settingsBytes += try Self.edit(photo, number, folder: folderIDs[number / 1000], in: maker)
+                    try settingsSizes.append(Self.edit(photo, number, folder: folderIDs[number / 1000], in: maker))
                 }
                 for step in 0 ..< 3 {
                     try maker.tag(photo, keywords[(number * 7 + step * 131) % keywords.count])
@@ -125,12 +125,7 @@ struct LightroomBenchTests {
             }
         }
         maker.close()
-        return Library(
-            photos: photos, library: library, index: index, catalog: maker.url, settingsSize: settingsBytes / max(
-                count,
-                1,
-            ),
-        )
+        return Library(photos: photos, library: library, index: index, catalog: maker.url, settingsSizes: settingsSizes)
     }
 
     /// Photo `number`'s edit in the catalog: its settings, three history steps, two snapshots on a tenth and a
@@ -277,9 +272,12 @@ struct LightroomBenchTests {
         #expect(census.withSettings == count + copies && census.found == count + copies)
         #expect(census.historySteps == 3 * count && census.snapshots == 2 * ((count + 5) / 10))
         #expect(census.photosWithMasks == (count + 9) / 10)
+        let sizes = library.settingsSizes
+        let cores = ProcessInfo.processInfo.activeProcessorCount
         print("LIGHTROOM-CENSUS-BENCH \(count) photos and \(copies) virtual copies, their settings "
-            + "\(library.settingsSize) bytes on average: census in \(took), on \(ProcessInfo.processInfo.activeProcessorCount) "
-            + "cores (the report with edits has about 4.9 s for 100,000 photos)")
+            + "\(sizes.reduce(0, +) / max(sizes.count, 1)) bytes on average (\(sizes.min() ?? 0) to "
+            + "\(sizes.max() ?? 0)): census in \(took) on \(cores) cores; the report with edits has about 4.9 s "
+            + "for 100,000 photos")
         return took
     }
 
