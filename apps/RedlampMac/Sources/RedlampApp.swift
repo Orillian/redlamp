@@ -33,6 +33,7 @@ struct RedlampApp: App {
             FolderSettingsCopy.restoreMissing()
         }
         LensProfileIssues.current = { LCPProfileLibrary.user.issues }
+        DispatchQueue.global(qos: .utility).async { LCPProfileLibrary.user.prepare() }
         RedlampEngine.register(generativeFiller: { FluxFiller(model: $0) })
         let engine: any EditingEngine
         do {

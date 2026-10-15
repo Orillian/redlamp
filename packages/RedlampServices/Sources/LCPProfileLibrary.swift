@@ -63,9 +63,19 @@ public final class LCPProfileLibrary: Sendable {
         var modified: Date
         var size: Int
         /// The whole profile once read, else its first sub-profile alone.
-        var profile: LCPProfile?
+        var profile: LCPProfile? {
+            didSet {
+                lensKeys = first.map { first in
+                    ([first.lens, first.lensPrettyName].compactMap(\.self) + first.alternateLensNames)
+                        .map { LCPProfile.SubProfile.key($0) }
+                } ?? []
+            }
+        }
+
         var complete: Bool
         var issues: [String]
+        /// The first sub-profile's lens names as `LCPProfile.SubProfile.key` writes them.
+        var lensKeys: [String] = []
 
         /// The first sub-profile, which names the camera and lens every other does.
         var first: LCPProfile.SubProfile? {
@@ -96,6 +106,12 @@ public final class LCPProfileLibrary: Sendable {
     /// A library of Redlamp's Lens Profiles folder alone.
     public convenience init(directory: URL) {
         self.init(folders: [Folder(url: directory, kind: .redlamp)])
+    }
+
+    /// Reads every folder's files as far as matching first needs them, so the first photo opened
+    /// doesn't wait for Camera Raw's thousand-odd files (a third of a second on an M4 Max).
+    public func prepare() {
+        _ = firstSubProfiles()
     }
 
     /// Files in Redlamp's Lens Profiles folder that couldn't be read, or whose sub-profiles were
@@ -155,7 +171,8 @@ public final class LCPProfileLibrary: Sendable {
         let identified = photo.lens == nil ? identifiedLens(photo, among: listed) : nil
         let folderOrder = folders.map(\.kind)
         let candidates = listed.compactMap { file -> Candidate? in
-            guard let first = file.first, first.isRaw, let body = photo.body(first),
+            guard photo.mayName(file.lensKeys) || photo.lens == nil && file.first?.lensID == photo.lensID,
+                  let first = file.first, first.isRaw, let body = photo.body(first),
                   let lens = photo.lensMatch(first, identified: identified)
             else { return nil }
             return Candidate(url: file.url, folder: file.folder, body: body, lens: lens)
@@ -218,9 +235,7 @@ public final class LCPProfileLibrary: Sendable {
     /// whose focal lengths agree with the lens's, or with the photo's where the lens's aren't known.
     /// Nil where none or several do: makers' numbers aren't unique (Nikon's 165 is the 105 mm f/1.4E
     /// and the 35 mm f/1.8G alike), and the lens is then chosen by hand.
-    private func identifiedLens(
-        _ photo: PhotoIdentity, among listed: [(url: URL, folder: LensProfileFolder, first: LCPProfile.SubProfile?)],
-    ) -> String? {
+    private func identifiedLens(_ photo: PhotoIdentity, among listed: [Listed]) -> String? {
         guard let id = photo.lensID else { return nil }
         var lenses = Set<String>()
         for file in listed {
@@ -260,9 +275,17 @@ public final class LCPProfileLibrary: Sendable {
         }
     }
 
-    /// Every file of every folder, in the folders' order and by path, with its first sub-profile,
-    /// read again where its file changed. Redlamp's folder is read whole, as `profiles` reads it.
-    private func firstSubProfiles() -> [(url: URL, folder: LensProfileFolder, first: LCPProfile.SubProfile?)] {
+    /// A file as process 17 first looks at it: its first sub-profile, and its lens's names as keys.
+    private struct Listed {
+        var url: URL
+        var folder: LensProfileFolder
+        var first: LCPProfile.SubProfile?
+        var lensKeys: [String]
+    }
+
+    /// Every file of every folder, with its first sub-profile, read again where its file changed.
+    /// Redlamp's folder is read whole, as `profiles` reads it.
+    private func firstSubProfiles() -> [Listed] {
         _ = profiles(in: [.redlamp])
         let others = folders.filter { $0.kind != .redlamp }.flatMap { folder in
             listing(of: folder).map { (folder: folder.kind, file: $0) }
@@ -275,11 +298,12 @@ public final class LCPProfileLibrary: Sendable {
                     listed.url, folder: folder, modified: listed.modified, size: listed.size, firstOnly: true,
                 )
             }
-            let order = folders.map(\.kind)
-            return files.map { (url: $0.key, folder: $0.value.folder, first: $0.value.first) }.sorted { a, b in
-                let (folderA, folderB) = (order.firstIndex(of: a.folder) ?? 0, order.firstIndex(of: b.folder) ?? 0)
-                return folderA != folderB ? folderA < folderB : a.url.path < b.url.path
-            }
+            return files.map { Listed(
+                url: $0.key,
+                folder: $0.value.folder,
+                first: $0.value.first,
+                lensKeys: $0.value.lensKeys,
+            ) }
         }
     }
 
@@ -395,16 +419,35 @@ private struct PhotoIdentity {
     let lensID: Int?
     let focalLength: Double?
     let lensFocalRange: ClosedRange<Double>?
+    /// The lens's name as a key, with each of the photo's makes left off its start: a profile's
+    /// lens name can match only if its key ends with one.
+    let lensKeys: [String]
 
     init?(_ info: ImageInfo) {
         guard let make = info.make else { return nil }
-        cameras = [(make, info.model)] + (info.canonicalMake.map { [($0, info.canonicalModel ?? info.model)] } ?? [])
-        makes = Set(cameras.map { Self.makeKey($0.make) })
-        lens = info.lens.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        let cameras = [(make: make, model: info.model)]
+            + (info.canonicalMake.map { [(make: $0, model: info.canonicalModel ?? info.model)] } ?? [])
+        let makes = Set(cameras.map { Self.makeKey($0.make) })
+        let lens = info.lens.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        guard lens != nil || info.lensID != nil else { return nil }
+        self.cameras = cameras
+        self.makes = makes
+        self.lens = lens
         lensID = info.lensID
         focalLength = info.focalLength
         lensFocalRange = info.lensFocalRange
-        guard lens != nil || lensID != nil else { return nil }
+        let dropped = makes.union(cameras.map { LCPProfile.SubProfile.makeKey($0.make) })
+        lensKeys = lens.map { lens in
+            Array(Set([LCPProfile.SubProfile.key(lens)] + dropped
+                    .map { LCPProfile.SubProfile.key(lens, dropping: [$0]) }))
+                .filter { !$0.isEmpty }
+        } ?? []
+    }
+
+    /// Whether a profile whose lens names have these keys may be of the photo's lens, before
+    /// `lensMatch` decides: `key` leaves off only a make at a name's start.
+    func mayName(_ keys: [String]) -> Bool {
+        keys.contains { key in lensKeys.contains { key.hasSuffix($0) } }
     }
 
     func body(_ subProfile: LCPProfile.SubProfile) -> Body? {
