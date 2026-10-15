@@ -17,18 +17,22 @@ public final class RecipeCatalog {
     @ObservationIgnored private var importedLists: Set<String> = []
     /// The looks given to the engine, by id, version and table hash.
     @ObservationIgnored private var registered: Set<String> = []
-    /// Where the firmware model comes from while its switch is on, and what reading it found.
-    public internal(set) var firmwareStatus: String?
-    @ObservationIgnored var firmwareSource: FirmwareModelSource?
-    @ObservationIgnored var firmwareTask: Task<Void, Never>?
-    @ObservationIgnored var defaultsObserver: (any NSObjectProtocol)?
+    #if !REDLAMP_APP_STORE
+        /// Where the firmware model comes from while its switch is on, and what reading it found.
+        public internal(set) var firmwareStatus: String?
+        @ObservationIgnored var firmwareSource: FirmwareModelSource?
+        @ObservationIgnored var firmwareTask: Task<Void, Never>?
+        @ObservationIgnored var defaultsObserver: (any NSObjectProtocol)?
+    #endif
 
     public init(engine: any EditingEngine, library: RecipeLibrary = RecipeLibrary()) {
         self.engine = engine
         self.library = library
         engine.registerBaseLooks(BuiltInBaseLooks.all.map(Self.source))
         registerLooks()
-        observeFirmwareSwitch()
+        #if !REDLAMP_APP_STORE
+            observeFirmwareSwitch()
+        #endif
     }
 
     private static func key(_ package: BaseLookPackage) -> String {

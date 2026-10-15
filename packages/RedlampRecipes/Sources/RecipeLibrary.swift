@@ -50,7 +50,11 @@ public final class RecipeLibrary {
     /// The firmware model while its switch is on: card recipes resolve through it
     /// (`resolvingCard`), and `firmwareRecipes` offers each of its simulations.
     public var firmwareModel: FirmwareFilmModel? {
-        didSet { firmwareRecipes = firmwareModel.map(Self.firmwareRecipes(model:)) ?? [] }
+        didSet {
+            #if !REDLAMP_APP_STORE
+                firmwareRecipes = firmwareModel.map(Self.firmwareRecipes(model:)) ?? []
+            #endif
+        }
     }
 
     public private(set) var firmwareRecipes: [Recipe] = []

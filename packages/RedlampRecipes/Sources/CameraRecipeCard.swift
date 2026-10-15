@@ -363,7 +363,11 @@ public extension CameraRecipeCard {
     ) -> Recipe {
         let card = clamped
         let slot = card.slot ?? .standard
-        let look = firmware.flatMap { try? FirmwareLook.package(firmwareSettings, model: $0) }
+        #if REDLAMP_APP_STORE
+            let look: BaseLookPackage? = nil
+        #else
+            let look = firmware.flatMap { try? FirmwareLook.package(firmwareSettings, model: $0) }
+        #endif
         return Recipe(
             id: id,
             name: name,
@@ -379,15 +383,17 @@ public extension CameraRecipeCard {
         )
     }
 
-    /// The firmware look the card stands for: its slot's simulation at its settings.
-    var firmwareSettings: FirmwareLookSettings {
-        let card = clamped
-        return FirmwareLookSettings(
-            simulation: card.slot.flatMap(FirmwareSimulation.init(slot:)) ?? .standard,
-            dynamicRange: Int(card.dynamicRange.percent), highlight: card.highlight, shadow: card.shadow,
-            color: card.color, warmCool: card.monochromeWarmCool, magentaGreen: card.monochromeMagentaGreen,
-        )
-    }
+    #if !REDLAMP_APP_STORE
+        /// The firmware look the card stands for: its slot's simulation at its settings.
+        var firmwareSettings: FirmwareLookSettings {
+            let card = clamped
+            return FirmwareLookSettings(
+                simulation: card.slot.flatMap(FirmwareSimulation.init(slot:)) ?? .standard,
+                dynamicRange: Int(card.dynamicRange.percent), highlight: card.highlight, shadow: card.shadow,
+                color: card.color, warmCool: card.monochromeWarmCool, magentaGreen: card.monochromeMagentaGreen,
+            )
+        }
+    #endif
 }
 
 public extension Recipe {
