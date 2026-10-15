@@ -17,7 +17,7 @@ public struct LightroomPresetImport: Sendable {
     }
 }
 
-/// How each of a preset's settings was carried over.
+/// How each of a preset's or a photo's settings was carried over.
 public struct LightroomImportReport: Sendable, Equatable {
     public enum Outcome: String, Sendable, CaseIterable {
         /// Redlamp has the same control on the same scale.
@@ -28,20 +28,50 @@ public struct LightroomImportReport: Sendable, Equatable {
         case ignored
     }
 
+    /// Why a photo's setting was left out of its edit, which the import's report groups photos by.
+    public enum Reason: Sendable, Hashable {
+        /// Only files Lightroom made can settle how it converts: where masks and spots sit, Upright, panel
+        /// switches, the catalog's rotation codes and Point Color's fields.
+        case notYetChecked
+        /// Process 2003's or 2010's tone, which EDT-31 is to convert as Lightroom's Update to Current Process
+        /// does; until then the photo keeps Redlamp's default tone.
+        case earlierProcess
+        /// A Lightroom feature Redlamp doesn't have, with the roadmap row that would bring it, if one would
+        /// (`OTH-03` for Lens Blur).
+        case notInRedlamp(row: String?)
+        /// A value that can't be read.
+        case unreadable
+        /// A setting Redlamp doesn't know.
+        case unknown
+    }
+
+    /// How fully a photo's edit converts.
+    public enum Conversion: String, Sendable, CaseIterable {
+        /// Every setting is mapped.
+        case full
+        /// Some settings are approximated, and none is left out.
+        case approximated
+        /// Some settings are left out.
+        case leftOut
+    }
+
     public struct Entry: Sendable, Equatable {
         /// The Camera Raw setting's name without its namespace, for example `Exposure2012`.
         public var setting: String
         public var outcome: Outcome
         public var note: String?
+        /// Why a photo's setting was left out; nil for one carried over, and for a preset's.
+        public var reason: Reason?
 
-        public init(setting: String, outcome: Outcome, note: String? = nil) {
+        public init(setting: String, outcome: Outcome, note: String? = nil, reason: Reason? = nil) {
             self.setting = setting
             self.outcome = outcome
             self.note = note
+            self.reason = reason
         }
     }
 
-    /// The preset's `crs:ProcessVersion`, if it has one.
+    /// The preset's or photo's `crs:ProcessVersion`, if it has one.
     public var processVersion: String?
     public var entries: [Entry]
 
@@ -52,6 +82,23 @@ public struct LightroomImportReport: Sendable, Equatable {
 
     public func entries(_ outcome: Outcome) -> [Entry] {
         entries.filter { $0.outcome == outcome }
+    }
+
+    /// How fully a photo's edit converts, by its settings' outcomes.
+    public var conversion: Conversion {
+        if entries.contains(where: { $0.outcome == .ignored }) {
+            return .leftOut
+        }
+        return entries.contains { $0.outcome == .approximated } ? .approximated : .full
+    }
+
+    /// Why settings were left out, each reason once, in the report's order.
+    public var reasons: [Reason] {
+        var reasons: [Reason] = []
+        for reason in entries.compactMap(\.reason) where !reasons.contains(reason) {
+            reasons.append(reason)
+        }
+        return reasons
     }
 }
 
