@@ -837,9 +837,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
     }
 
     public func setChosenCameraProfiles(_ urls: [URL]) {
-        guard let profileLooks else { return }
-        profileLooks.library.setChosen(urls)
-        profileLooks.invalidate()
+        profileLooks?.library.setChosen(urls)
     }
 
     public func cameraProfileIssue(_ url: URL) async -> String? {

@@ -299,7 +299,9 @@ final class CameraProfileLooks: @unchecked Sendable {
     let library: CameraProfileLibrary
     private let device: any MTLDevice
     private let lock = NSLock()
-    private var cameras: [String: [Entry]] = [:]
+    /// Each camera's looks, and the library's revision they were found at: another engine sharing
+    /// the library may have chosen files since.
+    private var cameras: [String: (revision: Int, entries: [Entry])] = [:]
     private var calibrations: [String: ProfileCalibration] = [:]
 
     init(library: CameraProfileLibrary, device: any MTLDevice) {
@@ -312,21 +314,17 @@ final class CameraProfileLooks: @unchecked Sendable {
     func looks(make: String?, model: String?, refresh: Bool) -> (found: [Entry], gone: [BaseLookReference]) {
         guard let make, let model else { return ([], []) }
         let key = "\(make)\u{1F}\(model)"
-        if !refresh, let cached = lock.withLock({ cameras[key] }) {
-            return (cached, [])
+        let revision = library.revision
+        if !refresh, let cached = lock.withLock({ cameras[key] }), cached.revision == revision {
+            return (cached.entries, [])
         }
         let entries = entries(for: library.profiles(make: make, model: model))
         let before = lock.withLock {
-            defer { cameras[key] = entries }
-            return cameras[key] ?? []
+            defer { cameras[key] = (revision, entries) }
+            return cameras[key]?.entries ?? []
         }
         let ids = Set(entries.map(\.look.reference.id))
         return (entries, before.map(\.look.reference).filter { !ids.contains($0.id) })
-    }
-
-    /// Forgets what was found, after the photographer chooses other files.
-    func invalidate() {
-        lock.withLock { cameras.removeAll() }
     }
 
     private func calibration(_ dcp: DCPProfile) -> ProfileCalibration {

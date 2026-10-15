@@ -375,13 +375,11 @@ struct AdobeProfileLookTests {
             )
             try data.write(to: url)
         }
-        let looks = CameraProfileLooks(
-            library: CameraProfileLibrary(locations: .init(
-                cameraRaw: root.appending(path: "Shared"),
-                userCameraRaw: nil,
-            )),
-            device: device,
-        )
+        let library = CameraProfileLibrary(locations: .init(
+            cameraRaw: root.appending(path: "Shared"),
+            userCameraRaw: nil,
+        ))
+        let looks = CameraProfileLooks(library: library, device: device)
         let entries = looks.looks(make: "Canon", model: "EOS R5", refresh: true).found
         #expect(entries.map(\.descriptor.reference.name) == [
             "Adobe Color", "Adobe Monochrome", "Adobe Standard", "Camera Faithful", "B&W 01",
@@ -397,11 +395,19 @@ struct AdobeProfileLookTests {
         #expect(monochrome.descriptor.summary.contains("Clarity +8"))
         #expect(looks.looks(make: "Canon", model: "EOS R6", refresh: true).found.isEmpty)
 
+        // Files chosen through the library, by any engine sharing it, are found without a refresh.
+        let chosen = root.appending(path: "Grain.xmp")
+        try Synthetic.xmpLook(name: "Grain", baseProfile: nil, cluster: nil, lookTable: table.with(shift: 9))
+            .write(to: chosen)
+        #expect(looks.looks(make: "Canon", model: "EOS R5", refresh: false).found.count == entries.count)
+        library.setChosen([chosen])
+        #expect(looks.looks(make: "Canon", model: "EOS R5", refresh: false).found.count == entries.count + 1)
+
         // A profile taken off the Mac is gone at the next listing, with the looks over it.
         try FileManager.default.removeItem(at: root.appending(path: "Shared/CameraProfiles/Adobe Standard"))
         let after = looks.looks(make: "Canon", model: "EOS R5", refresh: true)
         #expect(after.found.map(\.descriptor.reference.name) == ["Camera Faithful"])
-        #expect(Set(after.gone.map(\.name)) == ["Adobe Color", "Adobe Monochrome", "Adobe Standard", "B&W 01"])
+        #expect(Set(after.gone.map(\.name)) == ["Adobe Color", "Adobe Monochrome", "Adobe Standard", "B&W 01", "Grain"])
         let registry = try BaseLookRegistry(device: device)
         entries.forEach { registry.register($0.look) }
         registry.unregister(after.gone)

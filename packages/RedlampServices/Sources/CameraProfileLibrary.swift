@@ -101,9 +101,17 @@ public final class CameraProfileLibrary: Sendable {
         locations.withLock { $0 }
     }
 
+    /// Moves when the chosen files change, so what was found before can be found again.
+    public var revision: Int {
+        revisions.withLock { $0 }
+    }
+
+    private let revisions = Mutex(0)
+
     /// The files the photographer chose, replacing the last ones.
     public func setChosen(_ urls: [URL]) {
         locations.withLock { $0.chosen = urls }
+        revisions.withLock { $0 += 1 }
     }
 
     /// Files that couldn't be read, with the reasons, as of the last listing.
