@@ -146,6 +146,15 @@ interface Pick {
   result?: string;
 }
 
+/** Words the owner posts or sends himself: announcements, templates, posts. */
+interface Draft {
+  id: string;
+  label: string;
+  /** Where it goes, and when. */
+  where: string;
+  text: string;
+}
+
 interface Room {
   /** The agent's reading of each application on the rubric, by issue number. */
   scores: Record<string, Scores>;
@@ -154,6 +163,7 @@ interface Room {
   candidates: Candidate[];
   cohort: Ambassador[];
   picks: Pick[];
+  drafts: Draft[];
 }
 
 const room: Room = {
@@ -162,13 +172,14 @@ const room: Room = {
   candidates: [],
   cohort: [],
   picks: [],
+  drafts: [],
 };
 
 const applications: Application[] = /*APPLICATIONS:BEGIN*/ [] /*APPLICATIONS:END*/;
 
 // ---------------------------------------------------------------- rendering (keys sit on wrapper divs)
 
-const TABS = ["Overview", "Applications", "Candidates", "Ambassadors", "Picks", "Plan", "Decisions", "Log", "Measurements"] as const;
+const TABS = ["Overview", "Applications", "Candidates", "Drafts", "Ambassadors", "Picks", "Plan", "Decisions", "Log", "Measurements"] as const;
 type Tab = (typeof TABS)[number];
 
 const STEP_LABEL: Record<StepStatus, string> = {
@@ -818,6 +829,24 @@ function CandidatesTab({ marks, setMarks }: { marks: Marked<Outreach>; setMarks:
   );
 }
 
+function DraftsTab() {
+  return (
+    <Stack gap={22}>
+      {room.drafts.map((draft) => (
+        <div key={draft.id}>
+          <Stack gap={6}>
+            <Text weight="semibold">{draft.label}</Text>
+            <Text size="small" tone="tertiary">
+              {draft.where}
+            </Text>
+            <CopyText text={draft.text} />
+          </Stack>
+        </div>
+      ))}
+    </Stack>
+  );
+}
+
 function CohortTab() {
   return (
     <Table
@@ -862,6 +891,7 @@ export default function WorkstreamCanvas() {
     Overview: true,
     Applications: applications.length > 0,
     Candidates: room.candidates.length > 0,
+    Drafts: room.drafts.length > 0,
     Ambassadors: room.cohort.length > 0,
     Picks: room.picks.length > 0,
     Plan: w.plan.length > 0,
@@ -924,6 +954,7 @@ export default function WorkstreamCanvas() {
       {tab === "Overview" && <OverviewTab now={now} marks={marks} setMarks={setMarks} />}
       {tab === "Applications" && <ApplicationsTab marks={triage} setMarks={setTriage} />}
       {tab === "Candidates" && <CandidatesTab marks={outreach} setMarks={setOutreach} />}
+      {tab === "Drafts" && <DraftsTab />}
       {tab === "Ambassadors" && <CohortTab />}
       {tab === "Picks" && <PicksTab />}
       {tab === "Plan" && <PlanTab />}

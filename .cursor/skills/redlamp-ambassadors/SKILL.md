@@ -11,7 +11,7 @@ Redlamp's ambassadors are photographers who send an edit a month made in Redlamp
 
 | What | Where |
 | --- | --- |
-| The room | `~/.cursor/projects/Users-pedrogomes-src-darkroom/canvases/ws-ambassadors.canvas.tsx`, from [template.tsx](template.tsx). It began as the campaign's workstream canvas and keeps that name. Edit its `workstream` object (Overview, Plan, Decisions, Log) and its `room` object (`scores`, `replies`, `candidates`, `cohort`, `picks`); [room.py](room.py) writes the APPLICATIONS block. A change to the rendering goes into the template and the room together. |
+| The room | `~/.cursor/projects/Users-pedrogomes-src-darkroom/canvases/ws-ambassadors.canvas.tsx`, from [template.tsx](template.tsx). It began as the campaign's workstream canvas and keeps that name. Edit its `workstream` object (Overview, Plan, Decisions, Log) and its `room` object (`scores`, `replies`, `candidates`, `drafts`, `cohort`, `picks`); [room.py](room.py) writes the APPLICATIONS block. A change to the rendering goes into the template and the room together. |
 | The owner's marks | `ws-ambassadors.canvas.data.json` beside it: `needsYou`, `applications` (by issue number: `shortlist`, `accept` or `decline`) and `candidates` (by candidate ID: `sent`, `replied`, `applied` or `not now`). Only the canvas writes it. |
 | Applications | Issues in the private `pdcgomes/redlamp-ambassadors`, filed by the site's relay (`web/lib/ambassadors.ts`, `web/README.md`), each with its photos and one `.redlamp` sidecar stored beside it, and its fields in a hidden `<!-- redlamp-ambassador v1 {…} -->` marker. |
 | Thumbnails | `~/Library/Caches/redlamp-ambassadors/<number>/`, made by `room.py sync`, never committed |
@@ -40,6 +40,7 @@ Score each candidate and applicant 1 to 3 on photography, sharing (do they expla
 
 - Wave 0 is warm: the Discord, Ko-fi supporters, the Reddit launch thread's commenters, GitHub stargazers whose profiles show photography (`gh api repos/pdcgomes/redlamp/stargazers`, then each profile), and people the owner names. Wave 1 is 25 to 40 photographers with roughly 2,000 to 50,000 followers who post edit breakdowns, recipes or film looks and edit on a Mac.
 - Never invent a person, a handle or a figure. Add only people whose public profile you or the owner have seen, with `source` saying where.
+- `drafts` holds the words the owner posts or sends himself (announcements, the invitation template, the follow-up, the open call's posts), each with where it goes; the Drafts tab gives each a Copy button.
 - An invitation is personal: one line about their work that's true and specific, the offer in two lines, the ask (edit a photo in Redlamp, apply at redlamp.app/join), and nothing else. Write in the owner's voice, as `.cursor/skills/redlamp-blog/SKILL.md` describes (Writing in the owner's voice). The owner sends every DM and email; agents never contact anyone.
 
 ## The cohort
