@@ -100,7 +100,7 @@
     /// The keys as customised in Settings › Shortcuts (LIB-36), the menu bar's keys each reaching their own item, and
     /// the palette's commands run last, its actions on the selection and what else a row does on ⌘↵ (LIB-19).
     enum ShortcutScenarios {
-        static let all: [Scenario] = [oneKeyEach, editor, paletteActions]
+        static let all: [Scenario] = [oneKeyEach, editor, paletteActions, askBeforeQuitting]
 
         /// The menu bar, in Library and in Develop, with each preset's keys: no two items have one key, no item with
         /// a key and ⇧ comes ahead of an action's item with the key (the driver's presses would reach it first, as ⌘R
@@ -245,6 +245,70 @@
             if app.settingsControlsDrawnBySwiftUI {
                 throw app.leftOutSettingsStep("Settings › Shortcuts' Keys From menu")
             }
+        }
+
+        /// UX-53: ⌘Q asks before quitting, as it does until turned off; Esc answers Cancel and Redlamp stays open,
+        /// Don't ask again turns the question off, and Settings › Shortcuts' checkbox, following it, turns it back on.
+        static let askBeforeQuitting = Scenario(
+            "shortcuts.ask-before-quitting",
+            "⌘Q asks before quitting, Cancel keeps Redlamp open, Don't ask again turns the question off and Settings › "
+                + "Shortcuts turns it back on",
+            claims: [.feature("workspace.shortcuts"), .feature("workspace.settings")],
+        ) { app in
+            let quit = KeyCombo.char("q", command: true), setting = "settings.shortcuts.ask-before-quitting"
+            defer {
+                try? app.main { _ in UserDefaults.standard.removeObject(forKey: QuitConfirmation.defaultsKey) }
+                try? app.closeSettings()
+            }
+            try app.expect(try app.main { _ in QuitConfirmation.asks }, "⌘Q doesn't ask at first")
+            // ⌘Q is only pressed once it's known to reach the question: let through to Quit, it would end the run.
+            let reachesQuit = try app.main { _ -> Bool in
+                guard let menu = NSApp.mainMenu else { return false }
+                return try QuitConfirmation.isQuitKey(Keyboard.event(quit), in: menu)
+            }
+            try app.expect(reachesQuit, "⌘Q doesn't reach Quit Redlamp in the menu bar")
+
+            /// Presses ⌘Q and waits for the question, returning its text and its buttons' titles.
+            func ask() throws -> [String] {
+                try app.press(quit)
+                try app.waitForSheet("the question before quitting")
+                return try app.main { _ in
+                    guard let content = NSApp.modalWindow?.contentView else { return [] }
+                    return Views.all(NSTextField.self, in: content).map(\.stringValue).filter { !$0.isEmpty }
+                        + Views.all(NSButton.self, in: content).map(\.title)
+                }
+            }
+
+            let shown = try ask()
+            try app.expect(
+                ["Quit Redlamp?", "Quit", "Cancel", "Don't ask again"].allSatisfy(shown.contains),
+                "The question shows \(shown)",
+            )
+            try app.expect(try app.pressInSheet(KeyCombo(.escape)), "Esc didn't answer the question")
+            try app.waitForNoSheet("the question")
+            try app.expect(try app.main { _ in QuitConfirmation.asks }, "Cancel turned the question off")
+            app.covered(.feature("workspace.shortcuts"), via: .key)
+
+            _ = try ask()
+            try app.main { _ in
+                guard let content = NSApp.modalWindow?.contentView,
+                      let box = Views.all(NSButton.self, in: content).first(where: { $0.title == "Don't ask again" })
+                else { throw ScenarioFailure("The question has no Don't ask again") }
+                box.performClick(nil)
+            }
+            try app.expect(try app.pressInSheet(KeyCombo(.escape)), "Esc didn't answer the question")
+            try app.waitForNoSheet("the question")
+            try app.wait("Don't ask again to turn the question off") { _ in !QuitConfirmation.asks }
+
+            guard !app.settingsControlsDrawnBySwiftUI else {
+                throw app.leftOutSettingsStep("Settings › Shortcuts' Ask before quitting with ⌘Q")
+            }
+            try app.openSettings(tab: "Shortcuts")
+            try app.expect(try !app.isOn(setting, inWindowTitled: "Shortcuts"), "Settings › Shortcuts' checkbox is on")
+            try app.click(setting, inWindowTitled: "Shortcuts")
+            try app.wait("Settings › Shortcuts to turn the question back on") { _ in QuitConfirmation.asks }
+            try app.closeSettings()
+            app.covered(.feature("workspace.settings"), via: .mouse)
         }
 
         /// The palette in Library: what can be done to the photos selected listed first and run on all of them, the
