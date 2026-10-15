@@ -50,6 +50,19 @@ public struct ImageInfo: Codable, Sendable, Hashable {
     public var exposureTime: Double?
     public var aperture: Double?
     public var focalLength: Double?
+    /// The frame's crop factor: 35 mm film's diagonal over the frame's (1 for full frame, about 1.5
+    /// for APS-C, 2 for Four Thirds), following a crop mode; nil where the file doesn't tell. A lens
+    /// profile made on another body is scaled by it (LNS-14).
+    public var cropFactor: Double?
+    /// The maker's number for the lens where its maker note gives one (Nikon's LensIDNumber), which
+    /// matches a lens profile when the file doesn't name the lens (LNS-14).
+    public var lensID: Int?
+    /// The lens's focal lengths, shortest and longest, in millimetres, where the maker note gives them.
+    public var lensFocalRange: ClosedRange<Double>?
+    /// LibRaw's canonical name for the camera, as its camera list spells it: one name for a body sold
+    /// under several (Canon's EOS 600D, Rebel T3i and Kiss X5). Nil where LibRaw gives none.
+    public var canonicalMake: String?
+    public var canonicalModel: String?
     public var captureDate: Date?
     /// The camera's recorded white balance; `nil` for images that are not raw.
     public var asShotWhiteBalance: WhiteBalanceValue?
@@ -59,8 +72,8 @@ public struct ImageInfo: Codable, Sendable, Hashable {
     /// The process version the embedded look needs, when it relies on a stage older edits
     /// don't apply (ProRAW's tone curve on its gain table map, process 5).
     public var embeddedBaseLookProcess: Int?
-    /// The lens correction the file carries (DNG opcodes or the maker's tags), applied by
-    /// Enable Profile Corrections.
+    /// The lens correction the file carries (DNG opcodes or the maker's tags), else the user's lens
+    /// profile for the photo's lens, applied by Enable Profile Corrections from its process version.
     public var lensCorrection: LensCorrection?
     /// A raw's BaselineExposure (0 when it states none), which an estimated exposure anchor
     /// carries when it renders (`ExposureAnchor.stops(baseline:)`); nil for bitmaps.

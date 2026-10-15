@@ -49,14 +49,19 @@ extension LCPResource {
     static let xml = "http://www.w3.org/XML/1998/namespace"
 
     /// The resources an XMP packet describes (the node elements of its `rdf:RDF`); nil when the
-    /// data isn't well-formed XML.
-    static func read(_ data: Data) -> [LCPResource]? {
+    /// data isn't well-formed XML. With `property`, reading stops once the first item of that
+    /// list property has been read, and the resources hold what was read up to it.
+    static func read(
+        _ data: Data, stoppingAfterFirstItemOf property: (name: String, namespace: String)? = nil,
+    ) -> [LCPResource]? {
         let tree = XMLTree()
+        tree.stopAfterFirstItemOf = property
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
         parser.shouldReportNamespacePrefixes = true
         parser.delegate = tree
-        guard parser.parse(), let root = tree.root else { return nil }
+        let parsed = parser.parse()
+        guard parsed || tree.stopped, let root = tree.root else { return nil }
         return root.first { $0.namespace == rdf && $0.name == "RDF" }?.children.map(node) ?? []
     }
 
@@ -129,6 +134,10 @@ private final class XMLTree: NSObject, XMLParserDelegate {
     private var open: [Element] = []
     /// Each prefix's namespaces, innermost last.
     private var prefixes: [String: [String]] = [:]
+    /// The list property whose first item ends the reading, and whether it has: the elements
+    /// still open then close where they are.
+    var stopAfterFirstItemOf: (name: String, namespace: String)?
+    private(set) var stopped = false
 
     func parser(_: XMLParser, didStartMappingPrefix prefix: String, toURI namespaceURI: String) {
         prefixes[prefix, default: []].append(namespaceURI)
@@ -160,8 +169,23 @@ private final class XMLTree: NSObject, XMLParserDelegate {
         open[open.count - 1].text += string
     }
 
-    func parser(_: XMLParser, didEndElement _: String, namespaceURI _: String?, qualifiedName _: String?) {
+    func parser(_ parser: XMLParser, didEndElement _: String, namespaceURI _: String?, qualifiedName _: String?) {
         guard let element = open.popLast() else { return }
+        let endsReading = stopAfterFirstItemOf.map { property in
+            element.namespace == LCPResource.rdf && element.name == "li" && open.count >= 2
+                && open[open.count - 2].namespace == property.namespace && open[open.count - 2].name == property.name
+        } ?? false
+        close(element)
+        if endsReading {
+            stopped = true
+            parser.abortParsing()
+            while let element = open.popLast() {
+                close(element)
+            }
+        }
+    }
+
+    private func close(_ element: Element) {
         if open.isEmpty {
             root = element
         } else {

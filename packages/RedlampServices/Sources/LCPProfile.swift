@@ -15,8 +15,14 @@ struct LCPProfile: Sendable {
         var cameraPrettyName: String?
         /// The lens as the reference photos' metadata names it.
         var lens: String?
+        /// Other names the lens's metadata gives it, on other bodies or firmware.
+        var alternateLensNames: [String] = []
         /// The lens as the profile's author names it.
         var lensPrettyName: String?
+        /// The maker's number for the lens (Nikon's LensIDNumber in Adobe's Nikon profiles).
+        var lensID: Int?
+        /// The lens's focal lengths in millimetres, from its LensInfo.
+        var lensFocalRange: ClosedRange<Double>?
         var profileName: String?
         /// Millimetres.
         var focalLength: Double
@@ -71,9 +77,13 @@ extension LCPProfile {
     static let photoshop = "http://ns.adobe.com/photoshop/1.0/"
     static let stCamera = "http://ns.adobe.com/photoshop/1.0/camera-profile"
 
-    /// The sub-profiles are the items of `photoshop:CameraProfiles`.
-    init(data: Data) throws {
-        guard let resources = LCPResource.read(data) else { throw ReadError(description: "not an XML file") }
+    /// The sub-profiles are the items of `photoshop:CameraProfiles`. With `firstOnly`, reading stops
+    /// after the first, which names the camera and lens as every other does: a profile describes
+    /// one camera and lens.
+    init(data: Data, firstOnly: Bool = false) throws {
+        guard let resources = LCPResource.read(
+            data, stoppingAfterFirstItemOf: firstOnly ? (name: "CameraProfiles", namespace: Self.photoshop) : nil,
+        ) else { throw ReadError(description: "not an XML file") }
         let items = resources.flatMap { $0.resources(under: "CameraProfiles", in: Self.photoshop) }
         guard !items.isEmpty else { throw ReadError(description: "no camera profiles") }
         var subProfiles: [SubProfile] = []
@@ -92,6 +102,19 @@ extension LCPProfile.SubProfile {
     /// The name to show for the profile.
     var name: String {
         profileName ?? lensPrettyName ?? lens ?? make
+    }
+
+    /// The shortest and longest focal lengths of an EXIF LensInfo written out, `24/1 70/1 28/10 28/10`.
+    static func focalRange(_ lensInfo: String) -> ClosedRange<Double>? {
+        let values = lensInfo.split(whereSeparator: \.isWhitespace).prefix(2).map { value -> Double? in
+            let parts = value.split(separator: "/", maxSplits: 1).map { Double($0) }
+            guard let numerator = parts.first ?? nil else { return nil }
+            guard parts.count == 2 else { return numerator }
+            return parts[1].flatMap { $0 > 0 ? numerator / $0 : nil }
+        }
+        guard values.count == 2, let shortest = values[0], let longest = values[1], shortest > 0, longest >= shortest
+        else { return nil }
+        return shortest ... longest
     }
 
     static func read(_ item: LCPResource) -> Result<Self, LCPProfile.ReadError> {
@@ -128,7 +151,10 @@ extension LCPProfile.SubProfile {
             uniqueCameraModel: item.string("UniqueCameraModel"),
             cameraPrettyName: item.string("CameraPrettyName"),
             lens: item.string("Lens"),
+            alternateLensNames: item.strings("AlternateLensNames"),
             lensPrettyName: item.string("LensPrettyName"),
+            lensID: item.string("LensID").flatMap { Int($0) },
+            lensFocalRange: item.string("LensInfo").flatMap(Self.focalRange),
             profileName: item.string("ProfileName"),
             focalLength: focalLength,
             apertureValue: apertureValue,
@@ -167,8 +193,10 @@ extension LCPProfile.Model {
 // MARK: - Matching
 
 extension LCPProfile.SubProfile {
+    /// How a photo's lens matches a sub-profile's, weakest first. `lensMatch` gives the three every
+    /// process uses; process 17 adds another name the lens goes by and the maker's number for it.
     enum LensMatch: Comparable {
-        case unmatched, prettyName, lens
+        case unmatched, lensID, alternate, prettyName, lens
     }
 
     /// Whether this is the photo's camera. EXIF's names (`NIKON CORPORATION`, `NIKON Z 6`) and
@@ -224,6 +252,16 @@ private extension LCPResource {
 
     func number(_ name: String) -> Double? {
         string(name).flatMap { Double($0) }.flatMap { $0.isFinite ? $0 : nil }
+    }
+
+    /// The literal items of a list property (`rdf:Seq`, `rdf:Bag` or `rdf:Alt`).
+    func strings(_ name: String) -> [String] {
+        guard case let .list(items)? = value(name, in: LCPProfile.stCamera) else { return [] }
+        return items.compactMap { item in
+            guard case let .literal(text) = item else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
     }
 
     func resource(_ name: String) -> LCPResource? {

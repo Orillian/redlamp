@@ -59,6 +59,18 @@ public struct LensCorrection: Codable, Sendable, Hashable {
     /// The lens a user's profile names, which the Lens panel shows (LNS-11); nil for a correction
     /// the file carries. Only a label: the correction renders the same without it.
     public var profileName: String?
+    /// The folder a lens profile was found in (LNS-16), and the camera it was made on where that's
+    /// another than the photo's (LNS-14). Only labels.
+    public var profileFolder: LensProfileFolder?
+    public var profileCamera: String?
+    /// The first process version whose matching finds this lens profile, where it's later than its
+    /// source's: process 17 matches profiles made on other bodies and those in Camera Raw's folders.
+    public var profileProcess: Int?
+
+    /// The first process version that applies the correction.
+    public var process: Int {
+        max(source.process, profileProcess ?? 0)
+    }
 
     public init(
         source: Source, center: SIMD2<Double>, radii: [Double], distortion: [SIMD3<Double>], vignetting: [Double],
@@ -147,6 +159,36 @@ public struct LensCorrection: Codable, Sendable, Hashable {
         let (w, h) = (Double(size.width), Double(size.height))
         let reach = SIMD2(max(center.x, 1 - center.x) * w, max(center.y, 1 - center.y) * h)
         return SIMD2(w, h) / simd_length(reach)
+    }
+}
+
+/// Where lens profiles are kept (LNS-04, LNS-16).
+public enum LensProfileFolder: String, Codable, Sendable, CaseIterable {
+    /// Redlamp's Lens Profiles folder, in Application Support.
+    case redlamp
+    /// The photographer's own Camera Raw lens profiles, in `~/Library/Application
+    /// Support/Adobe/CameraRaw/LensProfiles`.
+    case cameraRawUser
+    /// The lens profiles Lightroom Classic and Camera Raw install, in
+    /// `/Library/Application Support/Adobe/CameraRaw/LensProfiles/1.0`.
+    case cameraRaw
+
+    /// The folder in a sentence: "a lens profile in …".
+    public var name: String {
+        switch self {
+        case .redlamp: "your Lens Profiles folder"
+        case .cameraRawUser: "your Camera Raw lens profiles"
+        case .cameraRaw: "Camera Raw's lens profiles"
+        }
+    }
+
+    /// The folder in a few words, as the Lens panel labels a profile.
+    public var shortName: String {
+        switch self {
+        case .redlamp: "Redlamp"
+        case .cameraRawUser: "your Camera Raw"
+        case .cameraRaw: "Camera Raw"
+        }
     }
 }
 

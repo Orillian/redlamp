@@ -203,6 +203,89 @@ struct LCPProfileTests {
         #expect(try Self.correction([SyntheticLCP.Spec()], size: PixelSize(width: 6064, height: 4040)) != nil)
     }
 
+    @Test func `reads the lens's number, its focal lengths and its other names`() throws {
+        var spec = SyntheticLCP.Spec()
+        spec.lensID = 138
+        spec.lensInfo = "24/1 70/1 40/10 40/10"
+        spec.alternateLensNames = ["24-70mm f/4", "NIKKOR Z 24-70 f/4 S"]
+        for form in [SyntheticLCP.Form.elements, .attributes] {
+            let lens = try #require(try Self.profile([spec], form: form).subProfiles.first)
+            #expect(lens.lensID == 138 && lens.lensFocalRange == 24 ... 70)
+            #expect(lens.alternateLensNames == ["24-70mm f/4", "NIKKOR Z 24-70 f/4 S"])
+        }
+        #expect(LCPProfile.SubProfile.focalRange("105 105 2.8 2.8") == 105 ... 105)
+        #expect(LCPProfile.SubProfile.focalRange("70/1 24/1 4/1 4/1") == nil)
+        #expect(LCPProfile.SubProfile.focalRange("24/0 70/1") == nil)
+    }
+
+    @Test func `reading the first sub-profile stops after it, past the lists inside it`() throws {
+        var first = SyntheticLCP.Spec()
+        first.alternateLensNames = ["24-70mm f/4"]
+        var second = first
+        second.focalLength = 70
+        for form in [SyntheticLCP.Form.elements, .attributes] {
+            let data = SyntheticLCP.file([first, second], form: form)
+            let whole = try LCPProfile(data: data)
+            #expect(whole.subProfiles.count == 2)
+            #expect(try LCPProfile(data: data, firstOnly: true).subProfiles == [whole.subProfiles[0]])
+            // Cut short after the first item, as the library reads a large file's first bytes.
+            let single = SyntheticLCP.file([first], form: form)
+            let cut = Data(data.prefix(zip(data, single).prefix { $0 == $1 }.count))
+            #expect(cut.count < data.count)
+            #expect(try LCPProfile(data: cut, firstOnly: true).subProfiles == [whole.subProfiles[0]])
+        }
+    }
+
+    @Test func `scaled to another frame, the models reach as far into the lens as the frame does`() throws {
+        var spec = SyntheticLCP.Spec()
+        spec.sensorFormatFactor = 1
+        let lens = try #require(try Self.profile([spec]).subProfiles.first)
+        let size = SIMD2<Double>(6000, 4000)
+        // A full-frame profile on an APS-C body of as many pixels: its frame is 1.53 times smaller.
+        #expect(lens.ratio(toCropFactor: 1.53, size: size) == 1.53)
+        // Formats within 4% of each other are one: a 1.5 profile on a 1.53 body is as recorded.
+        #expect(lens.ratio(toCropFactor: 1.02, size: size) == 1)
+        // Micro Four Thirds (2, 4:3) from an APS-C profile (1.5, 3:2), by the frames' larger sides.
+        var apsC = spec
+        apsC.sensorFormatFactor = 1.5
+        let fourThirds = try #require(try Self.profile([apsC]).subProfiles.first?
+            .ratio(toCropFactor: 2, size: SIMD2(6000, 4500)))
+        let byLargerSides: Double = 2 / 1.5 * (6000 / 7211.102550927978) / 0.8
+        #expect(abs(fourThirds - byLargerSides) < 1e-12)
+
+        let model = try #require(lens.distortion)
+        let focal = try #require(lens.pixelFocalLength(model, size: size, fit: .scaled(1.53)))
+        let scaledFocal = 0.68 * 6000 * 1.53
+        #expect(abs(focal - scaledFocal) < 1e-9)
+        var millimetres = spec
+        millimetres.focal = nil
+        let derived = try #require(try Self.profile([millimetres]).subProfiles.first)
+        // 24 mm on an APS-C frame 23.5 mm wide (36 / 1.53) of 6000 pixels.
+        let derivedModel = try #require(derived.distortion)
+        let derivedFocal = try #require(derived.pixelFocalLength(derivedModel, size: size, fit: .scaled(1.53)))
+        let millimetresFocal: Double = 24 * 6000 * 1.53 / 36
+        #expect(abs(derivedFocal - millimetresFocal) < 1e-9)
+        for radius in [500.0, 2000, 3600] {
+            let gain = try #require(lens.gain(at: radius, size: size, fit: .scaled(1.53)))
+            let recordedGain = try #require(lens.gain(at: radius / 1.53, size: size))
+            #expect(abs(gain - recordedGain) < 1e-12)
+            let scales = try #require(lens.scales(at: radius, size: size, fit: .scaled(1.53)))
+            let recordedScales = try #require(lens.scales(at: radius / 1.53, size: size))
+            #expect(simd_abs(scales - recordedScales).max() < 1e-12)
+        }
+        // The principal point keeps its offset from the frame's middle, scaled.
+        let center = lens.center(model, in: size, fit: .scaled(1.53))
+        let offset = SIMD2<Double>(0.51 - 0.5, 0.32 - 4000.0 / 2 / 6000) * 6000 * 1.53
+        #expect(simd_distance(center, SIMD2(3000, 2000) + offset) < 1e-9)
+        // Scaled, a frame of another size or shape is corrected where recorded it isn't.
+        let crop = PixelSize(width: 3936, height: 2624)
+        #expect(try Self.correction([spec], size: crop) == nil)
+        #expect(try LCPProfile.correction(
+            Self.profile([spec]).subProfiles, focalLength: 24, aperture: 4, size: crop, orientation: 0,
+            fit: .scaled(1.53),
+        ) != nil)
+    }
+
     @Test func `a model that folds back on itself, or leaves no light, is dropped`() throws {
         var extreme = SyntheticLCP.Spec()
         extreme.colour = false
@@ -242,18 +325,32 @@ enum SyntheticLCP {
         var colour = true
         var vignette: SIMD3<Double>? = SIMD3(-0.6, 0.15, -0.02)
         var fisheye = false
+        var imageWidth = 6000
+        var imageLength = 4000
+        var lensID: Int?
+        var lensInfo: String?
+        var alternateLensNames: [String] = []
 
         fileprivate var fields: [Field] {
             var fields: [Field] = [
                 .value("Make", make), .value("Model", model), .value("CameraPrettyName", cameraName),
                 .value("Lens", lens), .value("LensPrettyName", prettyName),
-                .value("ProfileName", "Synthetic (\(prettyName))"), .value("ImageWidth", "6000"),
-                .value("ImageLength", "4000"), .value("FocalLength", "\(focalLength)"),
+                .value("ProfileName", "Synthetic (\(prettyName))"), .value("ImageWidth", "\(imageWidth)"),
+                .value("ImageLength", "\(imageLength)"), .value("FocalLength", "\(focalLength)"),
                 .value("ApertureValue", "\(apertureValue)"), .value("FocusDistance", "\(focusDistance)"),
                 .value("CameraRawProfile", raw ? "True" : "False"),
             ]
             if let sensorFormatFactor {
                 fields.append(.value("SensorFormatFactor", "\(sensorFormatFactor)"))
+            }
+            if let lensID {
+                fields.append(.value("LensID", "\(lensID)"))
+            }
+            if let lensInfo {
+                fields.append(.value("LensInfo", lensInfo))
+            }
+            if !alternateLensNames.isEmpty {
+                fields.append(.list("AlternateLensNames", alternateLensNames))
             }
             var geometry = [Field.value("Version", "2")] + model("RadialDistortParam", distortion)
                 + [.value("TangentialDistortParam1", "0.0003"), .value("TangentialDistortParam2", "-0.0002")]
@@ -292,6 +389,12 @@ enum SyntheticLCP {
     fileprivate enum Field {
         case value(String, String)
         case model(String, [Field])
+        /// A list property, an `rdf:Seq` of literals.
+        case list(String, [String])
+    }
+
+    private static func sequence(_ name: String, _ items: [String], _ prefix: String) -> String {
+        "<\(prefix):\(name)><rdf:Seq>" + items.map { "<rdf:li>\($0)</rdf:li>" }.joined() + "</rdf:Seq></\(prefix):\(name)>"
     }
 
     private static let cameraProfile = "http://ns.adobe.com/photoshop/1.0/camera-profile"
@@ -330,6 +433,8 @@ enum SyntheticLCP {
                 "<\(prefix):\(name)>\(value)</\(prefix):\(name)>"
             case let .model(name, fields):
                 #"<\#(prefix):\#(name) rdf:parseType="Resource">"# + elements(fields, prefix) + "</\(prefix):\(name)>"
+            case let .list(name, items):
+                sequence(name, items, prefix)
             }
         }.joined(separator: "\n")
     }
@@ -344,6 +449,8 @@ enum SyntheticLCP {
                 attributes.append(#"\#(prefix):\#(name)="\#(value)""#)
             case let .model(name, fields):
                 models.append("<\(prefix):\(name)>" + description(fields, prefix) + "</\(prefix):\(name)>")
+            case let .list(name, items):
+                models.append(sequence(name, items, prefix))
             }
         }
         return "<rdf:Description \(attributes.joined(separator: "\n"))>" + models.joined() + "</rdf:Description>"

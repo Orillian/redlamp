@@ -101,7 +101,7 @@ struct ProfileCorrectionsToggle: View {
 
     /// Whether the photo's lens correction applies at the edit's process version.
     static func applies(in model: EditorModel) -> Bool {
-        model.info?.lensCorrection.map { model.processVersion >= $0.source.process } ?? false
+        model.info?.lensCorrection.map { model.processVersion >= $0.process } ?? false
     }
 
     static func isOn(in model: EditorModel) -> Bool {
@@ -154,21 +154,32 @@ enum LensPanelText {
     static func help(_ lens: LensCorrection?, applies: Bool) -> String {
         guard let lens else { return "This photo carries no lens correction" }
         guard applies else {
-            return "Edits made before process \(lens.source.process) render without this lens correction"
+            return "Edits made before process \(lens.process) render without this lens correction"
         }
+        let folder = (lens.profileFolder ?? .redlamp).name
         let origin = switch (lens.source, lens.profileName) {
-        case let (.profile, name?): "the lens profile for \(name) in your Lens Profiles folder"
-        case (.profile, nil): "a lens profile in your Lens Profiles folder"
+        case let (.profile, name?): "the lens profile for \(name) in \(folder)" + madeOn(lens)
+        case (.profile, nil): "a lens profile in \(folder)" + madeOn(lens)
         default: "the \(lens.source.name) file itself"
         }
         return "Distortion and vignetting corrections from \(origin)"
             + (lens.correctsColorFringes ? ", with its colour fringe correction" : "")
     }
 
-    /// The lens a matched profile is for; nil for a correction the file carries.
+    /// The lens a matched profile is for, and the folder it's in when that isn't Redlamp's; nil
+    /// for a correction the file carries.
     static func profile(_ lens: LensCorrection?) -> Note? {
         guard let lens, lens.source == .profile, let name = lens.profileName else { return nil }
-        return Note(text: "Profile: \(name)", help: "The lens profile in your Lens Profiles folder for \(name)")
+        let folder = lens.profileFolder ?? .redlamp
+        return Note(
+            text: "Profile: \(name)" + (folder == .redlamp ? "" : " (\(folder.shortName))"),
+            help: "The lens profile in \(folder.name) for \(name)" + madeOn(lens),
+        )
+    }
+
+    /// ", made on a Canon EOS 5D Mark III" for a profile made on another body than the photo's.
+    private static func madeOn(_ lens: LensCorrection) -> String {
+        lens.profileCamera.map { ", made on a \($0)" } ?? ""
     }
 
     /// How many profiles couldn't be read, with each file and its reasons in the help.

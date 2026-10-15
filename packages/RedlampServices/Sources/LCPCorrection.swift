@@ -13,6 +13,21 @@ extension LCPProfile {
     /// `LensCorrection.tabulated`'s radii: 1 is the corner farthest from the centre.
     static let radii = (0 ... 32).map { Double($0) / 32 * 1.05 }
 
+    /// How a profile's models reach a photo: as recorded, on the body it was made on and a frame of
+    /// the reference photos' shape and size; or scaled to another frame (another body, or a crop
+    /// mode, LNS-14), `ratio` being the reference photos' larger side over the photo's, in millimetres.
+    enum Fit: Equatable {
+        case recorded
+        case scaled(Double)
+
+        var ratio: Double {
+            switch self {
+            case .recorded: 1
+            case let .scaled(ratio): ratio
+            }
+        }
+    }
+
     /// The correction one camera and lens's sub-profiles give a photo of `size` pixels as the
     /// sensor recorded it (before `orientation`, as the reference photos were), shot at
     /// `focalLength` millimetres and f/`aperture`. Every model is taken about the geometric
@@ -21,15 +36,20 @@ extension LCPProfile {
     /// lens as the profile's author names it.
     static func correction(
         _ subProfiles: [SubProfile], focalLength: Double?, aperture: Double?, size: PixelSize, orientation: Int,
+        fit: Fit = .recorded,
     ) -> LensCorrection? {
         let size = SIMD2(Double(size.width), Double(size.height))
         guard size.min() > 0 else { return nil }
-        let fitting = subProfiles.filter { $0.fits(size) }
+        let fitting = fit == .recorded ? subProfiles.filter { $0.fits(size) } : subProfiles
         let geometric = weights(fitting.filter { $0.geometry != nil }, focalLength: focalLength, aperture: aperture)
         let vignetted = weights(fitting.filter { $0.vignette != nil }, focalLength: focalLength, aperture: aperture)
         let principalPoints = geometric.isEmpty
-            ? vignetted.compactMap { item in item.subProfile.vignette.map { ($0.center(in: size), item.weight) } }
-            : geometric.compactMap { item in item.subProfile.geometry.map { ($0.center(in: size), item.weight) } }
+            ? vignetted.compactMap { item in
+                item.subProfile.vignette.map { (item.subProfile.center($0, in: size, fit: fit), item.weight) }
+            }
+            : geometric.compactMap { item in
+                item.subProfile.geometry.map { (item.subProfile.center($0, in: size, fit: fit), item.weight) }
+            }
         guard !principalPoints.isEmpty else { return nil }
         let center = principalPoints.reduce(SIMD2<Double>.zero) { sum, point in sum + point.0 * point.1 }
         let reach = simd_length(simd_max(center, size - center))
@@ -39,11 +59,11 @@ extension LCPProfile {
         var vignetting = [Double](repeating: 0, count: vignetted.isEmpty ? 0 : radii.count)
         for (index, radius) in radii.enumerated() {
             for (subProfile, weight) in geometric {
-                distortion[index] += (subProfile.scales(at: radius * reach, size: size) ?? SIMD3(repeating: .nan))
-                    * weight
+                let scales = subProfile.scales(at: radius * reach, size: size, fit: fit)
+                distortion[index] += (scales ?? SIMD3(repeating: .nan)) * weight
             }
             for (subProfile, weight) in vignetted {
-                vignetting[index] += (subProfile.gain(at: radius * reach, size: size) ?? .nan) * weight
+                vignetting[index] += (subProfile.gain(at: radius * reach, size: size, fit: fit) ?? .nan) * weight
             }
         }
         if !rises(distortion) {
@@ -125,25 +145,52 @@ extension LCPProfile.SubProfile {
         return abs(shape - 1) < 0.03 && abs(size.max() / imageSize.max() - 1) < 0.05
     }
 
+    /// The reference photos' larger side over a photo's, in millimetres, for a photo of `size`
+    /// (sensor-oriented) and `cropFactor`, from each one's crop factor and shape (the photo's, where
+    /// the profile doesn't give its photos' size). Formats within 4% of each other are taken for
+    /// one: their crop factors are rounded, and a camera's frame differs from its format's by as much.
+    func ratio(toCropFactor cropFactor: Double, size: SIMD2<Double>) -> Double? {
+        guard let factor = sensorFormatFactor, factor > 0, cropFactor > 0, size.min() > 0 else { return nil }
+        let shape = size.max() / simd_length(size)
+        let referenceShape = imageSize.flatMap { $0.min() > 0 ? $0.max() / simd_length($0) : nil } ?? shape
+        return (abs(cropFactor / factor - 1) < 0.04 ? 1 : cropFactor / factor) * referenceShape / shape
+    }
+
     /// A model's focal length in pixels for a photo of `size`: fx and fy (their geometric mean)
     /// times the larger side or, where the file leaves them out, the focal length in millimetres
     /// times pixels per millimetre, the sensor's diagonal being 35 mm film's over the format factor.
-    func pixelFocalLength(_ model: LCPProfile.Model, size: SIMD2<Double>) -> Double? {
+    /// Scaled, the reference photos' larger side maps onto the photo's times the fit's ratio.
+    func pixelFocalLength(_ model: LCPProfile.Model, size: SIMD2<Double>, fit: LCPProfile.Fit = .recorded) -> Double? {
         if let f = model.focalLength {
-            return f.min() > 0 ? (f.x * f.y).squareRoot() * size.max() : nil
+            return f.min() > 0 ? (f.x * f.y).squareRoot() * size.max() * fit.ratio : nil
         }
         guard let factor = sensorFormatFactor, factor > 0 else { return nil }
-        return focalLength * factor * simd_length(size) / simd_length(SIMD2<Double>(36, 24))
+        guard case let .scaled(ratio) = fit else {
+            return focalLength * factor * simd_length(size) / simd_length(SIMD2<Double>(36, 24))
+        }
+        let shape = imageSize.flatMap { $0.min() > 0 ? $0.max() / simd_length($0) : nil }
+            ?? size.max() / simd_length(size)
+        return focalLength * size.max() * ratio / (CropFactor.fullFrameDiagonal / factor * shape)
+    }
+
+    /// A model's principal point in pixels for a photo of `size`: as recorded, or scaled, the
+    /// photo's centre moved by the model's offset from the reference photos' centre.
+    func center(_ model: LCPProfile.Model, in size: SIMD2<Double>, fit: LCPProfile.Fit) -> SIMD2<Double> {
+        guard case let .scaled(ratio) = fit else { return model.center(in: size) }
+        guard let reference = imageSize, reference.min() > 0 else { return size / 2 }
+        let middle = reference / 2 / reference.max()
+        let offset = SIMD2(model.centerX ?? middle.x, model.centerY ?? middle.y) - middle
+        return size / 2 + offset * size.max() * ratio
     }
 
     /// Where red, green and blue are recorded, as multiples of `radius`, a distance in pixels from
     /// the centre of the corrected photo.
-    func scales(at radius: Double, size: SIMD2<Double>) -> SIMD3<Double>? {
-        guard let geometry, let f = pixelFocalLength(geometry, size: size) else { return nil }
+    func scales(at radius: Double, size: SIMD2<Double>, fit: LCPProfile.Fit = .recorded) -> SIMD3<Double>? {
+        guard let geometry, let f = pixelFocalLength(geometry, size: size, fit: fit) else { return nil }
         let green = geometry.scale * geometry.polynomial(radius / f)
         guard let chromatic else { return SIMD3(repeating: green) }
-        guard let red = pixelFocalLength(chromatic.red, size: size),
-              let blue = pixelFocalLength(chromatic.blue, size: size)
+        guard let red = pixelFocalLength(chromatic.red, size: size, fit: fit),
+              let blue = pixelFocalLength(chromatic.blue, size: size, fit: fit)
         else { return nil }
         let recorded = green * radius
         return SIMD3(
@@ -155,8 +202,8 @@ extension LCPProfile.SubProfile {
 
     /// The gain that undoes the vignette at `radius`, a distance in pixels from the centre of the
     /// recorded photo; nil where the model leaves no light.
-    func gain(at radius: Double, size: SIMD2<Double>) -> Double? {
-        guard let vignette, let f = pixelFocalLength(vignette, size: size) else { return nil }
+    func gain(at radius: Double, size: SIMD2<Double>, fit: LCPProfile.Fit = .recorded) -> Double? {
+        guard let vignette, let f = pixelFocalLength(vignette, size: size, fit: fit) else { return nil }
         let kept = vignette.polynomial(radius / f)
         return kept > 0 ? 1 / kept : nil
     }

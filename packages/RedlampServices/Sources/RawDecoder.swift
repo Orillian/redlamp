@@ -150,6 +150,9 @@ enum RawDecoder {
             focalLength: other.focal_len > 0 ? Double(other.focal_len) : nil,
             captureDate: other.timestamp > 0 ? Date(timeIntervalSince1970: TimeInterval(other.timestamp)) : nil,
         )
+        let file = data ?? (try? Data(contentsOf: url, options: .alwaysMapped))
+        info.cropFactor = CropFactor.of(raw) { file.flatMap { CropFactor.focalPlane($0, url: url) } }
+        lensIdentity(raw, into: &info)
         info.diagnostics = diagnostics(
             raw, url: url, blackLevels: blackLevels, nominalWhite: nominalWhite, white: whiteLevel,
             xyzToCamera: xyzToCamera, mosaic: mosaic,
@@ -169,7 +172,7 @@ enum RawDecoder {
             baselineExposure: plausibleBaselineExposure(rl_baseline_exposure(raw)),
             info: info,
         )
-        if let data = data ?? (try? Data(contentsOf: url, options: .alwaysMapped)) {
+        if let data = file {
             decoded.noiseProfile = DNGNoiseProfile.read(data, url: url)
             decoded.gainMaps = DNGGainMaps.read(data, url: url)
             decoded.dngColor = DNGColorCalibration.read(data, url: url)
@@ -258,6 +261,21 @@ enum RawDecoder {
         guard let pointer else { return nil }
         let value = String(cString: pointer).trimmingCharacters(in: .whitespaces)
         return value.isEmpty ? nil : value
+    }
+
+    /// What lens profiles match a raw by beside its make, model and lens (LNS-14): LibRaw's
+    /// canonical name for the camera, Nikon's number for the lens, and the lens's focal lengths.
+    private static func lensIdentity(_ raw: UnsafeMutablePointer<libraw_data_t>, into info: inout ImageInfo) {
+        info.canonicalMake = text(raw.pointee.idata.normalized_make)
+        info.canonicalModel = text(raw.pointee.idata.normalized_model)
+        let lens = raw.pointee.lens
+        if info.make?.lowercased() == "nikon", lens.nikon.LensIDNumber > 0 {
+            info.lensID = Int(lens.nikon.LensIDNumber)
+        }
+        let (shortest, longest) = (Double(lens.makernotes.MinFocal), Double(lens.makernotes.MaxFocal))
+        if shortest > 0, longest >= shortest {
+            info.lensFocalRange = shortest ... longest
+        }
     }
 
     /// LibRaw's `FC(row, col)` for 2x2 Bayer patterns, with G2 folded into green.
