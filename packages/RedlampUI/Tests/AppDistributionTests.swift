@@ -31,10 +31,4 @@ struct AppDistributionTests {
         #expect(try AppDistribution(bundle: bundle(["RedlampDistribution": "$(REDLAMP_DISTRIBUTION)"])) == .source)
         #expect(AppDistribution(value: true) == .source)
     }
-
-    @Test func `both release builds are releases and a build from source isn't`() {
-        #expect(AppDistribution.appStore.isRelease)
-        #expect(AppDistribution.developerID.isRelease)
-        #expect(!AppDistribution.source.isRelease)
-    }
 }

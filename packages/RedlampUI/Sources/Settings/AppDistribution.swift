@@ -19,10 +19,4 @@ public enum AppDistribution: String, Sendable {
 
     /// The running app's.
     public static let current = AppDistribution(bundle: .main)
-
-    /// Either release build, which is updated as a whole, by Sparkle or by the App Store, rather than
-    /// rebuilt from whatever the checkout holds.
-    public var isRelease: Bool {
-        self != .source
-    }
 }

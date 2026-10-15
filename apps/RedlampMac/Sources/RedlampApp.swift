@@ -160,7 +160,7 @@ struct RedlampApp: App {
                 checksForUpdates: appDelegate.updates.map { updates in
                     Binding(get: { updates.checksAutomatically }, set: { updates.setChecksAutomatically($0) })
                 },
-                showsWhatsNew: AppDistribution.current.isRelease ? $showsWhatsNew : nil,
+                showsWhatsNew: appDelegate.isUpdated ? $showsWhatsNew : nil,
             )
             .focusEffectDisabled()
         }
@@ -256,16 +256,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Release builds, which are updated as a whole: by Sparkle, or by the App Store, whose build has
+    /// no updater of its own. A copy whose feed is cleared, as the regression suite's is, isn't.
+    var isUpdated: Bool {
+        updates != nil || AppDistribution.current == .appStore
+    }
+
     /// Builds from source have every highlight: their version is the last release's until the next.
     private var newsVersion: AppVersion? {
-        AppDistribution.current.isRelease ? AppVersion.current : nil
+        isUpdated ? AppVersion.current : nil
     }
 
     /// After an update, the highlights not yet shown open over the editor if they're ready within
     /// a few seconds and nothing else has started; otherwise they wait for the next launch.
     private func lookForNews(firstLaunch: Bool) {
         let launch = WhatsNew.atLaunch(
-            arguments: LaunchArguments.all, updatesItself: AppDistribution.current.isRelease,
+            arguments: LaunchArguments.all, updatesItself: isUpdated,
             opensAfterUpdates: whatsNewLoader.store.opensAfterUpdates, welcomeOpens: firstLaunch,
         )
         guard launch != .nothing else { return }
