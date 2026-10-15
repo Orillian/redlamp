@@ -470,6 +470,7 @@
             "develop.firmware-model",
             "The firmware film model turned on in Settings, a simulation and its settings from the Camera Recipe group",
             claims: [.feature("develop.firmware-model")],
+            needsFocus: true,
         ) { app in
             let folder = FileManager.default.temporaryDirectory.appending(path: "firmware-\(UUID().uuidString)")
             try FirmwareFilmModel.Files.identity().write(to: folder)
@@ -488,6 +489,7 @@
             try app.closeSettings()
             try app.openWorking()
             try app.main { $0.expandedPanels.insert(.effects) }
+            try app.focus()
             try app.expectRenders("the Standard simulation") {
                 try app.chooseFirmware("Standard", in: "simulation") { $0.firmwareSettings?.simulation == .standard }
             }
@@ -908,65 +910,103 @@
     }
 
     extension RunningApp {
-        /// Chooses `title` in the firmware model's pop-up `develop.firmware-model.<control>` in the
-        /// Camera Recipe group, as choosing it from its menu does, and waits until `done`. SwiftUI's
-        /// pop-ups take a choice through their menu items' actions, AppKit's through their own.
+        /// The firmware model's pickers in the Camera Recipe group, in the order of its rows
+        /// (`FirmwareModelControls`): Simulation alone until one is chosen, then its settings, and
+        /// the toning of a black-and-white one.
+        private static let firmwareRows = [
+            "simulation", "highlight", "shadow", "color", "dynamic-range", "warm-cool", "magenta-green",
+        ]
+
+        /// Chooses `title` in the firmware model's picker `develop.firmware-model.<control>` in the
+        /// Camera Recipe group as the mouse does, and waits until `done`: a click on the picker opens
+        /// its menu, where the keyboard chooses the item, as in `choose(_:inMenuOf:)`.
         func chooseFirmware(
             _ title: String, in control: String, until done: @escaping @MainActor (EditorModel) -> Bool,
         ) throws {
             let identifier = "develop.firmware-model.\(control)"
-            try wait("the \(identifier) pop-up") { _ in Self.firmwarePopUp(identifier) != nil }
-            for byItem in [true, false] {
-                try main { _ in
-                    guard let popUp = Self.firmwarePopUp(identifier)
-                    else { throw ScenarioFailure("No \(identifier) pop-up") }
-                    guard let index = popUp.itemTitles.firstIndex(of: title) else {
-                        throw ScenarioFailure("\(identifier) has no \(title): \(popUp.itemTitles)")
-                    }
-                    if byItem {
-                        popUp.menu?.performActionForItem(at: index)
-                    } else {
-                        popUp.selectItem(at: index)
-                        _ = popUp.sendAction(popUp.action, to: popUp.target)
-                    }
-                }
-                if (try? wait("\(title) in \(identifier)", timeout: 3, until: done)) != nil {
-                    return
-                }
+            do {
+                try wait("the \(identifier) picker") { (try? Self.firmwarePicker(control, in: $0)) != nil }
+            } catch {
+                _ = try main { try Self.firmwarePicker(control, in: $0) }
+                throw error
             }
-            let shown = try main { _ -> String in
-                guard let popUp = Self.firmwarePopUp(identifier) else { return "no pop-up" }
-                let item = popUp.itemTitles.firstIndex(of: title).flatMap { popUp.item(at: $0) }
-                return "showing \(popUp.titleOfSelectedItem ?? "nothing"), identifier "
-                    + "\(popUp.accessibilityIdentifier().isEmpty ? "on its element only" : "on the button"), "
-                    + "action \(popUp.action.map(NSStringFromSelector) ?? "none"), "
-                    + "item action \(item?.action.map(NSStringFromSelector) ?? "none")"
+            let opened = OpenedMenu()
+            try main { _ in opened.watch { menu in opened.chose = Menus.chooseByKeys(title, in: menu) } }
+            defer { try? main { _ in opened.stop() } }
+            // The menu tracks inside the press.
+            post { model in
+                guard let picker = try? Self.firmwarePicker(control, in: model) else { return }
+                Views.tap(at: picker.point, inWindow: picker.window, clicks: 1, modifiers: [])
             }
-            throw ScenarioFailure("Choosing \(title) in \(identifier) changed nothing: \(shown)")
+            do {
+                try wait("the \(identifier) menu to open") { _ in opened.menu != nil }
+            } catch {
+                let point = try main { try Self.firmwarePicker(control, in: $0).point }
+                throw ScenarioFailure("A click on \(identifier) at \(Views.describe(point)) opened no menu")
+            }
+            try wait("the \(identifier) menu to close") { _ in opened.closed }
+            let (items, chose) = try main { _ in (opened.items.map(\.title), opened.chose) }
+            try expect(chose, "\(identifier)'s menu has no \(title): \(items)")
+            try wait("\(title) in \(identifier)", until: done)
         }
 
-        /// SwiftUI may give a picker's identifier to its accessibility element rather than to the
-        /// pop-up button, so the button is also found under that element's frame.
-        @MainActor private static func firmwarePopUp(_ identifier: String) -> NSPopUpButton? {
-            guard let window = Views.editorWindow, let root = window.contentView?.superview else { return nil }
-            let popUps = Views.all(NSPopUpButton.self, in: root)
-            if let popUp = popUps.first(where: { $0.accessibilityIdentifier() == identifier }) {
-                return popUp
+        /// Where the firmware model's picker `control` is, in the middle of its row of the Camera
+        /// Recipe group, scrolled into view: its window and the point there. macOS 27's SwiftUI draws
+        /// the pickers itself, with no AppKit control under them and, in the app's own process, no
+        /// accessibility to find them by, so the place is worked out from the group's rows, each a
+        /// `ControlRow`: its label, `Metrics.labelWidth` wide, then the picker after `Metrics.rowSpacing`.
+        /// Where a view carries the picker's identifier, the place must be on it.
+        @MainActor private static func firmwarePicker(_ control: String, in model: EditorModel) throws
+            -> (window: Int, point: NSPoint) {
+            guard let window = Views.editorWindow, let group = firmwareGroup(in: window) else {
+                throw ScenarioFailure("The Effects panel shows no Camera Recipe group")
             }
-            guard let frame = accessibilityFrame(identifier, in: root) else { return nil }
-            let middle = NSPoint(x: frame.midX, y: frame.midY)
-            return popUps.first { window.convertToScreen($0.convert($0.bounds, to: nil)).contains(middle) }
+            let rows = model.firmwareSettings.map { $0.simulation.isMonochrome ? 7 : 5 } ?? 1
+            guard let row = firmwareRows.firstIndex(of: control), row < rows else {
+                throw ScenarioFailure("The Camera Recipe group shows \(firmwareRows.prefix(rows)), not \(control)")
+            }
+            func band() -> NSRect {
+                let frame = group.convert(group.bounds, to: nil)
+                let height = frame.height / CGFloat(rows)
+                return NSRect(
+                    x: frame.minX, y: frame.maxY - height * CGFloat(row + 1), width: frame.width, height: height,
+                )
+            }
+            // Until the panel's column lays the group out again for the rows the model added.
+            guard (20 ... 40).contains(band().height) else {
+                throw ScenarioFailure(
+                    "The Camera Recipe group's \(rows) rows are \(Int(band().height.rounded())) points high each",
+                )
+            }
+            group.scrollToVisible(group.convert(band(), from: nil))
+            window.contentView?.layoutSubtreeIfNeeded()
+            let point = NSPoint(x: band().minX + Metrics.labelWidth + Metrics.rowSpacing + 16, y: band().midY)
+            let identifier = "develop.firmware-model.\(control)"
+            if let picker = Views.all(NSView.self, in: group)
+                .first(where: { $0.accessibilityIdentifier() == identifier }) {
+                let frame = picker.convert(picker.bounds, to: nil)
+                guard frame.contains(point) else {
+                    throw ScenarioFailure(
+                        "\(identifier) is at \(Views.describe(frame)), not at its row's \(Views.describe(point))",
+                    )
+                }
+            }
+            return (window.windowNumber, point)
         }
 
-        @MainActor private static func accessibilityFrame(_ identifier: String, in element: Any) -> NSRect? {
-            guard let element = element as? NSAccessibilityProtocol else { return nil }
-            if element.accessibilityIdentifier() == identifier {
-                return element.accessibilityFrame()
-            }
-            for child in element.accessibilityChildren() ?? [] {
-                if let frame = accessibilityFrame(identifier, in: child) {
-                    return frame
+        /// The Camera Recipe group's firmware controls: the row of the Effects panel before the
+        /// group's first slider.
+        @MainActor private static func firmwareGroup(in window: NSWindow) -> NSView? {
+            guard let panel = Views.shown("panel.effects", in: window),
+                  let first = PanelID.cameraRecipeParameters.first
+            else { return nil }
+            let slider = Target.slider(first).identifier
+            var view = Views.all(NSView.self, in: panel).first { $0.accessibilityIdentifier() == slider }
+            while let row = view {
+                if let column = row.superview as? ColumnView, let index = column.arrangedViews.firstIndex(of: row) {
+                    return index > 0 ? column.arrangedViews[index - 1] : nil
                 }
+                view = row.superview
             }
             return nil
         }
