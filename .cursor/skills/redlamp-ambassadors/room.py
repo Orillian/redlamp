@@ -4,6 +4,8 @@
     room.py status                         applications, the owner's marks, and what's waiting on whom
     room.py sync                           read the applications with gh and write the room's APPLICATIONS
                                            block, with thumbnails of their photos (cached, never committed)
+    room.py measures --since DATE         applications since DATE, and release downloads since DATE
+                                           against the three weeks before it
     room.py draft NUMBER accept|decline [--line TEXT] [--gmail]
                                            print the reply to an application, with TEXT as its personal
                                            line; --gmail also saves it as a Gmail draft through the press
@@ -146,6 +148,30 @@ def cmd_status(_args):
         print("Needs you marks to fold in: " + ", ".join(f"{k} ({v['state']})" for k, v in needs.items()))
 
 
+def cmd_measures(args):
+    """The plan's measures from what can be read: applications and their triage, and downloads of the
+    releases published since a date, with the three weeks before it for comparison."""
+    import datetime as dt
+
+    since = dt.date.fromisoformat(args.since)
+    before = since - dt.timedelta(days=21)
+    applications = read_block("APPLICATIONS")
+    triage = marks().get("applications") or {}
+    recent = [a for a in applications if a["created"][:10] >= args.since]
+    accepted = [n for n, mark in triage.items() if mark and mark.get("state") == "accept"]
+    print(f"Applications since {since}: {len(recent)} (all time {len(applications)}); accepted all time: {len(accepted)}")
+    releases = gh("api", "repos/pdcgomes/redlamp/releases", "--paginate")
+    for label, start, end in (("Three weeks before", before, since), (f"Since {since}", since, dt.date.today() + dt.timedelta(days=1))):
+        rows = [
+            (r["tag_name"], r["published_at"][:10], sum(a["download_count"] for a in r["assets"]))
+            for r in releases
+            # The app's releases only: the models are published as releases too.
+            if r["tag_name"].startswith("v") and r.get("published_at") and start <= dt.date.fromisoformat(r["published_at"][:10]) < end
+        ]
+        print(f"{label}: {sum(d for _, _, d in rows)} downloads of {len(rows)} releases " + ", ".join(f"{t} ({p}) {d}" for t, p, d in rows))
+    print("Downloads are counted per release since it was published, so a release's count keeps growing; compare like with like.")
+
+
 REPLIES = {
     "accept": (
         "Redlamp ambassadors: your application",
@@ -202,6 +228,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("status").set_defaults(run=cmd_status)
     sub.add_parser("sync").set_defaults(run=cmd_sync)
+    measures = sub.add_parser("measures")
+    measures.add_argument("--since", required=True, help="the open call's first day, YYYY-MM-DD")
+    measures.set_defaults(run=cmd_measures)
     draft = sub.add_parser("draft")
     draft.add_argument("number", type=int)
     draft.add_argument("kind", choices=sorted(REPLIES))
