@@ -153,9 +153,12 @@ export default function PrivacyPage() {
         <h3>On your Mac</h3>
         <p>
           Redlamp keeps the reports you&apos;ve sent, your drafts, any reports waiting to be sent, and a journal of recent
-          activity that describes a crash, in <code>~/Library/Application Support/Redlamp/Feedback</code>. When Redlamp
-          notices a crash or a hang, it offers to report it; one you don&apos;t report stays in Help › Your Reports for 30
-          days. Nothing about a crash is sent unless you send it.
+          activity that describes a crash, in <code>~/Library/Application Support/Redlamp/Feedback</code>. The journal is
+          Redlamp&apos;s activity log: the tools, panels and edits you use, the messages it shows, and the photos and
+          folders you open. Turning off Keep an activity log, in Redlamp&apos;s Settings › Privacy, stops the log and
+          deletes what it holds, and your reports then go without it. When Redlamp notices a crash or a hang, it offers
+          to report it; one you don&apos;t report stays in Help › Your Reports for 30 days. Nothing about a crash is sent
+          unless you send it.
         </p>
         <p>
           Your Reports checks your reports for replies by sending their issue numbers to redlamp.app, which asks GitHub.
