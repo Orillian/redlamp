@@ -1,6 +1,6 @@
 import AppKit
 import OSLog
-#if DEBUG || REDLAMP_PROFILING
+#if (DEBUG || REDLAMP_PROFILING) && !REDLAMP_APP_STORE
     import RedlampAutomation
 #endif
 import RedlampDocument
@@ -24,7 +24,9 @@ struct RedlampApp: App {
         ThemeSettings.turnOffDesktopTinting()
         #if DEBUG || REDLAMP_PROFILING
             DebugDecodeCheck.runIfRequested()
-            Automation.listIfRequested(arguments: LaunchArguments.all)
+            #if !REDLAMP_APP_STORE
+                Automation.listIfRequested(arguments: LaunchArguments.all)
+            #endif
             DevelopPanels.usesSwiftUI = LaunchArguments.all.contains("--swiftui-panels")
         #endif
         LensProfileIssues.current = { LCPProfileLibrary.user.issues }
@@ -115,9 +117,12 @@ struct RedlampApp: App {
                 DebugSnapshot.scheduleIfRequested(model: model)
                 DebugPerformance.scheduleIfRequested(model: model)
                 DebugLibraryPerformance.scheduleIfRequested(model: model)
-                Automation.startIfRequested(
-                    model: model, arguments: LaunchArguments.all, host: AutomationHost(theme: theme, exports: exports),
-                )
+                #if !REDLAMP_APP_STORE
+                    Automation.startIfRequested(
+                        model: model, arguments: LaunchArguments.all,
+                        host: AutomationHost(theme: theme, exports: exports),
+                    )
+                #endif
             #endif
             return editor
         }
@@ -155,7 +160,7 @@ struct RedlampApp: App {
                 checksForUpdates: appDelegate.updates.map { updates in
                     Binding(get: { updates.checksAutomatically }, set: { updates.setChecksAutomatically($0) })
                 },
-                showsWhatsNew: appDelegate.updates == nil ? nil : $showsWhatsNew,
+                showsWhatsNew: AppDistribution.current.isRelease ? $showsWhatsNew : nil,
             )
             .focusEffectDisabled()
         }
@@ -253,14 +258,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Builds from source have every highlight: their version is the last release's until the next.
     private var newsVersion: AppVersion? {
-        updates == nil ? nil : AppVersion.current
+        AppDistribution.current.isRelease ? AppVersion.current : nil
     }
 
     /// After an update, the highlights not yet shown open over the editor if they're ready within
     /// a few seconds and nothing else has started; otherwise they wait for the next launch.
     private func lookForNews(firstLaunch: Bool) {
         let launch = WhatsNew.atLaunch(
-            arguments: LaunchArguments.all, updatesItself: updates != nil,
+            arguments: LaunchArguments.all, updatesItself: AppDistribution.current.isRelease,
             opensAfterUpdates: whatsNewLoader.store.opensAfterUpdates, welcomeOpens: firstLaunch,
         )
         guard launch != .nothing else { return }
