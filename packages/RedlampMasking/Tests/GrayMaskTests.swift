@@ -279,12 +279,9 @@ struct GrayMaskTests {
     /// sky at the horizon.
     @Test func `sky estimate finds a sunset's warm sky`() throws {
         let region = try SkyEstimator.region(warmSunset(), seesSky: { _ in true })
-        func sky(_ x: Double, _ y: Double) -> Bool {
-            region.sky[Int(y * Double(region.height)) * region.width + Int(x * Double(region.width))]
-        }
-        #expect(sky(0.2, 0.15) && sky(0.5, 0.15) && sky(0.8, 0.6), "the sky")
-        #expect(!sky(0.5, 0.5), "the tower")
-        #expect(!sky(0.2, 0.85), "the sea")
+        #expect(covers(region, 0.2, 0.15) && covers(region, 0.5, 0.15) && covers(region, 0.8, 0.6), "the sky")
+        #expect(!covers(region, 0.5, 0.5), "the tower")
+        #expect(!covers(region, 0.2, 0.85), "the sea")
     }
 
     /// A warm backdrop looks like a warm sky, so a warm sky needs Vision's classifier to see sky.
@@ -295,21 +292,59 @@ struct GrayMaskTests {
         }
     }
 
+    /// At dusk the band along the top is darker than the estimate takes by day, though brighter
+    /// than the land's silhouette below: the estimate takes the sky by that band's own brightness,
+    /// when Vision sees sky.
+    @Test func `sky estimate finds a dusk sky`() throws {
+        let image = try scene(width: 600, height: 400) { _, y in
+            let t = Double(y) / 260
+            return y >= 260 ? (8, 8, 10) : (25 + 65 * t, 40 + 60 * t, 75 + 65 * t)
+        }
+        let region = try SkyEstimator.region(image, seesSky: { _ in true })
+        #expect(covers(region, 0.5, 0.1) && covers(region, 0.5, 0.6), "the sky")
+        #expect(!covers(region, 0.5, 0.85), "the land")
+        #expect(throws: MaskComputationError.nothingFound(.sky)) {
+            try SkyEstimator.region(image, seesSky: { _ in false })
+        }
+    }
+
+    /// A deep sunset's sky can hold no blue at all, which leaves its blue over red no guide: the
+    /// estimate still takes all of its orange, down to the horizon.
+    @Test func `sky estimate finds a sunset sky with no blue in it`() throws {
+        let image = try scene(width: 600, height: 400) { _, y in
+            let t = Double(y) / 260
+            return y >= 260 ? (10, 6, 4) : (160 + 70 * t, 70 + 40 * t, 3 * t)
+        }
+        let region = try SkyEstimator.region(image, seesSky: { _ in true })
+        #expect(covers(region, 0.5, 0.1) && covers(region, 0.5, 0.6), "the sky")
+        #expect(!covers(region, 0.5, 0.85), "the land")
+    }
+
+    /// Whether `region` holds the point (x, y), as fractions of its width and height.
+    private func covers(_ region: (sky: [Bool], width: Int, height: Int), _ x: Double, _ y: Double) -> Bool {
+        region.sky[Int(y * Double(region.height)) * region.width + Int(x * Double(region.width))]
+    }
+
     /// 450 × 600: a golden sky down to the horizon two-thirds of the way down, its blue about 0.63
     /// of its red at the top and 0.78 at the horizon; a pale tower in the middle from a quarter of
     /// the way down; a blue-grey sea below.
     private func warmSunset() throws -> CGImage {
-        let width = 450
-        let height = 600
+        try scene(width: 450, height: 600) { x, y in
+            let t = Double(y) / 400
+            return y >= 400 ? (110, 125, 140)
+                : (200 ..< 250).contains(x) && y >= 150 ? (205, 200, 190)
+                : (184 - 50 * t, 163 - 46 * t, 115 - 10 * t)
+        }
+    }
+
+    /// An sRGB image whose pixel at (x, y) is `rgb(x, y)`, from 0 to 255.
+    private func scene(width: Int, height: Int, rgb: (Int, Int) -> (Double, Double, Double)) throws -> CGImage {
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
         for y in 0 ..< height {
             for x in 0 ..< width {
                 let index = (y * width + x) * 4
-                let t = Double(y) / 400
-                let rgb: (Double, Double, Double) = y >= 400 ? (110, 125, 140)
-                    : (200 ..< 250).contains(x) && y >= 150 ? (205, 200, 190)
-                    : (184 - 50 * t, 163 - 46 * t, 115 - 10 * t)
-                (pixels[index], pixels[index + 1], pixels[index + 2]) = (UInt8(rgb.0), UInt8(rgb.1), UInt8(rgb.2))
+                let (r, g, b) = rgb(x, y)
+                (pixels[index], pixels[index + 1], pixels[index + 2]) = (UInt8(r), UInt8(g), UInt8(b))
             }
         }
         let provider = try #require(CGDataProvider(data: Data(pixels) as CFData))

@@ -7,12 +7,12 @@ import Vision
 
 /// The interim Sky mask, until the bake-off (tracker MSK-17) picks a model: a classical estimate.
 ///
-/// Sky is bright, smooth and, where it isn't overcast, bluer than it is red, unless a low sun
-/// warms all of it; it reaches the top of the frame. Candidate pixels are grown from the top edge
-/// as one connected region, then snapped to the photo's edges with a guided filter. Vision's image
-/// classifier (which has no sky *mask*, only labels) confirms there is sky at all, and has to for
-/// a warm sky. Good on clear and evenly overcast skies; tree lines and hair are where a trained
-/// model will do better.
+/// Sky is bright, smooth and, where it isn't overcast, bluer than it is red, unless dusk or a low
+/// sun darkens or warms all of it; it reaches the top of the frame. Candidate pixels are grown
+/// from the top edge as one connected region, then snapped to the photo's edges with a guided
+/// filter. Vision's image classifier (which has no sky *mask*, only labels) confirms there is sky
+/// at all, and has to for a dark or warm sky. Good on clear and evenly overcast skies; tree lines
+/// and hair are where a trained model will do better.
 public enum SkyEstimator {
     static let workLongEdge = 512
 
@@ -135,12 +135,14 @@ public enum SkyEstimator {
         guard !top.isEmpty else { throw MaskComputationError.nothingFound(.sky) }
         let reference = top.map { luma[$0] }.sorted()[top.count / 2]
 
-        func grow(skyColored: (SIMD3<Float>) -> Bool, rimColored: (SIMD3<Float>) -> Bool) -> [Bool] {
+        func grow(
+            floor: (sky: Float, rim: Float), skyColored: (SIMD3<Float>) -> Bool, rimColored: (SIMD3<Float>) -> Bool,
+        ) -> [Bool] {
             var candidate = [Bool](repeating: false, count: width * height)
             for index in candidate.indices {
                 let rgb = pixels.rgb(index % width, index / width)
                 let smooth = texture[index] < 0.05
-                let bright = luma[index] > max(0.25, reference * 0.55)
+                let bright = luma[index] > floor.sky
                 candidate[index] = smooth && bright && skyColored(rgb)
             }
 
@@ -172,36 +174,46 @@ public enum SkyEstimator {
                         || (y > 0 && sky[index - width]) || (y < height - 1 && sky[index + width])
                     guard touches else { continue }
                     let rgb = pixels.rgb(x, y)
-                    grown[index] = luma[index] > max(0.25, reference * 0.6) && rimColored(rgb)
+                    grown[index] = luma[index] > floor.rim && rimColored(rgb)
                 }
                 sky = grown
             }
             return sky
         }
 
-        let sky = grow(skyColored: { $0.z >= $0.x * 0.92 }, rimColored: { $0.z >= $0.x * 0.95 })
+        let sky = grow(
+            floor: (max(0.25, reference * 0.55), max(0.25, reference * 0.6)),
+            skyColored: { $0.z >= $0.x * 0.92 }, rimColored: { $0.z >= $0.x * 0.95 },
+        )
         let fraction = Double(sky.count(where: \.self)) / Double(sky.count)
         if fraction > 0.02 {
             guard seesSky(image) || fraction > 0.15 else { throw MaskComputationError.nothingFound(.sky) }
             return (sky, width, height)
         }
 
-        // A low sun can leave no part of the sky that blue. Then sky is as warm as it is along the
-        // top (its blue over red within a factor of 4/3 either way), and Vision has to see sky,
-        // since a warm backdrop is as smooth and bright.
+        // Dusk, a deep sunset or a low sun can leave the whole sky darker or warmer than that. Then
+        // sky is brighter than 0.55 of the band along the top, though never near black, and as blue
+        // as that band, or as warm (its blue over red within a factor of 4/3 either way, give or
+        // take 0.03 for a sky with no blue in it); and Vision has to see sky, since a dark or warm
+        // backdrop is as smooth.
         let topBlue = top.map { index in
             let rgb = pixels.rgb(index % width, index / width)
             return rgb.z / max(rgb.x, 1e-3)
         }.sorted()[top.count / 2]
-        guard topBlue < 0.92 else { throw MaskComputationError.nothingFound(.sky) }
-        let warm = grow(
-            skyColored: { $0.z >= $0.x * topBlue * 0.75 && $0.z <= $0.x * topBlue / 0.75 },
-            rimColored: { $0.z >= $0.x * topBlue * 0.8 && $0.z <= $0.x * topBlue / 0.8 },
-        )
-        guard Double(warm.count(where: \.self)) / Double(warm.count) > 0.02, seesSky(image) else {
+        let warm = topBlue < 0.92
+        guard warm || reference * 0.55 < 0.25 else { throw MaskComputationError.nothingFound(.sky) }
+        let relative = (max(0.03, reference * 0.55), max(0.03, reference * 0.6))
+        let second = warm
+            ? grow(
+                floor: relative,
+                skyColored: { $0.z >= $0.x * (topBlue * 0.75 - 0.03) && $0.z <= $0.x * (topBlue / 0.75 + 0.03) },
+                rimColored: { $0.z >= $0.x * (topBlue * 0.8 - 0.03) && $0.z <= $0.x * (topBlue / 0.8 + 0.03) },
+            )
+            : grow(floor: relative, skyColored: { $0.z >= $0.x * 0.92 }, rimColored: { $0.z >= $0.x * 0.95 })
+        guard Double(second.count(where: \.self)) / Double(second.count) > 0.02, seesSky(image) else {
             throw MaskComputationError.nothingFound(.sky)
         }
-        return (warm, width, height)
+        return (second, width, height)
     }
 
     /// Gives back the sky a segmentation model leaves out between bare branches. Segment Anything
