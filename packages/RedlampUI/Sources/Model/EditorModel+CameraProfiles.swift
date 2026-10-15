@@ -33,7 +33,7 @@ public extension EditorModel {
         var accepted: [URL] = []
         var issues: [String] = []
         for url in urls {
-            if url.hasDirectoryPath {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                 accepted.append(url)
             } else if let issue = await engine.cameraProfileIssue(url) {
                 issues.append("“\(url.lastPathComponent)” \(issue).")

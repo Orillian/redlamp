@@ -109,6 +109,11 @@ struct CameraProfileMenuTests {
         await editor.chooseCameraProfiles([good, preset])
         #expect(engine.chosenProfiles.withLock { $0 } == [good])
         #expect(editor.cameraProfileIssues == ["“Preset.xmp” is a preset, not a profile."])
+        // A folder is taken whole, however its URL was made.
+        let pack = folder.appending(path: "Pack")
+        try FileManager.default.createDirectory(at: pack, withIntermediateDirectories: true)
+        await editor.chooseCameraProfiles([URL(fileURLWithPath: pack.path, isDirectory: false)])
+        #expect(engine.chosenProfiles.withLock { $0 }.map(\.path) == [pack.path] && editor.cameraProfileIssues.isEmpty)
     }
 
     @Test func `the stand-in follows the words in a profile's name`() {
