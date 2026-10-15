@@ -55,6 +55,9 @@ public struct SettingsView: View {
             Tab("Experimental", systemImage: "flask") {
                 FirmwareModelSettings(recipes: recipes)
             }
+            Tab("Privacy", systemImage: "hand.raised") {
+                PrivacySettings(activityLog: .shared)
+            }
             Tab("About", systemImage: "info.circle") {
                 AboutSettings(checksForUpdates: checksForUpdates, showsWhatsNew: showsWhatsNew, engine: engine)
             }

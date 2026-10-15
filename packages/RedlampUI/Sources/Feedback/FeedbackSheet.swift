@@ -195,9 +195,12 @@ private struct FeedbackForm: View {
                 Toggle("The photo, its edit and its history", isOn: $sheet.report.details.photo)
                     .disabled(sheet.context.photo == nil)
                 Toggle(
-                    "What I did in the last 15 minutes, and the editor's state",
+                    sheet.context.activityLog
+                        ? "What I did in the last 15 minutes, and the editor's state"
+                        : "The editor's state and the messages on screen",
                     isOn: $sheet.report.details.activity,
                 )
+                .automationIdentifier("feedback.details.activity")
                 Toggle("Redlamp's log", isOn: $sheet.report.details.log)
             }
             .padding(.leading, 18)
@@ -210,7 +213,10 @@ private struct FeedbackForm: View {
         } header: {
             Text("Included with your report")
         } footer: {
-            Text("Paths, folder names, location and serial numbers are never included.").formFooter()
+            VStack(alignment: .leading, spacing: 6) {
+                ActivityLogNote(isOn: sheet.context.activityLog)
+                Text("Paths, folder names, location and serial numbers are never included.").formFooter()
+            }
         }
     }
 
@@ -353,6 +359,7 @@ private struct IncidentSections: View {
             Toggle("What happened, with the threads' stacks", isOn: $sheet.report.details.incident)
                 .automationIdentifier("feedback.details.incident")
             Toggle("What I did in the 15 minutes before it", isOn: $sheet.report.details.activity)
+                .disabled(!sheet.context.activityLog)
                 .automationIdentifier("feedback.details.activity")
             Toggle("The Mac and the Redlamp build", isOn: $sheet.report.details.system)
                 .automationIdentifier("feedback.details.system")
@@ -364,10 +371,13 @@ private struct IncidentSections: View {
         } header: {
             Text("Included with your report")
         } footer: {
-            Text(
-                "Photos are named Photo A, Photo B. Paths, folder names, location and serial numbers are never included.",
-            )
-            .formFooter()
+            VStack(alignment: .leading, spacing: 6) {
+                ActivityLogNote(isOn: sheet.context.activityLog)
+                Text(
+                    "Photos are named Photo A, Photo B. Paths, folder names, location and serial numbers are never included.",
+                )
+                .formFooter()
+            }
         }
     }
 
@@ -380,6 +390,26 @@ private struct IncidentSections: View {
             incident.version.map { "in Redlamp \($0)" },
         ].compactMap(\.self).joined(separator: ", ")
     }
+}
+
+/// What the activity in a report holds and where it comes from, or that the activity log is off and none goes with it.
+private struct ActivityLogNote: View {
+    let isOn: Bool
+
+    var body: some View {
+        Text(isOn ? Self.on : Self.off)
+            .formFooter()
+            .automationIdentifier(isOn ? "feedback.activity-log.on" : "feedback.activity-log.off")
+    }
+
+    static let on = """
+    What you did comes from Redlamp's activity log: the tools, panels and edits you used, the messages \
+    Redlamp showed and the photos you opened, named Photo A, Photo B. The log stays on this Mac and \
+    leaves it only in a report you send. Settings › Privacy turns it off.
+    """
+    static let off = """
+    The activity log is off in Settings › Privacy, so nothing you did goes with this report.
+    """
 }
 
 /// A labelled text box for the person's own words.
