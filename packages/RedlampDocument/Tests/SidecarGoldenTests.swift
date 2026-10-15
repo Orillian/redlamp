@@ -82,7 +82,7 @@ struct SidecarGoldenTests {
         #"{"format":"app.redlamp.edit","modified":"2026-09-30T08:00:00Z","recipe":{"baseLook":{"amount":100,"id":""#
             + #"redlamp/base/color","name":"Redlamp Color","version":1},"future":true,"processVersion":1,"treatment":"co"#
             + #"lor","values":{"basic.exposure":0.5,"future.parameter":3},"version":3,"whiteBalance":"asShot"},"snapshot"#
-            + #"s":[],"versions":[{"name":"Alt"}]}"#,
+            + #"s":[],"tags":[{"name":"Alt"}]}"#,
         #"{"format":"app.redlamp.edit","modified":"0001-01-01T00:00:00Z","recipe":{"baseLook":{"amount":100,"id":""#
             + #"redlamp/base/color","name":"Redlamp Color","version":1},"processVersion":1,"treatment":"color","values":"#
             + #"{},"version":3,"whiteBalance":"asShot"},"snapshots":[]}"#,

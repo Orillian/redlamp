@@ -151,7 +151,8 @@ extension SidecarStore {
 
     /// Three-way: each field one side changed alone takes that side's value; an edit both
     /// changed goes to the newer, the other kept as a snapshot. Every snapshot of both is kept,
-    /// and this session's history is written beside theirs.
+    /// and this session's history is written beside theirs. Versions are matched by `id`, and
+    /// each one both have merges by these rules.
     public static func merge(_ ours: Sidecar, _ theirs: Sidecar, base: Sidecar, opened: Sidecar) -> Sidecar {
         var merged = ours
         switch (ours.recipe != opened.recipe, theirs.recipe != base.recipe) {
@@ -172,9 +173,43 @@ extension SidecarStore {
             ours.metadata, theirs.metadata, base: base.metadata, opened: opened.metadata,
         )
         merged.unknownFields = theirs.unknownFields.merging(ours.unknownFields) { _, new in new }
+        merged.versions = mergedVersions(ours, theirs, base: base, opened: opened)
         merged.session = ours.session
         merged.clearsHistory = false
         merged.modified = max(ours.modified, theirs.modified)
+        return merged
+    }
+
+    /// Each side's versions, ours first: one both have merges as the photo's own edit does, its name taken
+    /// as a field is. One only one side has stays, unless the other side removed it and the side that has
+    /// it hasn't changed it since.
+    private static func mergedVersions(
+        _ ours: Sidecar, _ theirs: Sidecar, base: Sidecar, opened: Sidecar,
+    ) -> [PhotoVersion] {
+        var merged: [PhotoVersion] = []
+        for version in ours.versions {
+            guard let their = theirs.version(version.id) else {
+                if base.version(version.id) == nil || opened.version(version.id) != version {
+                    merged.append(version)
+                }
+                continue
+            }
+            let based = base.version(version.id) ?? their
+            let open = opened.version(version.id) ?? version
+            var kept = version.holding(merge(
+                version.asSidecar(modified: ours.modified), their.asSidecar(modified: theirs.modified),
+                base: based.asSidecar(modified: base.modified), opened: open.asSidecar(modified: opened.modified),
+            ))
+            if their.name != based.name, version.name == open.name {
+                kept.name = their.name
+            }
+            merged.append(kept)
+        }
+        for version in theirs.versions where ours.version(version.id) == nil {
+            if opened.version(version.id) == nil || base.version(version.id) != version {
+                merged.append(version)
+            }
+        }
         return merged
     }
 }

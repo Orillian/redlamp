@@ -62,7 +62,7 @@ struct SidecarTests {
         let store = SidecarStore()
         let json = #"""
         {"format":"app.redlamp.edit","modified":"2026-09-30T08:00:00Z","snapshots":[],
-         "versions":[{"name":"Alt"}],
+         "tags":[{"name":"Alt"}],
          "recipe":{"version":1,"processVersion":1,"values":{"basic.exposure":0.5,"future.parameter":3}}}
         """#
         try Data(json.utf8).write(to: store.url(for: image))
@@ -80,7 +80,7 @@ struct SidecarTests {
             Issue.record("sidecar did not encode as an object")
             return
         }
-        #expect(root["versions"] == .array([.object(["name": .string("Alt")])]))
+        #expect(root["tags"] == .array([.object(["name": .string("Alt")])]))
         #expect(values["future.parameter"] == .number(3))
         #expect(values["basic.exposure"] == .number(1))
     }

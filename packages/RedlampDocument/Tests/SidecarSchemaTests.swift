@@ -38,13 +38,18 @@ struct SidecarSchemaTests {
         return try body(store, image, sidecar)
     }
 
-    /// The rich sidecar's `edit.json` and history file, as written.
-    private func written() throws -> (edit: JSONValue, history: JSONValue) {
+    /// The rich sidecar's `edit.json`, and the history files of the photo's edit and of its version, as written.
+    private func written() throws -> (edit: JSONValue, history: JSONValue, versionHistory: JSONValue) {
         try withRichSidecar { store, image, sidecar in
             let session = try #require(sidecar.session)
-            let history = store.url(for: image).appending(path: SidecarStore.historyDirectory)
-                .appending(path: "\(session.id.uuidString).json")
-            return try (json(Data(contentsOf: store.editURL(for: image))), json(Data(contentsOf: history)))
+            let versionSession = try #require(sidecar.unsavedSessions.first)
+            let directory = store.url(for: image).appending(path: SidecarStore.historyDirectory)
+            let history = directory.appending(path: "\(session.id.uuidString).json")
+            let versionHistory = directory.appending(path: "\(versionSession.id.uuidString).json")
+            return try (
+                json(Data(contentsOf: store.editURL(for: image))), json(Data(contentsOf: history)),
+                json(Data(contentsOf: versionHistory)),
+            )
         }
     }
 
@@ -70,18 +75,21 @@ struct SidecarSchemaTests {
             let edit = try json(Data(contentsOf: store.editURL(for: image)))
             #expect(validator.errors(in: edit) == [])
 
-            let session = try #require(sidecar.session)
-            let file = store.url(for: image).appending(path: "history/\(session.id.uuidString).json")
-            let history = try json(Data(contentsOf: file))
-            #expect(validator.errors(in: history, against: "#/$defs/historyFile") == [])
-            let recipes = try stepRecipes(history)
-            #expect(recipes.count == session.steps.count)
-            for (index, recipe) in recipes.enumerated() {
-                #expect(validator.errors(in: recipe, against: "#/$defs/recipe") == [], "step \(index)")
+            for session in try [#require(sidecar.session)] + sidecar.unsavedSessions {
+                let file = store.url(for: image).appending(path: "history/\(session.id.uuidString).json")
+                let history = try json(Data(contentsOf: file))
+                #expect(validator.errors(in: history, against: "#/$defs/historyFile") == [])
+                let recipes = try stepRecipes(history)
+                #expect(recipes.count == session.steps.count)
+                for (index, recipe) in recipes.enumerated() {
+                    #expect(validator.errors(in: recipe, against: "#/$defs/recipe") == [], "step \(index)")
+                }
             }
 
+            let version = try #require(sidecar.versions.first)
             let bitmaps = sidecar.recipe.maskBitmaps + sidecar.snapshots.flatMap(\.recipe.maskBitmaps)
-            #expect(bitmaps.count == 9)
+                + version.recipe.maskBitmaps + version.snapshots.flatMap(\.recipe.maskBitmaps)
+            #expect(bitmaps.count == 11)
             for bitmap in bitmaps {
                 #expect(try Data(contentsOf: store.bitmapURL(bitmap.sha256, for: image)) == bitmap.png)
             }
@@ -90,15 +98,19 @@ struct SidecarSchemaTests {
 
     @Test func `every key written is in the schema, and every key in the schema is written`() throws {
         let validator = try validator()
-        let (edit, history) = try written()
+        let (edit, history, versionHistory) = try written()
         let editKeys = validator.keys(in: edit)
         let historyKeys = validator.keys(in: history, against: "#/$defs/historyFile")
-        #expect(editKeys.undeclared + historyKeys.undeclared == [], "keys the encoder wrote that the schema lacks")
+        let versionHistoryKeys = validator.keys(in: versionHistory, against: "#/$defs/historyFile")
+        #expect(
+            editKeys.undeclared + historyKeys.undeclared + versionHistoryKeys.undeclared == [],
+            "keys the encoder wrote that the schema lacks",
+        )
 
         // Format 1's name for `baseLook`, which is read but never written.
         let readOnly: Set = ["#/$defs/recipe profile"]
         let unwritten = validator.declaredKeys.subtracting(editKeys.declared).subtracting(historyKeys.declared)
-            .subtracting(readOnly)
+            .subtracting(versionHistoryKeys.declared).subtracting(readOnly)
         #expect(unwritten.sorted() == [], "keys in the schema that the rich sidecar doesn't write")
     }
 
@@ -120,12 +132,15 @@ struct SidecarSchemaTests {
             path.count == 3 && path[0] == "steps" && path[2] == "recipe"
                 || path.count == 5 && path[0] == "steps" && path[2] == "patch" && path[4] == "value"
         }
-        let mismatches = try mismatches(
-            in: written().history, against: "#/$defs/historyFile", validator: validator(), opaque: opaque,
-            ignoring: { $0.range(of: "^/steps/[0-9]+/patch$", options: .regularExpression) != nil },
-            decodes: { (try? HistorySession(decoding: $0)) != nil },
-        )
-        #expect(mismatches == [])
+        let files = try written()
+        for history in [files.history, files.versionHistory] {
+            let mismatches = try mismatches(
+                in: history, against: "#/$defs/historyFile", validator: validator(), opaque: opaque,
+                ignoring: { $0.range(of: "^/steps/[0-9]+/patch$", options: .regularExpression) != nil },
+                decodes: { (try? HistorySession(decoding: $0)) != nil },
+            )
+            #expect(mismatches == [])
+        }
     }
 
     @Test func `objects are open exactly where unknown keys survive a save`() throws {
@@ -239,6 +254,11 @@ struct SidecarSchemaTests {
             ("\(pointer(radial))/softness", edit.updating(radial) { $0.adding("softness") }),
             ("/modified", edit.updating(["modified"]) { _ in .string("2026-10-03T12:59:01") }),
             ("/recipe/processVersion", edit.updating(["recipe", "processVersion"]) { _ in .number(99) }),
+            ("/versions/0", edit.updating(["versions", "0", "id"]) { _ in nil }),
+            ("/versions/0/recipe/processVersion", edit.updating(["versions", "0", "recipe", "processVersion"]) { _ in
+                .number(99)
+            }),
+            ("/versions", edit.updating(["versions"]) { _ in .array([]) }),
         ]
         for (error, sidecar) in wrong {
             let errors = validator.errors(in: sidecar)
@@ -264,7 +284,7 @@ struct SidecarSchemaTests {
                 kinds.append("history")
             }
         }
-        #expect(kinds == ["edit", "history"])
+        #expect(kinds == ["edit", "history", "edit", "history"])
     }
 
     // MARK: - The schema against the code
@@ -431,7 +451,7 @@ enum RichSidecar {
 
     static func sidecar() -> Sidecar {
         let edit = recipe()
-        return Sidecar(
+        var sidecar = Sidecar(
             recipe: edit,
             snapshots: [Snapshot(name: "Every slider", created: date, recipe: everySlider())],
             metadata: PhotoMetadata(
@@ -446,9 +466,42 @@ enum RichSidecar {
                 stack: PhotoStack(id: UUID(uuidString: "6F1C2A4E-8B1D-4C3A-9E57-1B2D3C4E5F60"), top: true, position: 0),
                 captureShift: -18000, captureOffset: -18000, customLabelColor: .teal,
             ),
+            versions: [version()],
             modified: date,
             session: session(ending: edit),
         )
+        sidecar.unsavedSessions = [versionSession()]
+        return sidecar
+    }
+
+    static let versionID = UUID(uuidString: "8E2B4F1A-3C5D-4E6F-9A7B-0C1D2E3F4A5B") ?? UUID()
+
+    /// A black and white version with an AI mask, its own metadata and a snapshot with a mask of its own.
+    static func version() -> PhotoVersion {
+        var recipe = EditRecipe()
+        recipe.treatment = .blackAndWhite
+        recipe[.contrast] = 30
+        recipe.masks = [layer(
+            "Subject",
+            [MaskComponent(shape: .ai(aiMask(.subject, "version")))],
+            [.localExposure: 0.2],
+        )]
+        var before = EditRecipe()
+        before.masks = [layer("Sky", [MaskComponent(shape: .ai(aiMask(.sky, "version sky")))], [.localDehaze: 10])]
+        return PhotoVersion(
+            id: versionID, name: "Copy 1", created: date, recipe: recipe,
+            metadata: PhotoMetadata(rating: 5, flag: .pick, keywords: ["Places/Portugal/Lisbon"]),
+            snapshots: [Snapshot(name: "Sky", created: date, recipe: before)],
+        )
+    }
+
+    /// A session of the version, which made it black and white.
+    static func versionSession() -> HistorySession {
+        var recipe = EditRecipe()
+        let opened = HistoryStep(action: .open, title: "Created from Original", recipe: recipe)
+        recipe.treatment = .blackAndWhite
+        let treatment = HistoryStep(action: .treatment, title: "Treatment", after: "Black & White", recipe: recipe)
+        return HistorySession(started: date, steps: [opened, treatment], versionID: versionID)
     }
 
     static func recipe() -> EditRecipe {

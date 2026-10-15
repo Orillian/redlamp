@@ -10,6 +10,12 @@ public extension SidecarStore {
         return (try? Self.reading(sidecar) { Self.decodeHistory(inSidecar: $0) }) ?? []
     }
 
+    /// The history sessions of one of the photo's edits, its own (`version` nil) or a version's, newest
+    /// first, as `loadHistory(for:)` reads them.
+    func loadHistory(for image: URL, version: UUID?) -> [HistorySession] {
+        loadHistory(for: image).filter { $0.versionID == version }
+    }
+
     /// Whether the photo's sidecar keeps a history session, as a photo edited in Redlamp keeps one when its edit is
     /// back at the defaults. Lists the package as it is, without coordinating: read the sidecar first.
     func hasHistory(for image: URL) -> Bool {
@@ -51,16 +57,22 @@ extension SidecarStore {
     }
 
     /// Writes the open session's file, or removes it while the session has no edits, and the
-    /// files of its unsaved sessions; with `clearsHistory`, removes every other session's
-    /// instead. Returns whether anything changed.
+    /// files of its unsaved sessions; with `clearsHistory`, removes every other session's of the
+    /// same edit instead. Removes the sessions of `removedVersions`. Returns whether anything changed.
     @discardableResult
-    static func writeHistory(of sidecar: Sidecar, in package: URL) throws -> Bool {
+    static func writeHistory(
+        of sidecar: Sidecar, in package: URL, removing removedVersions: Set<UUID> = [],
+    ) throws -> Bool {
         let fileManager = FileManager.default
         let directory = package.appending(path: historyDirectory)
         let name = sidecar.session.map { "\($0.id.uuidString).json" }
         var changed = false
-        if sidecar.clearsHistory {
+        if sidecar.clearsHistory || !removedVersions.isEmpty {
+            let cleared = sidecar.clearsHistory ? sidecar.session?.versionID : nil
             for file in historyFiles(in: package) where file.lastPathComponent != name {
+                let summary = historySummary(file)
+                let removed = summary?.versionID.map(removedVersions.contains) ?? false
+                guard removed || sidecar.clearsHistory && summary?.versionID == cleared else { continue }
                 try fileManager.removeItem(at: file)
                 changed = true
             }
@@ -80,6 +92,12 @@ extension SidecarStore {
         return try writeSession(session, in: package) || changed
     }
 
+    /// The versions `existing` has and `sidecar` doesn't: saving `sidecar` over it removes their sessions.
+    static func removedVersions(_ sidecar: Sidecar, over existing: Sidecar?) -> Set<UUID> {
+        guard let existing, !existing.versions.isEmpty else { return [] }
+        return Set(existing.versions.map(\.id)).subtracting(sidecar.versions.map(\.id))
+    }
+
     /// Writes `session`'s file unless it holds that already. Returns whether it wrote it.
     private static func writeSession(_ session: HistorySession, in package: URL) throws -> Bool {
         let directory = package.appending(path: historyDirectory)
@@ -90,18 +108,18 @@ extension SidecarStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try data.write(to: file, options: .atomic)
         if existing == nil {
-            pruneHistory(in: package, keeping: file)
+            pruneHistory(in: package, keeping: file, of: session.versionID)
         }
         return true
     }
 
-    /// Removes the oldest sessions beyond `keptSessions`, never `current` or a file this build
-    /// can't read.
-    private static func pruneHistory(in package: URL, keeping current: URL) {
+    /// Removes the oldest sessions of the edit `version` names beyond `keptSessions`, never
+    /// `current` or a file this build can't read.
+    private static func pruneHistory(in package: URL, keeping current: URL, of version: UUID?) {
         let others = historyFiles(in: package).filter { $0.lastPathComponent != current.lastPathComponent }
         let dated = others.compactMap { file -> (file: URL, started: Date)? in
             guard let summary = historySummary(file), (summary.version ?? 1) <= HistorySession.formatVersion,
-                  let started = summary.started
+                  summary.versionID == version, let started = summary.started
             else { return nil }
             return (file, started)
         }

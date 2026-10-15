@@ -104,16 +104,21 @@ public struct HistoryStep: Identifiable, Hashable, Sendable {
 /// The steps of one visit to a photo, from opening it to leaving it.
 public struct HistorySession: Identifiable, Hashable, Sendable {
     public static let format = "app.redlamp.history"
-    public static let formatVersion = 1
+    /// The newest history format this build reads. A session of the photo's own edit is written as format 1;
+    /// format 2 adds `versionID`, so a build from before versions skips a version's sessions (EDT-09).
+    public static let formatVersion = 2
 
     public var id: UUID
     public var started: Date
     public var steps: [HistoryStep]
+    /// The version of the photo the session edited; nil for the photo's own edit.
+    public var versionID: UUID?
 
-    public init(id: UUID = UUID(), started: Date = Date(), steps: [HistoryStep]) {
+    public init(id: UUID = UUID(), started: Date = Date(), steps: [HistoryStep], versionID: UUID? = nil) {
         self.id = id
         self.started = started
         self.steps = steps
+        self.versionID = versionID
     }
 
     /// Whether anything was done after the session's first step.
@@ -144,18 +149,20 @@ struct HistoryFile: Codable {
     }
 
     var format = HistorySession.format
-    var version = HistorySession.formatVersion
+    var version = 1
     var id: UUID
     var started: Date
     /// The mask bitmaps the steps use, so the package keeps them without reading every step.
     var bitmaps: [String]
     var steps: [Step]
+    var versionID: UUID?
 
-    /// Just what saving needs from a session file: its date and the bitmaps it uses.
+    /// Just what saving needs from a session file: its date, the edit it's of and the bitmaps it uses.
     struct Summary: Decodable {
         var version: Int?
         var started: Date?
         var bitmaps: [String]?
+        var versionID: UUID?
     }
 }
 
@@ -183,7 +190,8 @@ public extension HistorySession {
             previous = json
         }
         let file = HistoryFile(
-            id: id, started: started, bitmaps: maskBitmaps.map(\.sha256).sorted(), steps: steps,
+            version: versionID == nil ? 1 : 2, id: id, started: started, bitmaps: maskBitmaps.map(\.sha256).sorted(),
+            steps: steps, versionID: versionID,
         )
         return try JSONEncoder.sidecar.encode(file)
     }
@@ -210,6 +218,6 @@ public extension HistorySession {
             ))
         }
         guard !steps.isEmpty else { throw HistoryFileError.empty }
-        self.init(id: file.id, started: file.started, steps: steps)
+        self.init(id: file.id, started: file.started, steps: steps, versionID: file.versionID)
     }
 }

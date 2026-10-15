@@ -40,7 +40,9 @@ struct HandCodedTypeTests {
     private let everything = SidecarSamples.everything
 
     @Test func `the sidecar and its edit`() throws {
-        try check(everything, notWritten: ["session", "clearsHistory", "unsavedSessions"])
+        let versioned = SidecarSamples.versioned
+        try check(versioned, notWritten: ["session", "clearsHistory", "unsavedSessions"])
+        try check(#require(versioned.versions.first))
         let provenance = EditProvenance(
             source: .lightroomCatalog, path: "/Users/ana/Pictures/Lightroom/Catalog.lrcat", photo: 4211,
             digest: "8c1f", date: Date(timeIntervalSince1970: 1_791_000_000), approximated: ["Clarity2012"],

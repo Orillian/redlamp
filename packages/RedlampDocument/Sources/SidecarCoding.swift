@@ -27,6 +27,37 @@ extension Snapshot: Codable {
     }
 }
 
+extension PhotoVersion: Codable {
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, name, created, recipe, metadata, snapshots
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        created = try container.decode(Date.self, forKey: .created)
+        recipe = try container.decode(EditRecipe.self, forKey: .recipe)
+        metadata = try container.decodeIfPresent(PhotoMetadata.self, forKey: .metadata)
+        snapshots = try container.decodeIfPresent([Snapshot].self, forKey: .snapshots) ?? []
+        unknownFields = try decoder.container(keyedBy: DynamicCodingKey.self)
+            .unknownFields(excluding: Set(CodingKeys.allCases.map(\.stringValue)))
+    }
+
+    /// Written as the sidecar writes the photo's own edit: `snapshots` always, `metadata` only when it's set.
+    public func encode(to encoder: Encoder) throws {
+        var unknown = encoder.container(keyedBy: DynamicCodingKey.self)
+        try unknown.encode(unknownFields)
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(created, forKey: .created)
+        try container.encode(recipe, forKey: .recipe)
+        try container.encodeIfPresent(metadata, forKey: .metadata)
+        try container.encode(snapshots, forKey: .snapshots)
+    }
+}
+
 extension PhotoMetadata: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case rating, flag, label, customLabel, customLabelColor, mark, originalName, keywords, title, caption, creator

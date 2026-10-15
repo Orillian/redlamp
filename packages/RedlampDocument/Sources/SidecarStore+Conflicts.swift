@@ -6,7 +6,8 @@ public extension SidecarStore {
     /// Conflicting copies, made when the same photo was edited on two Macs before iCloud Drive
     /// synced them. The most recently modified edit wins, and every other distinct edit is kept
     /// as a snapshot of the winner, so nothing is lost; snapshots of every copy are kept too.
-    /// Rating, flag, label and unknown metadata come each from the newest copy that set it.
+    /// Rating, flag, label and unknown metadata come each from the newest copy that set it. Versions
+    /// of every copy are kept, matched by `id`, and each merges by these rules too.
     static func merge(_ current: Sidecar, _ conflicts: [Sidecar]) -> Sidecar {
         let copies = [current] + conflicts
         let newest = copies.indices.reduce(0) { copies[$1].modified > copies[$0].modified ? $1 : $0 }
@@ -33,7 +34,26 @@ public extension SidecarStore {
         for copy in copies {
             winner.unknownFields.merge(copy.unknownFields) { kept, _ in kept }
         }
+        winner.versions = mergedVersions(of: copies, newest: newest)
         return winner
+    }
+
+    /// Every copy's versions, matched by `id`, the newest copy's first in its order: each merged from the
+    /// copies that have it, each dated as its copy is, keeping the name and date of the newest copy's.
+    private static func mergedVersions(of copies: [Sidecar], newest: Int) -> [PhotoVersion] {
+        let order = [newest] + copies.indices.filter { $0 != newest }
+        var ids: [UUID] = []
+        for index in order {
+            for version in copies[index].versions where !ids.contains(version.id) {
+                ids.append(version.id)
+            }
+        }
+        return ids.map { id in
+            let holding = order.compactMap { index in copies[index].version(id).map { (copies[index].modified, $0) } }
+            let edits = holding.map { modified, version in version.asSidecar(modified: modified) }
+            let winner = edits.indices.reduce(0) { edits[$1].modified > edits[$0].modified ? $1 : $0 }
+            return holding[winner].1.holding(merge(edits[0], Array(edits.dropFirst())))
+        }
     }
 
     /// `current` merged with the conflicting copies at `versions`; nil when this build can't

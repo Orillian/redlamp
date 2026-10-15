@@ -18,6 +18,12 @@
       "description": "Named versions of the edit, oldest first."
     },
     "metadata": { "$ref": "#/$defs/metadata" },
+    "versions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/photoVersion" },
+      "description": "The photo's other edits, as Lightroom Classic's virtual copies, in the order they were made. Written only when there are some. recipe, snapshots and metadata stay the file's own edit."
+    },
     "modified": {
       "$ref": "#/$defs/date",
       "description": "When the edit was last saved. The newest edit wins when conflicting copies merge."
@@ -925,6 +931,28 @@
       },
       "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
     },
+    "photoVersion": {
+      "description": "Another edit of the same photo, as a virtual copy is in Lightroom Classic: shown as a photo of its own, with its own name, edit, metadata, snapshots and history sessions.",
+      "type": "object",
+      "required": ["id", "name", "created", "recipe"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid", "description": "The versionID of the version's history files." },
+        "name": { "type": "string", "description": "Copy 1, or the name the user gave it." },
+        "created": { "$ref": "#/$defs/date" },
+        "recipe": { "$ref": "#/$defs/recipe" },
+        "metadata": {
+          "$ref": "#/$defs/metadata",
+          "description": "The version's own rating, flag, label, keywords, title, caption, collections and the rest. originalName, captureShift and captureOffset describe the file: the photo's apply, and Redlamp doesn't write them here. Written only when one is set."
+        },
+        "snapshots": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/snapshot" },
+          "default": [],
+          "description": "The version's own snapshots, oldest first."
+        }
+      },
+      "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
+    },
     "metadata": {
       "description": "Rating, flag, color label, mark, the photo's original name, its keywords, title, caption, creator, copyright and location, the collections and stack it's in, and its capture time's shift and zone. Written only when one is set.",
       "type": "object",
@@ -1026,10 +1054,14 @@
         "version": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 1,
-          "description": "The history format version. Redlamp skips a file with a newer one, and never removes it."
+          "maximum": 2,
+          "description": "The history format version: 1 for a session of the photo's own edit, 2 for a version's. Redlamp skips a file with a newer one, and never removes it."
         },
         "id": { "$ref": "#/$defs/uuid", "description": "The session's id, and the file's name." },
+        "versionID": {
+          "$ref": "#/$defs/uuid",
+          "description": "The id of the version the session edited, in a format 2 file. Missing for the photo's own edit."
+        },
         "started": { "$ref": "#/$defs/date" },
         "bitmaps": {
           "type": "array",

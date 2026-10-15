@@ -17,6 +17,34 @@ public struct Snapshot: Sendable, Hashable, Identifiable {
     }
 }
 
+/// Another edit of the same photo, as Lightroom Classic's virtual copies are (EDT-09): kept in the photo's
+/// sidecar beside its own edit, with its own name, metadata and snapshots, and its own history sessions.
+public struct PhotoVersion: Sendable, Hashable, Identifiable {
+    public var id: UUID
+    /// "Copy 1", or the name the user gave it.
+    public var name: String
+    public var created: Date
+    public var recipe: EditRecipe
+    /// Its own rating, flag, label, keywords, title, caption and collections. The fields that describe the
+    /// file (`originalName`, `captureShift`, `captureOffset`) are the photo's, and aren't written here.
+    public var metadata: PhotoMetadata?
+    public var snapshots: [Snapshot]
+    /// Fields written by a newer Redlamp, written back unchanged.
+    public var unknownFields: [String: JSONValue] = [:]
+
+    public init(
+        id: UUID = UUID(), name: String, created: Date = Date(), recipe: EditRecipe, metadata: PhotoMetadata? = nil,
+        snapshots: [Snapshot] = [],
+    ) {
+        self.id = id
+        self.name = name
+        self.created = created
+        self.recipe = recipe
+        self.metadata = metadata
+        self.snapshots = snapshots
+    }
+}
+
 public enum PhotoFlag: String, Codable, Sendable, Hashable {
     case pick, reject
 }
@@ -223,6 +251,9 @@ public struct Sidecar: Sendable, Hashable {
     public var snapshots: [Snapshot]
     /// Optional so sidecars written before ratings existed still decode.
     public var metadata: PhotoMetadata?
+    /// The photo's other edits, in the order they were made (EDT-09). `recipe`, `snapshots` and `metadata`
+    /// stay the file's own, so builds from before versions show the photo as it was.
+    public var versions: [PhotoVersion]
     public var modified: Date
     /// Top-level fields written by a newer Redlamp, written back unchanged.
     public var unknownFields: [String: JSONValue] = [:]
@@ -240,20 +271,22 @@ public struct Sidecar: Sendable, Hashable {
         recipe: EditRecipe,
         snapshots: [Snapshot] = [],
         metadata: PhotoMetadata? = nil,
+        versions: [PhotoVersion] = [],
         modified: Date = Date(),
         session: HistorySession? = nil,
     ) {
         self.recipe = recipe
         self.snapshots = snapshots
         self.metadata = metadata
+        self.versions = versions
         self.modified = modified
         self.session = session
     }
 
     /// Nothing worth keeping: the file can be deleted, unless earlier sessions' history is in it.
     public var isPristine: Bool {
-        recipe.isPristine && snapshots.isEmpty && (metadata?.isEmpty ?? true) && unknownFields.isEmpty
-            && session?.hasEdits != true && !unsavedSessions.contains(where: \.hasEdits)
+        recipe.isPristine && snapshots.isEmpty && (metadata?.isEmpty ?? true) && versions.isEmpty
+            && unknownFields.isEmpty && session?.hasEdits != true && !unsavedSessions.contains(where: \.hasEdits)
     }
 
     /// Same edit, ratings and snapshots, whenever it was written. Compared as written, since the
@@ -270,7 +303,7 @@ public struct Sidecar: Sendable, Hashable {
 
 extension Sidecar: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case format, recipe, snapshots, metadata, modified
+        case format, recipe, snapshots, metadata, versions, modified
     }
 
     public init(from decoder: Decoder) throws {
@@ -279,11 +312,13 @@ extension Sidecar: Codable {
         recipe = try container.decode(EditRecipe.self, forKey: .recipe)
         snapshots = try container.decodeIfPresent([Snapshot].self, forKey: .snapshots) ?? []
         metadata = try container.decodeIfPresent(PhotoMetadata.self, forKey: .metadata)
+        versions = try container.decodeIfPresent([PhotoVersion].self, forKey: .versions) ?? []
         modified = try container.decodeIfPresent(Date.self, forKey: .modified) ?? .distantPast
         unknownFields = try decoder.container(keyedBy: DynamicCodingKey.self)
             .unknownFields(excluding: Set(CodingKeys.allCases.map(\.stringValue)))
     }
 
+    /// Writes `versions` only when there are some, so a sidecar without them is written as before them.
     public func encode(to encoder: Encoder) throws {
         var unknown = encoder.container(keyedBy: DynamicCodingKey.self)
         try unknown.encode(unknownFields)
@@ -292,6 +327,9 @@ extension Sidecar: Codable {
         try container.encode(recipe, forKey: .recipe)
         try container.encode(snapshots, forKey: .snapshots)
         try container.encodeIfPresent(metadata, forKey: .metadata)
+        if !versions.isEmpty {
+            try container.encode(versions, forKey: .versions)
+        }
         try container.encode(modified, forKey: .modified)
     }
 }
@@ -507,6 +545,12 @@ public struct SidecarStore: Sendable {
         for index in decoded.snapshots.indices {
             decoded.snapshots[index].recipe.loadMaskBitmaps(bitmaps)
         }
+        for index in decoded.versions.indices {
+            decoded.versions[index].recipe.loadMaskBitmaps(bitmaps)
+            for snapshot in decoded.versions[index].snapshots.indices {
+                decoded.versions[index].snapshots[snapshot].recipe.loadMaskBitmaps(bitmaps)
+            }
+        }
         return decoded
     }
 
@@ -539,7 +583,9 @@ public struct SidecarStore: Sendable {
             // History first: an interrupted save leaves the new step in history, where it can be
             // restored, rather than an edit its history doesn't record.
             try writeBitmaps(of: sidecar, into: destination)
-            let historyChanged = try writeHistory(of: sidecar, in: destination)
+            let historyChanged = try writeHistory(
+                of: sidecar, in: destination, removing: removedVersions(sidecar, over: existing),
+            )
             try edits.replace(json, destination.appending(path: editFile))
             if historyChanged || mayLeaveUnusedBitmaps(over: existing, sidecar) {
                 removeUnusedBitmaps(of: sidecar, in: destination, json: json)
@@ -575,8 +621,9 @@ public struct SidecarStore: Sendable {
 
     private static func bitmaps(of sidecar: Sidecar) -> [MaskBitmap] {
         let sessions = ([sidecar.session].compactMap(\.self) + sidecar.unsavedSessions).filter(\.hasEdits)
-        return sidecar.recipe.maskBitmaps + sidecar.snapshots.flatMap(\.recipe.maskBitmaps)
-            + sessions.flatMap(\.maskBitmaps)
+        let recipes = [sidecar.recipe] + sidecar.snapshots.map(\.recipe)
+            + sidecar.versions.flatMap { [$0.recipe] + $0.snapshots.map(\.recipe) }
+        return recipes.flatMap(\.maskBitmaps) + sessions.flatMap(\.maskBitmaps)
     }
 
     private static func hasEveryBitmap(_ sidecar: Sidecar, in package: URL) -> Bool {
@@ -610,8 +657,8 @@ public struct SidecarStore: Sendable {
         written.contains { $0.range(of: Data(sha256.utf8)) != nil }
     }
 
-    /// Removes the package's bitmaps that nothing refers to: not the edit, its snapshots or its
-    /// history, nor any field of `json` (the edit as written), of a history file or of a damaged
+    /// Removes the package's bitmaps that nothing refers to: not the edit, its snapshots, its versions
+    /// or its history, nor any field of `json` (the edit as written), of a history file or of a damaged
     /// edit set aside, where fields a newer build added (a mask shape this build doesn't know,
     /// say) may name one. Nothing is removed while a session file can't be read, since the
     /// bitmaps it needs aren't known.

@@ -64,7 +64,7 @@ extension SidecarStore {
     }
 
     /// Whether saving `sidecar` over `existing`, the edit at `destination`, would leave nothing worth
-    /// keeping.
+    /// keeping. The sessions of versions it removes don't count: the save removes them.
     static func leavesNothing(_ sidecar: Sidecar, over existing: Sidecar?, at destination: URL) -> Bool {
         var merged = sidecar
         if let existing {
@@ -72,7 +72,10 @@ extension SidecarStore {
         }
         guard merged.isPristine else { return false }
         let open = sidecar.session.map { "\($0.id.uuidString).json" }
-        return sidecar.clearsHistory || historyFiles(in: destination).allSatisfy { $0.lastPathComponent == open }
+        let removed = removedVersions(sidecar, over: existing)
+        return sidecar.clearsHistory || historyFiles(in: destination).allSatisfy { file in
+            file.lastPathComponent == open || historySummary(file)?.versionID.map(removed.contains) == true
+        }
     }
 
     /// The edit's bytes; nil when there is none. Throws the read's error when it is there but
@@ -253,17 +256,34 @@ extension SidecarStore {
         return false
     }
 
+    /// Whether the recipe, or a version's, has a newer format or process version.
     private static func isNewer(_ data: Data) -> Bool {
-        struct Probe: Decodable {
-            struct Versions: Decodable {
-                var version: Int?
-                var processVersion: Int?
-            }
+        struct Versions: Decodable {
+            var version: Int?
+            var processVersion: Int?
 
+            var areNewer: Bool {
+                (version ?? 1) > EditRecipe.formatVersion || (processVersion ?? 1) > EditRecipe.currentProcessVersion
+            }
+        }
+        struct Edit: Decodable {
             var recipe: Versions?
         }
-        guard let versions = (try? JSONDecoder.sidecar.decode(Probe.self, from: data))?.recipe else { return false }
-        return (versions.version ?? 1) > EditRecipe.formatVersion
-            || (versions.processVersion ?? 1) > EditRecipe.currentProcessVersion
+        struct Probe: Decodable {
+            enum CodingKeys: CodingKey {
+                case recipe, versions
+            }
+
+            var recipes: [Versions?]
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                let versions = (try? container.decodeIfPresent([Edit].self, forKey: .versions)) ?? nil
+                recipes = try [container.decodeIfPresent(Versions.self, forKey: .recipe)]
+                    + (versions ?? []).map(\.recipe)
+            }
+        }
+        guard let probe = try? JSONDecoder.sidecar.decode(Probe.self, from: data) else { return false }
+        return probe.recipes.contains { $0?.areNewer == true }
     }
 }

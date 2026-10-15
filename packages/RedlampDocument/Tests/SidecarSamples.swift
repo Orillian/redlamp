@@ -94,13 +94,34 @@ enum SidecarSamples {
         )
     }
 
+    /// `everything` with a version that has its own metadata and a snapshot (EDT-09).
+    static var versioned: Sidecar {
+        var sidecar = everything
+        var recipe = EditRecipe()
+        recipe[.contrast] = 30
+        recipe.masks = [MaskLayer(id: id(8), name: "Subject", components: [
+            MaskComponent(id: id(81), shape: .ai(ai(.subject))),
+        ])]
+        sidecar.versions = [PhotoVersion(
+            id: id(9), name: "Copy 1", created: Date(timeIntervalSince1970: 1500), recipe: recipe,
+            metadata: PhotoMetadata(rating: 5, flag: .reject, keywords: ["Harbour"]),
+            snapshots: [Snapshot(
+                id: id(10),
+                name: "Before",
+                created: Date(timeIntervalSince1970: 1500),
+                recipe: EditRecipe(),
+            )],
+        )]
+        return sidecar
+    }
+
     /// Ordinary sidecars of every format: format 1 with a profile and an old look id, format 2,
     /// one carrying fields a newer build added where they are kept, and one spelling out defaults.
     static let ordinary = [
         #"{"format":"app.redlamp.edit","recipe":{"version":1,"processVersion":1,"#
             + #""profile":{"id":"redlamp.vivid","name":"Redlamp Vivid","amount":80}}}"#,
         #"{"format":"app.redlamp.edit","recipe":{"version":2,"processVersion":1,"values":{"basic.exposure":0.5}}}"#,
-        #"{"format":"app.redlamp.edit","modified":"2026-09-30T08:00:00Z","snapshots":[],"versions":[{"name":"Alt"}],"#
+        #"{"format":"app.redlamp.edit","modified":"2026-09-30T08:00:00Z","snapshots":[],"tags":[{"name":"Alt"}],"#
             +
             #""recipe":{"version":3,"processVersion":1,"future":true,"values":{"basic.exposure":0.5,"future.parameter":3}}}"#,
         #"{"format":"app.redlamp.edit","snapshots":[],"recipe":{"version":3,"processVersion":1,"values":{"basic.exposure":0},"#

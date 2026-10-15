@@ -1,8 +1,8 @@
 # The `.redlamp` sidecar format
 
-Redlamp never writes into photos. Each edited photo gets a **sidecar** beside it, holding its edit recipe, masks, Remove, Heal and Clone spots, snapshots, rating, label and keywords, and editing history. Deleting the sidecar returns the photo to unedited.
+Redlamp never writes into photos. Each edited photo gets a **sidecar** beside it, holding its edit recipe, masks, Remove, Heal and Clone spots, snapshots, rating, label and keywords, its versions, and editing history. Deleting the sidecar returns the photo to unedited.
 
-This page is the published format: edit format 3 and history format 1. A machine-readable [JSON Schema](sidecar-format.schema.json) sits next to it. The reference implementation is `packages/RedlampDocument` (`Sidecar`, `SidecarStore`, `HistorySession`), with the edit's types in `packages/RedlampEngineAPI` (`EditRecipe`, `MaskLayer`, `RetouchSpot`). Applying a [`.redrecipe`](recipe-format.md) writes its settings into the edit recipe described here.
+This page is the published format: edit format 3 and history formats 1 and 2. A machine-readable [JSON Schema](sidecar-format.schema.json) sits next to it. The reference implementation is `packages/RedlampDocument` (`Sidecar`, `SidecarStore`, `HistorySession`), with the edit's types in `packages/RedlampEngineAPI` (`EditRecipe`, `MaskLayer`, `RetouchSpot`). Applying a [`.redrecipe`](recipe-format.md) writes its settings into the edit recipe described here.
 
 ## Principles
 
@@ -23,21 +23,21 @@ The sidecar is a **package**, a folder that Finder shows as one file:
 
 ```
 IMG_1234.CR3.redlamp/
-  edit.json               the edit, snapshots, rating, label and keywords
+  edit.json               the edit, snapshots, rating, label, keywords and versions
   masks/<sha256>.png      mask bitmaps, named by the SHA-256 of their bytes
-  history/<uuid>.json     one file per editing session
+  history/<uuid>.json     one file per editing session, of the photo's own edit or a version's
 ```
 
 `edit.json` is always there, except in a package whose edit was set aside (rule 6 under [Versions and compatibility](#versions-and-compatibility)); `masks/` and `history/` exist only when something is in them. Sidecars written before format 3 are a single JSON file at the package's path, with the same content as `edit.json`. A reader must accept both; Redlamp turns a single file into a package when it next saves it.
 
-To show a photo's badges, Redlamp reads only `recipe` and `metadata` from `edit.json`, without file coordination. That is safe because the file is only ever replaced whole.
+To show a photo's badges, Redlamp reads only `recipe`, `metadata` and `versions` from `edit.json`, without file coordination. That is safe because the file is only ever replaced whole.
 
 ### Writing
 
 - `edit.json` is written to a temporary file and moved into place. Mask bitmaps are written before the edit that names them, and a new package is built beside the photo and moved in whole, so a reader never finds an edit that names a missing or partly written file.
 - A sidecar whose content hasn't changed is not rewritten, so saving an unchanged edit doesn't wake sync services. A change to `modified` alone doesn't count.
-- When it saves, Redlamp deletes the bitmaps that no edit, snapshot or history session uses and that no key of `edit.json` or of a history file names, since a key a newer Redlamp added may refer to one. It deletes none while a history file can't be read.
-- Redlamp deletes the whole sidecar when the edit is back to its defaults (whatever `wb.temperature` and `wb.tint` hold) and there are no snapshots, rating, flag, label, custom label, mark, original name, keywords (an empty list of them included), title, caption, creator, copyright, location (empty ones included), collections, stack, capture shift or zone, unknown fields or history.
+- When it saves, Redlamp deletes the bitmaps that no edit, version, snapshot or history session uses and that no key of `edit.json` or of a history file names, since a key a newer Redlamp added may refer to one. It deletes none while a history file can't be read.
+- Redlamp deletes the whole sidecar when the edit is back to its defaults (whatever `wb.temperature` and `wb.tint` hold) and there are no snapshots, versions, rating, flag, label, custom label, mark, original name, keywords (an empty list of them included), title, caption, creator, copyright, location (empty ones included), collections, stack, capture shift or zone, unknown fields or history.
 - Every read and write goes through `NSFileCoordinator`, so iCloud Drive never syncs a half-written package, and a read waits for a sidecar that iCloud Drive has evicted to download. Other tools on macOS should coordinate their writes the same way.
 
 ### Conflicting copies
@@ -47,6 +47,7 @@ When a photo is edited on two Macs before iCloud Drive syncs them, iCloud keeps 
 - the copy with the latest `modified` wins;
 - every other copy whose edit differs becomes a snapshot of the winner, named "Edit from another Mac" with the copy's date;
 - the snapshots of every copy are kept, matched by `id`;
+- the versions of every copy are kept, matched by `id`, and a version that several copies hold is merged by these same rules, from those copies, each dated by its copy's `modified`: the edit of the newest copy's version wins, the others' differing edits become its snapshots, and its name and `created` are the newest copy's;
 - unknown top-level fields of every copy are kept, the winner's taking precedence;
 - history sessions the winner lacks are copied in, with their bitmaps.
 
@@ -70,6 +71,7 @@ When a photo is edited on two Macs before iCloud Drive syncs them, iCloud keeps 
 | `recipe` | object | **Required.** The edit; see [The recipe](#the-recipe). |
 | `snapshots` | [snapshot] | Named versions of the edit, in the order they were made. Default `[]`. |
 | `metadata` | object? | Rating, flag, label (a custom label with its colour), mark, the photo's original name, its keywords, title, caption, creator, copyright and location, the collections and stack it's in, and its capture time's shift and zone. Written only when one is set. |
+| `versions` | [version] | The photo's other edits, as Lightroom Classic's virtual copies, in the order they were made; see [Versions](#versions). Written only when there are some. |
 | `modified` | date? | When the edit was last saved. A sidecar without it loses every conflict. |
 
 A **snapshot** is a named version of the edit, as in Lightroom: `{"id", "name", "created", "recipe"}`, all required. `created` is a date and `recipe` a whole recipe. Snapshots are how one sidecar keeps several versions of a photo's edit.
@@ -87,6 +89,23 @@ A **snapshot** is a named version of the edit, as in Lightroom: `{"id", "name", 
 `captureShift` and `captureOffset` correct when the photo was taken without changing its file, as Lightroom Classic's Edit Capture Time does. `captureShift` is an integer: the seconds added to the time the camera recorded (EXIF's DateTimeOriginal, with its fraction of a second), negative for earlier, written only when it isn't 0. `captureOffset` is the zone the camera's clock was in, an integer of seconds east of UTC from −50400 to 50400 (`3600` is UTC+01:00, `-18000` UTC−05:00), in place of the zone the file records (EXIF's OffsetTimeOriginal) or for a file that records none, written only when it's set. Redlamp sorts, finds, groups into bursts and names the photo by the recorded time with `captureShift` added, in the zone `captureOffset` gives, so the camera's own time is always that time less `captureShift`. A camera left on Lisbon's winter time in New York, showing 18:00 for a photo taken at 13:00 there, gets `"captureShift": -18000, "captureOffset": -18000`.
 
 Builds from before `customLabel`, `customLabelColor`, `mark`, `title`, `caption`, `creator`, `copyright`, `location`, `collections`, `stack`, `captureShift` and `captureOffset` keep them as unknown keys, and builds from before `stack`'s `position` keep it as one of `stack`'s.
+
+### Versions
+
+A **version** is another edit of the same photo, as a virtual copy is in Lightroom Classic: a photo of its own on the same file, with its own edit, metadata, snapshots and history. The file is shared, so moving, renaming or trashing the photo takes its versions with it. The photo's own edit stays in `recipe`, `snapshots` and `metadata`, and each version is an element of `versions`:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | UUID | **Required.** History files of the version's sessions name it as their `versionID`. |
+| `name` | string | **Required.** "Copy 1", "Copy 2" and so on as Redlamp makes them, or the name the user gave it. Names needn't be unique. |
+| `created` | date | **Required.** When it was made. |
+| `recipe` | object | **Required.** The version's edit, in the same form as the photo's; see [The recipe](#the-recipe). |
+| `metadata` | object? | The version's own metadata, in the same form as the photo's: its rating, flag, label, mark, keywords, title, caption, creator, copyright, location, collections and stack. `originalName`, `captureShift` and `captureOffset` describe the file, so the photo's apply to its versions, and Redlamp doesn't write them here. Written only when one is set. |
+| `snapshots` | [snapshot] | The version's own snapshots, in the order they were made. Default `[]`; Redlamp always writes it. |
+
+A version's recipe renders as the photo's does, and its mask bitmaps are kept in the package's `masks/` with the photo's. The sidecar is read-only when a version's recipe has a newer format or process version, as it is when the photo's has one (rule 1 under [Versions and compatibility](#versions-and-compatibility)).
+
+Builds from before versions keep `versions` as an unknown key, and show and edit the photo's own edit.
 
 ## The recipe
 
@@ -420,18 +439,19 @@ A generated fill (Generative Remove, made by FLUX.2 [klein] 4B in Redlamp) is ke
 
 ## History files
 
-`history/<id>.json` holds one editing session, from opening the photo to leaving it. Redlamp writes the open session's file as the session goes and doesn't keep a session without edits; once the session is over, the file is never rewritten. Redlamp keeps the 20 most recent sessions, removing the oldest as new ones start but never a file it can't read; Clear History removes every session's file but the open one's.
+`history/<id>.json` holds one editing session of one of the photo's edits, its own or a version's, from opening it to leaving it. Redlamp writes the open session's file as the session goes and doesn't keep a session without edits; once the session is over, the file is never rewritten. Each edit keeps its own history: Redlamp keeps the 20 most recent sessions of each, removing the oldest as new ones start but never a file it can't read; Clear History removes every session's file of the edit open but the open one's, and removing a version removes its sessions' files.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `format` | string | `app.redlamp.history`. |
-| `version` | integer | The history format version, `1`. Redlamp skips a file with a newer one. |
+| `version` | integer | The history format version: `1` for a session of the photo's own edit, `2` for a version's. Redlamp skips a file with a newer one. |
 | `id` | UUID | The session's id, which is also the file's name. |
+| `versionID` | UUID? | The `id` of the version the session edited. Written only in a format 2 file; missing for the photo's own edit. |
 | `started` | date | |
 | `bitmaps` | [hash] | Every mask bitmap the steps use, sorted, so saving can keep them without reading every step. |
 | `steps` | [step] | At least one. |
 
-All of them are required. A **step** is:
+All of them are required but `versionID`. Format 2 differs from format 1 only by `versionID`; its number keeps a version's sessions out of the photo's own history in builds from before versions, which skip a file of a newer format. A **step** is:
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -479,12 +499,12 @@ A sidecar carries three version numbers:
 
 What Redlamp does when it reads a sidecar, which is also what another reader must do to write one back safely:
 
-1. **A newer format or process version** (`version` above 3 or `processVersion` above 11): Redlamp shows the photo with the edit, rendered with the newest behavior it has, but the sidecar is read-only. Redlamp never overwrites or deletes a read-only sidecar, its rating, flag and label can't be changed, and applying settings to many photos leaves it alone. Only these two numbers are checked; a `version` that isn't an integer is ignored.
+1. **A newer format or process version** (`version` above 3, or `processVersion` above the latest in [Process versions](#process-versions)), in the recipe or in a version's: Redlamp shows the photo with the edit, rendered with the newest behavior it has, but the sidecar is read-only. Redlamp never overwrites or deletes a read-only sidecar, its rating, flag and label can't be changed, and applying settings to many photos leaves it alone. Only these two numbers are checked; a `version` that isn't an integer is ignored.
 2. **Unknown keys** are kept and written back unchanged where the format has room for them:
    - top-level keys of `edit.json`;
-   - keys of a recipe, in the edit and in snapshots, and of a snapshot;
+   - keys of a recipe, in the edit, in snapshots and in versions, of a snapshot and of a version;
    - keys in `values`, in a mask's `adjustments` and in a swatch's `values` (they must be numbers, and don't render);
-   - keys of a mask, a component, an AI mask (a depth range's depth map and a spot's region included), a Point Color swatch, a spot, `metadata`, its `location` and `stack`, and the applied recipe;
+   - keys of a mask, a component, an AI mask (a depth range's depth map and a spot's region included), a Point Color swatch, a spot, `metadata` (the photo's and a version's), its `location` and `stack`, and the applied recipe;
    - component kinds in a mask's `shape` (they render nothing).
 
    Everywhere else in `edit.json` (shape parameters, bitmaps, the Base Look, the crop and orientation) Redlamp has nowhere to keep an unknown key, so a sidecar holding one is read-only. A shape with more than one key is read as one of them (the first in the order of the kinds table in [Masks](#masks), or else the first by name), and the sidecar is read-only. It ignores unknown keys in history files, which it never rewrites. The schema marks the objects without room for unknown keys closed (`additionalProperties: false`) and leaves the others open, so a writer that validates its sidecars puts new keys only where Redlamp keeps them.
@@ -497,6 +517,13 @@ What Redlamp does when it reads a sidecar, which is also what another reader mus
    - **Not opened:** `edit.json` is there but can't be opened now (no permission, an I/O error, another app holding it, or iCloud Drive can't download it). Redlamp reads it again, at growing intervals up to a minute, and opens the photo with its edit once it reads.
 
    Validate a sidecar against the schema before writing it.
+
+**Versions in builds from before them.** A build from before versions reads a sidecar that has them as it reads any other, and saving it leaves the versions as they were:
+
+- `versions` is an unknown top-level key to it, kept and written back unchanged; it shows, edits and exports the photo's own edit, which is the photo as it was before its versions were made;
+- it keeps the mask bitmaps that only versions use, since `versions` in `edit.json` names them, and those that only a version's history uses, since it reads every history file's `bitmaps`;
+- it skips the history files of versions' sessions (format 2), so they don't show in the photo's History, and it never removes them to keep its 20 sessions, but its Clear History removes them with the rest;
+- merging conflicting copies, it keeps `versions` whole from one copy, as it keeps any unknown top-level key: the winner's, or where the winner has none, another copy's. A version that only another copy holds is left out, and so are the changes another copy made to a version.
 
 When writing a sidecar for Redlamp:
 
@@ -529,18 +556,18 @@ The properties are in the namespace `https://redlamp.app/ns/edit/1.0/`, which Re
 </rdf:Description>
 ```
 
-- **Only the recipe.** Snapshots, history, rating, flag and label stay in the sidecar. Mask bitmaps aren't embedded: an AI mask, a depth map or a spot's picked region keeps its `bitmap` (`sha256`, `width` and `height`) but not its pixels. Applied to the photo it came from, the recipe finds them in that photo's sidecar, as `masks/<sha256>.png`; anywhere else a missing bitmap covers nothing, as it does in a sidecar. Brush strokes and range masks are in the JSON, so they come back whole.
+- **Only the recipe.** Snapshots, history, rating, flag and label stay in the sidecar. A version's export carries the version's recipe, and nothing says which version it was: the recipe is what an export can give back. Mask bitmaps aren't embedded: an AI mask, a depth map or a spot's picked region keeps its `bitmap` (`sha256`, `width` and `height`) but not its pixels. Applied to the photo it came from, the recipe finds them in that photo's sidecar, as `masks/<sha256>.png`; anywhere else a missing bitmap covers nothing, as it does in a sidecar. Brush strokes and range masks are in the JSON, so they come back whole.
 - **Size.** An edit is embedded when its XMP takes at most 256,000 bytes. Most edits take a few kilobytes, and a long brush stroke adds about 10 KB. A bigger edit is left out rather than cut short. A JPEG's main XMP segment holds about 64 KB; when the edit doesn't fit there, ImageIO writes `Recipe` in Extended XMP segments, as part 3 of the XMP specification describes, and keeps the other properties in the main segment. A reader without Extended XMP sees the versions but not the recipe. ImageIO doesn't make the segments' GUID the MD5 digest of their content that the specification asks for, so a reader that checks the digest misses the recipe too. The edit counts toward a file size limit, as the rest of the metadata does.
 - **The rest of the metadata is unchanged.** ImageIO keeps some metadata only in XMP: lens details and a rating, and, in HEIC, AVIF and JPEG XL, every IPTC field. Redlamp writes the edit beside them, and first checks, on a file of one pixel with the same metadata, that everything else reads back as it does without the edit. If it wouldn't, the edit is left out.
 - **Reading it back.** Find `Recipe` by its namespace, whatever prefix the file gives it, and decode it as a recipe. An edit with a `version` or `processVersion` newer than the reader's is treated as a newer sidecar is; see [Versions and compatibility](#versions-and-compatibility). In Redlamp, `EmbeddedEdit.read` returns the recipe and its format version, or nothing when the file has no edit or it can't be read.
 
 ## The schema
 
-[`sidecar-format.schema.json`](sidecar-format.schema.json) is JSON Schema draft 2020-12. Validate `edit.json` against the schema itself and a history file against its `#/$defs/historyFile`. The schema describes what Redlamp writes, and is stricter than Redlamp's reader where the reader is lenient: it checks ranges, lists of values and closed objects, where the reader clamps, maps or has nowhere to keep a key, and so opens the sidecar read-only. It accepts format versions up to 3 and process versions up to 12, so a sidecar from a newer Redlamp needs that Redlamp's schema.
+[`sidecar-format.schema.json`](sidecar-format.schema.json) is JSON Schema draft 2020-12. Validate `edit.json` against the schema itself and a history file against its `#/$defs/historyFile`. The schema describes what Redlamp writes, and is stricter than Redlamp's reader where the reader is lenient: it checks ranges, lists of values and closed objects, where the reader clamps, maps or has nowhere to keep a key, and so opens the sidecar read-only. It accepts format versions up to 3, process versions up to the latest in [Process versions](#process-versions) and history formats up to 2, so a sidecar from a newer Redlamp needs that Redlamp's schema.
 
 Besides annotations, the schema uses only `type`, `enum`, `const`, `minimum`, `maximum`, `pattern`, `properties`, `patternProperties`, `additionalProperties`, `required`, `minProperties`, `maxProperties`, `items`, `prefixItems`, `minItems`, `maxItems`, `anyOf`, `oneOf` and `$ref` to its own `$defs`, so a small validator can check it.
 
-`SidecarSchemaTests` keeps the schema and the code in step. It writes a sidecar with masks of every kind, spots of every mode, a crop, history and the other fields above through `SidecarStore`, and checks that it validates; that every key written is in the schema and every key in the schema is written; that the schema requires exactly the keys the decoder needs; that objects are open exactly where unknown keys survive a save; and that parameters, lists of values, versions and limits match the code. It also validates the examples on this page.
+`SidecarSchemaTests` keeps the schema and the code in step. It writes a sidecar with masks of every kind, spots of every mode, a crop, a version, history of the photo's edit and of the version's, and the other fields above through `SidecarStore`, and checks that it validates; that every key written is in the schema and every key in the schema is written; that the schema requires exactly the keys the decoder needs; that objects are open exactly where unknown keys survive a save; and that parameters, lists of values, versions and limits match the code. It also validates the examples on this page.
 
 ## Examples
 
@@ -597,6 +624,56 @@ The start of the session that made it: the photo as opened, then Exposure, then 
      "patch": [{"op": "replace", "path": "/whiteBalance", "value": "custom"},
                {"op": "add", "path": "/values/wb.temperature", "value": 5150},
                {"op": "add", "path": "/values/wb.tint", "value": 8}]}
+  ]
+}
+```
+
+A photo with a version, Copy 1, made from its edit and turned black and white with more contrast. The version has its own rating and flag, and keeps the photo's keywords, which it took when it was made:
+
+```json
+{
+  "format": "app.redlamp.edit",
+  "modified": "2026-10-15T18:20:00Z",
+  "metadata": {"rating": 3, "keywords": ["Places/Portugal/Lisbon"]},
+  "snapshots": [],
+  "recipe": {
+    "version": 3, "processVersion": 16, "treatment": "color", "whiteBalance": "asShot",
+    "values": {"basic.exposure": 0.2},
+    "baseLook": {"id": "redlamp/base/color", "version": 1, "name": "Redlamp Color", "amount": 100}
+  },
+  "versions": [{
+    "id": "8E2B4F1A-3C5D-4E6F-9A7B-0C1D2E3F4A5B", "name": "Copy 1", "created": "2026-10-15T18:05:00Z",
+    "metadata": {"rating": 5, "flag": "pick", "keywords": ["Places/Portugal/Lisbon"]},
+    "snapshots": [],
+    "recipe": {
+      "version": 3, "processVersion": 16, "treatment": "blackAndWhite", "whiteBalance": "asShot",
+      "values": {"basic.exposure": 0.2, "basic.contrast": 30},
+      "baseLook": {"id": "redlamp/base/color", "version": 1, "name": "Redlamp Color", "amount": 100}
+    }
+  }]
+}
+```
+
+The session that made the version's changes, a format 2 file naming the version:
+
+```json
+{
+  "format": "app.redlamp.history",
+  "version": 2,
+  "id": "4D5E6F70-8192-4A3B-9C4D-5E6F708192A3",
+  "versionID": "8E2B4F1A-3C5D-4E6F-9A7B-0C1D2E3F4A5B",
+  "started": "2026-10-15T18:05:00Z",
+  "bitmaps": [],
+  "steps": [
+    {"id": "5E6F7081-92A3-4B4C-8D5E-6F708192A3B4", "action": "open", "title": "Created from Original",
+     "recipe": {"version": 3, "processVersion": 16, "treatment": "color", "whiteBalance": "asShot",
+                "values": {"basic.exposure": 0.2},
+                "baseLook": {"id": "redlamp/base/color", "version": 1, "name": "Redlamp Color", "amount": 100}}},
+    {"id": "6F708192-A3B4-4C5D-9E6F-708192A3B4C5", "action": "treatment", "title": "Treatment", "after": "Black & White",
+     "patch": [{"op": "replace", "path": "/treatment", "value": "blackAndWhite"}]},
+    {"id": "708192A3-B4C5-4D6E-8F70-8192A3B4C5D6", "action": "adjustment:basic.contrast", "title": "Contrast",
+     "before": "0", "after": "+30",
+     "patch": [{"op": "add", "path": "/values/basic.contrast", "value": 30}]}
   ]
 }
 ```
