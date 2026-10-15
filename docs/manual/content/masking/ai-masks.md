@@ -82,7 +82,7 @@ The first time a mask needs a model, the panel names it and its size, at the top
 | SAM 3 | Landscape; Hair, Facial Hair, Body Skin and Clothes | 988.1 MB | SAM License |
 | Depth Anything 3 (mono, large) | Better Sky masks; Depth Range | 336.1 MB | Apache-2.0 |
 | Depth Anything V2 (small) | Depth Range on photos without a depth map | 49.8 MB | Apache-2.0 |
-| ViTMatte (base) | Stray hairs on the edges of Subject, Background and People masks | 108.9 MB | Apache-2.0 |
+| ViTMatte (base) | Stray hairs on the edges of Subject, Background and People masks | 111.1 MB | Apache-2.0 |
 
 Nothing asks for ViTMatte: download it in Settings › Models, and Subject, Background and People masks, and Refine Edges, keep more of the strands at their edges.
 

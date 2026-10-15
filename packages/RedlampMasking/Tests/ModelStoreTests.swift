@@ -89,6 +89,41 @@ struct ModelStoreTests {
         #expect(ModelCatalog.manifest("sam3")?.licenses.weights == "SAM License")
     }
 
+    /// ViTMatte's version 2 (MSK-33), served from this Mac's copy as its release serves it: each
+    /// file matches the manifest's size and SHA-256, and once it's in place version 1 goes.
+    @Test(.enabled(if: ModelStoreTests.downloadedViTMatte != nil))
+    func `ViTMatte's version 2 downloads, matches its manifest and replaces version 1`() async throws {
+        let root = try temporary()
+        let compiled = try temporary()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: compiled)
+        }
+        var model = try #require(ModelCatalog.manifest("vitmatte-base"))
+        model.source = try #require(Self.downloadedViTMatte)
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "vitmatte-base/1/ViTMatteBaseW8.mlpackage"),
+            withIntermediateDirectories: true,
+        )
+        let store = ModelStore(root: root)
+        let directory = try await store.download(model)
+        #expect(directory.path == root.appending(path: "vitmatte-base/2").path)
+        await store.removeOutdated(catalog: ModelCatalog.all, compiled: compiled)
+        #expect(try FileManager.default
+            .contentsOfDirectory(atPath: root.appending(path: "vitmatte-base").path) == ["2"])
+        #expect(await store.location(of: model) != nil)
+    }
+
+    /// ViTMatte's current version, where this Mac has downloaded it.
+    static let downloadedViTMatte: URL? = ModelCatalog.manifest("vitmatte-base").flatMap { manifest in
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "Redlamp/Models/\(manifest.id)/\(manifest.version)")
+        let complete = manifest.files.allSatisfy { file in
+            FileManager.default.fileExists(atPath: directory.appending(path: file.path).path)
+        }
+        return complete ? directory : nil
+    }
+
     @Test func `refuses a damaged download`() async throws {
         let root = try temporary()
         let source = try temporary()

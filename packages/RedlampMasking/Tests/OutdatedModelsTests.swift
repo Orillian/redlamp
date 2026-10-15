@@ -57,6 +57,24 @@ struct OutdatedModelsTests {
         ])
     }
 
+    /// Version 2 of ViTMatte replaced version 1 (MSK-33), so a launch removes version 1's files
+    /// and its compile.
+    @Test func `ViTMatte's version 1 goes with its compile, now the catalogue lists version 2`() async throws {
+        defer { try? FileManager.default.removeItem(at: base) }
+        #expect(ModelCatalog.manifest("vitmatte-base")?.version == 2)
+        try make(
+            ["vitmatte-base/1/ViTMatteBaseW8.mlpackage", "vitmatte-base/2/ViTMatteBaseW8RelPos16.mlpackage"],
+            in: models,
+        )
+        try make(
+            ["vitmatte-base-v1-ViTMatteBaseW8.mlmodelc", "vitmatte-base-v2-ViTMatteBaseW8RelPos16.mlmodelc"],
+            in: compiled,
+        )
+        await ModelStore(root: models).removeOutdated(catalog: ModelCatalog.all, compiled: compiled)
+        #expect(try contents("Models/vitmatte-base") == ["2"])
+        #expect(try contents("CompiledModels") == ["vitmatte-base-v2-ViTMatteBaseW8RelPos16.mlmodelc"])
+    }
+
     @Test func `staging a download cut short left goes after a day`() async throws {
         defer { try? FileManager.default.removeItem(at: base) }
         let now = Date()

@@ -83,7 +83,7 @@ says that is **no longer true**. One line each; the section that replaces it is 
 | Not said anywhere | — | **New:** a mask's Point Color (TON-29) is in the panel, under Curve | §6 |
 
 Also changed outside the panel but inside Part 3's subject:
-- **ViTMatte (base)**, 108.9 MB, is a new downloadable model: stray hairs on Subject, Background and
+- **ViTMatte (base)**, 111.1 MB, is a new downloadable model: stray hairs on Subject, Background and
   People mask edges (§5).
 - `docs/lightroom-comparison.md:130` now marks **Point Color inside masks** as Done (TON-29); the old
   sheet listed it as the one masking row not done.
@@ -1277,7 +1277,7 @@ What each does, from the stroke model (`Masks.swift:56-71`):
 | Objects | Segment Anything 2.1 (tiny) | 79.6 MB | **yes** |
 | Landscape (all seven classes) | SAM 3 | 988.1 MB | **yes** |
 | Depth Range | the photo's own depth map; else Depth Anything 3 if downloaded; else Depth Anything V2 (small) | none / 49.8 MB | **yes**, unless the photo has its own depth map |
-| Subject, Background and People edges, with Refine Edges | ViTMatte (base), when downloaded | 108.9 MB, optional | no — it is never asked for; download it in Settings › Models |
+| Subject, Background and People edges, with Refine Edges | ViTMatte (base), when downloaded | 111.1 MB, optional | no — it is never asked for; download it in Settings › Models |
 
 Sources: the kind→model map `RedlampEngine.modelID(for:)` —
 `packages/RedlampEngine/Sources/RedlampEngine+Models.swift:8-18` (objects → `sam2.1-tiny`,
@@ -1306,7 +1306,7 @@ From the manifests in `packages/RedlampMasking/Resources/Models/` (sizes are the
 | `sam3.json` | SAM 3 | "Landscape masks (water, vegetation, mountains, architecture, natural and artificial ground) and the People parts Vision can't give: hair, facial hair, body skin and clothes." | 988,085,795 B → **988.1 MB** | SAM License | yes |
 | `depth-anything-3-mono-large.json` | Depth Anything 3 (mono, large) | "Sky masks (with Segment Anything) and Depth Range masks, from one model." | 336,101,695 B → **336.1 MB** | Apache-2.0 | yes |
 | `depth-anything-v2-small.json` | Depth Anything V2 (small) | "Depth Range masks for photos without an embedded depth map." | 49,819,122 B → **49.8 MB** | Apache-2.0 | no |
-| `vitmatte-base.json` | ViTMatte (base) | "Stray hairs on the edges of Subject, Background and People masks." | 108,850,800 B → **108.9 MB** | Apache-2.0 (code MIT) | yes |
+| `vitmatte-base.json` | ViTMatte (base) | "Stray hairs on the edges of Subject, Background and People masks." | 111,141,440 B → **111.1 MB** (version 2, MSK-33) | Apache-2.0 (code MIT) | yes |
 | `owlv2-base.json` | OWLv2 (base) | "Finding things named in words to remove: litter, signs, cables, cars, people, birds." | 365,102,113 B → **365.1 MB** | Apache-2.0 | yes |
 | `flux2-klein-4b-fill.json` | FLUX.2 [klein] 4B | "Generative Remove: fills areas too large for content-aware Remove, labelled as generated fill." | 2,414,734,243 B → **2.41 GB** | Apache-2.0 | yes |
 
@@ -1847,7 +1847,7 @@ shows.
   `README.md:137`.
 - **Subject, Background, People face parts and Sky need nothing**, but **Objects (79.6 MB)**,
   **Landscape and the SAM 3 People parts (988.1 MB)** and **Depth Range (49.8 MB)** do; **ViTMatte
-  (108.9 MB)** is optional and improves hair on Refine Edges.
+  (111.1 MB)** is optional and improves hair on Refine Edges.
 - **Hair** comes from the photo's own hair matte (iPhone portraits) unless SAM 3 is downloaded —
   `README.md:130`.
 - **Landscape has no plain "Landscape" command** — you pick a class
@@ -1884,7 +1884,7 @@ shows.
 | Objects download size | "an 80 MB download" — `README.md:130` | 79,644,968 bytes → **79.6 MB** (the button reads "Download 79.6 MB") | Both; the README rounds. Quote 79.6 MB |
 | SAM 3 download size | "a 988 MB download" — `README.md:130` | 988,085,795 bytes → **988.1 MB** | Both; the README rounds |
 | Depth Anything 3 size | "a 336 MB download" — `README.md:130` | 336,101,695 bytes → **336.1 MB** | Both; the README rounds |
-| ViTMatte size | "Settings › Models, 109 MB" — `README.md:130` | 108,850,800 bytes → **108.9 MB** | Both; the README rounds |
+| ViTMatte size | "Settings › Models, 111 MB" — `README.md:131` | 111,141,440 bytes → **111.1 MB** | Both; the README rounds |
 | SAM 3's standing | README: cleared, "under Meta's SAM License, which comes with it" (`README.md:130`) | The manifest is `cleared: true, evaluationOnly: false`, so it is offered to everyone — but the **error message still calls it an evaluation model**: `"<Part> masks need the SAM 3 evaluation model."` (`Masks.swift:587`) | The manifest and the README. The error string is stale; don't repeat "evaluation model" in the manual |
 | Depth Range model | "estimated by Depth Anything 3 (or V2 Small)" — `README.md:130` | The prompt offers **Depth Anything V2 (small), 49.8 MB**; DA3 is used only if already downloaded for Sky | The code |
 | Mask Amount units | "the mask's Amount (0–200%)" — `README.md:134` | Range 0…200, format `.integer`, so the slider shows `100`, not `100%` | The code for the on-screen reading; the range is the same |
