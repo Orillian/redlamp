@@ -134,6 +134,17 @@ defaults write app.redlamp.mac FeedbackEndpoint http://localhost:3123/api/feedba
 defaults write app.redlamp.mac FeedbackSendsLive -bool YES   # Debug builds send dry runs otherwise
 ```
 
+## The ambassadors relay
+
+The form on redlamp.app/ambassadors (`/join` redirects to it) posts each application to `POST /api/ambassadors`. The relay checks it (a name, an email, one to three links, one to three JPEGs the page has resized, a `.redlamp` sidecar Redlamp wrote, and agreement to the terms), stores the photos and the sidecar in a private repository (`applications/<yyyy>/<mm>/<id>/`), and files the application there as an issue, labelled `application` when the label exists, with the fields in a hidden `<!-- redlamp-ambassador v1 {…} -->` marker for the ambassadors room's sync. An application whose hidden `website` field is filled in is answered as if filed and dropped. Nothing an applicant sends reaches a public repository. The logic is in `lib/ambassadors.ts`, tested by `lib/ambassadors.test.ts`; the page's copy is in `content/ambassadors.ts`.
+
+It uses the Redlamp Feedback app's `FEEDBACK_GITHUB_*` settings, and these:
+
+| Variable | Value |
+| --- | --- |
+| `AMBASSADORS_ENABLED` | `1` to accept applications; anything else switches it off (it answers 503) |
+| `AMBASSADORS_REPO` | `pdcgomes/redlamp-ambassadors`, a private repository the app is installed on with Issues and Contents (read and write) |
+
 ## The camera bench relay
 
 Redlamp's Camera Bench (`packages/RedlampUI/Sources/CameraBench`, [docs/camera-bench.md](../docs/camera-bench.md)) posts each report to `POST /api/bench`. The relay checks it against `docs/camera-bench.schema.json`, whose objects are closed so nothing but measurements gets through, and keeps it in a private repository as one file per submission (`submissions/<yyyy>/<mm>/<id>.json`, with the day it arrived and the app's version; no IP address or other request detail). A request with `X-Redlamp-Dry-Run: 1`, as Debug builds send, is checked and nothing is kept. `GET /api/bench/summary` serves what each camera mode still needs, cut down from `docs/camera-bench.json`, which `scripts/camera-bench.py` writes; the app downloads the whole list, so the site never learns which cameras someone has. The logic is in `lib/bench.ts`, tested by `lib/bench.test.ts`.
