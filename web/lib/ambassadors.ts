@@ -3,7 +3,8 @@ import { type AppCredentials, github, installationToken } from "./github-app.ts"
 /**
  * The relay behind redlamp.app/ambassadors: it files an application to Redlamp's ambassador
  * programme as an issue in a private repository, as the Redlamp Feedback app, with the photos the
- * applicant edited in Redlamp and one photo's sidecar stored beside it in the same repository.
+ * applicant exported from Redlamp and the edit stored beside it in the same repository: the edit an
+ * export carries in its XMP (lib/embedded-edit.ts), or edit.json from a photo's .redlamp package.
  * Nothing an applicant sends reaches a public repository.
  */
 export interface AmbassadorsConfig extends AppCredentials {
@@ -128,7 +129,8 @@ export function validate(payload: unknown): Application {
     return { ...photo, type: "image/jpeg" };
   });
 
-  const sidecar = file(input.sidecar, "edit.redlamp");
+  // The edit an export carried in its XMP, or edit.json from the photo's .redlamp package.
+  const sidecar = file(input.sidecar, "edit.json");
   if (sidecar.data.length > limits.sidecarBytes) throw new Rejection(413, "The .redlamp file is too large");
   let format: unknown;
   try {

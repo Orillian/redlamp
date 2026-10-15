@@ -96,7 +96,7 @@ export default function AmbassadorsPage() {
             <a href={`${site.github}/releases/latest`} className={link}>
               download it
             </a>{" "}
-            and edit a photo first: your application is that photo.
+            and edit a photo first: your application is that photo, exported.
           </p>
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <details className="surface p-5">
@@ -110,6 +110,13 @@ export default function AmbassadorsPage() {
             <details className="surface p-5">
               <summary className="cursor-pointer text-[15px] text-paper">Privacy: {a.privacy.title.toLowerCase()}</summary>
               <p className="mt-4 text-[14px] leading-relaxed text-mute">{a.privacy.text}</p>
+              <p className="mt-3 text-[14px] leading-relaxed text-mute">
+                Write to me at{" "}
+                <a href={`mailto:${a.contact}`} className={link}>
+                  {a.contact}
+                </a>
+                .
+              </p>
             </details>
           </div>
           <div className="mt-6">

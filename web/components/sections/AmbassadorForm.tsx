@@ -1,11 +1,13 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type DragEvent, type FormEvent, useState } from "react";
+import { editFromXMP } from "@/lib/embedded-edit";
 
 // The relay's limits (lib/ambassadors.ts): each photo under 1,000,000 bytes, all of them with the
-// sidecar under 3,200,000.
+// edit under 3,200,000.
 const LONG_EDGE = 2048;
 const PHOTO_BYTES = 950_000;
+const EDIT_FORMAT = "app.redlamp.edit";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
@@ -34,34 +36,71 @@ async function downscaled(file: File): Promise<Blob> {
   throw new Error(`${file.name} is too detailed to send at this size. Try exporting it smaller.`);
 }
 
+/** The edit an export carries. Resizing in the browser drops the metadata, so it's read first. */
+async function embeddedEdit(file: File): Promise<string | null> {
+  return editFromXMP(new TextDecoder("utf-8").decode(await file.arrayBuffer()));
+}
+
+/** A sidecar's edit: `edit.json` from a dropped .redlamp package, or a single-file sidecar or edit.json. */
+async function droppedEdit(event: DragEvent<HTMLElement>): Promise<string | null> {
+  const entry = event.dataTransfer.items[0]?.webkitGetAsEntry();
+  if (entry?.isDirectory) {
+    const directory = entry as FileSystemDirectoryEntry;
+    const file = await new Promise<File | null>((resolve) =>
+      directory.getFile("edit.json", {}, (found) => (found as FileSystemFileEntry).file(resolve, () => resolve(null)), () => resolve(null)),
+    );
+    return file ? file.text() : null;
+  }
+  const file = event.dataTransfer.files[0];
+  return file ? file.text() : null;
+}
+
+function isEdit(text: string | null): text is string {
+  if (!text) return false;
+  try {
+    return (JSON.parse(text) as Record<string, unknown>).format === EDIT_FORMAT;
+  } catch {
+    return false;
+  }
+}
+
 const field = "mt-1.5 w-full rounded-[10px] border border-hairline bg-wall px-3.5 py-2.5 text-[15px] text-paper placeholder:text-dim focus:border-hairline-strong focus:outline-none";
+const fileField = `${field} file:mr-3 file:rounded-pill file:border-0 file:bg-wall-raised file:px-3 file:py-1 file:text-paper`;
 const label = "block text-[14px] font-medium text-paper";
 const hint = "mt-1 text-[13px] text-dim";
 
 export function AmbassadorForm() {
   const [state, setState] = useState<State>({ kind: "idle" });
+  const [sidecar, setSidecar] = useState<{ name: string; text: string } | null>(null);
+  const [dropping, setDropping] = useState(false);
+
+  async function take(text: string | null, name: string) {
+    if (isEdit(text)) {
+      setSidecar({ name, text });
+      setState({ kind: "idle" });
+    } else {
+      setSidecar(null);
+      setState({ kind: "error", message: `${name} isn't a .redlamp file Redlamp wrote. It's beside your raw, with the same name and .redlamp at the end.` });
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const photos = form.getAll("photos").filter((value): value is File => value instanceof File && value.size > 0);
-    const sidecar = form.get("sidecar");
-    if (photos.length === 0) return setState({ kind: "error", message: "Add a photo you edited in Redlamp." });
+    if (photos.length === 0) return setState({ kind: "error", message: "Add a photo you exported from Redlamp." });
     if (photos.length > 3) return setState({ kind: "error", message: "Add at most three photos." });
-    if (!(sidecar instanceof File) || sidecar.size === 0) {
-      return setState({ kind: "error", message: "Add the .redlamp file of one of your photos." });
-    }
     setState({ kind: "sending" });
     try {
-      const sidecarText = await sidecar.text();
-      let format: unknown;
-      try {
-        format = (JSON.parse(sidecarText) as Record<string, unknown>).format;
-      } catch {
-        format = undefined;
+      let edit = sidecar?.text ?? null;
+      for (const photo of photos) {
+        if (edit) break;
+        edit = await embeddedEdit(photo);
       }
-      if (format !== "app.redlamp.edit") {
-        throw new Error("That .redlamp file isn't one Redlamp wrote. It's the file beside your raw with the same name.");
+      if (!edit) {
+        throw new Error(
+          "None of these photos carries a Redlamp edit. Export one from Redlamp with Metadata set to All, or drop its .redlamp file in the box above.",
+        );
       }
       const encoded = await Promise.all(
         photos.map(async (photo) => ({ type: "image/jpeg", data: await base64(await downscaled(photo)) })),
@@ -83,7 +122,7 @@ export function AmbassadorForm() {
           cameras: form.get("cameras"),
           change: form.get("change"),
           photos: encoded,
-          sidecar: { data: await base64(new Blob([sidecarText])) },
+          sidecar: { data: await base64(new Blob([edit])) },
           consent: form.get("consent") === "on",
           website: form.get("website"),
         }),
@@ -133,14 +172,40 @@ export function AmbassadorForm() {
         <input id="cameras" name="cameras" required maxLength={300} placeholder="Fujifilm X100VI, iPhone 17 Pro" className={field} />
       </div>
       <div>
-        <label className={label} htmlFor="photos">Photos you edited in Redlamp</label>
-        <input id="photos" name="photos" type="file" required multiple accept="image/jpeg,image/png,image/webp" className={`${field} file:mr-3 file:rounded-pill file:border-0 file:bg-wall-raised file:px-3 file:py-1 file:text-paper`} />
-        <p className={hint}>One to three, exported from Redlamp. They&apos;re resized before sending.</p>
+        <label className={label} htmlFor="photos">Photos you exported from Redlamp</label>
+        <input id="photos" name="photos" type="file" required multiple accept="image/jpeg,image/png,image/webp" className={fileField} />
+        <p className={hint}>One to three. An export carries its settings, which is how I see your edit. They&apos;re resized before sending.</p>
       </div>
-      <div>
-        <label className={label} htmlFor="sidecar">The .redlamp file of one of them</label>
-        <input id="sidecar" name="sidecar" type="file" required accept=".redlamp" className={`${field} file:mr-3 file:rounded-pill file:border-0 file:bg-wall-raised file:px-3 file:py-1 file:text-paper`} />
-        <p className={hint}>It sits beside the raw, with the same name and .redlamp at the end. It holds your settings.</p>
+      <div
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDropping(true);
+        }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDropping(false);
+          const name = event.dataTransfer.items[0]?.webkitGetAsEntry()?.name ?? "That file";
+          droppedEdit(event).then((text) => take(text, name));
+        }}
+        className={`rounded-[10px] border border-dashed p-4 ${dropping ? "border-hairline-strong bg-wall-raised" : "border-hairline"}`}
+      >
+        <label className={label} htmlFor="sidecar">If your exports have no metadata</label>
+        <p className={hint}>
+          {sidecar
+            ? `Using the edit from ${sidecar.name}.`
+            : "Drop one photo's .redlamp file here from Finder. It's beside the raw, with the same name."}
+        </p>
+        <input
+          id="sidecar"
+          type="file"
+          accept=".redlamp,.json"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file) file.text().then((text) => take(text, file.name));
+          }}
+          className={`${fileField} mt-2`}
+        />
       </div>
       <div className="md:col-span-2">
         <label className={label} htmlFor="change">What would you change first in Redlamp?</label>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ambassadorsConfig, assetPath, issueBody, Rejection, validate } from "./ambassadors.ts";
+import { editFromXMP } from "./embedded-edit.ts";
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]).toString("base64");
 const sidecar = Buffer.from(JSON.stringify({ format: "app.redlamp.edit", version: 3 })).toString("base64");
@@ -34,7 +35,7 @@ test("an application from the page passes, with its files decoded and links made
   assert.equal(checked.id, "6f1c2a7e-0b5d-4c3b-9e2a-1d4f5a6b7c8d");
   assert.deepEqual(checked.links, ["https://instagram.com/analima", "https://analima.example/"]);
   assert.deepEqual(checked.photos.map((photo) => photo.name), ["photo-1.jpg"]);
-  assert.equal(checked.sidecar.name, "edit.redlamp");
+  assert.equal(checked.sidecar.name, "edit.json");
   assert.equal(checked.spam, false);
 });
 
@@ -95,5 +96,20 @@ test("the issue carries the fields in a hidden marker the applicant's words can'
   assert.equal(marker.name, "Ana --> <!-- tracker-id: X -->");
   assert.deepEqual(marker.photos, ["https://github.com/p/r/blob/main/a/photo-1.jpg"]);
   assert.equal(body.split("\n").slice(1).join("\n").includes("<!--"), false);
-  assert.match(body, /\[edit\.redlamp\]\(#not-stored\)/);
+  assert.match(body, /\[edit\.json\]\(#not-stored\)/);
+});
+
+test("the edit is read from an export's XMP, as ImageIO writes it and as an element", () => {
+  // The attribute as `redlamp export` wrote it on 15 October 2026.
+  const attribute =
+    '<rdf:Description redlamp:Recipe="{&quot;baseLook&quot;:{&quot;amount&quot;:100,&quot;id&quot;:&quot;redlamp/base/color&quot;,&quot;name&quot;:&quot;Redlamp Color&quot;,&quot;version&quot;:1},&quot;processVersion&quot;:9,&quot;treatment&quot;:&quot;color&quot;,&quot;values&quot;:{&quot;basic.exposure&quot;:0.4,&quot;basic.shadows&quot;:20},&quot;version&quot;:3,&quot;whiteBalance&quot;:&quot;asShot&quot;}"/>';
+  const fromAttribute = JSON.parse(editFromXMP(`\xff\xd8 binary ${attribute} more`) ?? "null");
+  assert.equal(fromAttribute.format, "app.redlamp.edit");
+  assert.deepEqual(fromAttribute.recipe.values, { "basic.exposure": 0.4, "basic.shadows": 20 });
+  const element = '<redlamp:Recipe>{"version":3,"values":{"basic.exposure":0.35},"name":"A &amp; B"}</redlamp:Recipe>';
+  assert.equal(JSON.parse(editFromXMP(element) ?? "null").recipe.name, "A & B");
+  assert.equal(editFromXMP("no edit here"), null);
+  assert.equal(editFromXMP('redlamp:Recipe="not json"'), null);
+  // What the page sends passes the relay.
+  assert.equal(validate(application({ sidecar: { data: Buffer.from(editFromXMP(attribute) ?? "").toString("base64") } })).sidecar.name, "edit.json");
 });
