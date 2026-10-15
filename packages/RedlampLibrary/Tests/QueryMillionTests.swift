@@ -8,9 +8,10 @@ import Testing
 /// them, and the manifest's queries typed a character at a time, then their facets. The index's
 /// text lookups are answered from memory, worked out before the timed pass, so the times are the
 /// engine's own. Skipped unless `REDLAMP_QUERY_BENCH=1`, which xcodebuild hands to the tests from
-/// `TEST_RUNNER_REDLAMP_QUERY_BENCH=1`.
+/// `TEST_RUNNER_REDLAMP_QUERY_BENCH=1`; `REDLAMP_QUERY_BENCH_PHOTOS` sets how many photos.
 struct QueryMillionTests {
-    static let photoCount = 1_000_000
+    static let photoCount = ProcessInfo.processInfo.environment["REDLAMP_QUERY_BENCH_PHOTOS"]
+        .flatMap(Int.init) ?? 1_000_000
 
     /// Three raws, so a fifth of the photos are raws as in a fixture made with sources.
     static let raws = [

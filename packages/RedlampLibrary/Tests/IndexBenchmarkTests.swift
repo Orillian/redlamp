@@ -2,10 +2,11 @@ import Foundation
 import Testing
 @testable import RedlampLibrary
 
-/// The index at a million photos. Skipped unless `REDLAMP_INDEX_BENCH=1`, which xcodebuild hands to
-/// the tests from `TEST_RUNNER_REDLAMP_INDEX_BENCH=1`, so CI stays fast.
+/// The index at a million photos, or `REDLAMP_INDEX_BENCH_PHOTOS`. Skipped unless `REDLAMP_INDEX_BENCH=1`, which
+/// xcodebuild hands to the tests from `TEST_RUNNER_REDLAMP_INDEX_BENCH=1`, so CI stays fast.
 struct IndexBenchmarkTests {
-    private static let photoCount = 1_000_000
+    private static let photoCount = ProcessInfo.processInfo.environment["REDLAMP_INDEX_BENCH_PHOTOS"]
+        .flatMap(Int.init) ?? 1_000_000
     private static let batchSize = 1000
     private static let perFolder = 200
     private static let root = "/Volumes/Bench/Photos"
