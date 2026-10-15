@@ -6,6 +6,8 @@ extension LibraryCommand {
     static let lightroomUsage = """
     usage: redlamp library lightroom <catalog> [--index <path>] [--root <lightroom folder>=<folder>]… [--apply]
                                      [--json]
+           redlamp library lightroom <catalog> --census [--index <path>] [--root <lightroom folder>=<folder>]…
+                                     [--json]
            redlamp library lightroom --undo [--index <path>] [--json]
       lightroom reads a Lightroom Classic catalog, a .lrcat file or a copy of one, opened read-only and never
                written (one Lightroom has open is refused), and reports what it would bring into the library at
@@ -19,6 +21,14 @@ extension LibraryCommand {
                doesn't have and indexes them, then imports as the library's journaled batches, writing each
                photo's .redlamp sidecar: Lightroom's value replaces the library's where Lightroom has one, and
                keywords and collections join the photos'. --undo takes the last import back. --json prints JSON.
+               --census counts what the catalog's edits use instead, over every photo and virtual copy, and
+               names no photo, path, keyword or value, so it can be shared: the photos by process version; each
+               setting with the photos carrying it and, of those, the ones whose value isn't the one most of them
+               have; masks' components by kind and subtype, with the masks' own settings; earlier masks, spots
+               and earlier spots by kind; profiles and looks by name when they're Adobe's or camera-matching ones,
+               the rest as other; Upright's modes; snapshots and history steps; and Lightroom's rotation codes,
+               each with the EXIF orientations of the files the library at --index has (the app's own library
+               without it, when there is one). It writes nothing.
     """
 
     /// `redlamp library lightroom`: a Lightroom Classic catalog's report, its import with `--apply`, and the
@@ -48,6 +58,17 @@ extension LibraryCommand {
             }
             let folder = URL(fileURLWithPath: String(argument[argument.index(after: equals)...]), isDirectory: true)
             moved[String(argument[..<equals])] = folder.standardizedFileURL
+        }
+        if options.has("--census") {
+            guard !options.has("--apply")
+            else { throw CLIError(description: "--census only counts: leave out --apply") }
+            let given = options.value("--index") != nil
+            guard !given || FileManager.default.fileExists(atPath: url.path) else {
+                throw CLIError(description: "no index at \(url.path): --index names a library's index")
+            }
+            let index = given || FileManager.default.fileExists(atPath: url.path) ? url : nil
+            try await lightroomCensus(catalogURL, index: index, moved: moved, json: options.has("--json"))
+            return
         }
 
         let catalog = try await Task.detached { try LightroomCatalog.read(catalogURL) }.value
@@ -126,6 +147,31 @@ extension LibraryCommand {
         }
         if !outcome.skipped.isEmpty {
             throw ExitCode(1)
+        }
+    }
+
+    /// The census of the catalog's edits (EDT-23), its rotation codes paired with the files of the library whose
+    /// index is at `url`, when there's one.
+    private static func lightroomCensus(
+        _ catalog: URL,
+        index url: URL?,
+        moved: [String: URL],
+        json: Bool,
+    ) async throws {
+        let clock = ContinuousClock()
+        let started = clock.now
+        var index: LibraryIndex?
+        if let url {
+            index = try await LibraryIndex.open(at: url)
+        }
+        let result = await Result { [index] in try await LightroomCensus.make(catalog, index: index, moved: moved) }
+        await index?.close()
+        let census = try result.get()
+        if json {
+            try print(String(decoding: census.json(), as: UTF8.self))
+        } else {
+            census.lines().forEach { print($0) }
+            print("  counted in \(seconds(clock.now - started)) s")
         }
     }
 
