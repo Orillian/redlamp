@@ -1,9 +1,11 @@
 // The ambassador programme's page (app/ambassadors). Its source is the programme's plan in the
 // private redlamp-social repository (plans/2026-10-15-ambassadors.md); change both together.
 
+import { contactEmail } from "@/lib/site";
+
 export const ambassadors = {
   places: 10,
-  contact: "pdcgomes@gmail.com",
+  contact: contactEmail,
   intro: [
     "Redlamp is a free raw photo editor for the Mac, in early development. I'm looking for photographers to be its ten founding ambassadors.",
     "Ambassadors propose features and recommend which should come first. Each quarter, they also pick one feature from my shortlist, and I build it next. I show their edits, with their name, wherever Redlamp is seen. Redlamp is new, and its audience is still small: 283 stars on GitHub on 15 October, and its Instagram and TikTok accounts start posting on 27 October. As it grows, more people see your work.",

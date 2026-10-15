@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { privacyUpdated } from "@/content/privacy";
 import { articles } from "@/lib/articles";
 import { posts } from "@/lib/blog";
 import { site } from "@/lib/site";
@@ -16,5 +17,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...all.map((post) => ({ url: `${site.origin}/blog/${post.slug}`, lastModified: post.date, priority: 0.6 })),
     { url: `${site.origin}/articles`, lastModified: technical[0]?.date, changeFrequency: "weekly", priority: 0.7 },
     ...technical.map((article) => ({ url: `${site.origin}/articles/${article.slug}`, lastModified: article.date, priority: 0.6 })),
+    { url: `${site.origin}/help`, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${site.origin}/privacy`, lastModified: privacyUpdated, changeFrequency: "yearly", priority: 0.3 },
   ];
 }

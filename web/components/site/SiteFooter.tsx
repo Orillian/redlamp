@@ -57,6 +57,12 @@ export function SiteFooter() {
           <a className="text-mute hover:text-paper" href="/blog/feed.xml">
             RSS feed
           </a>
+          <a className="text-mute hover:text-paper" href="/help">
+            Help and contact
+          </a>
+          <a className="text-mute hover:text-paper" href="/privacy">
+            Privacy
+          </a>
         </nav>
         <div className="flex flex-col gap-2 text-[14px]">
           <p className="eyebrow mb-1">License</p>

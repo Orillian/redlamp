@@ -1,5 +1,8 @@
 const github = "https://github.com/pdcgomes/redlamp";
 
+/** Where people write to Pedro Gomes, who makes Redlamp: help, privacy requests, ambassadors. */
+export const contactEmail = "pdcgomes@gmail.com";
+
 /** Every externally visible string and link, in one place. */
 export const site = {
   name: "Redlamp",
