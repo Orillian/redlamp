@@ -215,7 +215,7 @@ struct LightroomPresetConverter {
 
     /// A point curve's `x, y` pairs on Lightroom's 0…255 scale, as 0…1, in order.
     private func curve(_ key: String) -> [CurvePoint]? {
-        guard case let .list(items) = settings[key], items.count >= 2 else { return nil }
+        guard let items = settings.list(key), items.count >= 2 else { return nil }
         var points: [CurvePoint] = []
         for item in items {
             let coordinates = item.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
@@ -256,7 +256,7 @@ struct LightroomPresetConverter {
     }
 
     private var lookNote: String {
-        guard case let .structure(fields) = settings["Look"], let name = fields["Name"], !name.isEmpty else {
+        guard let name = settings.structure("Look")?.text("Name"), !name.isEmpty else {
             return Note.profile
         }
         return Note.look(name)

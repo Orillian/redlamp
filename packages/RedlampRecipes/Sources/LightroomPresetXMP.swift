@@ -1,30 +1,6 @@
 import Foundation
 
-/// The Camera Raw settings an XMP packet holds: the properties in the `crs` namespace of its
-/// top-level `rdf:Description` elements, in every form XMP allows (XMP Specification Part 1,
-/// 7.4–7.9): attributes or elements for simple values, `rdf:Seq` and `rdf:Bag` for lists,
-/// `rdf:Alt` for language alternatives, and structures as a nested `rdf:Description`,
-/// `rdf:parseType="Resource"` or field attributes. A structure's fields stay inside it, so a
-/// profile's own name or process version never reads as the preset's.
-struct CameraRawSettings: Sendable {
-    static let namespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
-
-    enum Value: Sendable, Equatable {
-        /// A simple value, or a language alternative's default text.
-        case text(String)
-        /// An array of simple values, such as a curve's points.
-        case list([String])
-        /// A structure's simple fields in the Camera Raw namespace, such as a profile's `Name`.
-        case structure([String: String])
-        /// An array of structures, such as masks: only how many there are.
-        case structures(Int)
-    }
-
-    private(set) var values: [String: Value] = [:]
-    /// Whether the packet also describes a photo: TIFF, Exif or Exif auxiliary properties, which a
-    /// photo's sidecar carries and a preset never does.
-    private(set) var describesPhoto = false
-
+extension CameraRawSettings {
     /// A develop preset rather than a photo's sidecar, which holds Camera Raw settings too.
     /// Lightroom Classic and Camera Raw write `crs:PresetType` in every XMP preset; without it, a
     /// preset's own name, group or UUID with no photo metadata and no `crs:RawFileName` still
@@ -35,37 +11,6 @@ struct CameraRawSettings: Sendable {
         }
         return !describesPhoto && values["RawFileName"] == nil
             && ["Name", "Group", "UUID"].contains { values[$0] != nil && !isBlank($0) }
-    }
-
-    subscript(name: String) -> Value? {
-        values[name]
-    }
-
-    func text(_ name: String) -> String? {
-        if case let .text(text) = values[name] {
-            return text
-        }
-        return nil
-    }
-
-    func number(_ name: String) -> Double? {
-        guard let text = text(name), let value = Double(text.trimmingCharacters(in: .whitespaces)) else { return nil }
-        return value.isFinite ? value : nil
-    }
-
-    /// A simple value with no text, as Lightroom writes a field it leaves unset
-    /// (`crs:CameraModelRestriction=""`).
-    func isBlank(_ name: String) -> Bool {
-        text(name)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
-    }
-
-    /// `True` and `False` in any case, or a number, which is on unless it is zero.
-    func flag(_ name: String) -> Bool? {
-        switch text(name)?.lowercased() {
-        case "true": true
-        case "false": false
-        default: number(name).map { $0 != 0 }
-        }
     }
 }
 
@@ -78,10 +23,15 @@ extension CameraRawSettings {
         "http://cipa.jp/exif/1.0/",
     ]
 
-    /// Reads an XMP packet, or nil when `data` isn't well-formed XML with an `rdf:RDF` element. A
-    /// document type declaration is refused: XMP has none, and its entities could expand without
-    /// bound. So is anything larger than a recipe file may be.
-    init?(xmp data: Data) {
+    /// The Camera Raw settings an XMP packet holds: the properties in the `crs` namespace of its
+    /// top-level `rdf:Description` elements, in every form XMP allows (XMP Specification Part 1,
+    /// 7.4–7.9): attributes or elements for simple values, `rdf:Seq` and `rdf:Bag` for lists and arrays
+    /// of structures, `rdf:Alt` for language alternatives, and structures as a nested
+    /// `rdf:Description`, `rdf:parseType="Resource"` or field attributes, at any depth. Nil when `data`
+    /// isn't well-formed XML with an `rdf:RDF` element. A document type declaration is refused: XMP has
+    /// none, and its entities could expand without bound. So is anything larger than a recipe file may
+    /// be.
+    public init?(xmp data: Data) {
         guard data.count <= RecipeValidator.maximumFileSize, data.range(of: Data("<!DOCTYPE".utf8)) == nil,
               let root = XMLTree.parse(data),
               let rdf = root.first(where: { $0.namespace == Self.rdf && $0.name == "RDF" })
@@ -124,23 +74,27 @@ extension CameraRawSettings {
                 let chosen = items.first { $0.attribute("lang", in: xml) == "x-default" } ?? items.first
                 return .text(chosen?.trimmedText ?? "")
             }
-            return items.allSatisfy(isSimple) ? .list(items.map(\.trimmedText)) : .structures(items.count)
+            guard !items.allSatisfy(isSimple) else { return .list(items.map(\.trimmedText)) }
+            return .structures(items.map { item in
+                guard case let .structure(fields) = value(of: item) else { return CameraRawSettings() }
+                return fields
+            })
         }
         return property.attributes.contains(where: isField) ? structure(property) : .text(property.trimmedText)
     }
 
-    /// A structure's simple Camera Raw fields; a qualified simple value (`rdf:value` beside its
-    /// qualifiers) reads as that value.
+    /// A structure's Camera Raw fields, each read as a property is; a qualified simple value
+    /// (`rdf:value` beside its qualifiers) reads as that value.
     private static func structure(_ node: XMLTree.Element) -> Value {
         if let value = node.children.first(where: { $0.namespace == rdf && $0.name == "value" }) {
             return .text(value.trimmedText)
         }
-        var fields: [String: String] = [:]
+        var fields = CameraRawSettings()
         for attribute in node.attributes where attribute.namespace == namespace {
-            fields[attribute.name] = attribute.value
+            fields.add(attribute.name, .text(attribute.value))
         }
-        for field in node.children where field.namespace == namespace && isSimple(field) {
-            fields[field.name] = field.trimmedText
+        for field in node.children where field.namespace == namespace {
+            fields.add(field.name, value(of: field))
         }
         return .structure(fields)
     }

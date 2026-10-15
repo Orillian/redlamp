@@ -131,26 +131,34 @@ struct LightroomPresetReaderTests {
            </crs:RangeMaskMapInfo>
            <crs:DepthMapInfo crs:BaseHighlightGuideInputDigest="abc" crs:DepthSource="Embedded"/>
         """))
-        #expect(settings["Look"] == .structure(["Name": "Adobe Color", "Amount": "1"]))
-        #expect(settings["RangeMaskMapInfo"] == .structure(["RangeMaskMapInfo": "x", "Version": "2"]))
-        #expect(settings["DepthMapInfo"] == .structure([
-            "BaseHighlightGuideInputDigest": "abc",
-            "DepthSource": "Embedded",
-        ]))
+        let look = try #require(settings.structure("Look"))
+        #expect(look.values.keys.sorted() == ["Amount", "Name", "Parameters"])
+        #expect(look.text("Name") == "Adobe Color" && look.number("Amount") == 1)
+        let parameters = try #require(look.structure("Parameters"))
+        #expect(parameters.text("ProcessVersion") == "5.7" && parameters.flag("ConvertToGrayscale") == true)
+        #expect(parameters.list("ToneCurvePV2012") == ["0, 0", "255, 255"])
+        #expect(settings["RangeMaskMapInfo"] == .structure(CameraRawSettings([
+            "RangeMaskMapInfo": .text("x"),
+            "Version": .text("2"),
+        ])))
+        #expect(settings["DepthMapInfo"] == .structure(CameraRawSettings([
+            "BaseHighlightGuideInputDigest": .text("abc"),
+            "DepthSource": .text("Embedded"),
+        ])))
         #expect(settings.text("Name") == "Test Preset")
         #expect(settings.text("ProcessVersion") == "15.4")
         #expect(settings["ConvertToGrayscale"] == nil)
         #expect(settings["ToneCurvePV2012"] == nil)
     }
 
-    @Test func `lists keep their order and arrays of structures are counted`() throws {
+    @Test func `lists keep their order and arrays of structures keep each structure`() throws {
         let settings = try read(PresetXMP.preset(
             lists: [("ToneCurvePV2012", ["0, 10", "128, 120", "255, 245"])],
             body: """
                <crs:MaskGroupBasedCorrections>
                 <rdf:Seq>
                  <rdf:li rdf:parseType="Resource"><crs:What>Correction</crs:What></rdf:li>
-                 <rdf:li><rdf:Description crs:What="Correction"/></rdf:li>
+                 <rdf:li><rdf:Description crs:What="Correction" crs:CorrectionName="Sky"/></rdf:li>
                 </rdf:Seq>
                </crs:MaskGroupBasedCorrections>
                <crs:PointColors>
@@ -159,8 +167,12 @@ struct LightroomPresetReaderTests {
             """,
         ))
         #expect(settings["ToneCurvePV2012"] == .list(["0, 10", "128, 120", "255, 245"]))
-        #expect(settings["MaskGroupBasedCorrections"] == .structures(2))
+        #expect(settings["MaskGroupBasedCorrections"] == .structures([
+            CameraRawSettings(["What": .text("Correction")]),
+            CameraRawSettings(["What": .text("Correction"), "CorrectionName": .text("Sky")]),
+        ]))
         #expect(settings["PointColors"] == .list([]))
+        #expect(settings.structures("PointColors") == [])
     }
 
     @Test func `settings spread over several descriptions are merged, the first value kept`() throws {
