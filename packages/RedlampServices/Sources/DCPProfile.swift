@@ -5,16 +5,19 @@ import Foundation
 /// Camera Raw installs Adobe Standard and the Camera Matching profiles (TON-51). Read from the
 /// photographer's own files, never shipped (DEC-85).
 public struct DCPProfile: Sendable, Hashable {
-    public var name: String
+    public let name: String
     /// UniqueCameraModel: the camera it was made for, as Adobe names it (`Canon EOS R5`).
-    public var cameraModel: String
+    public let cameraModel: String
     /// ProfileEmbedPolicy: 0 allow copying, 1 embed if used, 2 never embed, 3 no restrictions.
-    public var embedPolicy: Int?
-    public var copyright: String?
-    public var color: DNGColorCalibration
+    public let embedPolicy: Int?
+    public let copyright: String?
+    public let color: DNGColorCalibration
     /// The HueSatMaps, LookTable, tone curve and BaselineExposureOffset; empty for a profile of
     /// matrices alone.
-    public var profile: DNGProfile
+    public let profile: DNGProfile
+    /// 16 hex digits of a SHA-256 over what renders (the matrices, tables, curve and offset; not
+    /// the names), so the same profile is one profile wherever its file is.
+    public let identity: String
 
     public init(
         name: String, cameraModel: String, embedPolicy: Int?, copyright: String?, color: DNGColorCalibration,
@@ -26,6 +29,20 @@ public struct DCPProfile: Sendable, Hashable {
         self.copyright = copyright
         self.color = color
         self.profile = profile
+        var identity = ProfileIdentity("dcp")
+        identity.add(color.calibrations.count)
+        for calibration in color.calibrations {
+            identity.add(calibration.temperature)
+            identity.add(calibration.colorMatrix)
+            identity.add(calibration.cameraCalibration)
+            identity.add(calibration.forwardMatrix ?? [])
+        }
+        identity.add(profile.hueSatMaps.count)
+        profile.hueSatMaps.forEach { identity.add($0) }
+        identity.add(profile.lookTable)
+        identity.add(profile.toneCurve?.flatMap { [$0.x, $0.y] } ?? [])
+        identity.add(profile.baselineExposureOffset)
+        self.identity = identity.digest
     }
 
     /// Larger files aren't camera profiles.
@@ -45,22 +62,6 @@ public struct DCPProfile: Sendable, Hashable {
             name: name, cameraModel: camera, embedPolicy: profile.embedPolicy, copyright: profile.copyright,
             color: color, profile: profile,
         )
-    }
-
-    /// 16 hex digits of a SHA-256 over what renders (the matrices, tables, curve and offset; not
-    /// the names), so the same profile is one profile wherever its file is.
-    public var identity: String {
-        struct Rendering: Encodable {
-            var calibrations: [DNGColorCalibration.Calibration]
-            var hueSatMaps: [DNGProfile.HSVMap]
-            var lookTable: DNGProfile.HSVMap?
-            var toneCurve: [SIMD2<Float>]?
-            var baselineExposureOffset: Double
-        }
-        return AdobeLook.digest(Rendering(
-            calibrations: color.calibrations, hueSatMaps: profile.hueSatMaps, lookTable: profile.lookTable,
-            toneCurve: profile.toneCurve, baselineExposureOffset: profile.baselineExposureOffset,
-        ))
     }
 
     /// Whether it was made for this camera: its UniqueCameraModel names the photo's make and model,

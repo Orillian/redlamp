@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// An Adobe XMP profile's look, as Camera Raw stores Adobe Color and the other Adobe Raw looks,
@@ -141,53 +140,33 @@ public struct AdobeLook: Sendable, Hashable {
         }
         self.leftOut = leftOut
         guard lookTable != nil || rgbTable != nil || toneCurve != nil else { throw .nothingToRender }
+        var identity = ProfileIdentity("look")
+        identity.add(lookTable?.map)
+        for value in [lookTable?.version ?? 0, supportsAmount ? 1 : 0, convertsToGrayscale ? 1 : 0] {
+            identity.add(value)
+        }
+        identity.add([lookTable?.amounts.lowerBound ?? 0, lookTable?.amounts.upperBound ?? 0, rgbTableAmount])
+        if let rgbTable {
+            for value in [
+                rgbTable.isThreeDimensional ? 3 : 1,
+                rgbTable.divisions,
+                rgbTable.primaries.rawValue,
+                rgbTable.encoding.rawValue,
+                rgbTable.extendsGamut ? 1 : 0,
+            ] {
+                identity.add(value)
+            }
+            identity.add(rgbTable.samples)
+            identity.add([rgbTable.amounts.lowerBound, rgbTable.amounts.upperBound])
+        } else {
+            identity.add(0)
+        }
+        identity.add(toneCurve?.flatMap { [$0.x, $0.y] } ?? [])
+        self.identity = identity.digest
     }
 
     /// 16 hex digits of a SHA-256 over what renders, so the same look is one look wherever its file is.
-    public var identity: String {
-        struct Rendering: Encodable {
-            var lookTable: [Float]?
-            var lookTableShape: [Int]?
-            var lookTableAmounts: [Double]?
-            var rgbTable: [Float]?
-            var rgbTableShape: [Int]?
-            var rgbTableAmounts: [Double]?
-            var rgbTableAmount: Double
-            var toneCurve: [Float]?
-            var supportsAmount: Bool
-            var grayscale: Bool
-        }
-        let rendering = Rendering(
-            lookTable: lookTable?.map.entries,
-            lookTableShape: lookTable.map {
-                [$0.map.hues, $0.map.saturations, $0.map.values, $0.map.srgbValues ? 1 : 0, $0.version]
-            },
-            lookTableAmounts: lookTable.map { [$0.amounts.lowerBound, $0.amounts.upperBound] },
-            rgbTable: rgbTable?.samples,
-            rgbTableShape: rgbTable.map {
-                [
-                    $0.isThreeDimensional ? 3 : 1,
-                    $0.divisions,
-                    $0.primaries.rawValue,
-                    $0.encoding.rawValue,
-                    $0.extendsGamut ? 1 : 0,
-                ]
-            },
-            rgbTableAmounts: rgbTable.map { [$0.amounts.lowerBound, $0.amounts.upperBound] },
-            rgbTableAmount: rgbTableAmount,
-            toneCurve: toneCurve?.flatMap { [$0.x, $0.y] },
-            supportsAmount: supportsAmount,
-            grayscale: convertsToGrayscale,
-        )
-        return Self.digest(rendering)
-    }
-
-    static func digest(_ value: some Encodable) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-        let data = (try? encoder.encode(value)) ?? Data()
-        return SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
-    }
+    public private(set) var identity = ""
 
     /// Properties that describe the look rather than set anything.
     private static let metadata: Set<String> = [
