@@ -350,11 +350,15 @@ def new_job(kind: str, commit: str) -> str:
 
 
 def prune() -> None:
-    """The newest jobs' results, and no others; of their apps, the newest few."""
+    """The newest jobs' results, and no others, but for jobs still running: every checkout's jobs share these
+    folders, so a long job can fall behind many short ones, and its job.json is only written when it finishes.
+    Of their apps, the newest few."""
     base = checkout() / "build/build-mac"
     kept = sorted(path for path in base.iterdir() if path.is_dir() and JOB_ID.fullmatch(path.name))
+    day_ago = dt.datetime.now() - dt.timedelta(days=1)
     for old in kept[:-KEPT_JOBS]:
-        shutil.rmtree(old, ignore_errors=True)
+        if (old / "job.json").exists() or dt.datetime.strptime(old.name[:15], "%Y%m%d-%H%M%S") < day_ago:
+            shutil.rmtree(old, ignore_errors=True)
     apps = [path / "Redlamp.app" for path in kept[-KEPT_JOBS:] if (path / "Redlamp.app").is_dir()]
     for old in apps[:-KEPT_APPS]:
         shutil.rmtree(old, ignore_errors=True)
