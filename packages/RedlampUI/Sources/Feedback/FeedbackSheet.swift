@@ -110,7 +110,7 @@ private struct FeedbackForm: View {
         .disabled(sheet.phase == .sending)
         .sheet(isPresented: $previewing) {
             ReportPreview(
-                title: sheet.outgoing.issueTitle, labels: sheet.outgoing.labels, issue: sheet.previewBody,
+                title: sheet.previewTitle, labels: sheet.outgoing.labels, issue: sheet.previewBody,
                 attachments: sheet.screenshots
                     .map(\.source) + (sheet.outgoing.includesDetails ? [FeedbackReport.diagnosticsName] : []),
                 done: { previewing = false },

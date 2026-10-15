@@ -153,10 +153,12 @@
 
         static let reportABug = Scenario(
             "feedback.report-a-bug",
-            "Report a Bug opens from the menu, suggests the area in use, and sends nothing private to the relay",
+            "Report a Bug opens from the menu, suggests the area in use, and sends nothing private to the relay, in its "
+                + "title or anywhere else",
             claims: [],
         ) { app in
             try app.openWorking()
+            let photo = try app.workingPhoto()
             try app.choose(.sendFeedback)
             try app.waitForSheet("Report a Bug")
             try app.pressInSheet(KeyCombo(.escape))
@@ -171,7 +173,7 @@
                     suggested.set()
                 }
                 var report = sheet.report
-                report.title = "Regression suite: a report"
+                report.title = "Regression suite: a report on \(photo), from \(NSHomeDirectory())/Desktop/Exports"
                 report.body = "Sent by the regression suite to its own relay."
                 report.featureID = report.featureID ?? "masking.other"
                 sheet.report = report
@@ -182,8 +184,9 @@
             try app.wait("the relay to get the report", timeout: 20) { _ in
                 ((try? FileManager.default.contentsOfDirectory(atPath: relay.path).count) ?? 0) > before
             }
-            let sent = try FileManager.default.contentsOfDirectory(atPath: relay.path).sorted().last
-                .map { try String(contentsOf: relay.appending(path: $0), encoding: .utf8) } ?? ""
+            let latest = try FileManager.default.contentsOfDirectory(atPath: relay.path).sorted().last
+                .map { relay.appending(path: $0) }
+            let sent = try latest.map { try String(contentsOf: $0, encoding: .utf8) } ?? ""
             let home = NSHomeDirectory()
             for leak in [app.photos.path, app.runDirectory.path, home, "/Users/"] {
                 try app.expect(!sent.contains(leak), "The report holds a path: \(leak)")
@@ -191,6 +194,12 @@
             for name in try app.photoNames() where name.count > 6 {
                 try app.expect(!sent.contains(name), "The report names the photo \(name)")
             }
+            let title = try latest.map { try IncidentScenarios.Sent($0).title } ?? ""
+            try app.expect(
+                title.contains("Regression suite: a report on Photo ") && !title.contains(photo)
+                    && title.hasSuffix(", from …/Exports"),
+                "The report is titled \(title)",
+            )
         }
 
         static let yourReports = Scenario(

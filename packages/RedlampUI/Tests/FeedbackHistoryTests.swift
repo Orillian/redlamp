@@ -58,26 +58,59 @@ struct FeedbackHistoryTests {
     }
 
     @Test func `sent reports are kept across launches, newest first`() throws {
-        var first = FeedbackReport()
-        first.title = "One"
-        var second = FeedbackReport()
-        second.title = "Two"
-        second.featureID = "export.dialog"
+        let first = submission()
+        var second = submission()
+        second.title = "[Export › Export Dialog] Two"
         let history = history()
         try history.record(first, number: 1, url: #require(URL(string: "https://github.com/o/r/issues/1")))
         try history.record(second, number: 2, url: #require(URL(string: "https://github.com/o/r/issues/2")))
         let again = self.history()
         #expect(again.reports.map(\.number) == [2, 1])
         #expect(again.reports.first?.title == "[Export › Export Dialog] Two")
-        again.forget(second.id)
+        #expect(again.reports.first?.featureID == "export.dialog")
+        again.forget(second.report)
         #expect(self.history().reports.map(\.number) == [1])
+    }
+
+    @Test func `Your Reports and the outbox keep a title redacted, as it was sent`() async throws {
+        let sender = Sender()
+        let history = history()
+        history.sender = sender
+        func sheet() -> FeedbackSheetModel {
+            let sheet = FeedbackSheetModel(
+                context: FeedbackReportTests.context(), system: FeedbackReportTests.system, windowShot: nil,
+                sender: sender, dryRun: false, defaults: defaults,
+            )
+            sheet.onSent = { submission, result in
+                if case let .filed(number, url) = result {
+                    history.record(submission, number: number, url: url)
+                }
+            }
+            sheet.onQueue = { history.enqueue($0) }
+            sheet.acceptNote()
+            sheet.report.title = "DSCF1234.RAF hangs exporting to \(NSHomeDirectory())/Desktop/Lisbon"
+            sheet.report.body = "Exporting never ends."
+            return sheet
+        }
+        let redacted = "[Masking › Objects] Photo A hangs exporting to …/Lisbon"
+        await sheet().send()
+        #expect(self.history().reports.map(\.title) == [redacted])
+
+        sender.result = .failure(.unreachable("The Internet connection appears to be offline."))
+        let offline = sheet()
+        await offline.send()
+        offline.queue()
+        #expect(self.history().queued.map(\.submission.title) == [redacted])
+        sender.result = try .success(.filed(number: 8, url: #require(URL(string: "https://github.com/o/r/issues/8"))))
+        await history.sendQueued()
+        #expect(self.history().reports.map(\.title) == [redacted, redacted])
     }
 
     @Test func `a reply or a change of state is news until it's seen`() async throws {
         let source = Source()
         let history = history()
         history.source = source
-        try history.record(FeedbackReport(), number: 5, url: #require(URL(string: "https://github.com/o/r/issues/5")))
+        try history.record(submission(), number: 5, url: #require(URL(string: "https://github.com/o/r/issues/5")))
         source.statuses = [status(5)]
         await history.refresh(force: true)
         #expect(history.newsCount == 0)
@@ -99,7 +132,7 @@ struct FeedbackHistoryTests {
         history.source = source
         await history.refresh()
         #expect(source.asked.isEmpty)
-        try history.record(FeedbackReport(), number: 5, url: #require(URL(string: "https://github.com/o/r/issues/5")))
+        try history.record(submission(), number: 5, url: #require(URL(string: "https://github.com/o/r/issues/5")))
         await history.refresh()
         await history.refresh()
         #expect(source.asked == [[5]])

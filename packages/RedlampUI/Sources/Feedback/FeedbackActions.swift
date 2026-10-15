@@ -77,9 +77,9 @@ public enum FeedbackActions {
     /// What's sent joins Your Reports, and what waits joins its outbox; either way, the crash or
     /// hang it's on is done with.
     private static func connect(_ sheet: FeedbackSheetModel, to history: FeedbackHistory, incident: UUID? = nil) {
-        sheet.onSent = { report, result in
+        sheet.onSent = { submission, result in
             if case let .filed(number, url) = result {
-                history.record(report, number: number, url: url)
+                history.record(submission, incident: incident, number: number, url: url)
             }
         }
         sheet.onQueue = { history.enqueue($0, incident: incident) }

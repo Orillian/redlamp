@@ -97,7 +97,8 @@ struct IncidentReportTests {
     @Test func `a crash's issue says what happened, then the crashed thread's stack and what came before it`() throws {
         let pending = try Self.crash()
         let report = sheet(pending).outgoing
-        #expect(report.issueTitle == "[Performance & Stability › Crashes] Crash: EXC_BAD_ACCESS (SIGSEGV) in Redlamp")
+        #expect(report.issueTitle(context: FeedbackContext(reporting: pending))
+            == "[Performance & Stability › Crashes] Crash: EXC_BAD_ACCESS (SIGSEGV) in Redlamp")
         #expect(report.labels == ["in-app", "bug", "component:performance"])
         let body = issue(report, pending)
         #expect(body.hasPrefix(
@@ -164,7 +165,8 @@ struct IncidentReportTests {
             Self.event(-5, from: Self.hangBegan, .mask, "Selected mask “Mask 1”: Objects"),
         ])
         let report = sheet(pending).outgoing
-        #expect(report.issueTitle == "[Performance & Stability › Freezes] Hang: 14 s, then Redlamp was closed")
+        #expect(report.issueTitle(context: FeedbackContext(reporting: pending))
+            == "[Performance & Stability › Freezes] Hang: 14 s, then Redlamp was closed")
         let body = issue(report, pending)
         #expect(body.contains(#""incident":"hang""#) && body.contains(#""area":"performance.freeze""#))
         for line in [
@@ -216,6 +218,20 @@ struct IncidentReportTests {
         #expect(!body.contains("<details>") && !body.contains("diagnostics.json"))
         #expect(body.contains("**From:** Redlamp 0.2.1-prealpha (412, 1a2b3c4d5e6f)\n"))
         #expect(try diagnostics(report, pending) == nil)
+    }
+
+    @Test func `a title the person changes is redacted with the session's photos and folders, always by alias`(
+    ) throws {
+        let pending = try Self.crash()
+        var report = sheet(pending).outgoing
+        report.title = "Crash opening IMG_0001.CR3 from /Users/someone/Pictures/Holiday, then "
+            + "\(NSHomeDirectory())/Desktop/Edits"
+        report.details.fileNames = true
+        let title = report.issueTitle(context: FeedbackContext(reporting: pending))
+        #expect(title == "[Performance & Stability › Crashes] Crash opening Photo A from a folder, then …/Edits")
+        for secret in Self.secrets {
+            #expect(!title.contains(secret), "the title contains \(secret)")
+        }
     }
 
     // MARK: - diagnostics.json
@@ -301,9 +317,9 @@ struct IncidentReportTests {
 
         let sending = sheet(crash)
         sending.acceptNote()
-        sending.onSent = { report, result in
+        sending.onSent = { submission, result in
             if case let .filed(number, url) = result {
-                history.record(report, number: number, url: url)
+                history.record(submission, incident: crash.id, number: number, url: url)
             }
         }
         await sending.send()

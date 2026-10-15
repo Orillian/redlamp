@@ -93,10 +93,10 @@ Paths, folder names, location and serial numbers are never included, as the note
 - Any other path is cut to its last part.
 - Unless File names is on, each photo's file name, with or without its extension, becomes its letter.
 
-This covers your own words below the title too. The title is sent as you type it.
+This covers your own words too, the title included.
 
 ::: caution Reports are public
-Anyone can read an issue and the files attached to it. Read the preview before you send, and keep out of the title anything you don't want to be public.
+Anyone can read an issue and the files attached to it. Read the preview before you send, and leave out of your words anything else you don't want to be public.
 :::
 
 ### Screenshots

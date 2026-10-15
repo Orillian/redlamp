@@ -188,15 +188,15 @@ public final class FeedbackHistory {
         reports.count { $0.hasNews }
     }
 
-    /// A report the relay filed; a crash or a hang it was on is reported.
-    public func record(_ report: FeedbackReport, number: Int, url: URL) {
-        reports.removeAll { $0.id == report.id }
+    /// A report the relay filed, as it was sent; `incident`, the crash or hang it was on, is reported.
+    public func record(_ submission: FeedbackSubmission, incident: UUID? = nil, number: Int, url: URL) {
+        reports.removeAll { $0.id == submission.report }
         reports.insert(SentReport(
-            id: report.id, number: number, url: url, title: report.issueTitle, featureID: report.featureID,
-            kind: report.kind, sent: now(),
+            id: submission.report, number: number, url: url, title: submission.title, featureID: submission.area,
+            kind: submission.kind, sent: now(),
         ), at: 0)
-        if let incident = report.incident {
-            incidents.removeAll { $0.id == incident.id }
+        if let incident {
+            incidents.removeAll { $0.id == incident }
         }
         save()
     }
@@ -257,12 +257,7 @@ public final class FeedbackHistory {
         for item in queued {
             guard case let .filed(number, url)? = try? await sender.send(item.submission) else { continue }
             queued.removeAll { $0.id == item.id }
-            reports.removeAll { $0.id == item.id }
-            reports.insert(SentReport(
-                id: item.id, number: number, url: url, title: item.submission.title, featureID: item.submission.area,
-                kind: item.submission.kind, sent: now(),
-            ), at: 0)
-            save()
+            record(item.submission, number: number, url: url)
         }
     }
 

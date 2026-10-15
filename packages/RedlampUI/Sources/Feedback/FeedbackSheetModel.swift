@@ -56,7 +56,7 @@ public final class FeedbackSheetModel {
     private let sender: any FeedbackSending
     @ObservationIgnored private let defaults: UserDefaults
     /// Called with what was sent and what the relay did, for Your Reports.
-    @ObservationIgnored public var onSent: ((FeedbackReport, FeedbackResult) -> Void)?
+    @ObservationIgnored public var onSent: ((FeedbackSubmission, FeedbackResult) -> Void)?
     /// Puts a report in the outbox.
     @ObservationIgnored public var onQueue: ((FeedbackSubmission) -> Void)?
 
@@ -147,6 +147,10 @@ public final class FeedbackSheetModel {
         report.isComplete && report.topic != nil && phase == .form
     }
 
+    public var previewTitle: String {
+        outgoing.issueTitle(context: context)
+    }
+
     public var previewBody: String {
         outgoing.issueBody(context: context, system: system, log: log)
     }
@@ -182,14 +186,13 @@ public final class FeedbackSheetModel {
         error = nil
         unreachable = false
         phase = .sending
-        let outgoing = outgoing
         do {
             let submission = try outgoing.submission(context: context, system: system, log: log, dryRun: dryRun)
             let result = try await sender.send(submission)
             if case .filed = result {
                 removeDraft()
             }
-            onSent?(outgoing, result)
+            onSent?(submission, result)
             phase = .sent(result)
         } catch {
             self.error = error.localizedDescription

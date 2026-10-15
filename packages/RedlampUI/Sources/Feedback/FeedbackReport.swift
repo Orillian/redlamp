@@ -3,7 +3,7 @@ import Foundation
 /// A report as the person writes it, and the GitHub issue it becomes.
 ///
 /// The issue's body names its attachments `attachment:<name>`; the relay uploads them and puts
-/// their addresses in. Everything in the body and in `diagnostics.json` goes through
+/// their addresses in. Everything in the title, the body and `diagnostics.json` goes through
 /// `FeedbackRedactor` first, because issues are public.
 public struct FeedbackReport: Codable, Sendable, Hashable {
     public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
@@ -146,10 +146,10 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
             && (words || incident != nil && details.incident)
     }
 
-    /// "[Masking › Objects] Clicking a second object drops the first".
-    public var issueTitle: String {
-        let title = String(Self.sanitized(title).trimmingCharacters(in: .whitespacesAndNewlines)
-            .prefix(Self.titleLimit))
+    /// "[Masking › Objects] Clicking a second object drops the first": the person's title redacted as the body is.
+    public func issueTitle(context: FeedbackContext) -> String {
+        let title = String(Self.sanitized(redactor(context).redact(title))
+            .trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.titleLimit))
         return topic.map { "[\($0.path)] \(title)" } ?? title
     }
 

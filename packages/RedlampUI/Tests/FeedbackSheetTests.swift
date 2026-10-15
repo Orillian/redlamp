@@ -138,6 +138,21 @@ struct FeedbackSheetTests {
         #expect(defaults.data(forKey: FeedbackSheetModel.draftKey) == nil)
     }
 
+    @Test func `the title goes redacted, as the preview shows it, and is what Your Reports is told`() async {
+        let relay = Relay()
+        let sheet = sheet(relay: relay)
+        sheet.acceptNote()
+        fill(sheet)
+        sheet.report.title = "DSCF1234.RAF won't export to \(NSHomeDirectory())/Desktop/Lisbon"
+        let redacted = "[Masking › Objects] Photo A won't export to …/Lisbon"
+        #expect(sheet.previewTitle == redacted)
+        var told: FeedbackSubmission?
+        sheet.onSent = { submission, _ in told = submission }
+        await sheet.send()
+        #expect(relay.sent.first?.title == redacted)
+        #expect(told?.title == redacted)
+    }
+
     @Test func `a failed send keeps the report and says why`() async {
         let relay = Relay()
         relay.result = .failure(.relay(status: 503, message: "Feedback is turned off"))

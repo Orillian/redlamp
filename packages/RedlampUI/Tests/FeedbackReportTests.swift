@@ -112,13 +112,24 @@ struct FeedbackReportTests {
 
     @Test func `title and labels name the area`() {
         let report = Self.report()
-        #expect(report.issueTitle == "[Masking › Objects] Clicking a second object drops the first")
+        #expect(report.issueTitle(context: Self.context())
+            == "[Masking › Objects] Clicking a second object drops the first")
         #expect(report.labels == ["in-app", "bug", "component:masking"])
         var idea = FeedbackReport()
         idea.kind = .idea
         idea.title = "Batch rename"
-        #expect(idea.issueTitle == "Batch rename")
+        #expect(idea.issueTitle(context: Self.context()) == "Batch rename")
         #expect(idea.labels == ["in-app", "enhancement"])
+    }
+
+    @Test func `the title names no path or file unless asked, and keeps its area`() {
+        var report = Self.report()
+        report.title = "DSCF1234.RAF loses its mask, exported to \(NSHomeDirectory())/Desktop/Lisbon"
+        #expect(report.issueTitle(context: Self.context())
+            == "[Masking › Objects] Photo A loses its mask, exported to …/Lisbon")
+        report.details.fileNames = true
+        #expect(report.issueTitle(context: Self.context())
+            == "[Masking › Objects] DSCF1234.RAF loses its mask, exported to …/Lisbon")
     }
 
     @Test func `the body names no folder, path or file unless asked`() {

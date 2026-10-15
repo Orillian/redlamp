@@ -136,7 +136,7 @@ public extension FeedbackReport {
             ))
         }
         return FeedbackSubmission(
-            report: id, kind: kind, area: featureID, title: issueTitle,
+            report: id, kind: kind, area: featureID, title: issueTitle(context: context),
             body: issueBody(context: context, system: system, log: log),
             labels: labels, attachments: attachments, dryRun: dryRun,
         )
