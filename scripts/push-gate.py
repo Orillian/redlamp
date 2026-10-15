@@ -37,7 +37,10 @@ since git would refuse it then. Tests stop at the first bundle that fails.
 On the build Mac, scripts/build-mac.py runs each gate in a lane of its own and names the lane as
 its worktree (REDLAMP_PUSH_GATE_SRC), with a lock of its own, so gates run side by side there. It
 also names the screen its regression suite drives alone (REDLAMP_SCREEN_LOCK) and the test targets
-that put windows on it (REDLAMP_SCREEN_TARGETS): a step that runs them waits for the screen.
+that put windows on it (REDLAMP_SCREEN_TARGETS). There the gate builds with the tests first at
+every level, then runs those targets' tests in a step of their own, the only one that holds the
+screen: before the other tests while the screen is free, and after them while a regression run has
+it or waits for it.
 
 It exits with 1 when a step fails, and git then stops the push. `git push --no-verify` skips it.
 """
@@ -103,8 +106,10 @@ SHOWN = re.compile(r"✘|(?:^|: )error: |Test run with \d+ tests|unexpected exit
 # failure in that bundle shown, rather than running the other bundles (`mise run test` runs them).
 BUNDLE_FAILED = re.compile(r"✘ Test run with \d+ tests|Test Suite '[^']+\.xctest' failed")
 KEPT_LOGS = 20
-# In the worktree, replaced by each run of the tests; its summary stays beside the log.
+# In the worktree, replaced by each run of the tests (on the build Mac, the tests that put windows on its screen keep
+# theirs apart); their summary stays beside the log.
 RESULTS = "build/push-gate.xcresult"
+RESULTS_SCREEN = "build/push-gate-screen.xcresult"
 # Git exports GIT_DIR and the like to its hooks; git in the gate's worktree mustn't see them.
 ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
@@ -227,8 +232,16 @@ def reference_suites() -> list[str]:
     return sorted(found | (set(NAMED_SUITES) & declared))
 
 
+def windowed() -> list[str]:
+    """On the build Mac, the test targets that put windows on its screen, of those the worktree has."""
+    if not SCREEN:
+        return []
+    return sorted(target for target in WINDOWED if (SRC / "packages" / target.removesuffix("Tests") / "Tests").is_dir())
+
+
 def steps(level: str) -> list[tuple[str, list[str], bool]]:
-    """CI's steps, by their names in ci.yml where it has them: (name, command, whether it runs long)."""
+    """CI's steps, by their names in ci.yml where it has them: (name, command, whether it runs long). On the build Mac
+    the tests that put windows on its screen are a step of their own, after a build with the tests."""
     common = ["xcodebuild", "-workspace", "Redlamp.xcworkspace", "-destination", "platform=macOS,arch=arm64",
               "-derivedDataPath", "build/DerivedData", "CODE_SIGNING_ALLOWED=NO"]
     xcodebuild = [*common, "-scheme", "Redlamp-Workspace"]
@@ -246,14 +259,27 @@ def steps(level: str) -> list[tuple[str, list[str], bool]]:
         ("Generate workspace", ["mise", "run", "generate"], False),
         ("Lint (SwiftFormat)", ["mise", "exec", "--", "swiftformat", "--lint", "."], False),
     ]
+    testing = [*xcodebuild, "test-without-building", "-resultBundlePath"]
     if level == "reference":
-        only = [f"-only-testing:{suite}" for suite in reference_suites()]
-        return out + [
+        suites = reference_suites()
+        shown = [suite for suite in suites if suite.split("/")[0] in windowed()]
+        rest = [suite for suite in suites if suite not in shown]
+        out.append(("Build with the tests", [*xcodebuild, "build-for-testing"], True))
+        if shown:
+            out.append((f"Reference tests on the screen ({len(shown)} suites)",
+                        [*testing, RESULTS_SCREEN, *[f"-only-testing:{suite}" for suite in shown]], True))
+        if rest or not shown:
+            out.append((f"Reference tests ({len(rest)} suites)",
+                        [*testing, RESULTS, *[f"-only-testing:{suite}" for suite in rest]], True))
+        return out
+    if windowed():
+        out += [
             ("Build with the tests", [*xcodebuild, "build-for-testing"], True),
-            (f"Reference tests ({len(only)} suites)",
-             [*xcodebuild, "test-without-building", "-resultBundlePath", RESULTS, *only], True),
+            ("Test on the screen", [*testing, RESULTS_SCREEN, *[f"-only-testing:{name}" for name in windowed()]], True),
+            ("Test", [*testing, RESULTS, *[f"-skip-testing:{name}" for name in windowed()]], True),
         ]
-    out.append(("Test", [*xcodebuild, "test", "-resultBundlePath", RESULTS], True))
+    else:
+        out.append(("Test", [*xcodebuild, "test", "-resultBundlePath", RESULTS], True))
     if level == "full":
         out += [
             ("Build app (Release)", [*common, "build", "-scheme", "Redlamp", "-configuration", "Release"], True),
@@ -366,15 +392,34 @@ def prepare(commit: str, level: str) -> None:
         say("Some sample raws couldn't be fetched; the tests that need them skip")
 
 
+def on_screen(command: list[str]) -> bool:
+    """Whether a step runs tests that put windows on the build Mac's screen: those it names of such a target, or, when
+    it names none, every test but the targets it skips."""
+    if not SCREEN or command[:1] != ["xcodebuild"] or not {"test", "test-without-building"} & set(command):
+        return False
+    named = {part.split(":", 1)[1].split("/")[0] for part in command if part.startswith("-only-testing:")}
+    skipped = {part.split(":", 1)[1] for part in command if part.startswith("-skip-testing:")}
+    return bool(named & set(windowed())) if named else not set(windowed()) <= skipped
+
+
+def screen_free() -> bool:
+    """Whether a step could take the build Mac's screen at once: no regression run has it or waits for it."""
+    with open(f"{SCREEN}.turnstile", "a+") as turnstile, open(SCREEN, "a+") as handle:
+        for held, how in ((turnstile, fcntl.LOCK_EX), (handle, fcntl.LOCK_SH)):
+            try:
+                fcntl.flock(held, how | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return False
+    return True
+
+
 @contextlib.contextmanager
 def screen(name: str, command: list[str]):
     """On the build Mac, its screen, shared with other tests, while a step runs tests that put windows on it, after
     any regression run there, which drives it alone. Its turnstile (the lock's path with .turnstile) is held while
     waiting, as scripts/build-mac.py's take_screen holds it, so a regression run waiting for these tests isn't
     passed by more of them."""
-    targets = {part.split(":", 1)[1].split("/")[0] for part in command if part.startswith("-only-testing:")}
-    tests = command[:1] == ["xcodebuild"] and bool({"test", "test-without-building"} & set(command))
-    if not SCREEN or not tests or (targets and not targets & WINDOWED):
+    if not on_screen(command):
         yield
         return
     with open(f"{SCREEN}.turnstile", "a+") as turnstile, open(SCREEN, "a+") as handle:
@@ -439,9 +484,10 @@ def run(name: str, command: list[str], log, long: bool) -> bool:
 def summarise(log_path: Path) -> None:
     """The tests' results beside the log, for comparing runs (scripts/test-results.py); never stops the gate."""
     script = ROOT / "scripts/test-results.py"
-    if not (SRC / RESULTS).exists() or not script.exists():
+    bundles = [str(SRC / bundle) for bundle in (RESULTS, RESULTS_SCREEN) if (SRC / bundle).exists()]
+    if not bundles or not script.exists():
         return
-    found = subprocess.run([sys.executable, str(script), "summary", str(SRC / RESULTS), "--out",
+    found = subprocess.run([sys.executable, str(script), "summary", *bundles, "--out",
                             str(log_path.with_suffix(".tests.json"))], env=ENV, capture_output=True, text=True)
     if found.returncode == 0 and found.stdout.strip():
         say(found.stdout.strip())
@@ -506,13 +552,24 @@ def check(commit: str, theirs: str | None, asked: str, remote: str | None) -> bo
             say(f"Log: {log_path}")
         with log_path.open("w") as log:
             log.write(f"==> Push gate: {commit} at the {level} level, {'pushed to ' + remote if remote else 'by hand'}\n")
-            for name, command, long in steps(level):
-                if RESULTS in command:
-                    shutil.rmtree(SRC / RESULTS, ignore_errors=True)
-                    (SRC / RESULTS).parent.mkdir(parents=True, exist_ok=True)
+            for bundle in (RESULTS, RESULTS_SCREEN):
+                shutil.rmtree(SRC / bundle, ignore_errors=True)
+            (SRC / RESULTS).parent.mkdir(parents=True, exist_ok=True)
+            pending = steps(level)
+            while pending:
+                name, command, long = pending.pop(0)
+                tested = RESULTS in command or RESULTS_SCREEN in command
+                later = next((index for index, (_, other, _) in enumerate(pending)
+                              if RESULTS in other and not on_screen(other)), None)
+                if on_screen(command) and later is not None and not screen_free():
+                    say(f"{name}: after {pending[later][0]}, since a regression run has the build Mac's screen or "
+                        "waits for it")
+                    pending.insert(later + 1, (name, command, long))
+                    continue
                 with screen(name, command):
                     passed = run(name, command, log, long)
-                if RESULTS in command:
+                if tested and (not passed or not any(RESULTS in other or RESULTS_SCREEN in other
+                                                     for _, other, _ in pending)):
                     summarise(log_path)
                 if not passed:
                     log.write(f"==> Push gate: {name} failed after {took(time.monotonic() - started)}\n")

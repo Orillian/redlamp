@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Test results from Xcode's result bundles, summarised and compared between runs (ARC-15).
 
-    scripts/test-results.py summary <bundle.xcresult> [--out <file.json>]
+    scripts/test-results.py summary <bundle.xcresult>... [--out <file.json>]
     scripts/test-results.py compare <a> <b>
 
 A summary lists each test case by its bundle and identifier, with its result (Passed, Failed,
 Skipped or Expected Failure), its time and the message of a skip or a failure, and the Mac that ran
-it. The push gate writes one beside its log for each run of the tests
+it; given several result bundles, as the push gate makes on the build Mac when it runs the tests
+that put windows on screen apart from the others, it lists the tests of all of them. The push gate
+writes one beside its log for each run of the tests
 (build/push-gate/logs/<log>.tests.json), and scripts/build-mac.py brings the build Mac's back with
 a job's logs (build/build-mac/<job>/tests.json).
 
@@ -136,8 +138,8 @@ def compare(first: Path, second: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    summary = commands.add_parser("summary", help="summarise a result bundle")
-    summary.add_argument("bundle", type=Path)
+    summary = commands.add_parser("summary", help="summarise one or more result bundles")
+    summary.add_argument("bundles", type=Path, nargs="+")
     summary.add_argument("--out", type=Path, help="write the summary here and print its counts")
     comparing = commands.add_parser("compare", help="how two runs differ")
     comparing.add_argument("first", type=Path)
@@ -145,7 +147,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "compare":
         return compare(args.first, args.second)
-    found = summarise(args.bundle)
+    found = summarise(args.bundles[0])
+    for bundle in args.bundles[1:]:
+        found["tests"].update(summarise(bundle)["tests"])
+    found["counts"] = counts(found["tests"])
     if not args.out:
         print(json.dumps(found, indent=1))
         return 0

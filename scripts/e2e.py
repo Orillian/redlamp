@@ -16,7 +16,9 @@ clicks and drags; this script launches it, watches it, and judges the run.
 A run leaves the Mac to the person at it: the app stays in the background, and keys typed meanwhile
 are kept out of it. With --focus, the scenarios that need the app in front (Scenario.needsFocus)
 bring it there for those steps, so a click in another app would fail them: leave the Mac alone, with
-its screen unlocked, until the run ends.
+its screen unlocked, until the run ends. On the build Mac (scripts/build-mac.py), which names its
+screen in REDLAMP_SCREEN_LOCK, a run builds its test app first and then waits for the screen, which
+it drives alone and the tests that put windows on it share.
 
 It exits 1 if a scenario fails (a pass on retry is flaky, reported, and doesn't fail the run), the
 app crashes or hangs, a feature the full tiers must cover isn't covered or exempted, or the
@@ -395,6 +397,9 @@ def storage_check(home: Path, compiles_before: set[str], free_before: int, earli
 # Every run, from any checkout, shares the test app's bundle ID, and with it its defaults (which each run
 # deletes when it ends) and the temporary folder its storage check reads: two at once break each other.
 RUN_LOCK = HOME / "Library/Caches/app.redlamp.e2e/run.lock"
+# The build Mac's screen, which a run drives alone and the tests that put windows on it share, named by
+# scripts/build-mac.py; the job holding it is noted beside it for the others' waiting messages.
+SCREEN_LOCK = os.environ.get("REDLAMP_SCREEN_LOCK")
 
 
 def hold_run_lock(lock: Path = RUN_LOCK):
@@ -411,6 +416,32 @@ def hold_run_lock(lock: Path = RUN_LOCK):
     handle.truncate()
     handle.write(f"pid {os.getpid()} in {ROOT}")
     handle.flush()
+    return handle
+
+
+def hold_screen():
+    """On the build Mac, its screen, held alone until this process ends; returns the open lock (None elsewhere). Its
+    turnstile is held while waiting, as scripts/build-mac.py's take_screen holds it, so tests that come meanwhile
+    wait for this run rather than pass it."""
+    if not SCREEN_LOCK:
+        return None
+    turnstile, handle = open(f"{SCREEN_LOCK}.turnstile", "a+"), open(SCREEN_LOCK, "a+")
+    told = False
+    for held in (turnstile, handle):
+        try:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if not told:
+                log("Waiting for the build Mac's screen, which another run or tests that put windows on it have")
+                told = True
+            fcntl.flock(held, fcntl.LOCK_EX)
+        if held is turnstile:
+            note = Path(SCREEN_LOCK).with_suffix(".json")
+            note.with_suffix(".new").write_text(json.dumps({
+                "job": os.environ.get("REDLAMP_BUILD_MAC_JOB", f"pid {os.getpid()}"), "source": "",
+                "used": dt.datetime.now().astimezone().isoformat(timespec="seconds")}) + "\n")
+            note.with_suffix(".new").replace(note)
+    turnstile.close()
     return handle
 
 
@@ -1102,6 +1133,12 @@ def main() -> int:
         sys.exit("The screen is locked, and the app can't come to the front until it's unlocked: unlock it, "
                  "then leave the Mac alone while the run takes focus")
     preflight(args.focus)
+    configuration = args.build or ("qa" if args.tier in ("release", "performance") else "debug")
+    # On the build Mac a run has its checkout to itself, so it builds before waiting for the screen, which the tests
+    # that put windows on it can use meanwhile; the screen comes before the test app's lock there, as it does for a
+    # run whose job took the screen for it.
+    built = (args.app or build(configuration)) if SCREEN_LOCK else None
+    screen = hold_screen()  # noqa: F841: held until main returns
     run_lock = hold_run_lock()  # noqa: F841: held until main returns
 
     sha, dirty = commit()
@@ -1118,7 +1155,7 @@ def main() -> int:
     if tier == "performance":
         args.validation = False
 
-    built = args.app or build(args.build or ("qa" if tier in ("release", "performance") else "debug"))
+    built = built or args.app or build(configuration)
     app = make_test_copy(built, ROOT / "build/e2e")
 
     home = run_dir / "home"

@@ -38,11 +38,14 @@ owner's choice, 14 October 2026). A lane is a worktree beside the clone whose De
 between jobs, and a job takes the lane its checkout used last when it's free; a gate's lane is the
 push gate's worktree, so gates run side by side. The regression suite drives the screen, so it takes
 the screen alone: tests that put windows on it (RedlampUITests' and RedlampAutomationTests') wait
-for it, and it waits for them, while builds and other tests run beside it. A test job builds those
-tests first and waits for the screen only to run them, and the push gate waits for it only in the
-steps that run them. A regression run with --focus, as a release's is, asks for a Mac nobody is
-using, so it keeps the Mac to itself, as a performance record would. A job whose lanes are all
-taken waits there, saying what for (status shows it), rather than running here.
+for it, and it waits for them, while builds and other tests run beside it. Each holds the screen
+only while it uses it: a test job builds those tests first and waits for the screen only to run
+them, the push gate builds first and runs them in a step of its own, and a regression run builds
+its test app first (scripts/e2e.py takes the screen itself, named in REDLAMP_SCREEN_LOCK). A
+regression run that measures performance, the release tier with every scenario as a release's
+checks run it, keeps the Mac to itself, as a performance record would; any other, with --focus or
+not, takes the screen (the owner's choice, 15 October 2026). A job whose lanes are all taken waits
+there, saying what for (status shows every job running or queued), rather than running here.
 
 test runs xcodebuild test for the scheme unsigned, as CI and the push gate do, and shows failures,
 errors and each bundle's result. e2e runs scripts/e2e.py, with the arguments after --, and brings
@@ -637,9 +640,20 @@ def e2e(args: argparse.Namespace, replace: bool = True) -> int:
     commit = snapshot()
     # Generated at each commit, which may add or remove source files.
     command = ["bash", "-c", 'mise run generate && exec scripts/e2e.py "$@"', "e2e", *args.options]
-    # --focus asks for a Mac nobody is using, as a release's regression run does, so it keeps the Mac to itself.
-    size = "alone" if "--focus" in args.options else "screen"
+    # A run that measures performance needs a quiet Mac, so it keeps the Mac to itself; any other takes the screen,
+    # which is all --focus needs (the owner's choice, 15 October 2026).
+    size = "alone" if measures(args.options) else "screen"
     return start("e2e", commit, command, args.detach, size=size, into=ROOT)
+
+
+def measures(options: list[str]) -> bool:
+    """Whether e2e.py's options measure performance, as the release tier does when it runs every scenario."""
+    named = {}
+    for index, option in enumerate(options):
+        name, _, value = option.partition("=")
+        if name in ("--tier", "--scenario"):
+            named.setdefault(name, value or "".join(options[index + 1:index + 2]))
+    return named.get("--tier") in ("release", "performance") and "--scenario" not in named
 
 
 def app(args: argparse.Namespace) -> int:
@@ -892,7 +906,7 @@ def status(_args: argparse.Namespace) -> int:
         parts += [f"{len(extra)} this Mac lacks"] if extra else []
         copies = "; `scripts/build-mac.py models` copies them" if name == "Models" and missing else ""
         print(f"    {name}: {'; '.join(parts)}; the tests that need them skip where they're missing{copies}")
-    for job in info["jobs"][:8]:
+    for job in [job for index, job in enumerate(info["jobs"]) if index < 8 or job["state"] not in FINAL]:
         ran = between(job.get("started"), job.get("finished") or now())
         spent = f" {'for' if job['state'] == 'running' else 'in'} {took(ran)}" if ran is not None else ""
         lane = f" (lane {job['lane']})" if job.get("lane") else ""
@@ -1067,7 +1081,7 @@ def admit(job: str, tell) -> None:
 def take_screen(job: str, exclusive: bool, tell=say):
     """The build Mac's screen, held: alone by a regression run, which drives it, or shared by tests that put windows
     on it. A regression run waiting for those tests holds the screen's turnstile, so tests that come meanwhile wait
-    for it; scripts/push-gate.py takes the screen the same way, given its path."""
+    for it; scripts/push-gate.py and scripts/e2e.py take the screen the same way, given its path."""
     handle = lock_there("screen")
     turnstile = open(f"{handle.name}.turnstile", "a+")
     how = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
@@ -1084,15 +1098,16 @@ def take_screen(job: str, exclusive: bool, tell=say):
     return handle
 
 
-def wait_turn(job: str, state: dict, log) -> tuple[str | None, list]:
+def wait_turn(job: str, state: dict, log, screen: bool) -> tuple[str | None, list]:
     """Waits for the job's turn; returns its lane (none for a regression run or a job that runs alone) and the locks
     it holds.
 
     A regression run puts the clone at its commit, so regression runs take the clone one at a time. A job that
     runs alone holds the turnstile, which stops the jobs that come after it, until the jobs running have finished.
-    A long job or a regression run then waits for room (admit), and a regression run for the screen, which tests
-    that put windows on it share (take_screen). The locks are taken in one order (the clone, a lane, the turnstile,
-    the Mac, the screen), so jobs can't end up waiting for each other in a circle.
+    A long job or a regression run then waits for room (admit), and with `screen` a regression run waits for the
+    screen, which tests that put windows on it share (take_screen); without it, its e2e.py takes the screen once it
+    has built. The locks are taken in one order (the clone, a lane, the turnstile, the Mac, the screen, the test
+    app's), so jobs can't end up waiting for each other in a circle.
     """
     def tell(text: str) -> None:
         log.write(f"==> {text}\n".encode())
@@ -1127,9 +1142,16 @@ def wait_turn(job: str, state: dict, log) -> tuple[str | None, list]:
     held.append(mac)
     if size in ("long", "screen"):
         admit(job, tell)
-    if size == "screen":
+    if size == "screen" and screen:
         held.append(take_screen(job, exclusive=True, tell=tell))
     return lane, held
+
+
+def takes_screen(commit: str) -> bool:
+    """Whether the commit's regression suite takes the build Mac's screen itself, once it has built its test app."""
+    found = subprocess.run(["git", "show", f"{commit}:scripts/e2e.py"], cwd=Path.home() / CLONE_THERE,
+                           capture_output=True, text=True)
+    return "REDLAMP_SCREEN_LOCK" in found.stdout
 
 
 def prepare_lane(place: Path, commit: str, env: dict, log) -> bool:
@@ -1170,8 +1192,9 @@ def supervise(job: str) -> None:
     state = update_job(job, supervisor=os.getpid())
     clone = Path.home() / CLONE_THERE
     env = environment_there()
+    itself = state["kind"] == "e2e" and state.get("size") == "screen" and takes_screen(state["commit"])
     with (folder_there(job) / "log").open("ab", buffering=0) as log:
-        lane, held = wait_turn(job, state, log)
+        lane, held = wait_turn(job, state, log, screen=not itself)
         if read_job(job).get("cancel"):
             update_job(job, state="cancelled", finished=now())
             return
@@ -1197,6 +1220,9 @@ def supervise(job: str) -> None:
                                             tell=lambda text: log.write(f"==> {text}\n".encode())))
         else:
             place, command = clone, state["command"]
+            if itself:
+                env = {**env, "REDLAMP_SCREEN_LOCK": str(Path.home() / LANES_THERE / "screen.lock"),
+                       "REDLAMP_BUILD_MAC_JOB": job}
             # origin/main as GitHub has it now, which the push gate measures the commit's changes from.
             subprocess.run(["git", "fetch", "--quiet", "origin"], cwd=clone, env=env, stdin=subprocess.DEVNULL,
                            stdout=log, stderr=subprocess.STDOUT)
@@ -1349,7 +1375,9 @@ def status_there() -> int:
     gate = clone.parent / f"{clone.name}-push-gate"
     folders = sorted((path for path in (Path.home() / JOBS_THERE).glob("*")
                       if path.is_dir() and JOB_ID.fullmatch(path.name)), reverse=True)
-    jobs = [current(path.name) for path in folders[:KEPT_JOBS]]
+    # The newest jobs, and any older one still running or queued, which pruning keeps.
+    jobs = [current(path.name) for path in folders]
+    running = [state["id"] for state in jobs if state["state"] == "running"]
     for state in jobs:
         try:
             with (folder_there(state["id"]) / "log").open("rb") as log:
@@ -1360,6 +1388,11 @@ def status_there() -> int:
         if last and (last[0].startswith("==> Waiting") and state["state"] == "running"
                      or last[0].startswith("==> ") and state["state"] == "queued"):
             state["waiting"] = last[0][4:]
+        # What it was waiting for when it said so may have changed hands since.
+        if state.get("waiting", "").startswith("This runs alone"):
+            state["waiting"] = f"This runs alone, so it waits for {', '.join(running) or 'the jobs running'}"
+        elif state.get("waiting", "").startswith("Waiting for the clone"):
+            state["waiting"] = f"Waiting for the clone, which {noted('clone').get('job', 'another job')} has"
     emit({
         "gpu": f"{gpus[0].get('_name')} ({gpus[0].get('sppci_cores')} GPU cores)" if gpus else "no GPU listed",
         "macos": output("sw_vers", "-productVersion").strip(),
