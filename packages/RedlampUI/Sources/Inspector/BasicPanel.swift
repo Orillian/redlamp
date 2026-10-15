@@ -89,6 +89,7 @@ struct BaseLookMenu: View {
                     .help("The look of the camera profile embedded in this file")
                 }
             }
+            cameraProfiles(current: current)
             ForEach(sections, id: \.name) { section in
                 Section(section.name) {
                     ForEach(section.looks, id: \.self) { look in
@@ -108,6 +109,8 @@ struct BaseLookMenu: View {
             }
             Divider()
             Button("Browse Base Looks…") { browsing = true }
+            Button("Choose Camera Profiles…") { CameraProfileChooser.choose(model: model) }
+                .help("Adobe .dcp and .xmp profiles, or folders of them, read where they are on this Mac")
         } label: {
             Text(current.name).font(Theme.labelFont)
         }
@@ -122,6 +125,63 @@ struct BaseLookMenu: View {
             BaseLookBrowser()
                 .environment(model)
         }
+        .alert(
+            "Some files can't be used as camera profiles",
+            isPresented: Binding(
+                get: { !model.cameraProfileIssues.isEmpty },
+                set: {
+                    if !$0 {
+                        model.cameraProfileIssues = []
+                    }
+                },
+            ),
+        ) {
+            Button("OK") { model.cameraProfileIssues = [] }
+        } message: {
+            Text(model.cameraProfileIssues.joined(separator: "\n"))
+        }
+    }
+
+    /// The photographer's Adobe profiles for the photo's camera: Adobe Raw, Camera Matching and
+    /// their own as sections, Adobe's creative groups as submenus (TON-51, TON-52).
+    @ViewBuilder private func cameraProfiles(current: BaseLookReference) -> some View {
+        let sections = model.cameraProfileSections
+        let creative = sections.filter { section in
+            section.looks.allSatisfy {
+                if case .creative = $0.group {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        ForEach(sections.filter { section in !creative.contains { $0.name == section.name } }, id: \.name) { section in
+            Section(section.name) {
+                ForEach(section.looks) { look in profileButton(look, current: current) }
+            }
+        }
+        if !creative.isEmpty {
+            Section("Creative") {
+                ForEach(creative, id: \.name) { section in
+                    Menu(section.name) {
+                        ForEach(section.looks) { look in profileButton(look, current: current) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func profileButton(_ look: CameraProfileLook, current: BaseLookReference) -> some View {
+        Button {
+            model.setBaseLook(look.reference)
+        } label: {
+            if look.reference.isSameLook(as: current) {
+                Label(look.reference.name, systemImage: "checkmark")
+            } else {
+                Text(look.reference.name)
+            }
+        }
+        .help(look.summary)
     }
 }
 

@@ -220,6 +220,9 @@ import UniformTypeIdentifiers
         if let notice = model.notice, !model.canStartOver {
             return notice
         }
+        if let standIn = model.cameraProfileStandIn {
+            return "\(model.baseLook.name) isn't on this Mac  ·  \(standIn.name) stands in"
+        }
         return "Base Look “\(model.baseLook.name)” isn't installed  ·  Showing the photo without it"
     }
 }

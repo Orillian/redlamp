@@ -307,17 +307,21 @@ final class CameraProfileLooks: @unchecked Sendable {
         self.device = device
     }
 
-    /// The looks for a camera: those found last unless `refresh`, which lists the folders again.
-    func looks(make: String?, model: String?, refresh: Bool) -> [Entry] {
-        guard let make, let model else { return [] }
+    /// The looks for a camera: those found last unless `refresh`, which lists the folders again,
+    /// and those found before that aren't any more.
+    func looks(make: String?, model: String?, refresh: Bool) -> (found: [Entry], gone: [BaseLookReference]) {
+        guard let make, let model else { return ([], []) }
         let key = "\(make)\u{1F}\(model)"
         if !refresh, let cached = lock.withLock({ cameras[key] }) {
-            return cached
+            return (cached, [])
         }
-        let found = library.profiles(make: make, model: model)
-        let entries = entries(for: found)
-        lock.withLock { cameras[key] = entries }
-        return entries
+        let entries = entries(for: library.profiles(make: make, model: model))
+        let before = lock.withLock {
+            defer { cameras[key] = entries }
+            return cameras[key] ?? []
+        }
+        let ids = Set(entries.map(\.look.reference.id))
+        return (entries, before.map(\.look.reference).filter { !ids.contains($0.id) })
     }
 
     /// Forgets what was found, after the photographer chooses other files.

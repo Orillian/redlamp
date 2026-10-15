@@ -110,9 +110,15 @@ public extension EditorModel {
         "\(Int(recipe.baseLook.amount.rounded()))"
     }
 
-    /// The edit's Base Look isn't installed here, so the photo renders without it.
+    /// The edit's Base Look isn't installed here, so the photo renders without it; for an Adobe
+    /// profile, Redlamp's look of the same name stands in. Not known for an Adobe profile until the
+    /// photo's profiles are listed.
     var isBaseLookMissing: Bool {
         _ = recipes.revision
+        if baseLook.isAdobeProfile {
+            return cameraProfilesPhoto == info?.url
+                && !cameraProfileLooks.contains { $0.reference.isSameLook(as: baseLook) }
+        }
         return !recipes.isAvailable(baseLook)
     }
 

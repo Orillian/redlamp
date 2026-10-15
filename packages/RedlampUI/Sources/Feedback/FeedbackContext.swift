@@ -167,6 +167,9 @@ public extension FeedbackContext {
             if case .baseLook = action, model.recipe.baseLook.isFirmwareModel {
                 return "develop.firmware-model"
             }
+            if case .baseLook = action, model.recipe.baseLook.isAdobeProfile {
+                return "develop.adobe-profiles"
+            }
             return FeedbackArea.featureID(for: action)
         }
     }

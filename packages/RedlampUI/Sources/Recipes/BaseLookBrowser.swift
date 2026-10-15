@@ -74,7 +74,8 @@ struct BaseLookBrowser: View {
     private static let columns = [GridItem(.adaptive(minimum: 116), spacing: 10)]
 
     var body: some View {
-        let sections = BaseLookGroups.shown(in: model.recipes, photoLook: model.baseLook)
+        let profiles = model.cameraProfileSections.map { (name: $0.name, looks: $0.looks.map(\.package)) }
+        let sections = profiles + BaseLookGroups.shown(in: model.recipes, photoLook: model.baseLook)
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(sections, id: \.name) { section in

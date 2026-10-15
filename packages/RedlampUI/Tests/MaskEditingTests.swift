@@ -95,6 +95,23 @@ final class StubEngine: EditingEngine, @unchecked Sendable {
     var lensCorrection: LensCorrection?
     /// The camera the opened photo states.
     var camera: (make: String, model: String)?
+    /// The Adobe camera profiles it lists for the open photo, the files it refuses as profiles
+    /// (by name, with the reason), and the files it was last told were chosen.
+    var cameraProfiles: [CameraProfileLook] = []
+    var refusedProfiles: [String: String] = [:]
+    let chosenProfiles = Mutex<[URL]>([])
+
+    func cameraProfileLooks() async -> [CameraProfileLook] {
+        cameraProfiles
+    }
+
+    func setChosenCameraProfiles(_ urls: [URL]) {
+        chosenProfiles.withLock { $0 = urls }
+    }
+
+    func cameraProfileIssue(_ url: URL) async -> String? {
+        refusedProfiles[url.lastPathComponent]
+    }
 
     /// Every photo `open` was asked for, in order. Opens run at once, off the main actor.
     let opened = Mutex<[URL]>([])

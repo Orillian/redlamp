@@ -131,6 +131,15 @@ final class BaseLookRegistry: @unchecked Sendable {
         registrations &+= 1
     }
 
+    /// Forgets Adobe looks whose profile is no longer on the Mac.
+    func unregister(_ looks: [BaseLookReference]) {
+        lock.lock()
+        defer { lock.unlock() }
+        for look in looks where profiles.removeValue(forKey: Key(id: look.id, version: look.version)) != nil {
+            registrations &+= 1
+        }
+    }
+
     /// Call with `lock` held.
     private func store(_ entry: Entry, key: Key) {
         if let current = entries[key], !current.isUnreadable, current.describesSameLook(as: entry) {

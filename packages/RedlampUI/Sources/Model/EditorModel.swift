@@ -607,6 +607,12 @@ public final class EditorModel {
     public var maskMessage: String?
     /// The AI mask kinds the engine can make for the open photo.
     public internal(set) var availableAIMaskKinds: Set<MaskKind> = []
+    /// The photographer's Adobe camera profiles that can render the open photo (TON-51, TON-52).
+    public internal(set) var cameraProfileLooks: [CameraProfileLook] = []
+    /// The photo `cameraProfileLooks` was listed for.
+    var cameraProfilesPhoto: URL?
+    /// What the last Choose Camera Profiles… couldn't use, with the reasons, for its alert.
+    public var cameraProfileIssues: [String] = []
     /// The People parts the engine can make for the open photo.
     var offeredPersonParts: Set<PersonPart> = []
     /// A model the chosen mask needs, waiting for the user to agree to download it.
@@ -852,6 +858,7 @@ public final class EditorModel {
         }
         followLibrary()
         chosenAutoAdvance = Self.chosenAutoAdvance(in: self.library.defaults)
+        engine.setChosenCameraProfiles(Self.chosenCameraProfiles(in: self.library.defaults))
         let frames = engine.frames()
         framesTask = Task { [weak self] in
             for await frame in frames {
@@ -1290,6 +1297,7 @@ public final class EditorModel {
         recordOpening(opened, edited: sidecar != nil)
         availableAIMaskKinds = []
         Task { await refreshAvailableMasks() }
+        Task { await refreshCameraProfiles() }
         maskMessage = nil
         readOnlyReason = read.protection
         hasUnmergedEdits = read.hasUnmergedConflicts
@@ -1746,7 +1754,8 @@ public final class EditorModel {
         }
         var next = recipe
         next.baseLook = look.withAmount(recipe.baseLook.isSameLook(as: look) ? recipe.baseLook.amount : look.amount)
-        if look == BuiltInBaseLook.monochrome.reference || recipes.package(for: look)?.parameters.isMonochrome == true {
+        if look == BuiltInBaseLook.monochrome.reference || recipes.package(for: look)?.parameters.isMonochrome == true
+            || cameraProfileLooks.contains(where: { $0.isMonochrome && $0.reference.isSameLook(as: look) }) {
             next.treatment = .blackAndWhite
         }
         commit(anchored(next), .baseLook, "Base Look") { $0.baseLook.name }

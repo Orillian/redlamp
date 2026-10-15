@@ -1,7 +1,7 @@
 #if DEBUG || REDLAMP_PROFILING
     import AppKit
     import RedlampDesign
-    import RedlampEngineAPI
+    @_spi(Harness) import RedlampEngineAPI
     import RedlampRecipes
     @_spi(Harness) import RedlampUI
 
@@ -18,6 +18,7 @@
             lensAndTransform,
             effectsAndCalibration,
             firmwareModel,
+            adobeProfiles,
             panelSwitches,
             histogram,
         ]
@@ -509,6 +510,65 @@
             try app.wait("the model put away") { !$0.usesFirmwareModel }
             try app.closeSettings()
             app.covered(.feature("develop.firmware-model"), via: .mouse)
+        }
+
+        static let adobeProfiles = Scenario(
+            "develop.adobe-profiles",
+            "Adobe profiles chosen from a folder, in the Base Look menu at an Amount, and Redlamp's look standing in "
+                + "once they're gone",
+            claims: [.feature("develop.adobe-profiles")],
+        ) { app in
+            // Synthetic profiles, made for the working photo's camera: Adobe's files are never committed.
+            let folder = app.runDirectory.appending(path: "Camera Profiles")
+            defer { try? FileManager.default.removeItem(at: folder) }
+            try app.openWorking()
+            let camera = try app
+                .main { model in model.info.flatMap { $0.isRaw && $0.model != nil ? $0.cameraName : nil } }
+            guard let adobeName = camera
+            else { throw ScenarioSkip("the working photo isn't a raw that names its camera") }
+            let matrix: [Double] = [0.6722, -0.0635, -0.0963, -0.4287, 1.246, 0.2028, -0.0908, 0.2162, 0.5668]
+            let forward: [Double] = [0.7978, 0.1352, 0.0313, 0.288, 0.7119, 0.0001, 0, 0, 0.8251]
+            let files: [(String, Data)] = [
+                ("\(adobeName) Adobe Standard.dcp", SyntheticCameraProfiles.dcp(
+                    name: "Adobe Standard", camera: adobeName, colorMatrices: [matrix], illuminants: [21],
+                    forwardMatrices: [forward], lookTable: .uniform(shift: SIMD3(4, 1.1, 1)),
+                )),
+                ("Adobe Color.xmp", SyntheticCameraProfiles.xmpLook(
+                    name: "Adobe Color", lookTable: .uniform(shift: SIMD3(-6, 1.25, 1)),
+                    toneCurve: [SIMD2(0, 0), SIMD2(64, 52), SIMD2(192, 205), SIMD2(255, 255)],
+                )),
+                ("Vintage 01.xmp", SyntheticCameraProfiles.xmpLook(
+                    name: "Vintage 01", baseProfile: nil, group: "Vintage", supportsAmount: true,
+                    rgbTable: .grid(divisions: 9) { SIMD3($0.x * 0.9 + 0.08, $0.y * 0.85 + 0.06, $0.z * 0.7 + 0.12) },
+                )),
+            ]
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            for (file, data) in files {
+                try data.write(to: folder.appending(path: file))
+            }
+            try app.main { model in _ = Task { await model.chooseCameraProfiles([folder]) } }
+            try app
+                .wait("\(adobeName)'s profiles in the Base Look menu", timeout: 20) { $0.cameraProfileLooks.count == 3 }
+            let looks = try app.main { $0.cameraProfileLooks }
+            guard let color = looks.first(where: { $0.reference.name == "Adobe Color" }),
+                  let vintage = looks.first(where: { $0.reference.name == "Vintage 01" })
+            else { throw ScenarioFailure("The menu lists \(looks.map(\.reference.name))") }
+            try app.expectRenders("Adobe Color") { try app.main { $0.setBaseLook(color.reference) } }
+            try app.expect(
+                try app.main { !$0.isBaseLookMissing && $0.baseLook.staysOnThisMac && $0.baseLook.contentHash == nil },
+                "Adobe Color should render here, and never leave this Mac",
+            )
+            try app.expectRenders("Adobe Color at 150") { try app.main { $0.setBaseLookAmount(150) } }
+            try app.expectRenders("Vintage 01") { try app.main { $0.setBaseLook(vintage.reference) } }
+            try app.main { $0.setBaseLook(color.reference) }
+            // Taken off the Mac: Redlamp Color stands in, and the photo says so.
+            try FileManager.default.removeItem(at: folder)
+            try app.expectRenders("Redlamp Color standing in") {
+                try app.main { model in _ = Task { await model.refreshCameraProfiles() } }
+                try app.wait("the stand-in's notice") { $0.cameraProfileStandIn == .color }
+            }
+            try app.choose(.resetAll)
+            app.covered(.feature("develop.adobe-profiles"), via: .model)
         }
 
         static let histogram = Scenario(

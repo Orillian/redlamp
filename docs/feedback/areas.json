@@ -11,6 +11,10 @@
           "title" : "Treatment and Base Looks"
         },
         {
+          "id" : "develop.adobe-profiles",
+          "title" : "Adobe Camera Profiles"
+        },
+        {
           "id" : "develop.reproduction",
           "title" : "Redlamp Reproduction and Calibrate from Target"
         },

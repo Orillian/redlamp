@@ -382,7 +382,7 @@ struct AdobeProfileLookTests {
             )),
             device: device,
         )
-        let entries = looks.looks(make: "Canon", model: "EOS R5", refresh: true)
+        let entries = looks.looks(make: "Canon", model: "EOS R5", refresh: true).found
         #expect(entries.map(\.descriptor.reference.name) == [
             "Adobe Color", "Adobe Monochrome", "Adobe Standard", "Camera Faithful", "B&W 01",
         ])
@@ -395,7 +395,17 @@ struct AdobeProfileLookTests {
         let monochrome = try #require(entries.first { $0.descriptor.reference.name == "Adobe Monochrome" })
         #expect(monochrome.descriptor.isMonochrome && monochrome.look.parameters.isMonochrome)
         #expect(monochrome.descriptor.summary.contains("Clarity +8"))
-        #expect(looks.looks(make: "Canon", model: "EOS R6", refresh: true).isEmpty)
+        #expect(looks.looks(make: "Canon", model: "EOS R6", refresh: true).found.isEmpty)
+
+        // A profile taken off the Mac is gone at the next listing, with the looks over it.
+        try FileManager.default.removeItem(at: root.appending(path: "Shared/CameraProfiles/Adobe Standard"))
+        let after = looks.looks(make: "Canon", model: "EOS R5", refresh: true)
+        #expect(after.found.map(\.descriptor.reference.name) == ["Camera Faithful"])
+        #expect(Set(after.gone.map(\.name)) == ["Adobe Color", "Adobe Monochrome", "Adobe Standard", "B&W 01"])
+        let registry = try BaseLookRegistry(device: device)
+        entries.forEach { registry.register($0.look) }
+        registry.unregister(after.gone)
+        #expect(!registry.canRender(color.look.reference) && registry.canRender(after.found[0].look.reference))
     }
 }
 

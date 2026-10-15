@@ -852,7 +852,9 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
     @discardableResult
     private func registerProfileLooks(for session: ImageSession, refresh: Bool = false) -> [CameraProfileLooks.Entry] {
         guard session.isRaw, let profileLooks else { return [] }
-        let entries = profileLooks.looks(make: session.info.make, model: session.info.model, refresh: refresh)
+        let (entries, gone) = profileLooks.looks(make: session.info.make, model: session.info.model, refresh: refresh)
+        // A profile no longer on the Mac renders as its stand-in from now on.
+        baseLooks.unregister(gone)
         for entry in entries {
             baseLooks.register(entry.look)
         }

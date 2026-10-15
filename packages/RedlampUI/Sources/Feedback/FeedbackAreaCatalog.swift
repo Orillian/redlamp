@@ -21,6 +21,13 @@ public extension FeedbackArea {
                     ["black and white", "b&w", "monochrome", "profile", "base look", "camera profile", "dcp"],
                 ),
                 FeedbackFeature(
+                    "adobe-profiles", "Adobe Camera Profiles",
+                    [
+                        "adobe color", "adobe standard", "camera matching", "lightroom profile", "xmp profile",
+                        "creative profile", "camera raw", "profile amount",
+                    ],
+                ),
+                FeedbackFeature(
                     "reproduction", "Redlamp Reproduction and Calibrate from Target",
                     [
                         "reproduction", "scene-referred", "linear", "calibrate", "calibration", "target", "grey card",
