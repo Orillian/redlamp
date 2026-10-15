@@ -87,8 +87,8 @@ A high-level list of the features photographers know from Lightroom, and where R
 | --- | --- | --- | --- | --- | --- | --- |
 | Lens corrections the raw file carries | Yes | Done | | | LNS-01, LNS-02 | DNG opcodes, Sony's and Fujifilm's built-in corrections, and from process 16 Panasonic's and OM System's distortion, framed as in the camera's own JPEG |
 | Chromatic aberration and vignetting from Panasonic and OM System raws | Yes | Planned | | P3 | LNS-18 | Their distortion corrections apply from process 16; the fringing and vignetting data the files carry don't match the cameras' JPEGs yet, and Remove Chromatic Aberration still works on them |
-| Adobe LCP lens profiles | Yes | Done | Behind | | LNS-04, LNS-11 | Profiles you put in Redlamp's Lens Profiles folder, each used only on the body it was made on, where Lightroom uses it on other bodies too; Redlamp doesn't ship Adobe's |
-| Lens profiles made on other bodies, chosen by hand, from Camera Raw's folders, and for fisheye lenses | Yes | Planned | | P2 | LNS-14, LNS-15, LNS-16, LNS-17 | A profile made on another body whose sensor covers the photo's; Lightroom's Make, Model and Profile menus; the profiles Lightroom Classic and Camera Raw install, read where they are; fisheye profiles in Phase 3 |
+| Adobe LCP lens profiles | Yes | Done | | | LNS-04, LNS-11, LNS-14, LNS-15, LNS-16 | Profiles you put in Redlamp's Lens Profiles folder and, from process 17, those Lightroom Classic and Camera Raw install, read where they are, and profiles made on another body whose sensor covers the photo's; Lightroom's Setup, Make, Model and Profile menus choose one by hand; Redlamp doesn't ship Adobe's |
+| Fisheye lens profiles | Yes | Planned | | P3 | LNS-17 | The Adobe Camera Model's fisheye model; until then a fisheye profile is skipped and reported |
 | A built-in lens profile database | Yes | Planned | | P2 | LNS-03 | The lensfun database, once a licence question is answered |
 | Manual distortion and vignetting | Yes | Done | | | | |
 | Remove Chromatic Aberration and Defringe | Yes | Done | | | LNS-09 | From the lens profile, or measured from the photo's own edges |
