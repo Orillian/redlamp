@@ -15,7 +15,7 @@ public struct PhotoAddress: Sendable, Hashable {
 }
 
 /// What one of a photo's edits holds besides its name: the edit, its snapshots and its metadata.
-public struct PhotoEdit: Sendable, Hashable {
+public struct SidecarEdit: Sendable, Hashable {
     public var recipe: EditRecipe
     public var snapshots: [Snapshot]
     public var metadata: PhotoMetadata?
@@ -35,11 +35,11 @@ public extension Sidecar {
 
     /// The photo's own edit for a nil `version`, or the version's; nil for a version the photo doesn't have.
     /// Setting a version the photo doesn't have changes nothing.
-    subscript(edit version: UUID?) -> PhotoEdit? {
+    subscript(edit version: UUID?) -> SidecarEdit? {
         get {
-            guard let version else { return PhotoEdit(recipe: recipe, snapshots: snapshots, metadata: metadata) }
+            guard let version else { return SidecarEdit(recipe: recipe, snapshots: snapshots, metadata: metadata) }
             return self.version(version).map {
-                PhotoEdit(recipe: $0.recipe, snapshots: $0.snapshots, metadata: $0.metadata)
+                SidecarEdit(recipe: $0.recipe, snapshots: $0.snapshots, metadata: $0.metadata)
             }
         }
         set {

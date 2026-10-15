@@ -192,7 +192,7 @@ struct SidecarVersionTests {
 
         sidecar[edit: copy.id]?.recipe[.exposure] = 2
         sidecar[edit: nil]?.metadata = PhotoMetadata(rating: 3)
-        sidecar[edit: UUID()] = PhotoEdit(recipe: EditRecipe())
+        sidecar[edit: UUID()] = SidecarEdit(recipe: EditRecipe())
         #expect(sidecar.versions.first?.recipe[.exposure] == 2)
         #expect(sidecar.versions.first?.name == "Copy 1")
         #expect(sidecar.metadata?.rating == 3 && sidecar.recipe[.exposure] == 0.5)
