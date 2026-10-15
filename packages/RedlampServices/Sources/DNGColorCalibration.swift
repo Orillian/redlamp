@@ -53,7 +53,7 @@ public struct DNGColorCalibration: Codable, Sendable, Hashable {
     ]
 
     static func read(_ url: URL) -> DNGColorCalibration? {
-        guard url.pathExtension.lowercased() == "dng",
+        guard ["dng", "dcp"].contains(url.pathExtension.lowercased()),
               let data = try? Data(contentsOf: url, options: .alwaysMapped)
         else {
             return nil
@@ -61,9 +61,10 @@ public struct DNGColorCalibration: Codable, Sendable, Hashable {
         return read(data, url: url)
     }
 
-    /// The same from the file's bytes, `url` naming the file.
+    /// The same from the file's bytes, `url` naming the file: a DNG, or a `.dcp` camera profile,
+    /// which has no CameraCalibration or AnalogBalance of its own.
     static func read(_ data: Data, url: URL) -> DNGColorCalibration? {
-        guard url.pathExtension.lowercased() == "dng" else {
+        guard ["dng", "dcp"].contains(url.pathExtension.lowercased()) else {
             return nil
         }
         return data.withUnsafeBytes { bytes -> DNGColorCalibration? in

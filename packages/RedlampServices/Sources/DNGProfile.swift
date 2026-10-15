@@ -116,7 +116,8 @@ public struct DNGProfile: Codable, Sendable, Hashable {
         hueSatMaps.isEmpty && lookTable == nil && toneCurve == nil && gainTableMap == nil
     }
 
-    static func read(_ data: Data, url: URL) -> DNGProfile? {
+    /// `keepingEmpty` keeps a profile with no tables or curve, as a `.dcp` with matrices alone is.
+    static func read(_ data: Data, url: URL, keepingEmpty: Bool = false) -> DNGProfile? {
         guard ["dng", "dcp"].contains(url.pathExtension.lowercased()) else {
             return nil
         }
@@ -128,7 +129,8 @@ public struct DNGProfile: Codable, Sendable, Hashable {
                     tags[entry.tag] = entry
                 }
             }
-            return read(tags, reader: reader)
+            let profile = read(tags, reader: reader)
+            return profile.isEmpty && !keepingEmpty ? nil : profile
         }
     }
 
@@ -137,7 +139,7 @@ public struct DNGProfile: Codable, Sendable, Hashable {
         return read(data, url: url)
     }
 
-    private static func read(_ tags: [UInt16: TIFFReader.Entry], reader: TIFFReader) -> DNGProfile? {
+    private static func read(_ tags: [UInt16: TIFFReader.Entry], reader: TIFFReader) -> DNGProfile {
         func integers(_ tag: UInt16) -> [Int] {
             tags[tag].map { reader.integers($0) } ?? []
         }
@@ -160,7 +162,7 @@ public struct DNGProfile: Codable, Sendable, Hashable {
         }
         let curve = floats(0xC6FC)
         let points = stride(from: 0, to: curve.count - 1, by: 2).map { SIMD2(curve[$0], curve[$0 + 1]) }
-        let profile = DNGProfile(
+        return DNGProfile(
             name: tags[0xC6F8].flatMap { reader.string($0) },
             copyright: tags[0xC6FE].flatMap { reader.string($0) },
             embedPolicy: integers(0xC6FD).first,
@@ -173,7 +175,6 @@ public struct DNGProfile: Codable, Sendable, Hashable {
             gainTableMap: tags[0xCD40].flatMap { gainTableMap($0, reader: reader, version: 2) }
                 ?? tags[0xCD2D].flatMap { gainTableMap($0, reader: reader, version: 1) },
         )
-        return profile.isEmpty ? nil : profile
     }
 
     /// The tag's parameters, big-endian as DNG's opcode lists are. Version 2 adds a storage type,

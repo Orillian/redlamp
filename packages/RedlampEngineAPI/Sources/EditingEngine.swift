@@ -146,6 +146,16 @@ public protocol EditingEngine: AnyObject, Sendable {
     /// keeping with the installed looks once an edit uses it.
     func embeddedBaseLook() -> BaseLookDefinition?
 
+    /// The photographer's Adobe camera profiles that can render the open photo, in the Base Look
+    /// menu's order (TON-51, TON-52). Lists Camera Raw's folders, so never call it on the main thread.
+    func cameraProfileLooks() async -> [CameraProfileLook]
+
+    /// The `.dcp` and `.xmp` files, or folders, the photographer chose, read where they are.
+    func setChosenCameraProfiles(_ urls: [URL])
+
+    /// Why a chosen file can't be used as a camera profile, or nil when it can.
+    func cameraProfileIssue(_ url: URL) async -> String?
+
     /// The open photo's straight edges, for automatic Upright.
     func detectLines() async -> [DetectedLine]
 
@@ -249,6 +259,16 @@ public extension EditingEngine {
 
     func embeddedBaseLook() -> BaseLookDefinition? {
         nil
+    }
+
+    func cameraProfileLooks() async -> [CameraProfileLook] {
+        []
+    }
+
+    func setChosenCameraProfiles(_: [URL]) {}
+
+    func cameraProfileIssue(_: URL) async -> String? {
+        "isn't a camera profile"
     }
 
     func detectLines() async -> [DetectedLine] {

@@ -58,7 +58,7 @@ public struct BaseLookReference: Sendable, Hashable {
     /// Whether the look's table must stay on the Mac that has it: its maker's terms don't let
     /// Redlamp pass it on, so shared recipes carry only the reference.
     public var staysOnThisMac: Bool {
-        isEmbedded || isFromMakerLUT || isFirmwareModel
+        isEmbedded || isFromMakerLUT || isFirmwareModel || isAdobeProfile
     }
 
     /// Whether it's Redlamp Reproduction, which has no tone curve.
