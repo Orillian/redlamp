@@ -379,7 +379,7 @@ final class LightroomCatalogMaker {
 /// `crs` tables give and in the form `docs/research/notes/EDT-lightroom-develop-settings.md` describes: never
 /// settings Lightroom wrote.
 enum LightroomSettingsText {
-    /// A raw's settings at Process 2012's and later defaults, about 3.5 KB once written, one `name = value` a line.
+    /// A raw's settings at Process 2012's and later defaults, about 4 KB once written, one `name = value` a line.
     static let defaults: [(name: String, value: String)] = defaultsText.split(separator: "\n").map { line in
         let parts = line.split(separator: "=", maxSplits: 1)
         return (parts[0].trimmingCharacters(in: .whitespaces), parts[1].trimmingCharacters(in: .whitespaces))

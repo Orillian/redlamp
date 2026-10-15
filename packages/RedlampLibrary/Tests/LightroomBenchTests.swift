@@ -152,7 +152,7 @@ struct LightroomBenchTests {
         return text.utf8.count
     }
 
-    /// Develop settings for the bench's photo `number`, 3.5 to 5.5 KB as a real catalog's are: a third with the
+    /// Develop settings for the bench's photo `number`, 4 to 7 KB and 4.7 KB on average: a third with the
     /// exposure changed, a tenth in Process 2012 and a fiftieth in Process 2010, a seventh with a camera-matching
     /// profile, half with a lens profile and Upright's solved transforms, a tenth with two to four masks of one to
     /// three components, and a twentieth with spots.
