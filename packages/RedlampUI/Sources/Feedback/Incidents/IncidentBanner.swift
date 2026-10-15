@@ -3,8 +3,9 @@ import SwiftUI
 
 /// Over the photo, a crash or a hang in an earlier session that the launch found and that hasn't been reported: what
 /// happened and when, with Review Report…, which opens the report to be read before anything is sent, and Not Now,
-/// after which it stays in Your Reports for 30 days. Develop shows it over the canvas, beside a failed save's banner;
-/// the Library, whose view covers the canvas, over the top of its photos.
+/// after which it stays in Your Reports for 30 days. Develop shows it over the canvas, below a failed save's banner;
+/// the Library, whose view covers the canvas, over the top of its photos, while no failed save or culling problem is
+/// shown there.
 struct IncidentBanner: View {
     let module: AppModule
     @Environment(EditorModel.self) private var model
@@ -40,10 +41,11 @@ struct IncidentBanner: View {
         }
     }
 
-    /// The crash or hang the banner offers in `module`, the one shown: in the Library, only while no culling problem
-    /// is shown in its place.
+    /// The crash or hang the banner offers in `module`, the one shown: in the Library, only while no failed save or
+    /// culling problem is shown in its place.
     static func offered(_ model: EditorModel, in module: AppModule) -> PendingIncident? {
-        guard model.module == module, module == .develop || model.cullingProblem == nil else { return nil }
+        guard model.module == module, module == .develop || model.saveError == nil && model.cullingProblem == nil
+        else { return nil }
         return model.incidentHistory?.offeredIncident
     }
 

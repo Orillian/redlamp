@@ -106,9 +106,7 @@ import UniformTypeIdentifiers
                 if model.canStartOver, let notice = model.notice {
                     DamagedEditBanner(notice: notice)
                 }
-                if let error = model.saveError {
-                    SaveErrorBanner(error: error)
-                }
+                SaveErrorBanner(module: .develop)
                 IncidentBanner(module: .develop)
             }
             .padding(.top, 14)
@@ -261,34 +259,6 @@ private struct InfoOverlay: View {
         .font(.system(size: 11))
         .foregroundStyle(Color.white.opacity(0.92))
         .shadow(color: .black.opacity(0.8), radius: 2)
-    }
-}
-
-/// Stays until a save goes through: what wasn't saved, why, and a way to try again.
-private struct SaveErrorBanner: View {
-    let error: SaveError
-    @Environment(EditorModel.self) private var model
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Label(error.message, systemImage: "exclamationmark.triangle.fill")
-                .symbolRenderingMode(.multicolor)
-            if error.canRetry {
-                Button("Retry") { model.retrySave() }
-                    .buttonStyle(.borderless)
-            }
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([error.url]) }
-                .buttonStyle(.borderless)
-            Button("Report…") {
-                model.sendFeedback(FeedbackPrefill(featureID: "saving.not-saved", message: error.message))
-            }
-            .buttonStyle(.borderless)
-            .help("Report a Bug about edits not saving")
-        }
-        .font(.system(size: 12, weight: .medium))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .capsule)
     }
 }
 

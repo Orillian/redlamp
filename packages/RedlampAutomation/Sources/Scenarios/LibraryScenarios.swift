@@ -259,9 +259,22 @@
         static let all: [Scenario] = [failedSave, readOnly, startOver]
 
         static let failedSave = Scenario(
-            "saving.failed-save", "A save the disk refuses is shown, retried, and lands once the disk allows it",
+            "saving.failed-save",
+            "A save the disk refuses is shown over the photo and over the Library's photos, retried from the Library, "
+                + "and lands once the disk allows it",
             claims: [.feature("saving.not-saved")],
+            needsFocus: true,
         ) { app in
+            /// Waits for the banner over the photo in Develop, or over the Library's photos, with its Retry.
+            func waitForBanner(in module: AppModule) throws {
+                let place = module == .library ? "over the Library's photos" : "over the photo"
+                try app.wait("the failed save's banner \(place)", timeout: 10) { model in
+                    guard model.module == module, model.saveError != nil, let window = Views.editorWindow else {
+                        return false
+                    }
+                    return Views.find("saving.banner.retry", in: window) != nil
+                }
+            }
             let folder = app.photos.appending(path: "Locked")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let photo = folder.appending(path: "Locked.ARW")
@@ -278,16 +291,29 @@
                 model.saveNow()
                 return model.saveError != nil
             }
+            try waitForBanner(in: .develop)
+
+            app.step("the banner over the Library's photos")
+            try app.press(.gridView)
+            try waitForBanner(in: .library)
+            let focused = try app.focus()
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
-            try app.main { $0.retrySave() }
-            try app.wait("the save to land", timeout: 20) { model in
+            if focused {
+                try app.tap(.identifier("saving.banner.retry"))
+            } else {
+                // What its button does: SwiftUI's buttons take no click while the app isn't active.
+                try app.main { $0.retrySave() }
+            }
+            try app.wait("the save to land, and the banner to go", timeout: 20) { model in
                 model.saveError == nil
                     && FileManager.default.fileExists(atPath: photo.path + ".redlamp/edit.json")
+                    && Views.editorWindow.map { Views.find("saving.banner", in: $0) == nil } == true
             }
+            app.covered(.feature("saving.not-saved"), via: focused ? .mouse : .model)
+            try app.press(.developModule)
             try app.main { $0.open([app.photos]) }
             try app.wait("the photos folder again", timeout: 30) { $0.folder == app.photos }
             try app.openWorking()
-            app.covered(.feature("saving.not-saved"), via: .model)
         }
 
         static let readOnly = Scenario(

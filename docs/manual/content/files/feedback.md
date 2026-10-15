@@ -8,7 +8,7 @@ sources = [
   "`packages/RedlampUI/Sources/Feedback/AreaPicker.swift`, `FeedbackArea.swift`, `FeedbackAreaCatalog.swift`",
   "`packages/RedlampUI/Sources/Feedback/FeedbackClient.swift`, `FeedbackFallbacks.swift`, `FeedbackHistory.swift`, `YourReportsView.swift` (sending, the outbox and Your Reports)",
   "`packages/RedlampUI/Sources/Feedback/Incidents/`: `IncidentCheck.swift`, `IncidentBanner.swift`, `IncidentReport.swift`, `Incident.swift`, `HangWatchdog.swift`, `SessionJournal.swift`, `SessionRecorder.swift`",
-  "`apps/RedlampMac/Sources/AppCommands.swift`, `RedlampApp.swift`; `packages/RedlampUI/Sources/Editor/EditorWindowController.swift`, `CanvasArea.swift` (where they open)",
+  "`apps/RedlampMac/Sources/AppCommands.swift`, `RedlampApp.swift`; `packages/RedlampUI/Sources/Editor/EditorWindowController.swift`, `CanvasArea.swift`, `SaveErrorBanner.swift` (where they open)",
   "`packages/RedlampUI/Sources/Shortcuts/ShortcutAction.swift`, `CommandPalette/ShortcutAction+Palette.swift`; the report buttons in `Inspector/MasksPanel.swift`, `Export/ExportActions.swift` and `CameraBench/CameraBenchView.swift`",
   "`web/lib/feedback.ts` (where the relay keeps attachments)",
 ]
@@ -176,7 +176,7 @@ Each session offers one report at most, a crash before a hang. A hang Redlamp wa
 
 ### The banner
 
-The offer is a banner at the top of the photo in Develop, and over the top of the photos in the Library. It reads Redlamp quit unexpectedly or Redlamp stopped responding, then says when and, for a hang, for how long, as in Today at 10:08, for 14 s, and that you can read the report before you send it.
+The offer is a banner at the top of the photo in Develop, and over the top of the photos in the Library. It reads Redlamp quit unexpectedly or Redlamp stopped responding, then says when and, for a hang, for how long, as in Today at 10:08, for 14 s, and that you can read the report before you send it. In the Library it waits while a banner there says edits couldn't be saved, or that a change didn't reach some photos.
 
 Review Report…
 : Opens the report, to read and send. If you cancel it, the banner stays.

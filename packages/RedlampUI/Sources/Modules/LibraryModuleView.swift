@@ -15,10 +15,13 @@ final class LibraryModuleView: NSView {
     let toolbar: LibraryToolbarView
     /// The filter bar above the grid (LIB-18), its search field always on screen (DEC-66).
     let filterBar: LibraryFilterBarView
+    /// A save that failed, over the top of the photos shown, above a culling problem (`SaveErrorBanner`): this view
+    /// covers Develop's canvas, where it shows otherwise.
+    private let saveError: NSView
     /// A culling change some photos didn't get, floating over the top of the photos shown (LIB-15).
     private let problem: NSView
-    /// A crash or a hang to report, in the culling problem's place while there's none (`IncidentBanner`): this view
-    /// covers Develop's canvas, where it shows otherwise.
+    /// A crash or a hang to report, in the culling problem's place while there's none and no failed save
+    /// (`IncidentBanner`): this view covers Develop's canvas, where it shows otherwise.
     private let incident: NSView
     private let filmstrip: NSView
     private let filmstripStatus: NSView
@@ -30,6 +33,10 @@ final class LibraryModuleView: NSView {
     private var trackers: [Tracker] = []
     private var withFilmstrip: [NSLayoutConstraint] = []
     private var withoutFilmstrip: [NSLayoutConstraint] = []
+    /// Where the culling problem is: below a failed save's banner while one shows.
+    private var withSaveError: [NSLayoutConstraint] = []
+    private var withoutSaveError: [NSLayoutConstraint] = []
+    private var showsSaveError = false
     private var filterHeight: NSLayoutConstraint?
     /// The bar shows the rows open from its field, which took the keyboard as they were shown.
     private var showsFilterRows = false
@@ -58,6 +65,7 @@ final class LibraryModuleView: NSView {
         filmstrip = hosting
         filmstripStatus = NSHostingView(rootView: LibraryFilmstripStatus(model: model, theme: theme)
             .focusEffectDisabled())
+        saveError = LibrarySaveErrorBanner.view(model: model, theme: theme)
         problem = CullingProblemStrip(model: model)
         incident = LibraryIncidentBanner.view(model: model, theme: theme)
         super.init(frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))
@@ -73,6 +81,7 @@ final class LibraryModuleView: NSView {
             toolbar,
             filmstrip,
             filterBar,
+            saveError,
             problem,
             incident,
             filmstripStatus,
@@ -100,8 +109,10 @@ final class LibraryModuleView: NSView {
             filterBar.trailingAnchor.constraint(equalTo: stage.trailingAnchor),
             filterBar.topAnchor.constraint(equalTo: stage.topAnchor),
             filterHeight,
+            saveError.centerXAnchor.constraint(equalTo: stage.centerXAnchor),
+            saveError.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: 10),
+            saveError.widthAnchor.constraint(lessThanOrEqualTo: stage.widthAnchor, constant: -32),
             problem.centerXAnchor.constraint(equalTo: stage.centerXAnchor),
-            problem.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: 10),
             problem.widthAnchor.constraint(lessThanOrEqualTo: stage.widthAnchor, constant: -32),
             incident.centerXAnchor.constraint(equalTo: stage.centerXAnchor),
             incident.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: 10),
@@ -117,7 +128,9 @@ final class LibraryModuleView: NSView {
         }
         withFilmstrip.append(toolbar.bottomAnchor.constraint(equalTo: filmstrip.topAnchor, constant: -inset / 2))
         withoutFilmstrip.append(toolbar.bottomAnchor.constraint(equalTo: bottomAnchor))
-        NSLayoutConstraint.activate(constraints + withFilmstrip)
+        withSaveError.append(problem.topAnchor.constraint(equalTo: saveError.bottomAnchor, constant: 8))
+        withoutSaveError.append(problem.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: 10))
+        NSLayoutConstraint.activate(constraints + withFilmstrip + withoutSaveError)
         showSurround()
         updateParts()
     }
@@ -160,6 +173,10 @@ final class LibraryModuleView: NSView {
                 let filters = model.libraryFilters
                 _ = filters?.filter.sections
                 showFilterBar(filters != nil && model.libraryView == .grid, rows: filters?.isBarShown == true)
+            },
+            Tracker { [weak self] in
+                guard let self else { return }
+                showSaveError(SaveErrorBanner.shown(model, in: .library) != nil)
             },
             // Watches only the theme, which `ThemeSettings` has put in `Palette` by the time this runs.
             Tracker { [weak self] in
@@ -240,6 +257,14 @@ final class LibraryModuleView: NSView {
         NSLayoutConstraint.deactivate(shown ? withoutFilmstrip : withFilmstrip)
         NSLayoutConstraint.activate(shown ? withFilmstrip : withoutFilmstrip)
         updateParts()
+    }
+
+    /// A failed save's banner takes the top of the photos, and a culling problem moves below it.
+    private func showSaveError(_ shown: Bool) {
+        guard showsSaveError != shown else { return }
+        showsSaveError = shown
+        NSLayoutConstraint.deactivate(shown ? withoutSaveError : withSaveError)
+        NSLayoutConstraint.activate(shown ? withSaveError : withoutSaveError)
     }
 
     /// Over Develop's canvas, the Library's own cursor, not the canvas's.

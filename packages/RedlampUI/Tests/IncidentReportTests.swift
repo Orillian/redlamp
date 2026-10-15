@@ -1,10 +1,12 @@
+import AppKit
 import Foundation
 import Testing
 @_spi(Harness) @testable import RedlampUI
 
 /// A report on a crash or a hang in an earlier session: its issue and diagnostics.json from the fixtures
 /// (`IncidentTests`), what's redacted from them, what each detail's switch leaves out, the sheet's crash mode, what
-/// sending, queueing and Not Now do to Your Reports, and which crash or hang the banner offers.
+/// sending, queueing and Not Now do to Your Reports, and which crash or hang the banner offers, and when it waits for a
+/// failed save's banner.
 @MainActor
 struct IncidentReportTests {
     private final class Relay: FeedbackSending, @unchecked Sendable {
@@ -354,5 +356,68 @@ struct IncidentReportTests {
         let read = ". You can read the report before you send it."
         #expect(try IncidentBanner.detail(Self.crash().incident).hasSuffix(read))
         #expect(IncidentBanner.detail(Self.hang(seconds: 14.2, closed: true).incident).hasSuffix(", for 14 s" + read))
+    }
+
+    @Test func `a failed save's banner shows in the module shown, and in the Library the crash waits for it`() throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = EditorModel(engine: StubEngine())
+        let crash = try Self.crash()
+        let history = FeedbackHistory(directory: directory, defaults: defaults)
+        model.incidentHistory = history
+        history.add([crash])
+        let error = SaveError(
+            url: URL(fileURLWithPath: "/tmp/IMG_0001.ARW"),
+            message: "Edits to IMG_0001 can't be saved: the disk is full",
+            canRetry: true,
+        )
+        model.saveError = error
+        #expect(SaveErrorBanner.shown(model, in: .develop) == error)
+        #expect(IncidentBanner.offered(model, in: .develop)?.id == crash.id, "below it in Develop")
+        #expect(SaveErrorBanner.shown(model, in: .library) == nil, "Develop is shown")
+        model.module = .library
+        #expect(SaveErrorBanner.shown(model, in: .library) == error)
+        #expect(SaveErrorBanner.shown(model, in: .develop) == nil, "the Library covers Develop's")
+        #expect(IncidentBanner.offered(model, in: .library) == nil, "the failed save is in its place")
+        model.saveError = nil
+        #expect(IncidentBanner.offered(model, in: .library)?.id == crash.id)
+    }
+
+    @Test func `over the Library's photos, a failed save's banner is on top and a culling problem moves below it`(
+    ) async throws {
+        let fixture = ModuleFixture()
+        defer { fixture.cleanUp() }
+        try await fixture.open(count: 2)
+        let model = fixture.model
+        let modules = fixture.showModules()
+        model.showLibrary(.grid)
+        model.cullingProblem = CullingProblem(
+            title: "3 Stars", field: .rating, photos: [fixture.photos[1]], values: [], reasons: ["permission denied"],
+            step: ObjectIdentifier(model),
+        )
+        func frame(_ identifier: String) -> NSRect? {
+            func search(_ view: NSView) -> NSView? {
+                guard !view.isHidden else { return nil }
+                return view.accessibilityIdentifier() == identifier ? view : view.subviews.lazy.compactMap(search).first
+            }
+            modules.window.layoutIfNeeded()
+            return search(modules.content.library).map { $0.convert($0.bounds, to: nil) }
+        }
+        try await fixture.eventually { frame("library.cullingProblem") != nil }
+        let alone = try #require(frame("library.cullingProblem"))
+
+        model.saveError = SaveError(
+            url: fixture.photos[0], message: "Edits to IMG_00000 can't be saved: the disk is full", canRetry: true,
+        )
+        try await fixture.eventually {
+            frame("saving.banner.retry") != nil && frame("library.cullingProblem").map { $0.maxY < alone.minY } == true
+        }
+        let banner = try #require(frame("saving.banner"))
+        let problem = try #require(frame("library.cullingProblem"))
+        #expect(banner.minY > problem.maxY, "the failed save on top, the culling problem below it")
+        #expect(abs(banner.maxY - alone.maxY) < 1, "in the culling problem's place")
+
+        model.saveError = nil
+        try await fixture.eventually { frame("saving.banner") == nil && frame("library.cullingProblem") == alone }
+        #expect(frame("library.cullingProblem") == alone, "back in its place")
     }
 }
