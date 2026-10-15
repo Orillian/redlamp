@@ -20,12 +20,12 @@ A row that needs a fix and also waits on a decision whose answer settles whether
 
 | Section | Compliant | Fix | Decision | Not applicable | Unverified | Rows |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1. App Review Guidelines | 27 | 38 | 18 | 123 | 2 | 208 |
+| 1. App Review Guidelines | 28 | 37 | 18 | 123 | 2 | 208 |
 | 2. App Store Connect | 1 | 22 | 9 | 6 | 2 | 40 |
 | 3. Technical checks | 8 | 26 | 2 | 2 | 5 | 43 |
 | 4. Apple's trademarks | 0 | 12 | 0 | 0 | 0 | 12 |
 | 5. Legal duties of a sale | 9 | 8 | 13 | 2 | 3 | 35 |
-| All | 45 | 106 | 42 | 133 | 12 | 338 |
+| All | 46 | 105 | 42 | 133 | 12 | 338 |
 
 ### Fixes, in the order to build them
 
@@ -144,7 +144,7 @@ Read on 15 October 2026 from <https://developer.apple.com/app-store/review/guide
 | 2.5.11(iii) Siri resolution | Resolve requests directly, without ads (2.5.11(iii)) | No | Not applicable | No Siri requests | — |
 | 2.5.12 CallKit and SMS filters | Block only confirmed spam numbers (2.5.12) | No | Not applicable | No CallKit or SMS extension | — |
 | 2.5.13 Facial recognition sign-in | Use LocalAuthentication for face sign-in (2.5.13) | No | Not applicable | Vision finds faces for masks, not for sign-in | — |
-| 2.5.14 Recording activity | "Apps must request explicit user consent and provide a clear visual and/or audible indication when recording, logging, or otherwise making a record of user activity." (2.5.14) | Yes | Fix | The activity log "stays in memory and in the session's journal, never sent unless a report is" (`ActivityLog.swift:6`); the journal is written to `Application Support/Redlamp/Feedback/Session` (`SessionJournal.swift:110`) with no setting to turn it off. Assessment: low risk | UX-52, in the form DEC-101 chooses; ARC-24 mentions it in the privacy policy |
+| 2.5.14 Recording activity | "Apps must request explicit user consent and provide a clear visual and/or audible indication when recording, logging, or otherwise making a record of user activity." (2.5.14) | Yes | Compliant | Settings › Privacy › Keep an activity log, on by default, says what the log holds, that it stays on this Mac and is sent only in a report; turning it off deletes what was kept and stops recording, and the Report a Bug sheet says what the activity part holds (UX-52, b29fd225e) | UX-52, in the form DEC-101 chooses; ARC-24 mentions it in the privacy policy |
 | 2.5.15 Files and iCloud | File pickers "should include items from the Files app and the user's iCloud documents" (2.5.15) | Yes | Compliant | System open panels, and sidecars written under file coordination for iCloud Drive (README) | — |
 | 2.5.16 Widgets and extensions | Extensions "should be related to the content and functionality of your app" (2.5.16) | Yes, once built: the Background Assets extension | Fix | Not built yet | INF-07: the extension downloads only the app's own model packs |
 | 2.5.16(a) App Clips | App Clip features must be in the main binary (2.5.16(a)) | No | Not applicable | No App Clip | — |
