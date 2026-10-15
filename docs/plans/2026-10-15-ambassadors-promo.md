@@ -135,15 +135,15 @@ Seven slides at 4:5, made by `marketing/campaigns/ambassadors/build.py` (`carous
 
 **The carousel:** the reel's caption, with "Swipe for what ambassadors get and what I ask." after the first sentence.
 
-**X** (277 characters as X counts them), from the first copy review:
+**X** (277 characters as X counts them), after the third copy review:
 
-> I'm looking for ten photographers to be founding ambassadors for Redlamp, my free raw editor for the Mac. Each quarter you'd pick one feature I build next, and I'd show your edits with your name. It's unpaid. Apply with a photo you've edited in Redlamp: https://redlamp.app/join
+> I'm looking for photographers to be the ten founding ambassadors of Redlamp, my free raw editor for the Mac. Each quarter you'd pick one feature I build next, and I'd show your edits with your name. It's unpaid. Apply with a photo you edited in Redlamp: https://redlamp.app/join
 
-**LinkedIn**, from the first copy review:
+**LinkedIn**, after the third copy review:
 
-> I'm looking for ten photographers to be Redlamp's founding ambassadors. Redlamp is a free, open-source raw editor for the Mac.
+> I'm looking for photographers to be Redlamp's ten founding ambassadors. Redlamp is a free, open-source raw editor for the Mac.
 >
-> Each quarter, ambassadors pick one feature from a shortlist of my roadmap, and I build it next. There's a call with me every month, and I show their edits on Redlamp's accounts and site, with their name.
+> Ambassadors propose features and recommend what to build next, in a monthly call with me and in their channel. Each quarter, they also pick one feature from a shortlist of my roadmap, and I build it next. I show their edits on Redlamp's accounts and site, with their name.
 >
 > It's unpaid, and ambassadors don't get early builds or fixes first. It needs an Apple Silicon Mac with macOS 26 or later, and Redlamp is in early development.
 >
@@ -162,7 +162,6 @@ The other hooks change only the first sentence: `credit`, "Pixel art of Redlamp'
 - **The roadmap's rows,** drawn for UX-38, UX-35 (the one that lifts), UX-41 and UX-37, or others he'd shortlist.
 - **Length:** 19.2 s, with the end card held for 7.2 s of it; or 16.8 s with a bar less, which the scriptwriter would take from the photographers' bar and the director would rather take from the end card.
 - **Before the post is scheduled:** the social room's caption check needs a call to action of the post's own (`room.py` refuses any caption without the standard one); the standard `requirements` line to say "macOS 26 or later", as the README and the page do; and both accounts' bios to link to redlamp.app/join for the open call.
-- **X, LinkedIn and the page** still say "I'm looking for ten photographers", which goes out of date once the seeding wave accepts anyone; the second copy review's change to the reel's caption applies to them too, for the copywriter before the open call.
 - **The closing date,** added to the caption once the open call's dates are fixed.
 
 ## Review notes
