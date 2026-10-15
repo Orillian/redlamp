@@ -45,7 +45,7 @@ quit_old() {
 }
 
 cleanup() {
-    [ -z "$SERVER" ] || kill "$SERVER" 2>/dev/null || true
+    [ -z "$SERVER" ] || { kill "$SERVER" && wait "$SERVER"; } 2>/dev/null || true
     ! pgrep -f "$OLD/Contents/MacOS/Redlamp" >/dev/null || quit_old >/dev/null 2>&1 || true
     for _ in $(seq 30); do
         pgrep -f "Autoupdate $ID" >/dev/null || break
@@ -74,6 +74,29 @@ build_of() {
     plutil -extract CFBundleVersion raw "$1/Contents/Info.plist"
 }
 
+# The update unpacked where Sparkle's installer checks it, its signature checking out (so every
+# file is in place), and the installer idle for 2 s, waiting for the app to quit.
+ready() {
+    local pid app before
+    pid="$(pgrep -n -f "Autoupdate $ID")" || return 1
+    for app in "$HOME/Library/Caches/$ID/org.sparkle-project.Sparkle/Installation"/*/*/Redlamp.app; do
+        [ -d "$app" ] && codesign --verify --deep --strict "$app" 2>/dev/null || continue
+        before="$(ps -o time= -p "$pid")" || return 1
+        sleep 2
+        [ "$(ps -o time= -p "$pid")" = "$before" ]
+        return
+    done
+    return 1
+}
+
+# What Sparkle's processes in this test logged as errors, where the log can be read.
+sparkle_errors() {
+    local ours="(processImagePath BEGINSWITH \"$WORK/\" OR processImagePath CONTAINS \"/Caches/$ID/\")"
+    /usr/bin/log show --last 15m --style compact \
+        --predicate "subsystem == \"org.sparkle-project.Sparkle\" AND messageType == error AND $ours" 2>/dev/null \
+        | sed -n 's/^.*\[org\.sparkle-project\.Sparkle:Sparkle\] /Sparkle: /p' | tail -5 >&2 || true
+}
+
 NEW_BUILD="$(build_of "$SOURCE")"
 copy new "$NEW_BUILD"
 copy old 1
@@ -99,6 +122,13 @@ if [ "$AUTO" = 1 ]; then
         sleep 2
     done
     pgrep -f "Autoupdate $ID" >/dev/null || fail "Sparkle didn't stage the update (see Console, subsystem org.sparkle-project.Sparkle)"
+    # The installer starts before it has unpacked and checked the update, and Sparkle drops the
+    # update if the app quits before then; it logs nothing once it's ready.
+    for _ in $(seq 60); do
+        ready && break
+        sleep 1
+    done
+    ready || { sparkle_errors; fail "Sparkle's installer wasn't ready to install build $NEW_BUILD"; }
     quit_old
 else
     open -n "$OLD"
@@ -110,6 +140,6 @@ for _ in $(seq 150); do
     [ "$(build_of "$OLD")" = "$NEW_BUILD" ] && break
     sleep 2
 done
-[ "$(build_of "$OLD")" = "$NEW_BUILD" ] || fail "the old copy is still build $(build_of "$OLD")"
+[ "$(build_of "$OLD")" = "$NEW_BUILD" ] || { sparkle_errors; fail "the old copy is still build $(build_of "$OLD")"; }
 codesign --verify --deep --strict "$OLD"
 echo "==> Updated build 1 to build $NEW_BUILD, and its signature checks out."
