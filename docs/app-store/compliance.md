@@ -21,11 +21,11 @@ A row that needs a fix and also waits on a decision whose answer settles whether
 | Section | Compliant | Fix | Decision | Not applicable | Unverified | Rows |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1. App Review Guidelines | 29 | 36 | 18 | 123 | 2 | 208 |
-| 2. App Store Connect | 2 | 21 | 9 | 6 | 2 | 40 |
+| 2. App Store Connect | 5 | 18 | 9 | 6 | 2 | 40 |
 | 3. Technical checks | 15 | 21 | 1 | 3 | 3 | 43 |
 | 4. Apple's trademarks | 0 | 12 | 0 | 0 | 0 | 12 |
 | 5. Legal duties of a sale | 9 | 8 | 13 | 2 | 3 | 35 |
-| All | 55 | 98 | 41 | 134 | 10 | 338 |
+| All | 58 | 95 | 41 | 134 | 10 | 338 |
 
 ### Fixes, in the order to build them
 
@@ -275,7 +275,7 @@ Read on 15 October 2026 from <https://developer.apple.com/app-store/review/guide
 | 5.5 Mobile Device Management | MDM capability from Apple (5.5) | No | Not applicable | Not an MDM app | — |
 | 5.6 Developer Code of Conduct | Apps "should never prey on users or attempt to rip off customers, trick them into making unwanted purchases" (5.6) | Yes | Fix | The tip jar isn't built | UX-51: tips plainly optional |
 | 5.6.1 App Store reviews | "Use the provided API to prompt users to review your app … we will disallow custom review prompts." (5.6.1) | Partly | Compliant | No review prompt: no `requestReview` or `SKStoreReviewController` in the sources | Any future prompt uses `requestReview`, and never one tied to a tip |
-| 5.6.2 Developer Identity | "Your representation of yourself, your business, and your offerings on the App Store … must be accurate." (5.6.2) | Yes | Decision | Seller name, trader details and support page not yet set | DEC-99 |
+| 5.6.2 Developer Identity | "Your representation of yourself, your business, and your offerings on the App Store … must be accurate." (5.6.2) | Yes | Decision | The seller is Pedro Gomes, an individual account (team 3JP75Z3F98, DEC-99); the trader details and the support page are not yet set in App Store Connect | DEC-99 |
 | 5.6.3 Discovery Fraud | No manipulating "charts, search, reviews, or referrals" (5.6.3) | Yes | Fix | The ambassador programme (DEC-86) asks for edits and feedback | ARC-27: the ambassadors' and supporters' terms say they're never asked for App Store ratings or reviews in return for anything |
 | 5.6.4 App Quality | Excessive customer reports, negative reviews and refund requests indicate low quality (5.6.4) | Yes | Decision | The app is described as an alpha | DEC-92 |
 
@@ -285,11 +285,11 @@ Read on 15 October 2026 from App Store Connect Help and Apple's developer pages,
 
 | Item | Requirement | Applies | Status | Evidence | Fix or decision |
 | --- | --- | --- | --- | --- | --- |
-| Program licence agreement | The Account Holder accepts the agreement revised on 13 October 2026 before creating apps or in-app purchases (Apple developer news, 13 October 2026) | Yes | Fix | Not accepted for this app | ARC-27 |
-| Paid Apps Agreement | "To sell your apps on the App Store or offer In-App Purchases, the Account Holder must sign the Paid Apps Agreement." (Sign and update agreements) | Yes | Fix | Not signed | ARC-27 |
-| Tax forms | "All developers must complete a US tax form"; W-8BEN or similar outside the United States; it can't be changed once submitted (Provide tax information) | Yes | Fix | Not submitted | ARC-27 |
-| Banking | Banking follows the Paid Apps Agreement and the tax forms (Enter banking information) | Yes | Fix | Not entered | ARC-27 |
-| Small Business Program | 15% commission for developers new to the App Store or under 1 million USD; proceeds adjust from the month after approval (Small Business Program) | Yes | Fix | Not enrolled | ARC-27 enrols before launch |
+| Program licence agreement | The Account Holder accepts the agreement revised on 13 October 2026 before creating apps or in-app purchases (Apple developer news, 13 October 2026) | Yes | Fix | Not confirmed: the Account Holder of team 3JP75Z3F98, the seller (DEC-99), accepts it at developer.apple.com/account; the team's App Store Connect API answered on 15 October 2026 without asking for an agreement | ARC-27 |
+| Paid Apps Agreement | "To sell your apps on the App Store or offer In-App Purchases, the Account Holder must sign the Paid Apps Agreement." (Sign and update agreements) | Yes | Compliant | In effect for team 3JP75Z3F98, the seller (DEC-99): Lookout Station's in-app purchases were on sale under it on 15 October 2026 (App Store `id6761258688`), which needs this agreement, the tax form and banking | — |
+| Tax forms | "All developers must complete a US tax form"; W-8BEN or similar outside the United States; it can't be changed once submitted (Provide tax information) | Yes | Compliant | Submitted for team 3JP75Z3F98, as the Paid Apps Agreement row shows | — |
+| Banking | Banking follows the Paid Apps Agreement and the tax forms (Enter banking information) | Yes | Compliant | Entered for team 3JP75Z3F98, as the Paid Apps Agreement row shows | — |
+| Small Business Program | 15% commission for developers new to the App Store or under 1 million USD; proceeds adjust from the month after approval (Small Business Program) | Yes | Fix | Not confirmed: enrolment is the account's, so it would cover Lookout Station's sales too; the Account Holder checks it or enrols | ARC-27 enrols before launch |
 | App record and bundle ID | The record is created for one bundle ID, which can't be changed afterwards (build audit §3.13) | Yes | Decision | `app.redlamp.mac` today | DEC-91 |
 | Name | "At least two characters and no more than 30 characters" (App information) | Yes | Unverified | "Redlamp" has 7 characters; App Store search finds no app of that name | Settled by reserving it when ARC-27 creates the record |
 | Subtitle | "This can't be longer than 30 characters." (App information) | Yes | Fix | Not written | ARC-27, with no third-party names (DEC-94) |
@@ -300,7 +300,7 @@ Read on 15 October 2026 from App Store Connect Help and Apple's developer pages,
 | Copyright | "The name of the person or entity that owns the exclusive rights to the app, preceded by the year" (Platform version information) | Yes | Decision | Today's string is "Redlamp contributors. MPL-2.0." (`apps/RedlampMac/Project.swift:26`) | DEC-99 |
 | Content rights | Apps with third-party content "must have all the necessary rights to that content" (App information) | Yes: LibRaw, the downloadable models, film datasheet data | Decision | Section 5 of this file | DEC-93; ARC-25 |
 | Licence agreement | Apple's standard EULA, or a custom one that supersedes it (App information) | Yes | Decision | Not chosen; how either sits with MPL-2.0 is for counsel | DEC-99 |
-| Digital Services Act trader status | Traders' address, phone number and email address are verified and shown in the EU; a paid app or in-app purchases count towards trader status (DSA trader requirements) | Yes: a paid app with tips | Decision | Not entered | DEC-99; ARC-27 enters it |
+| Digital Services Act trader status | Traders' address, phone number and email address are verified and shown in the EU; a paid app or in-app purchases count towards trader status (DSA trader requirements) | Yes: a paid app with tips | Decision | The account declares no trader status: Lookout Station's EU product page says Pedro Gomes "has not identified itself as a trader for this app"; the status can be set for each app (DSA trader requirements) | DEC-99; ARC-27 enters it |
 | Age rating | Answer the questionnaire; "An Unrated app can't be published"; its social media questions are required since September 2026 (Set an app age rating; news of 9 July 2026) | Yes | Decision | Draft answers: no to every capability and content descriptor, giving 4+ (guidelines audit §2.2) | DEC-103 |
 | Price and availability | Up to 800 price points; equalised prices across 175 storefronts; a paid price needs the Paid Apps Agreement (Set a price) | Yes | Decision | Not set; the EU storefronts depend on the AI Act's marking | DEC-88 and DEC-100 |
 | Apple silicon only | "To limit your app to Macs with Apple silicon, set your Xcode build architecture to arm64 only" (Apple developer news, 9 September 2026) | Yes | Compliant | `ARCHS = arm64` (`Tuist/ProjectDescriptionHelpers/Module.swift:112`) | — |
@@ -428,11 +428,11 @@ These rows are engineering assessments for the owner and counsel, not legal advi
 | Transfers | GitHub and Vercel are in the United States; their Data Privacy Framework certification and processor terms | Yes | Unverified | Not checked by either audit | Settled by checking the Data Privacy Framework list and both companies' data processing terms |
 | Request logs | Whether the website's host keeps IP addresses that Redlamp can read (What's New, the relays) | Yes | Unverified | The relay logs only error messages (`web/app/api/feedback/route.ts:39`) | Settled by reading Vercel's log retention for the project's plan |
 | Camera Bench identifiers | The per-Mac random ID and the optional credit name are personal data | Yes | Fix | `CameraBenchRelay.swift:107-118` | ARC-24 |
-| Establishment and representative | Where the seller is established decides whether an EU (GDPR Art. 27) or UK representative is needed | Yes | Decision | Not settled (INF-11 §7.4) | DEC-99 *(counsel)* |
+| Establishment and representative | Where the seller is established decides whether an EU (GDPR Art. 27) or UK representative is needed | Yes | Decision | The seller is an individual whose account gives the United Kingdom as its country (DEC-99); whether a representative is needed is not settled (INF-11 §7.4) | DEC-99 *(counsel)* |
 | Merchant | Apple is agent or commissionaire; the seller remains "solely responsible" for claims, warranties, assistance and support (DPLA Schedule 2, §1.1, §1.3, §6.1) | Yes | Fix | No support page | ARC-24's support page carries that responsibility |
 | Refunds | The developer issues no refunds; Apple may refund within 90 days or on non-conformity, and the developer reimburses it (DPLA §3.4; Schedule 2, §6.3) | Yes | Compliant | The app has no purchase or refund code; UX-51's tips add none | — |
 | EU trader certification | Traders certify that they "only offer products or services that comply with the applicable rules of EU law" (DSA trader requirements) | Yes | Decision | Not entered | DEC-99; ARC-27 |
-| Tax reporting | Apple reports tax, sales and contact details to tax authorities (DPLA revision of 13 October 2026) | Yes | Fix | Tax forms not submitted | ARC-27 |
+| Tax reporting | Apple reports tax, sales and contact details to tax authorities (DPLA revision of 13 October 2026) | Yes | Fix | The account's tax forms are submitted (section 2); the 13 October revision's acceptance is not confirmed | ARC-27 |
 | Export classification report | Exempt encryption may still call for a year-end self-classification report to the U.S. government (Complying with Encryption Export Regulations) | Yes | Unverified | Neither audit settled it | Settled by counsel or the Bureau of Industry and Security's rules once DEC-89 settles what encryption ships |
 
 ## Notes on the audits
