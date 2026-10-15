@@ -76,8 +76,9 @@ public enum Module: String, CaseIterable {
         case .services: [.engineAPI]
         case .document: [.engineAPI]
         // The library's index, search and file operations, over the document layer's folders and
-        // sidecars: shared by the app and the CLI, so it never reaches the engine or any UI layer.
-        case .library: [.engineAPI, .document]
+        // sidecars, and Lightroom catalogs' edits read and converted with Recipes' Camera Raw settings:
+        // shared by the app and the CLI, so it never reaches the engine or any UI layer.
+        case .library: [.engineAPI, .document, .recipes]
         // Recipes are pure values plus analysis: shared by the apps, the CLI and a future
         // companion app, so they may never reach the engine or any UI layer.
         case .recipes: [.engineAPI, .color]

@@ -1,4 +1,5 @@
 import Foundation
+import RedlampRecipes
 
 /// A Lightroom Classic smart collection in the library's query language (LIB-29): its rules, as the
 /// catalog keeps them (`LuaTable`), each made a term, its groups matching all, any or none of them.

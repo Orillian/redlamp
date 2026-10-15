@@ -1,20 +1,26 @@
 import Foundation
 
 /// A Lua table as Lightroom Classic writes its smart collections' rules into the catalog (LIB-29):
-/// `s = { { criteria = "rating", operation = ">=", value = 3 }, combine = "intersect" }`. The text is
-/// read as data, never run: only constructors of strings, numbers, booleans and tables are taken.
-struct LuaTable: Sendable, Hashable {
+/// `s = { { criteria = "rating", operation = ">=", value = 3 }, combine = "intersect" }`, and its photos'
+/// develop settings (`CameraRawSettings(lua:)`). The text is read as data, never run: only constructors
+/// of strings, numbers, booleans and tables are taken.
+public struct LuaTable: Sendable, Hashable {
     /// The values without keys, in their order, `nil` among them left out.
-    var items: [LuaValue] = []
+    public var items: [LuaValue] = []
     /// The values with names or other keys (`criteria = …`, `["value 2"] = …`), by their keys' text.
-    var fields: [String: LuaValue] = [:]
+    public var fields: [String: LuaValue] = [:]
 
-    subscript(key: String) -> LuaValue? {
+    public init(items: [LuaValue] = [], fields: [String: LuaValue] = [:]) {
+        self.items = items
+        self.fields = fields
+    }
+
+    public subscript(key: String) -> LuaValue? {
         fields[key]
     }
 
     /// The text of `key`'s value, a number's as Lua would print a whole number.
-    func text(_ key: String) -> String? {
+    public func text(_ key: String) -> String? {
         switch fields[key] {
         case let .string(text): text
         case let .number(number): number.rounded() == number && abs(number) < 1e15 ? String(Int64(number))
@@ -24,7 +30,7 @@ struct LuaTable: Sendable, Hashable {
         }
     }
 
-    func number(_ key: String) -> Double? {
+    public func number(_ key: String) -> Double? {
         switch fields[key] {
         case let .number(number): number
         case let .string(text): Double(text.trimmingCharacters(in: .whitespaces))
@@ -33,13 +39,13 @@ struct LuaTable: Sendable, Hashable {
     }
 }
 
-indirect enum LuaValue: Sendable, Hashable {
+public indirect enum LuaValue: Sendable, Hashable {
     case string(String)
     case number(Double)
     case bool(Bool)
     case table(LuaTable)
 
-    var table: LuaTable? {
+    public var table: LuaTable? {
         if case let .table(table) = self {
             return table
         }
@@ -48,17 +54,22 @@ indirect enum LuaValue: Sendable, Hashable {
 }
 
 /// Why a Lua table's text couldn't be read, and where.
-struct LuaTableError: Error, Sendable, Hashable, CustomStringConvertible {
-    let message: String
+public struct LuaTableError: Error, Sendable, Hashable, CustomStringConvertible {
+    public let message: String
     /// The byte the reading stopped at.
-    let offset: Int
+    public let offset: Int
 
-    var description: String {
+    public init(message: String, offset: Int) {
+        self.message = message
+        self.offset = offset
+    }
+
+    public var description: String {
         "\(message) at byte \(offset)"
     }
 }
 
-extension LuaTable {
+public extension LuaTable {
     /// Tables inside tables deeper than this are refused, so text made to nest without end can't exhaust the stack.
     static let deepest = 64
 
