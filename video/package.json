@@ -30,6 +30,8 @@
     "films": "node scripts/films.mjs",
     "films-renders": "python3 scripts/films-renders.py",
     "films-score": "python3 scripts/films-score.py",
+    "ambassadors-frames": "python3 scripts/ambassadors-frames.py",
+    "ambassadors-score": "python3 scripts/ambassadors-score.py",
     "review": "node scripts/review.mjs",
     "storyboard": "node scripts/storyboard.mjs",
     "typecheck": "tsc --noEmit"

@@ -1,4 +1,5 @@
 import { type CalculateMetadataFunction, Composition, Folder, Still } from "remotion";
+import { AMBASSADORS_FRAMES, AmbassadorsReel, type AmbassadorsReelProps, withFrames as withAmbassadorsFrames } from "./ambassadors/AmbassadorsReel";
 import { durationOf, Explainer, type ExplainerProps } from "./Explainer";
 import { FILM_LOOKS_FRAMES, FilmLooks, filmLooksDefaults } from "./films/FilmLooks";
 import { FEATURE_VIDEO_FRAMES, FeatureVideo, type FeatureVideoProps, withFrames } from "./features/FeatureVideo";
@@ -27,6 +28,7 @@ export function RemotionRoot() {
   const feature: FeatureVideoProps = { episode: "e01", hook: "a", score: "score", opener: true, guides: false, manifest: null };
   // The episodes built so far, each listed under Features on its own so it opens in one click.
   const featureEpisodes = ["e01", "e02", "e03", "e04", "e05", "e07", "e08", "e11", "e12"];
+  const ambassadors: AmbassadorsReelProps = { hook: "pick", score: "score", guides: false, manifest: null };
   return (
     <>
       <Composition
@@ -147,6 +149,18 @@ export function RemotionRoot() {
             calculateMetadata={withFrames}
           />
         ))}
+      </Folder>
+      <Folder name="Ambassadors">
+        <Composition
+          id="AmbassadorsReel"
+          component={AmbassadorsReel}
+          durationInFrames={AMBASSADORS_FRAMES}
+          fps={FPS}
+          width={1080}
+          height={1920}
+          defaultProps={ambassadors}
+          calculateMetadata={withAmbassadorsFrames}
+        />
       </Folder>
       <Folder name="Films">
         <Composition

@@ -1,0 +1,29 @@
+{
+  "bpm": 100,
+  "fps": 30,
+  "beatsPerBar": 4,
+  "bars": 8,
+  "drags": [
+    [4.5, 5, 5.5, 5.75],
+    [6.5, 7, 7.5, 7.75]
+  ],
+  "burst": [16, 18.5, 0.25],
+  "cues": {
+    "hook": 0,
+    "dashboard": 4,
+    "roadmap": 8,
+    "pickPress": 9.5,
+    "pick": 10,
+    "stop": 11.5,
+    "drop": 12,
+    "developed": 13,
+    "credit": 14,
+    "sheet": 16,
+    "ring": 19,
+    "endLine": 20,
+    "cta": 24,
+    "lastHit": 28,
+    "fade": 30,
+    "end": 32
+  }
+}

@@ -24,3 +24,6 @@ public/features/
 
 # The film looks reel's renders (scripts/films-renders.py) and score (scripts/films-score.py).
 public/films/
+
+# The ambassadors reel's frames and score (scripts/ambassadors-frames.py, scripts/ambassadors-score.py).
+public/ambassadors/
