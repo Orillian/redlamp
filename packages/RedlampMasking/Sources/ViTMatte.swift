@@ -25,7 +25,7 @@ public final class ViTMatte: @unchecked Sendable {
     private let model: MLModel
     private let lock = NSLock()
 
-    public init(manifest: ModelManifest, directory: URL) throws {
+    public init(manifest: ModelManifest, directory: URL, computeUnits: MLComputeUnits = computeUnits) throws {
         self.manifest = manifest
         guard let name = SAMSegmenter.packages(in: manifest).first
         else { throw ModelStoreError.unknownModel(manifest.id) }
@@ -33,9 +33,19 @@ public final class ViTMatte: @unchecked Sendable {
             package: directory.appending(path: "\(name).mlpackage"), key: "\(manifest.id)-v\(manifest.version)-\(name)",
         )
         let configuration = MLModelConfiguration()
-        // On the Neural Engine a tile takes three times as long.
-        configuration.computeUnits = .cpuAndGPU
+        configuration.computeUnits = computeUnits
         model = try Inference.shared.load(compiled, configuration: configuration)
+    }
+
+    /// The GPU, but on macOS 27 and later the CPU: there Metal Performance Shaders Graph, which
+    /// runs Core ML's GPU work, at times aborts the process as it prepares a prediction, rebuilding
+    /// the matmul of global attention's 8-bit relative positions with an operand of the wrong shape
+    /// (MSK-33). On an M4 Max a tile takes 0.14 s on the GPU, 0.43 s on the CPU and 0.8 s with the
+    /// Neural Engine, whose matte also strays further from the GPU's.
+    public static let computeUnits = computeUnits(macOS: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
+
+    static func computeUnits(macOS version: Int) -> MLComputeUnits {
+        version >= 27 ? .cpuOnly : .cpuAndGPU
     }
 
     /// `coarse` with its unsure band solved against `image`, at the image's size. Only the tiles
