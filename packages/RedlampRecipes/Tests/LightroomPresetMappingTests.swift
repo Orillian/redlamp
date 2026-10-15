@@ -453,9 +453,9 @@ struct LightroomPresetMappingTests {
         #expect(Set(keys).count == keys.count)
         var parameters: [ParameterID] = []
         for (key, rule) in LightroomPreset.rules {
-            guard case let .parameter(parameter) = rule else { continue }
-            #expect(RecipeSettingGroup(parameter: parameter) != nil, "\(key) maps to \(parameter.rawValue)")
-            parameters.append(parameter)
+            guard case let .parameter(spec) = rule else { continue }
+            #expect(RecipeSettingGroup(parameter: spec.id) != nil, "\(key) maps to \(spec.id.rawValue)")
+            parameters.append(spec.id)
         }
         #expect(Set(parameters).count == parameters.count)
     }

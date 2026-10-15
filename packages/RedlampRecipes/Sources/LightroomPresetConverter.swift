@@ -15,7 +15,7 @@ extension LightroomPreset {
         guard orderedSettings(settings).contains(where: { $0.rule?.isMetadata != true }) else {
             throw LightroomPresetError.notAPreset
         }
-        let converter = LightroomPresetConverter(settings)
+        let converter = LightroomConverter(settings)
         let recipe = Recipe(
             id: RecipeNamespace.newLocalID(),
             name: trimmed(name) ?? trimmed(settings.text("Name")) ?? "",
@@ -34,7 +34,7 @@ extension LightroomPreset {
         return result
     }
 
-    private static func versionNumbers(_ version: String) -> [Int]? {
+    static func versionNumbers(_ version: String) -> [Int]? {
         let numbers = version.split(separator: ".", omittingEmptySubsequences: false).map { Int($0) }
         guard !numbers.isEmpty, numbers.allSatisfy({ $0 != nil }) else { return nil }
         return numbers.compactMap(\.self)
@@ -46,23 +46,32 @@ extension LightroomPreset {
     }
 }
 
-/// A preset's settings carried over to a recipe's one Camera Raw setting at a time, with the
-/// report of how each was.
-struct LightroomPresetConverter {
-    private typealias Note = LightroomPreset.Note
-    private typealias Entry = LightroomImportReport.Entry
+/// A preset's or a photo's settings carried over one Camera Raw setting at a time, with the report
+/// of how each was: a preset's to a recipe's settings, a photo's to its whole edit's
+/// (`LightroomConverter.init(_:photo:)`).
+struct LightroomConverter {
+    typealias Note = LightroomPreset.Note
+    typealias Entry = LightroomImportReport.Entry
 
     let settings: CameraRawSettings
-    private(set) var values: [ParameterID: Double] = [:]
-    private(set) var includes: Set<RecipeSettingGroup> = []
-    private(set) var treatment: Treatment?
-    private(set) var whiteBalanceMode: WhiteBalanceMode?
-    private(set) var pointCurve: [CurvePoint]?
-    private(set) var channelCurves: [CurveChannel: [CurvePoint]] = [:]
-    private(set) var entries: [LightroomImportReport.Entry] = []
+    /// What a photo's conversion needs of the photo; nil for a preset.
+    let photo: LightroomPhotoContext?
+    /// The process a photo's settings were made in; a preset's are of Process 2012 or later.
+    var process = LightroomPhoto.Process.current
+    var values: [ParameterID: Double] = [:]
+    var includes: Set<RecipeSettingGroup> = []
+    var treatment: Treatment?
+    var whiteBalanceMode: WhiteBalanceMode?
+    var pointCurve: [CurvePoint]?
+    var channelCurves: [CurveChannel: [CurvePoint]] = [:]
+    var entries: [LightroomImportReport.Entry] = []
+    /// A photo's Base Look, crop and its angle, which a recipe doesn't carry.
+    var baseLook: BaseLookReference?
+    var crop: (rect: CropRect, angle: Double)?
 
     init(_ settings: CameraRawSettings) {
         self.settings = settings
+        photo = nil
         for (key, rule) in LightroomPreset.orderedSettings(settings) {
             apply(rule ?? .ignored(Note.unknown), to: key)
         }
@@ -76,31 +85,33 @@ struct LightroomPresetConverter {
         )
     }
 
-    private var isBlackAndWhite: Bool {
+    var isBlackAndWhite: Bool {
         settings.flag("ConvertToGrayscale") == true
     }
 
-    private mutating func apply(_ rule: LightroomRule, to key: String) {
+    mutating func apply(_ rule: LightroomRule, to key: String) {
         switch rule {
         case .metadata:
             break
+        case let .perPhoto(_, preset):
+            apply(preset.rule, to: key)
         case let .ignored(note):
             ignore(key, note)
         case let .unlessOff(note, switchKey):
             if settings.flag(switchKey ?? key) != false {
                 ignore(key, note)
             }
-        case let .parameter(parameter):
-            setNumber(key, parameter)
-        case let .colorLuminance(band):
+        case let .parameter(spec):
+            setNumber(key, spec)
+        case let .colorLuminance(spec):
             if isBlackAndWhite {
                 ignore(key, Note.luminanceInBlackAndWhite)
             } else {
-                setNumber(key, band.luminanceParameter)
+                setNumber(key, spec)
             }
-        case let .grayMix(band):
+        case let .grayMix(spec):
             if isBlackAndWhite {
-                setNumber(key, band.luminanceParameter, approximated: Note.grayMix)
+                setNumber(key, spec, approximated: Note.grayMix)
             } else {
                 ignore(key, Note.grayMixInColor)
             }
@@ -108,8 +119,8 @@ struct LightroomPresetConverter {
             setTreatment(key)
         case .whiteBalance:
             setWhiteBalance(key)
-        case let .kelvin(parameter):
-            setKelvin(key, parameter)
+        case let .kelvin(spec):
+            setKelvin(key, spec)
         case .incremental:
             setIncremental(key)
         case let .pointCurve(channel):
@@ -125,7 +136,7 @@ struct LightroomPresetConverter {
 
     // MARK: - Treatment and white balance
 
-    private static let whiteBalanceModes: [String: WhiteBalanceMode] = [
+    static let whiteBalanceModes: [String: WhiteBalanceMode] = [
         "As Shot": .asShot, "Auto": .auto, "Daylight": .daylight, "Cloudy": .cloudy, "Shade": .shade,
         "Tungsten": .tungsten, "Fluorescent": .fluorescent, "Flash": .flash, "Custom": .custom,
     ]
@@ -144,11 +155,11 @@ struct LightroomPresetConverter {
         return mode
     }
 
-    private var hasKelvin: Bool {
+    var hasKelvin: Bool {
         settings.number("Temperature") != nil || settings.number("Tint") != nil
     }
 
-    private var hasIncremental: Bool {
+    var hasIncremental: Bool {
         settings.number("IncrementalTemperature") != nil || settings.number("IncrementalTint") != nil
     }
 
@@ -167,34 +178,39 @@ struct LightroomPresetConverter {
     }
 
     /// Temperature or Tint, for raw photos, unless the preset names a white balance.
-    private mutating func setKelvin(_ key: String, _ parameter: ParameterID) {
+    private mutating func setKelvin(_ key: String, _ spec: ParameterSpec) {
         if let mode = namedWhiteBalance {
             return ignore(key, Note.setByMode(mode))
         }
         guard let value = settings.number(key) else { return ignore(key, Note.unreadable) }
         whiteBalanceMode = .custom
         // A custom white balance takes a temperature or tint it doesn't list from the photo.
-        set(parameter, value, key: key, keepingDefault: true)
+        set(spec, value, key: key, keepingDefault: true)
     }
 
     /// Lightroom's relative white balance for rendered photos, as Red and Blue Shift when the
     /// preset has no Temperature or Tint.
-    private mutating func setIncremental(_ key: String) {
+    mutating func setIncremental(_ key: String) {
         if let mode = namedWhiteBalance {
             return ignore(key, Note.setByMode(mode))
         }
         if hasKelvin {
             return ignore(key, Note.kelvinUsed)
         }
+        shiftWhiteBalance(key)
+    }
+
+    /// Lightroom's relative white balance as Red and Blue Shift.
+    mutating func shiftWhiteBalance(_ key: String) {
         guard settings.number(key) != nil else { return ignore(key, Note.unreadable) }
         let temperature = settings.number("IncrementalTemperature") ?? 0
         let tint = settings.number("IncrementalTint") ?? 0
         // Warmer is more red and less blue; a magenta tint is more of both.
-        let shifts: [ParameterID: Double] = [.wbShiftRed: temperature + tint, .wbShiftBlue: tint - temperature]
-        for (parameter, shift) in shifts {
-            store(parameter, parameter.spec.clamp(shift))
+        let shifts = [(Spec.shiftRed, temperature + tint), (Spec.shiftBlue, tint - temperature)]
+        for (spec, shift) in shifts {
+            store(spec, spec.clamp(shift))
         }
-        let clamped = shifts.values.contains { abs($0) > 100 }
+        let clamped = shifts.contains { abs($0.1) > 100 }
         report(key, .approximated, clamped ? Note.incremental + " " + Note.clamped("±100") : Note.incremental)
     }
 
@@ -218,7 +234,7 @@ struct LightroomPresetConverter {
         guard let items = settings.list(key), items.count >= 2 else { return nil }
         var points: [CurvePoint] = []
         for item in items {
-            let coordinates = item.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            let coordinates = item.split(separator: ",").compactMap { CameraRawSettings.number(in: $0) }
             guard coordinates.count == 2, coordinates.allSatisfy({ (0 ... 255).contains($0) }) else { return nil }
             points.append(CurvePoint(x: coordinates[0] / 255, y: coordinates[1] / 255))
         }
@@ -242,12 +258,12 @@ struct LightroomPresetConverter {
 
     /// A Split Toning preset, from before Color Grading, renders as Lightroom renders one: with
     /// Blending at 100 (Adobe, "Introducing Color Grading", 2020).
-    private mutating func setSplitToningBlending() {
+    mutating func setSplitToningBlending() {
         let keys = settings.values.keys
         guard keys.contains(where: { $0.hasPrefix("SplitToning") }),
               !keys.contains(where: { $0.hasPrefix("ColorGrade") })
         else { return }
-        store(.gradeBlending, 100)
+        store(Spec.blending, 100)
         let after = entries.lastIndex { $0.setting.hasPrefix("SplitToning") }.map { $0 + 1 } ?? entries.endIndex
         entries.insert(
             Entry(setting: "ColorGradeBlending", outcome: .mapped, note: Note.splitToningBlending),
@@ -264,45 +280,65 @@ struct LightroomPresetConverter {
 
     // MARK: - Values and the report
 
-    private mutating func setNumber(_ key: String, _ parameter: ParameterID, approximated note: String? = nil) {
+    /// `note` says how the value is approximated; `remark` says something of a value it maps.
+    mutating func setNumber(
+        _ key: String,
+        _ spec: ParameterSpec,
+        approximated note: String? = nil,
+        remark: String? = nil,
+    ) {
         guard let value = settings.number(key) else { return ignore(key, Note.unreadable) }
-        set(parameter, value, key: key, note: note)
+        set(spec, value, key: key, note: note, remark: remark)
     }
 
-    private mutating func set(
-        _ parameter: ParameterID,
+    mutating func set(
+        _ spec: ParameterSpec,
         _ value: Double,
         key: String,
         note: String? = nil,
+        remark: String? = nil,
         keepingDefault: Bool = false,
     ) {
-        let spec = parameter.spec
         let clamped = spec.clamp(value)
-        store(parameter, clamped, keepingDefault: keepingDefault)
+        store(spec, clamped, keepingDefault: keepingDefault)
         if clamped != value {
             report(
                 key,
                 .approximated,
-                [note, Note.clamped(spec.formatted(clamped))].compactMap(\.self).joined(separator: " "),
+                [note, remark, Note.clamped(spec.formatted(clamped))].compactMap(\.self).joined(separator: " "),
             )
         } else {
-            report(key, note == nil ? .mapped : .approximated, note)
+            report(key, note == nil ? .mapped : .approximated, note ?? remark)
         }
     }
 
     /// Lists a value unless it is the default, which an included group's unlisted values take.
-    private mutating func store(_ parameter: ParameterID, _ value: Double, keepingDefault: Bool = false) {
-        if let group = RecipeSettingGroup(parameter: parameter) {
+    mutating func store(_ spec: ParameterSpec, _ value: Double, keepingDefault: Bool = false) {
+        if let group = RecipeSettingGroup(parameter: spec.id) {
             includes.insert(group)
         }
-        values[parameter] = keepingDefault || abs(value - parameter.spec.defaultValue) > 1e-9 ? value : nil
+        values[spec.id] = keepingDefault || abs(value - spec.defaultValue) > 1e-9 ? value : nil
     }
 
-    private mutating func report(_ key: String, _ outcome: LightroomImportReport.Outcome, _ note: String? = nil) {
-        entries.append(Entry(setting: key, outcome: outcome, note: note))
+    /// The parameters the converter sets itself, specified once.
+    enum Spec {
+        static let shiftRed = ParameterID.wbShiftRed.spec
+        static let shiftBlue = ParameterID.wbShiftBlue.spec
+        static let blending = ParameterID.gradeBlending.spec
+        static let lensProfile = ParameterID.lensProfile.spec
     }
 
-    private mutating func ignore(_ key: String, _ note: String) {
-        report(key, .ignored, note)
+    mutating func report(
+        _ key: String,
+        _ outcome: LightroomImportReport.Outcome,
+        _ note: String? = nil,
+        reason: LightroomImportReport.Reason? = nil,
+    ) {
+        entries.append(Entry(setting: key, outcome: outcome, note: note, reason: reason))
+    }
+
+    /// A photo's setting left out says why: a value that can't be read, unless `reason` says otherwise.
+    mutating func ignore(_ key: String, _ note: String, reason: LightroomImportReport.Reason? = nil) {
+        report(key, .ignored, note, reason: reason ?? (photo == nil ? nil : .unreadable))
     }
 }
