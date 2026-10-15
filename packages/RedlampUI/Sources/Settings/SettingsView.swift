@@ -56,7 +56,7 @@ public struct SettingsView: View {
                 FirmwareModelSettings(recipes: recipes)
             }
             Tab("About", systemImage: "info.circle") {
-                AboutSettings(checksForUpdates: checksForUpdates, showsWhatsNew: showsWhatsNew)
+                AboutSettings(checksForUpdates: checksForUpdates, showsWhatsNew: showsWhatsNew, engine: engine)
             }
         }
         .frame(width: 500)
@@ -190,6 +190,7 @@ private struct CommandPaletteThemeSettings: View {
 private struct AboutSettings: View {
     let checksForUpdates: Binding<Bool>?
     let showsWhatsNew: Binding<Bool>?
+    let engine: (any EditingEngine)?
     private let info = Bundle.main.infoDictionary ?? [:]
 
     var body: some View {
@@ -215,6 +216,10 @@ private struct AboutSettings: View {
                 .padding(.top, 10)
             Link("Support Redlamp", destination: SettingsView.supportURL)
                 .padding(.top, 4)
+            if let engine {
+                Button("Acknowledgements and Trademarks") { AcknowledgementsWindowController.show(engine: engine) }
+                    .buttonStyle(.link)
+            }
             if let copyright = info["NSHumanReadableCopyright"] as? String {
                 Text(copyright)
                     .font(.caption)

@@ -379,6 +379,9 @@ struct AppCommands: Commands {
             item(.showShortcuts)
             item(.testCamera)
             Divider()
+            Button(AcknowledgementsWindowController.menuTitle) {
+                AcknowledgementsWindowController.show(engine: model.engine)
+            }
             Button("Support Redlamp") { openURL(SettingsView.supportURL) }
         }
     }
