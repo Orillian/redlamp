@@ -3,9 +3,10 @@
 
 Every picture on the slides is Redlamp's own render of the raw, made here with the `redlamp` CLI, and
 the panels are drawn from the recipe's values, so what a slide says is what made the picture. The plan
-is plans/2026-10-11-edit-showcases.md in the private redlamp-social repository. There are two kinds:
-a film look (the default), six slides with the raw in four of Redlamp's film looks, and an edit flow,
-the edit shown panel by panel.
+is plans/2026-10-11-edit-showcases.md in the private redlamp-social repository. There are three kinds:
+a film look (the default), six slides with the raw in four of Redlamp's film looks; an edit flow,
+the edit shown panel by panel; and a colour hunt, many raws, a slide of them for each colour in one of
+Redlamp's recipes (plans/2026-10-14-colour-hunt.md).
 
     video/scripts/showcase.py ~/src/redlamp-social/work/showcases/s01
 
@@ -42,6 +43,25 @@ with their values, then the finished photo and the call to action, at most ten s
      "stepFrameTop": 0.5,                  the step slides' frameTop, when the panels need the photo higher
      "caption": ..., "hashtags": [...], "alt": [...], "post": ...}
 
+A colour hunt's has "kind": "colour" and no raw or recipe: a slide per colour, each a 3 x 3 grid of
+eight photos in its recipe around a card naming the colour and the recipe, then the recipes' cards, one
+photo before and after a click on a recipe, and the call to action. Every photo is rendered with
+`redlamp recipe render`, which applies a recipe as a click in the Recipes panel does, from a copy of the
+recipe that also sets the photo's exposure:
+
+    {"kind": "colour", "folder": "~/src/redlamp-social/photos/rpu-cc0",   the raws, named from here
+     "exposures": {"DSC01234.ARW": 0.4, ...},     each photo's exposure, in stops
+     "whiteBalance": "asShot",             optional: the photo's As Shot where a recipe sets Auto
+     "slides": [{"title": "RED", "recipe": "redlamp/camera/snapshot-negative",
+                 "card": ["DSC01234.ARW", 0.5, 0.5, 1.2],     the centre card's photo and window
+                 "tiles": [["DSC01235.ARW", 0.5, 0.5, 1.0], ...]}, ...],   eight, in reading order;
+                                           a window is its centre (shares of the photo) and its zoom
+     "cards": ["redlamp/camera/snapshot-negative", ...],      the recipes whose cards are shown
+     "apply": {"photo": "DSC01234.ARW", "recipe": "redlamp/camera/nostalgic-summer",
+               "window": [0.5, 0.5, 1.0]},
+     "caption": "One sentence on the photos.", "notes": ["A paragraph after the colours' recipes.", ...],
+     "trademarks": ..., "hashtags": [...], "alt": [...], "post": ...}
+
 The folder is the showcase's work folder, ~/src/redlamp-social/work/showcases/<id>/: it keeps `renders/`
 (the CLI's renders and the recipes that made them) and `contact.jpg`. The package the owner posts from,
 ~/src/redlamp-social/showcases/<id>/, gets `slide-1.jpg` onwards at 1080 x 1350, `caption.txt`, and
@@ -53,6 +73,7 @@ import json
 import math
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -68,6 +89,11 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 W, H = 1080, 1350
 MARGIN = 64
 RENDER_EDGE = 2048
+
+# The lines every caption carries after its own, as posts.json's `standard` has them.
+ABOUT = ["Redlamp is a free raw photo editor for Mac, with Lightroom's layout and shortcuts.",
+         "Download it at redlamp.app (link in bio).",
+         "Needs an Apple Silicon Mac with macOS 26. It's in early development."]
 
 PAPER = (243, 238, 232)
 WALL = (10, 7, 7)
@@ -926,9 +952,7 @@ def flow_caption(edit, spec, steps):
             items = [f"{group} {label} {value_text(key, values[key])}" for group, keys in groups for key, label in keys
                      if key in values and round(values[key], 2) != STEP_DEFAULTS.get(key, 0)]
         lines.append(f"{name}: " + ", ".join(items))
-    lines += ["", "Redlamp is a free raw photo editor for Mac, with Lightroom's layout and shortcuts.",
-              "Download it at redlamp.app (link in bio).",
-              "Needs an Apple Silicon Mac with macOS 26. It's in early development."]
+    lines += ["", *ABOUT]
     if spec.get("trademarks"):
         lines += ["", spec["trademarks"]]
     lines += ["", " ".join(spec["hashtags"])]
@@ -973,6 +997,199 @@ def flow_slides(raw, edit, spec, renders, layout_only):
     return slides, flow_caption(edit, spec, steps)
 
 
+# Colour hunts
+
+TILE = (W // 3, H // 3)
+# Click to apply fills the slide with a window of one render, closer than the photo's own 4:5 frame.
+HUNT_EDGE = 2560
+
+
+def bundled(recipe_id):
+    """A bundled recipe as the CLI shows it, with the Base Looks it embeds."""
+    out = subprocess.run([str(CLI), "recipe", "show", recipe_id], check=True, capture_output=True, text=True)
+    return json.loads(out.stdout)
+
+
+def at_exposure(recipe, exposure, as_shot, path):
+    """A copy of the recipe that also sets the photo's exposure: the edit that clicking it in the Recipes
+    panel and then setting Exposure leaves. With `as_shot`, a recipe that sets Auto white balance keeps the
+    photo's As Shot instead, as setting it back after the click does; its shift (wb.shift.*) stays. The copy
+    has an ID of its own, in lowercase, since redlamp/ is reserved for the bundled recipes."""
+    copy = json.loads(json.dumps(recipe))
+    copy["id"] = f"social/{path.stem.lower()}"
+    if "tone" not in copy["includes"]:
+        copy["includes"].append("tone")
+    copy["settings"].setdefault("values", {})["basic.exposure"] = exposure
+    if as_shot and copy["settings"].get("whiteBalance") == "auto":
+        copy["settings"]["whiteBalance"] = "asShot"
+    path.write_text(json.dumps(copy))
+    return path
+
+
+def render_name(photo, recipe_id):
+    """day-2/DSC01234.ARW in redlamp/camera/bright-slide renders as day-2__DSC01234--bright-slide.jpg;
+    with no recipe, as ...--none.jpg."""
+    stem = Path(photo).with_suffix("").as_posix().replace("/", "__")
+    return f"{stem}--{recipe_id.rsplit('/', 1)[-1] if recipe_id else 'none'}.jpg"
+
+
+def centred(photo, cx, cy, zoom, size):
+    """A window of the photo at the size's aspect, `zoom` times closer than the largest, centred at (cx, cy)
+    in shares of the photo where the photo's edges allow."""
+    aspect = size[0] / size[1]
+    w, h = (photo.height * aspect, photo.height) if photo.width / photo.height > aspect else \
+        (photo.width, photo.width / aspect)
+    w, h = w / zoom, h / zoom
+    x0 = min(max(cx * photo.width - w / 2, 0), photo.width - w)
+    y0 = min(max(cy * photo.height - h / 2, 0), photo.height - h)
+    return photo.resize(size, Image.LANCZOS, box=(x0, y0, x0 + w, y0 + h))
+
+
+def fitted(text, width, size, weight, tracking):
+    """The font at `size`, or as much smaller as the text needs to fit `width`."""
+    while size > 12 and text_width(text, font(size, weight), tracking) > width:
+        size -= 1
+    return font(size, weight)
+
+
+def centre_card(background, title, name):
+    """The colour slide's middle tile: a darkened, softened window of one of its photos under the title,
+    Redlamp's app icon and the recipe's name."""
+    tw, th = background.size
+    img = background.filter(ImageFilter.GaussianBlur(3))
+    img = Image.fromarray((np.asarray(img, np.float32) * 0.42).astype(np.uint8)).convert("RGBA")
+    icon = Image.open(ICON).convert("RGBA").resize((176, 176), Image.LANCZOS)
+    img.alpha_composite(icon, ((tw - 176) // 2, 150))
+    d = ImageDraw.Draw(img, "RGBA")
+    draw_text(d, (tw / 2, 104), title, fitted(title, tw - 44, 48, 700, 0.01), PAPER, tracking=0.01, anchor="ms")
+    draw_text(d, (tw / 2, th - 44), name, fitted(name, tw - 60, 27, 600, 0.05), PAPER + (225,), tracking=0.05,
+              anchor="ms")
+    return img.convert("RGB")
+
+
+def colour_slide(slide, photo, names):
+    img = Image.new("RGB", (W, H))
+    tiles = [centred(photo(name, slide["recipe"]), cx, cy, zoom, TILE) for name, cx, cy, zoom in slide["tiles"]]
+    name, cx, cy, zoom = slide["card"]
+    card = centred(photo(name, slide["recipe"]), cx, cy, zoom, TILE)
+    tiles.insert(4, centre_card(card, slide["title"], names[slide["recipe"]].upper()))
+    for i, tile in enumerate(tiles):
+        img.paste(tile, ((i % 3) * TILE[0], (i // 3) * TILE[1]))
+    return img
+
+
+def signed(value):
+    text = f"{abs(value):g}"
+    return "0" if value == 0 else (f"+{text}" if value > 0 else f"\u2212{text}")
+
+
+def card_rows(recipe):
+    """A camera recipe's card as Redlamp keeps it (`source.card`), with the Base Look it starts from."""
+    card = recipe["source"]["card"]
+    wb, grain = card["whiteBalance"], card.get("grain") or {}
+    mode = f"{round(wb['kelvin'])} K" if wb["mode"] == "kelvin" else wb["mode"].title()
+    red, blue = wb.get("shiftRed", 0), wb.get("shiftBlue", 0)
+    strength = grain.get("strength", "off")
+    return [("Base Look", recipe["baseLook"]["name"]), ("Dynamic range", card["dynamicRange"].upper()),
+            ("Highlight", signed(card["highlight"])), ("Shadow", signed(card["shadow"])),
+            ("Color", signed(card["color"])), ("Color Chrome", card.get("colorChrome", "off").title()),
+            ("FX Blue", card.get("chromeFxBlue", "off").title()),
+            ("Grain", "Off" if strength == "off" else f"{strength.title()}, {grain.get('size', 'small')}"),
+            ("White balance", f"{mode}, R{signed(red)} B{signed(blue)}" if red or blue else mode)]
+
+
+def recipe_cards(recipes):
+    img = Image.new("RGB", (W, H), WALL)
+    d = ImageDraw.Draw(img, "RGBA")
+    draw_text(d, (W / 2, 116), "THE RECIPE CARDS", font(56, 700), PAPER, tracking=0.02, anchor="ms")
+    draw_text(d, (W / 2, 166), "CAMERA RECIPES", font(24, 600), PAPER + (170,), tracking=0.2, anchor="ms")
+    cw, ch, gx, gy, top = 470, 340, 36, 30, 214
+    x0 = (W - 2 * cw - gx) // 2
+    label, value, head = font(22, 500), font(22, 600), font(27, 700)
+    for i, recipe in enumerate(recipes):
+        x, y = x0 + (i % 2) * (cw + gx), top + (i // 2) * (ch + gy)
+        d.rounded_rectangle((x, y, x + cw, y + ch), 22, fill=PANEL)
+        draw_text(d, (x + 30, y + 52), recipe["name"].upper(), head, PAPER, tracking=0.03)
+        for j, (key, text) in enumerate(card_rows(recipe)):
+            yy = y + 94 + j * 27
+            draw_text(d, (x + 30, yy), key, label, white(LABEL))
+            draw_text(d, (x + cw - 30, yy), text, value, white(VALUE), anchor="rs")
+    return img
+
+
+def click_to_apply(before, after, at, name):
+    """One photo without a recipe on the left and with it on the right, under CLICK TO APPLY / IN REDLAMP;
+    `at` is the window's centre and zoom."""
+    img = centred(before, *at, (W, H))
+    img.paste(centred(after, *at, (W, H)).crop((W // 2, 0, W, H)), (W // 2, 0))
+    img = shade(img, top=600, bottom=260, strength=0.8)
+    d = ImageDraw.Draw(img, "RGBA")
+    d.line((W // 2, MARGIN + 160, W // 2, H), fill=PAPER + (230,), width=3)
+    draw_text(d, (W / 2, MARGIN + 64), "CLICK TO APPLY", font(62, 700), PAPER, tracking=0.02, anchor="ms")
+    draw_text(d, (W / 2, MARGIN + 116), "IN REDLAMP", font(30, 600), PAPER, tracking=0.2, anchor="ms")
+    f = font(28, 650)
+    label_pill(img, (MARGIN - 16, H - MARGIN - 40), "NO RECIPE", f)
+    label_pill(img, (W - MARGIN + 16, H - MARGIN - 40), name, f, anchor="r")
+    return img
+
+
+def colour_caption(spec, names):
+    """The caption's sentence, a line per colour naming its recipe, the notes, then the lines every caption
+    carries."""
+    lines = [spec["caption"], ""]
+    lines += [f"{s['title'][0]}{s['title'][1:].lower()}: {names[s['recipe']]}" for s in spec["slides"]]
+    for note in spec.get("notes", []):
+        lines += ["", note]
+    lines += ["", *ABOUT]
+    if spec.get("trademarks"):
+        lines += ["", spec["trademarks"]]
+    lines += ["", " ".join(spec["hashtags"])]
+    return "\n".join(lines) + "\n"
+
+
+def colour_slides(spec, renders, layout_only):
+    folder = Path(spec["folder"]).expanduser()
+    as_shot = spec.get("whiteBalance") == "asShot"
+    apply = spec["apply"]
+    ids = dict.fromkeys([s["recipe"] for s in spec["slides"]] + spec["cards"] + [apply["recipe"]])
+    recipes = {recipe_id: bundled(recipe_id) for recipe_id in ids}
+    names = {recipe_id: recipe["name"] for recipe_id, recipe in recipes.items()}
+    wanted = {(apply["photo"], None), (apply["photo"], apply["recipe"])}
+    for s in spec["slides"]:
+        wanted |= {(s["card"][0], s["recipe"])} | {(tile[0], s["recipe"]) for tile in s["tiles"]}
+
+    def make(job):
+        photo, recipe_id = job
+        out = renders / render_name(photo, recipe_id)
+        if layout_only and out.exists():
+            return
+        raw, exposure = folder / photo, spec["exposures"][photo]
+        if recipe_id is None:
+            args = ["render", str(raw), "--set", f"exposure={exposure:.2f}"]
+        else:
+            path = at_exposure(recipes[recipe_id], exposure, as_shot, out.with_suffix(".redrecipe"))
+            args = ["recipe", "render", str(raw), "--recipe", str(path)]
+        subprocess.run([str(CLI), *args, "-o", str(out), "--size", str(HUNT_EDGE)], check=True, capture_output=True)
+        print(f"rendered {out.name}")
+
+    with ThreadPoolExecutor(3) as pool:
+        list(pool.map(make, sorted(wanted, key=lambda job: (job[0], job[1] or ""))))
+    opened = {}
+
+    def photo(name, recipe_id):
+        path = renders / render_name(name, recipe_id)
+        if path not in opened:
+            opened[path] = Image.open(path).convert("RGB")
+        return opened[path]
+
+    slides = [colour_slide(s, photo, names) for s in spec["slides"]]
+    slides.append(recipe_cards([recipes[recipe_id] for recipe_id in spec["cards"]]))
+    slides.append(click_to_apply(photo(apply["photo"], None), photo(apply["photo"], apply["recipe"]),
+                                 apply["window"], names[apply["recipe"]].upper()))
+    slides.append(call_to_action())
+    return slides, colour_caption(spec, names)
+
+
 # Caption
 
 
@@ -988,10 +1205,7 @@ def caption(recipe, spec, best_name):
     for title, rows in other_sections(values):
         lines.append(f"{title}: " + ", ".join(f"{label} {text}" for label, text in rows))
     lines.append(f"Film look on slide 5: {best_name}")
-    lines += ["", "Redlamp is a free raw photo editor for Mac, with Lightroom's layout and shortcuts.",
-              "Download it at redlamp.app (link in bio).",
-              "Needs an Apple Silicon Mac with macOS 26. It's in early development.", "",
-              spec["trademarks"], "", " ".join(spec["hashtags"])]
+    lines += ["", *ABOUT, "", spec["trademarks"], "", " ".join(spec["hashtags"])]
     return "\n".join(lines) + "\n"
 
 
@@ -1033,13 +1247,17 @@ def main():
     args = parser.parse_args()
     folder = args.folder.expanduser().resolve()
     spec = json.loads((folder / "showcase.json").read_text())
-    raw = Path(os.path.expanduser(spec["raw"]))
-    edit = read_recipe(folder / spec["recipe"])
     renders = folder / "renders"
     renders.mkdir(exist_ok=True)
 
-    make = flow_slides if spec.get("kind", "look") == "flow" else look_slides
-    slides, text = make(raw, edit, spec, renders, args.layout_only)
+    kind = spec.get("kind", "look")
+    if kind == "colour":
+        slides, text = colour_slides(spec, renders, args.layout_only)
+    else:
+        raw = Path(os.path.expanduser(spec["raw"]))
+        edit = read_recipe(folder / spec["recipe"])
+        make = flow_slides if kind == "flow" else look_slides
+        slides, text = make(raw, edit, spec, renders, args.layout_only)
     if spec.get("alt") and len(spec["alt"]) != len(slides):
         raise SystemExit(f"{len(slides)} slides but {len(spec['alt'])} alt texts")
     package = PACKAGES / folder.name
