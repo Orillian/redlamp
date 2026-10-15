@@ -52,6 +52,8 @@ const nextConfig: NextConfig = {
         destination: `${site.github}/releases/latest/download/appcast.xml`,
         permanent: false,
       },
+      // The short address the ambassador campaign's posts show on screen.
+      { source: "/join", destination: "/ambassadors#apply", permanent: false },
     ];
   },
 };
