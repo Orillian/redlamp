@@ -21,6 +21,7 @@
             + AcknowledgementsScenarios.all
             + ImportScenarios.all
             + ImportRollbackScenarios.all
+            + FolderAccessScenarios.all
             + LightroomScenarios.all
             + LibraryPanelScenarios.all
             + HealthScenarios.all

@@ -7,7 +7,69 @@
     /// Lightroom Classic catalogs (LIB-29), from a catalog the run makes of photos of its own: never one Lightroom
     /// made, and never the run's working folder.
     enum LightroomScenarios {
-        static let all: [Scenario] = [importCatalog]
+        static let all: [Scenario] = [importCatalog, allowAccess]
+
+        /// A catalog's root folder Redlamp can't read, as each one is in the App Sandbox until it's chosen in a panel
+        /// (ARC-17): its permissions keep it from being read until the panel would have given access to it.
+        static let allowAccess = Scenario(
+            "library.lightroom-access",
+            "File › Import from Lightroom Classic… asks for access to a catalog's folder Redlamp can't read, with "
+                + "Allow Access…, and once it's allowed Import adds the folder and brings its photos' ratings",
+            claims: [.action(.importFromLightroom)],
+        ) { app in
+            let scratch = try SourcesScratch(
+                app, photos: ["Shoot/LR_0001.jpg", "Shoot/LR_0002.jpg", "Shoot/LR_0003.jpg"],
+            )
+            let tag = String(scratch.folder.lastPathComponent.suffix(8))
+            let catalog = try LightroomScratchCatalog.make(of: scratch.folder, tag: tag)
+            let root = scratch.folder.standardizedFileURL.path + "/"
+            let shut = scratch.folder.path
+            defer {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shut)
+                try? app.main { _ in LightroomWindowController.current?.close() }
+                scratch.remove(app)
+                try? FileManager.default.removeItem(at: catalog.deletingLastPathComponent())
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: shut)
+            try app.main { model in model.showLibrary(.grid) }
+            try app.choose(.importFromLightroom)
+            try app.wait("the Lightroom Classic window", timeout: 30) { _ in
+                LightroomWindowController.current?.window?.isVisible == true
+            }
+            try app.inLightroomWindow { $0.choose(catalog: catalog) }
+            try app.wait("the catalog's report", timeout: 60) { _ in
+                LightroomWindowController.current?.isReported == true
+            }
+            let state = try app.inLightroomWindow { $0.report?.roots.first?.state }
+            try app.expect(state == .needsAccess, "the folder Redlamp can't read is \(String(describing: state))")
+            let button = try app.inLightroomWindow { $0.button("lightroom.locate.0") }
+            try app.expect(
+                button?.title == "Allow Access…" && button?.shown == true && button?.enabled == true,
+                "the folder's button: \(String(describing: button))",
+            )
+
+            // Allow Access…'s panel can't be driven: the folder it would give access to is handed to the window.
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shut)
+            try app.inLightroomWindow { $0.locate(root, at: scratch.folder) }
+            try app.wait("the folder ready to add", timeout: 60) { _ in
+                guard let window = LightroomWindowController.current, window.isReported else { return false }
+                return window.report?.roots.first?.state == .notInLibrary
+            }
+            try app.clickInLightroomWindow("lightroom.import")
+            try app.wait("the import", timeout: 180) { _ in LightroomWindowController.current?.isImported == true }
+            let outcome = try app.inLightroomWindow { window in
+                window.outcome.map { "\($0.record.photos) \($0.skipped.count)" } ?? (window.problem ?? "nothing")
+            }
+            try app.expect(outcome == "3 0", "imported: \(outcome)")
+            try app.expect(
+                try app.main { model in model.library.root(containing: scratch.folder) != nil },
+                "the folder allowed is in Folders",
+            )
+            let rating = SidecarStore(locator: .besidePhotos).load(for: scratch.photo(scratch.names[0]))?.metadata?
+                .rating
+            try app.expect(rating == 5, "the first photo's rating: \(String(describing: rating))")
+            app.covered(.action(.importFromLightroom), via: .menu)
+        }
 
         static let importCatalog = Scenario(
             "library.lightroom",
