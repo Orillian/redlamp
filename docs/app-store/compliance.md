@@ -22,10 +22,10 @@ A row that needs a fix and also waits on a decision whose answer settles whether
 | --- | --- | --- | --- | --- | --- | --- |
 | 1. App Review Guidelines | 27 | 38 | 18 | 123 | 2 | 208 |
 | 2. App Store Connect | 1 | 22 | 9 | 6 | 2 | 40 |
-| 3. Technical checks | 7 | 27 | 2 | 2 | 5 | 43 |
+| 3. Technical checks | 8 | 26 | 2 | 2 | 5 | 43 |
 | 4. Apple's trademarks | 0 | 12 | 0 | 0 | 0 | 12 |
-| 5. Legal duties of a sale | 5 | 12 | 13 | 2 | 3 | 35 |
-| All | 40 | 111 | 42 | 133 | 12 | 338 |
+| 5. Legal duties of a sale | 9 | 8 | 13 | 2 | 3 | 35 |
+| All | 45 | 106 | 42 | 133 | 12 | 338 |
 
 ### Fixes, in the order to build them
 
@@ -372,7 +372,7 @@ Read on 15 October 2026 from App Store Connect Help and Apple's developer pages,
 | Outdated packs removed | Older versions' packs removed with `remove(assetPackWithID:)` (build audit §5.3) | Yes | Fix | `removeOutdated` deletes only directly downloaded folders (`ModelStore.swift:129`) | INF-07 |
 | Crash reports | Sandboxed apps read crash data through MetricKit (2.5.2) | Yes | Fix | `MacCrashReport.swift:9` reads `~/Library/Logs/DiagnosticReports` | ARC-17 |
 | Lens Profiles folder | Files people add by hand reach the container (build audit §4.6) | Yes | Fix | `LCPProfileLibrary.swift` keeps them in `~/Library/Application Support/Redlamp/Lens Profiles`, which moves into the container | ARC-17: "Add Lens Profiles…" and "Show in Finder" |
-| Licence texts in the bundle | Notices accompany binary distribution (section 5) | Yes | Fix | Only `Sam3AppPrompts-LICENSE.txt` ships | ARC-25 |
+| Licence texts in the bundle | Notices accompany binary distribution (section 5) | Yes | Compliant | Every component's licence ships in the app's resources, shown in Help › Acknowledgements… and Settings › About (ARC-25, f5c4b0520); tests fail when `LICENSES/` and the bundled copies drift apart | ARC-25 |
 
 ## 4. Apple's trademark rules for the listing
 
@@ -399,10 +399,10 @@ These rows are engineering assessments for the owner and counsel, not legal advi
 
 | Item | Requirement | Applies | Status | Evidence | Fix or decision |
 | --- | --- | --- | --- | --- | --- |
-| LibRaw (CDDL-1.0) | Recipients of the executable are told how to get the source (CDDL 3.1) | Yes | Fix | `LICENSES/CDDL-1.0.txt` in the repository; nothing in the app | ARC-25 |
-| libjxl, Highway, Brotli, skcms | Notices accompany binary distributions (BSD-3-Clause with libjxl's patent grant, BSD-3-Clause, MIT, BSD-3-Clause) | Yes | Fix | The texts are in `LICENSES/`; none ships | ARC-25 |
-| MLX and Swift Numerics | MIT and Apache-2.0 notices | Yes | Fix | Not in the app | ARC-25 |
-| Redlamp's MPL-2.0 | Executables tell recipients where the source is (MPL-2.0 §3.2) | Yes | Fix | No source offer in the app | ARC-25 |
+| LibRaw (CDDL-1.0) | Recipients of the executable are told how to get the source (CDDL 3.1) | Yes | Compliant | Its CDDL-1.0 text, copyright notice and a link to the source of the fork at the vendored commit, in Help › Acknowledgements… and Settings › About (ARC-25, f5c4b0520) | ARC-25 |
+| libjxl, Highway, Brotli, skcms | Notices accompany binary distributions (BSD-3-Clause with libjxl's patent grant, BSD-3-Clause, MIT, BSD-3-Clause) | Yes | Compliant | Each text, with libjxl's patent grant, in Help › Acknowledgements… and Settings › About (ARC-25, f5c4b0520) | ARC-25 |
+| MLX and Swift Numerics | MIT and Apache-2.0 notices | Yes | Compliant | MLX Swift with what it bundles (MLX, MLX C, metal-cpp, {fmt}, JSON for Modern C++, PocketFFT), and Swift Numerics, in Help › Acknowledgements… and Settings › About (ARC-25, f5c4b0520) | ARC-25 |
+| Redlamp's MPL-2.0 | Executables tell recipients where the source is (MPL-2.0 §3.2) | Yes | Compliant | The MPL-2.0 notice and a link to the source on GitHub, in Help › Acknowledgements… and Settings › About (ARC-25, f5c4b0520) | ARC-25 |
 | MPL-2.0 and the App Store's terms | How Apple's EULA, or a custom one, sits with MPL-2.0 | Yes | Decision | Not assessed by either audit | DEC-99 *(counsel)* |
 | Sparkle (MIT) | Its notice where it ships | No | Not applicable | Not in the App Store build (ARC-22) | ARC-25 lists it in the direct download |
 | SAM License | "You shall provide a copy of this Agreement with any such SAM Materials"; no uses subject to trade controls (`Sam3AppPrompts-LICENSE.txt:30-41`) | Yes | Compliant | The prompts' licence ships in `RedlampMasking.framework`, and `sam3.json` lists `LICENSE.txt` among the model's files (DEC-27) | — |
@@ -417,7 +417,7 @@ These rows are engineering assessments for the owner and counsel, not legal advi
 | Film stock and simulation names | Kodak, Ilford, CineStill and Fujifilm stock names, and Fujifilm's simulation names, as look names | Yes | Decision | `FilmLookCatalog.swift`, `BaseLooks.json`. Assessment: the highest-risk group; comparable App Store apps name stocks with a disclaimer; registrations not searched | DEC-94 *(counsel)* |
 | Film icons | Icons "in the stock's familiar colours, with its speed. Redlamp's own drawing, not the makers' packaging." (`FilmIcon.swift:5-6`) | Yes | Decision | Assessment: a trade-dress risk alongside the names | DEC-94 *(counsel)* |
 | Camera makers and models | Names of the cameras a file came from | Yes | Compliant | Nominative: the Metadata panel, the Camera Bench and LibRaw's camera table name the camera that made the file | — |
-| Trademark notices | A notice in About and in the description for the third-party names used | Yes | Fix | The README has one for Lightroom (`README.md:1320`); the app has none | ARC-25; ARC-27 for the description |
+| Trademark notices | A notice in About and in the description for the third-party names used | Yes | Fix | In the app: Help › Acknowledgements… and Settings › About (ARC-25, f5c4b0520), worded as DEC-94 settles; the description's notice waits on ARC-27 | ARC-27 for the description; DEC-94 for the wording |
 | Warranty of non-infringement | The seller warrants that nothing infringes "any patent, copyright, trademark, trade secret or other intellectual property" (DPLA Schedule 2, §5.1(b)) | Yes | Decision | As the rows above | DEC-89, DEC-93 and DEC-94 *(counsel)* |
 | EU AI Act, Article 50(2) | Providers of systems generating synthetic images mark outputs "in a machine-readable format and detectable as artificially generated or manipulated", applying since 2 August 2026 | Yes, in EU storefronts | Decision | Generative Remove (RM-10) runs on the Mac; INF-11 §6.5 read that Redlamp may be its provider; Content Credentials export (RM-03) is not started | DEC-100 *(counsel)*: RM-03 before the EU storefronts open |
 | Generated content labelled | The generated region is labelled as generated (DEC-23) | Yes | Compliant | `Label("Generated fill", …)` (`HealToolPanel.swift:192`) | — |
