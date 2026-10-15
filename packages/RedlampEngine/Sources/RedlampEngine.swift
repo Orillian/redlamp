@@ -118,6 +118,8 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
     let retouch: RetouchStage
     let masks: MaskResources
     private let baseLooks: BaseLookRegistry
+    /// The photographer's Adobe camera profiles, when the engine reads them.
+    private let profileLooks: CameraProfileLooks?
     let stacks: FocusStackCache
     /// The stages that undo what they recorded for a command buffer that came to nothing.
     private let rollbacks: [any CommandBufferRollback]
@@ -132,9 +134,12 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
     }
 
     /// An engine that decodes photos with `decoder`, such as the Mac app's sandboxed decode service,
-    /// and corrects raws that carry no lens correction with the user's `lensProfiles`.
-    public convenience init(decoder: any ImageDecoding, lensProfiles: LCPProfileLibrary? = nil) throws {
-        try self.init(stillTile: 2048, decoder: decoder, lensProfiles: lensProfiles)
+    /// corrects raws that carry no lens correction with the user's `lensProfiles`, and renders edits
+    /// in the photographer's Adobe camera profiles from `cameraProfiles` (TON-51, TON-52).
+    public convenience init(
+        decoder: any ImageDecoding, lensProfiles: LCPProfileLibrary? = nil, cameraProfiles: CameraProfileLibrary? = nil,
+    ) throws {
+        try self.init(stillTile: 2048, decoder: decoder, lensProfiles: lensProfiles, cameraProfiles: cameraProfiles)
     }
 
     init(
@@ -142,6 +147,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         stackCache: URL = FocusStackCache.defaultRoot,
         decoder: any ImageDecoding = InProcessDecoder(),
         lensProfiles: LCPProfileLibrary? = nil,
+        cameraProfiles: CameraProfileLibrary? = nil,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = { ProcessInfo.processInfo.thermalState },
     ) throws {
         self.stillTile = stillTile
@@ -171,6 +177,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         retouch = RetouchStage(device: device, kernels: kernels, queue: queue)
         masks = try MaskResources(device: device, kernels: kernels)
         baseLooks = try BaseLookRegistry(device: device)
+        profileLooks = cameraProfiles.map { CameraProfileLooks(library: $0, device: device) }
         rollbacks = [detailStage, retouch, masks]
 
         let stacks = FocusStackCache(device: device, kernels: kernels, root: stackCache, decoder: decoder)
@@ -234,6 +241,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
             release(keeping: built)
         }
         registerEmbeddedLook(built)
+        registerProfileLooks(for: built)
         warmIfWanted(built)
         return built.info
     }
@@ -537,8 +545,8 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
             masks: maskBindings,
         ) : nil
         var inputs = DevelopParameters.make(
-            recipe: recipe, session: session, baseLook: baseLooks.resolve(recipe.baseLook), outputSize: size,
-            region: region, encoding: encoding,
+            recipe: recipe, session: session, baseLook: resolveBaseLook(recipe.baseLook, session: session),
+            outputSize: size, region: region, encoding: encoding,
             showClipping: showClipping, maskOverlay: maskOverlay, maskOverlayColor: maskOverlayColor,
             maskOverlayStyle: maskOverlayStyle, maskOverlayOpacity: maskOverlayOpacity, masks: maskBindings,
             visualizePointColor: visualizePointColor, pointColorCoverage: pointColorCoverage,
@@ -564,8 +572,8 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
             encoder.setTexture(maskBindings.guide ?? masks.emptyGuide, index: 7)
             encoder.setTexture(maskBindings.edges ?? masks.emptyEdges, index: 14)
             encoder.setTexture(maskBindings.colors ?? masks.emptyEdges, index: 15)
-            encoder.setTexture(session.hueSatMaps?.cool ?? baseLooks.identity, index: 9)
-            encoder.setTexture(session.hueSatMaps?.warm ?? baseLooks.identity, index: 10)
+            encoder.setTexture(inputs.hueSatMaps?.cool ?? baseLooks.identity, index: 9)
+            encoder.setTexture(inputs.hueSatMaps?.warm ?? baseLooks.identity, index: 10)
             encoder.setTexture(session.gainTableMap?.texture ?? baseLooks.identity, index: 11)
             encoder.setTexture(session.toneBase, index: 12)
             encoder.setTexture(session.refinedHaze, index: 13)
@@ -601,8 +609,9 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         let session = try revisions.session(for: recipe, base: session)
         guard let encoder = commands.makeComputeCommandEncoder() else { throw EngineError.gpuUnavailable }
         var inputs = DevelopParameters.make(
-            recipe: recipe, session: session, baseLook: baseLooks.resolve(recipe.baseLook), outputSize: size,
-            region: region, encoding: .linear, showClipping: false, maskOverlay: nil, maskOverlayColor: .red,
+            recipe: recipe, session: session, baseLook: resolveBaseLook(recipe.baseLook, session: session),
+            outputSize: size, region: region, encoding: .linear, showClipping: false, maskOverlay: nil,
+            maskOverlayColor: .red,
         )
         // Mosaics clip where highlight reconstruction says they did; linear raws were clamped at 1.
         // Both just below, so values rounded to half floats still count.
@@ -818,6 +827,45 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         if let look = session.embeddedLook {
             baseLooks.register(look)
         }
+    }
+
+    // MARK: - Adobe camera profiles
+
+    public func cameraProfileLooks() async -> [CameraProfileLook] {
+        guard let session = currentSession() else { return [] }
+        return registerProfileLooks(for: session, refresh: true).map(\.descriptor)
+    }
+
+    public func setChosenCameraProfiles(_ urls: [URL]) {
+        guard let profileLooks else { return }
+        profileLooks.library.setChosen(urls)
+        profileLooks.invalidate()
+    }
+
+    public func cameraProfileIssue(_ url: URL) async -> String? {
+        guard let profileLooks else { return "can't be read" }
+        return profileLooks.library.issue(with: url)
+    }
+
+    /// Makes the photo's camera's Adobe looks renderable: those found for the camera before, unless
+    /// `refresh` lists the folders again.
+    @discardableResult
+    private func registerProfileLooks(for session: ImageSession, refresh: Bool = false) -> [CameraProfileLooks.Entry] {
+        guard session.isRaw, let profileLooks else { return [] }
+        let entries = profileLooks.looks(make: session.info.make, model: session.info.model, refresh: refresh)
+        for entry in entries {
+            baseLooks.register(entry.look)
+        }
+        return entries
+    }
+
+    /// The edit's look, after making its photo's Adobe looks renderable if it names one the
+    /// engine hasn't seen, such as a photo exported without being opened.
+    func resolveBaseLook(_ reference: BaseLookReference, session: ImageSession) -> BaseLookRegistry.Resolved {
+        if reference.isAdobeProfile, !baseLooks.canRender(reference) {
+            registerProfileLooks(for: session.photo)
+        }
+        return baseLooks.resolve(reference)
     }
 }
 

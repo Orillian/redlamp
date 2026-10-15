@@ -80,7 +80,7 @@ func run(_ arguments: [String]) async throws {
     let command = arguments[0]
     let input = URL(fileURLWithPath: arguments[1])
     RedlampEngine.register(generativeFiller: { FluxFiller(model: $0) })
-    let engine = try RedlampEngine(decoder: InProcessDecoder(), lensProfiles: .user)
+    let engine = try RedlampEngine(decoder: InProcessDecoder(), lensProfiles: .user, cameraProfiles: .user)
     let clock = ContinuousClock()
 
     let openStart = clock.now

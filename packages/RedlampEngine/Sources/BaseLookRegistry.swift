@@ -16,7 +16,20 @@ final class BaseLookRegistry: @unchecked Sendable {
         /// False when the edit's look isn't registered and renders without it.
         var isAvailable: Bool
         var tableSpace: LookTableSpace = .displayRec2020
+        /// An Adobe profile's calibration, which renders in place of the camera's (TON-51).
+        var calibration: ProfileCalibration?
+        /// Whether the table holds the look at the edit's Amount, so it applies whole.
+        var amountInTable = false
     }
+
+    /// An Adobe profile's look and its tables baked so far, by whole Amount, most recent last.
+    private struct ProfileEntry {
+        var look: AdobeProfileLook
+        var tables: [(amount: Int, table: LookTable)] = []
+    }
+
+    /// Bakes kept for each Adobe look: an Amount drag bakes one for each step.
+    static let bakesKept = 6
 
     private struct Key: Hashable {
         var id: String
@@ -61,6 +74,7 @@ final class BaseLookRegistry: @unchecked Sendable {
     private let device: any MTLDevice
     private let lock = NSLock()
     private var entries: [Key: Entry] = [:]
+    private var profiles: [Key: ProfileEntry] = [:]
     private var serials: UInt64 = 0
     private var textures: [String: any MTLTexture] = [:]
     /// Least recently used first.
@@ -106,6 +120,17 @@ final class BaseLookRegistry: @unchecked Sendable {
         }
     }
 
+    /// Makes an Adobe profile's look renderable. Its id names what renders, so registering it
+    /// again changes nothing.
+    func register(_ look: AdobeProfileLook) {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = Key(id: look.reference.id, version: look.reference.version)
+        guard profiles[key] == nil else { return }
+        profiles[key] = ProfileEntry(look: look)
+        registrations &+= 1
+    }
+
     /// Call with `lock` held.
     private func store(_ entry: Entry, key: Key) {
         if let current = entries[key], !current.isUnreadable, current.describesSameLook(as: entry) {
@@ -127,6 +152,9 @@ final class BaseLookRegistry: @unchecked Sendable {
         }
         lock.lock()
         defer { lock.unlock() }
+        if reference.isAdobeProfile {
+            return profiles[Key(id: reference.id, version: reference.version)] != nil
+        }
         guard let entry = entries[Key(id: reference.id, version: reference.version)] else { return false }
         return !entry.isUnreadable && entry.contentHash == reference.contentHash
     }
@@ -136,6 +164,9 @@ final class BaseLookRegistry: @unchecked Sendable {
     func resolve(_ reference: BaseLookReference) -> Resolved {
         if let builtIn = BuiltInBaseLook(reference: reference) {
             return Resolved(parameters: builtIn.parameters, table: nil, tableSize: 0, isAvailable: true)
+        }
+        if reference.isAdobeProfile {
+            return resolveProfile(reference)
         }
         let key = Key(id: reference.id, version: reference.version)
         lock.lock()
@@ -172,6 +203,50 @@ final class BaseLookRegistry: @unchecked Sendable {
             parameters: look.parameters, table: texture, tableSize: table.size, isAvailable: true,
             tableSpace: table.space,
         )
+    }
+
+    /// An Adobe look with its calibration, baked at the edit's whole Amount when the Amount is in
+    /// the table (outside `lock`). Where the profile isn't on this Mac, Redlamp's look of the same
+    /// name stands in (DEC-85).
+    private func resolveProfile(_ reference: BaseLookReference) -> Resolved {
+        let key = Key(id: reference.id, version: reference.version)
+        lock.lock()
+        let entry = profiles[key]
+        lock.unlock()
+        guard let entry else {
+            let standIn = reference.adobeStandIn ?? .color
+            return Resolved(parameters: standIn.parameters, table: nil, tableSize: 0, isAvailable: false)
+        }
+        let look = entry.look
+        let amount = look.amountInTable ? Int(reference.amount.rounded()) : 100
+        var resolved = Resolved(
+            parameters: look.parameters, table: nil, tableSize: 0, isAvailable: true, tableSpace: .sceneLog,
+            calibration: look.calibration, amountInTable: look.amountInTable,
+        )
+        guard look.bake.hasTable else { return resolved }
+        lock.lock()
+        let kept = profiles[key]?.tables.first { $0.amount == amount }?.table
+        lock.unlock()
+        guard let table = kept ?? look.bake.table(amount: Double(amount)) else {
+            resolved.isAvailable = false
+            return resolved
+        }
+        lock.lock()
+        if kept == nil, var current = profiles[key] {
+            current.tables.removeAll { $0.amount == amount }
+            current.tables.append((amount, table))
+            current.tables.removeFirst(max(current.tables.count - Self.bakesKept, 0))
+            profiles[key] = current
+        }
+        let cached = cachedTexture(table.contentHash)
+        lock.unlock()
+        guard let texture = cached ?? upload(table) else {
+            resolved.isAvailable = false
+            return resolved
+        }
+        resolved.table = texture
+        resolved.tableSize = table.size
+        return resolved
     }
 
     /// Reads `entry`'s look without holding `lock`, keeping it unless the look was registered

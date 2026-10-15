@@ -21,6 +21,10 @@ public struct RGBPrimaries: Sendable, Hashable {
     public static let rec2020 = RGBPrimaries(
         red: [0.708, 0.292], green: [0.170, 0.797], blue: [0.131, 0.046], white: d65,
     )
+    /// Adobe RGB (1998), one of the spaces Adobe's RGB tables work in.
+    public static let adobeRGB = RGBPrimaries(
+        red: [0.640, 0.330], green: [0.210, 0.710], blue: [0.150, 0.060], white: d65,
+    )
     /// ROMM RGB, the space DNG camera profiles' tables work in; its white is D50, so its
     /// `toXYZ` gives D50-relative XYZ.
     public static let proPhoto = RGBPrimaries(

@@ -37,7 +37,7 @@ struct RedlampApp: App {
         let engine: any EditingEngine
         do {
             // Photos decode in the sandboxed decode service, so a damaged file can't crash the editor.
-            engine = try RedlampEngine(decoder: DecodeServiceClient(), lensProfiles: .user)
+            engine = try RedlampEngine(decoder: DecodeServiceClient(), lensProfiles: .user, cameraProfiles: .user)
         } catch {
             fatalError("Redlamp needs a Metal GPU: \(error.localizedDescription)")
         }
@@ -56,8 +56,16 @@ struct RedlampApp: App {
         let model = EditorModel(engine: engine, library: library)
         // Sync and Paste onto a selection open the other photos in an engine of their own, and the
         // library renders edited photos' thumbnails in another.
-        model.makeWorkerEngine = { try? RedlampEngine(decoder: DecodeServiceClient(), lensProfiles: .user) }
-        model.editRenders.makeEngine = { try? RedlampEngine(decoder: DecodeServiceClient(), lensProfiles: .user) }
+        model.makeWorkerEngine = { try? RedlampEngine(
+            decoder: DecodeServiceClient(),
+            lensProfiles: .user,
+            cameraProfiles: .user,
+        ) }
+        model.editRenders.makeEngine = { try? RedlampEngine(
+            decoder: DecodeServiceClient(),
+            lensProfiles: .user,
+            cameraProfiles: .user,
+        ) }
         if let layout = UserDefaults.standard.string(forKey: "compareLayout").flatMap(CompareLayout.init) {
             model.compareLayout = layout
         }

@@ -15,6 +15,8 @@ struct DevelopInputs {
     var components: [MaskComponentGPU]
     /// The Base Look's table; nil binds the identity table with the stage off.
     var lookTable: (any MTLTexture)?
+    /// The HueSatMaps the kernel blends: an Adobe look's profile's, else the photo's own.
+    var hueSatMaps: HueSatMaps?
     /// The lens profile's table (`kLensTableSize` entries), identity when there is none.
     var lensTable: [SIMD4<Float>] = LensTable.identity
     /// The masks' Curves tables, four of `DevelopParameters.maskCurveSize` entries for each mask that
@@ -94,10 +96,10 @@ enum DevelopParameters {
             parameters: (BuiltInBaseLook(reference: recipe.baseLook) ?? .color).parameters,
             table: nil, tableSize: 0, isAvailable: true,
         )
-        let look = baseLook.parameters.scaled(by: recipe.baseLook.amount)
+        let look = baseLook.parameters.scaled(by: baseLook.amountInTable ? 100 : recipe.baseLook.amount)
         if baseLook.table != nil {
             p.lookTable = SIMD4(
-                Float(recipe.baseLook.amount / 100), Float(baseLook.tableSize),
+                baseLook.amountInTable ? 1 : Float(recipe.baseLook.amount / 100), Float(baseLook.tableSize),
                 baseLook.tableSpace == .sceneLog ? 1 : 0, 0,
             )
         }
@@ -111,12 +113,18 @@ enum DevelopParameters {
             0,
         )
 
-        p.setCameraToWorking(
-            Calibration.matrix(recipe).map { $0.floatMatrix * session.cameraToWorking(for: recipe) }
-                ?? session.cameraToWorking(for: recipe),
-        )
+        // An Adobe look brings its profile's matrices and HueSatMaps in place of the camera's (TON-51).
+        let profile = session.isRaw ? baseLook.calibration : nil
+        let cameraToWorking = profile?.cameraToWorking(for: recipe, session: session)
+            ?? session.cameraToWorking(for: recipe)
+        p.setCameraToWorking(Calibration.matrix(recipe).map { $0.floatMatrix * cameraToWorking } ?? cameraToWorking)
         p.calibration = SIMD4(Float(recipe[.calibrationShadowsTint] / 100), 0, 0, 0)
-        if recipe.processVersion >= 4, let maps = session.hueSatMaps {
+        if let profile {
+            if let maps = profile.maps {
+                p.hueSat = SIMD4(1, profile.hueSatWeight(for: recipe, session: session), maps.srgbValues ? 1 : 0, 0)
+                p.setWorkingToProPhoto(HueSatMaps.workingToProPhoto)
+            }
+        } else if recipe.processVersion >= 4, let maps = session.hueSatMaps {
             p.hueSat = SIMD4(1, session.hueSatWeight(for: recipe), maps.srgbValues ? 1 : 0, 0)
             p.setWorkingToProPhoto(HueSatMaps.workingToProPhoto)
         }
@@ -320,6 +328,7 @@ enum DevelopParameters {
             layers: layers.isEmpty ? [.empty] : layers,
             components: components.isEmpty ? [.empty] : components,
             lookTable: baseLook.table,
+            hueSatMaps: profile?.maps ?? session.hueSatMaps,
             lensTable: lensTable,
             maskCurves: curves.isEmpty ? [Float](repeating: 0, count: maskCurveSize) : curves,
             pointColor: pointColor.swatches.isEmpty ? [.empty] : pointColor.swatches,
