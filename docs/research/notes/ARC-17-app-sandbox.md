@@ -219,6 +219,8 @@ Steps 2 to 4 change nothing in how an edit renders and fit 0.3.3. Steps 5 and 6 
 2. **Both builds on one Mac.** Sandbox the direct download in the release the App Store build first ships, after the release that makes the bookmarks, so both share one container and settings and macOS asks once when switching *(lean)*; or give the App Store build its own bundle ID (reversing DEC-91), so the two keep apart and the App Store build ships sandboxed on its own schedule, with an import from the direct download's folder for people who switch.
 3. **Which arriving volumes the import window offers,** since it can't see `DCIM` first: ejectable volumes not yet granted or declined, with Not a Card remembered by UUID *(lean)*; or none by themselves, cards chosen with File › Import Photos….
 
+The owner chose the lean for each on 15 October 2026, and the plan goes ahead with them; ARC-17's row and DEC-91 record the answers.
+
 ## Sources
 
 All read on 15 October 2026.
