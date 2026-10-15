@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 // Vercel's Ignored Build Step (ignoreCommand in vercel.json), run in web/ before each build. It exits 0 to
-// skip the build and 1 to build. A commit is built only when something the site reads has changed since
-// the branch's last deployment: a file in web/ or an image sync-assets.mjs copies, or what the pages show
-// from the documents lib/repo.ts reads. Anything it can't settle is built.
+// skip the build and 1 to build. A commit is built at once when something the build compiles or copies has
+// changed since the branch's last deployment: a file in web/ or an image sync-assets.mjs copies. What the
+// pages show from the documents lib/repo.ts reads changes with most commits, so a commit that changes only
+// that is built once the last deployment is a day old. Anything it can't settle is built.
 
 import { execFileSync } from "node:child_process";
 import { parseCameras } from "../lib/cameras.ts";
 import { parseComparison } from "../lib/comparison.ts";
-import { parseLastUpdated, parseRoadmap, parseWorksToday } from "../lib/readme.ts";
+import { itemState, parseLastUpdated, parseRoadmap, parseWorksToday, phaseNumber } from "../lib/readme.ts";
 import type { RepoFile } from "../lib/repo.ts";
-import { parseTracker } from "../lib/tracker.ts";
+import { parseTracker, phaseCounts } from "../lib/tracker.ts";
 
 // What the build compiles or copies, as git pathspecs (the images are sync-assets.mjs's sources). Any change
-// to one is built.
+// to one is built. Vercel runs this script from the commit it decides about, so a change to it needs no build.
 const sources = [
   "web/",
+  ":(exclude)web/README.md",
+  ":(exclude)web/scripts/ignore-build.ts",
   ":(glob,icase)docs/images/*.png",
   ":(glob,icase)docs/images/*.jpg",
   ":(glob,icase)docs/images/*.jpeg",
@@ -23,11 +26,29 @@ const sources = [
   "docs/brand/logo/",
 ];
 
-// What the pages show from each document. A commit whose documents give the same views isn't built, so
-// anything else a page starts to show from one of them belongs in its view.
-const views: Record<RepoFile, (text: string) => unknown> = {
+// How old the last deployment must be, by its commit's date, before a commit that changes only what the
+// pages show from the documents is built.
+const documentDelay = 24 * 60 * 60 * 1000;
+
+// What the roadmap shows from the tracker (components/sections/Roadmap.tsx): each item's state and each
+// phase's counts. Which rows those are depends on the README.
+function roadmapWork(readme: string, tracker: string) {
+  const rows = parseTracker(tracker);
+  const status = (id: string) => rows.find((row) => row.id === id)?.status;
+  return parseRoadmap(readme).phases.map((phase) => {
+    const number = phaseNumber(phase.title);
+    return [
+      phase.items.map((item) => (item.done === null ? null : itemState(item, status))),
+      number === null ? null : phaseCounts(rows, number),
+    ];
+  });
+}
+
+// What the pages show from each document at a commit. A commit whose documents give the same views isn't
+// built, so anything else a page starts to show from one of them belongs in its view.
+const views: Record<RepoFile, (text: string, commit: string) => unknown> = {
   "README.md": (text) => [parseRoadmap(text), parseWorksToday(text), parseLastUpdated(text)],
-  "docs/research/research-tracker.md": parseTracker,
+  "docs/research/research-tracker.md": (text, commit) => roadmapWork(git("show", `${commit}:README.md`), text),
   "docs/lightroom-comparison.md": parseComparison,
   "docs/cameras.md": parseCameras,
   "docs/performance/metrics.json": (text) => text,
@@ -57,11 +78,15 @@ function present(commit: string): boolean {
 }
 
 const list = (names: string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+const hours = (ms: number) => {
+  const whole = Math.floor(ms / 3_600_000);
+  return whole < 1 ? "under an hour" : whole === 1 ? "an hour" : `${whole} hours`;
+};
 
 /** A document's view at a commit; one that's missing or doesn't parse differs from every other. */
 function view(file: RepoFile, commit: string): string {
   try {
-    return JSON.stringify(views[file](git("show", `${commit}:${file}`)));
+    return JSON.stringify(views[file](git("show", `${commit}:${file}`), commit));
   } catch {
     return `unreadable at ${commit}`;
   }
@@ -91,8 +116,13 @@ function decide(): { build: boolean; reason: string } {
   const source = changed.find((name) => !isDocument(name));
   if (source) return { build: true, reason: `${source} has changed ${since}` };
   const shown = changed.filter(isDocument).filter((name) => view(name, base) !== view(name, head));
-  if (shown.length) return { build: true, reason: `what the site shows from ${list(shown)} has changed ${since}` };
-  return { build: false, reason: `${list(changed)} changed ${since}, but not in what the site shows` };
+  if (!shown.length) return { build: false, reason: `${list(changed)} changed ${since}, but not in what the site shows` };
+  const elapsed = Date.now() - Number(git("show", "-s", "--format=%ct", base).trim()) * 1000;
+  const what = `what the site shows from ${list(shown)} has changed ${since}`;
+  if (elapsed < documentDelay) {
+    return { build: false, reason: `${what}, but that was committed ${hours(elapsed)} ago, and a change only to the documents waits a day` };
+  }
+  return { build: true, reason: `${what}, which was committed ${hours(elapsed)} ago` };
 }
 
 const { build, reason } = decide();
