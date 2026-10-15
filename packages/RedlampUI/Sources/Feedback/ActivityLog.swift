@@ -6,7 +6,9 @@ import Foundation
 /// It stays in memory and in the session's journal, never sent unless a report is, and what it
 /// writes itself never names a file: photos are Photo A, Photo B and so on, in the order they were
 /// opened, and their file names are kept apart for a report that asks for them. Messages it copies
-/// from the UI can mention one, so reports redact them.
+/// from the UI can mention one, so reports redact them. Turned off (`ActivityLogSetting`), it
+/// records nothing and forgets what it had; photos still get their aliases, which a report names
+/// them by, but the journal isn't told them.
 @MainActor
 public final class ActivityLog {
     public struct Event: Codable, Hashable, Sendable {
@@ -49,8 +51,22 @@ public final class ActivityLog {
     /// The folders the app shows: the open folder and the working set, to redact from a report.
     public var folders: [String] = [] {
         didSet {
-            if folders != oldValue {
+            if isOn, folders != oldValue {
                 journal?.folders(folders)
+            }
+        }
+    }
+
+    /// Off, nothing is recorded, and the events and the journal's activity are forgotten. Back on, the journal is told
+    /// the photos and folders again, for the next launch to redact a crash's report with.
+    public var isOn: Bool {
+        didSet {
+            guard isOn != oldValue else { return }
+            if isOn {
+                journal.map(fill)
+            } else {
+                events = []
+                journal?.forgetActivity()
             }
         }
     }
@@ -59,16 +75,8 @@ public final class ActivityLog {
     /// doesn't quit. What was recorded before it's set goes to it first.
     public var journal: SessionJournal? {
         didSet {
-            guard let journal else { return }
-            let first = appended - events.count
-            for (index, event) in events.enumerated() {
-                journal.record(event, seq: first + index)
-            }
-            for photo in photoNames {
-                journal.photo(PhotoName(alias: photo.alias, fileName: photo.fileName))
-            }
-            if !folders.isEmpty {
-                journal.folders(folders)
+            if isOn, let journal {
+                fill(journal)
             }
         }
     }
@@ -80,9 +88,32 @@ public final class ActivityLog {
     /// How many events have been added this session, the first of `events` among them.
     private var appended = 0
 
-    public init(capacity: Int = ActivityLog.defaultCapacity, now: @escaping () -> Date = Date.init) {
+    public init(
+        capacity: Int = ActivityLog.defaultCapacity, isOn: Bool = true, now: @escaping () -> Date = Date.init,
+    ) {
         self.capacity = capacity
+        self.isOn = isOn
         self.now = now
+    }
+
+    /// One that follows `setting`, turned on and off with it.
+    public convenience init(following setting: ActivityLogSetting) {
+        self.init(isOn: setting.isOn)
+        setting.onChange { [weak self] in self?.isOn = $0 }
+    }
+
+    /// Writes what the log holds to `journal`: its events, the photos and the folders.
+    private func fill(_ journal: SessionJournal) {
+        let first = appended - events.count
+        for (index, event) in events.enumerated() {
+            journal.record(event, seq: first + index)
+        }
+        for photo in photoNames {
+            journal.photo(PhotoName(alias: photo.alias, fileName: photo.fileName))
+        }
+        if !folders.isEmpty {
+            journal.folders(folders)
+        }
     }
 
     /// Adds an event. With `key`, it replaces the last event when that has the same key and is
@@ -93,6 +124,7 @@ public final class ActivityLog {
         replacing key: String? = nil,
         within window: TimeInterval = 2,
     ) {
+        guard isOn else { return }
         let time = now()
         defer { journal?.record(events[events.count - 1], seq: appended - 1) }
         if var last = events.last {
@@ -125,7 +157,9 @@ public final class ActivityLog {
         let alias = "Photo \(Self.letters(aliases.count))"
         aliases[url] = alias
         fileNames.append(url.lastPathComponent)
-        journal?.photo(PhotoName(alias: alias, fileName: url.lastPathComponent))
+        if isOn {
+            journal?.photo(PhotoName(alias: alias, fileName: url.lastPathComponent))
+        }
         return alias
     }
 

@@ -16,7 +16,7 @@ public final class EditorModel {
     public let engine: any EditingEngine
     public let canvas = CanvasController()
     /// What happened this session, for feedback reports.
-    public let activity = ActivityLog()
+    public let activity = ActivityLog(following: .shared)
     @ObservationIgnored private var activityRecorder: ActivityRecorder?
     @ObservationIgnored private var openStarted: ContinuousClock.Instant?
     /// Each photo's sidecar is read and written where `library.sidecars` places it.

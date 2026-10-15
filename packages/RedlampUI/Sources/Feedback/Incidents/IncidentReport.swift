@@ -120,15 +120,15 @@ extension PendingIncident {
 
 public extension FeedbackContext {
     /// What a report on a crash or a hang knows: the activity, photos and folders of the session it happened in, and
-    /// nothing of this one.
-    init(reporting pending: PendingIncident, now: Date = Date()) {
+    /// nothing of this one. `activityLog`: whether the activity log is on now; off, there's no activity.
+    init(reporting pending: PendingIncident, activityLog: Bool = true, now: Date = Date()) {
         self.init(
             captured: now,
             state: State(
                 tool: "", panels: [], zoom: "", beforeAfter: nil, selectedMask: nil, focusedSlider: nil,
                 folderPhotos: nil, selectedPhotos: 0, hidden: [],
             ),
-            activity: pending.activity, photos: pending.photos, folders: pending.folders,
+            activity: pending.activity, activityLog: activityLog, photos: pending.photos, folders: pending.folders,
             suggestion: pending.incident.featureID,
         )
     }
@@ -209,7 +209,7 @@ extension FeedbackReport {
             report: id, kind: kind, area: featureID, captured: context.captured,
             system: details.system ? system : nil,
             incident: details.incident ? pending.incident : nil,
-            activity: details.activity ? pending.activityBefore : nil,
+            activity: details.activity && context.activityLog ? pending.activityBefore : nil,
         )
         let encoder = JSONEncoder()
         // The redactor finds paths by their slashes.

@@ -7,7 +7,8 @@ import Synchronization
 /// names the process; then come the activity, the photos opened, the folders shown and the hangs,
 /// each line written as it happens, so a crash or a forced quit loses none of them; and a last
 /// line once the session has quit. A report on a crash or a hang takes its activity from it, and
-/// redacts with its photos and folders.
+/// redacts with its photos and folders. With the activity log off (`ActivityLogSetting`), it holds
+/// only the process, its hangs and the quit.
 public final class SessionJournal: Sendable {
     /// The process a journal is for, and the Mac it ran on.
     public struct Header: Codable, Sendable, Hashable {
@@ -170,6 +171,23 @@ public final class SessionJournal: Sendable {
         write(Line(quit: time)) { _ in }
     }
 
+    /// Rewrites the journal without its activity, photos and folders, as the activity log is turned off: what's left
+    /// is the process and its hangs, which tell a crash or a hang from a quit.
+    public func forgetActivity() {
+        state.withLock { state in
+            state.events = []
+            state.photos = []
+            state.folders = []
+            guard !rewrite(&state) else { return }
+            // Without room for the shorter copy, the journal itself is cut back to what it keeps.
+            guard ftruncate(state.descriptor, 0) == 0 else { return }
+            state.lines = 0
+            for line in [Line(header: header)] + state.hangs.map({ Line(hang: $0) }) {
+                Self.append(line, to: &state)
+            }
+        }
+    }
+
     private func write(_ line: Line, keeping keep: (inout State) -> Void) {
         state.withLock { state in
             keep(&state)
@@ -181,10 +199,10 @@ public final class SessionJournal: Sendable {
     }
 
     /// Replaces the journal with a shorter one holding what it keeps, renamed into place.
-    private func rewrite(_ state: inout State) {
+    @discardableResult private func rewrite(_ state: inout State) -> Bool {
         let temporary = url.deletingLastPathComponent().appending(path: ".\(url.lastPathComponent)")
         let descriptor = open(temporary.path, O_WRONLY | O_APPEND | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600)
-        guard descriptor >= 0 else { return }
+        guard descriptor >= 0 else { return false }
         var fresh = State(
             descriptor: descriptor, events: state.events, photos: state.photos, folders: state.folders,
             hangs: state.hangs,
@@ -198,10 +216,11 @@ public final class SessionJournal: Sendable {
         guard rename(temporary.path, url.path) == 0 else {
             close(descriptor)
             unlink(temporary.path)
-            return
+            return false
         }
         close(state.descriptor)
         state = fresh
+        return true
     }
 
     private static func append(_ line: Line, to state: inout State) {

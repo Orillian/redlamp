@@ -67,6 +67,8 @@ public struct FeedbackContext: Sendable {
     public var history: [String]
     public var historyIndex: Int
     public var activity: [ActivityLog.Event]
+    /// Whether the activity log was on; off, a report holds no activity and says so.
+    public var activityLog: Bool
     public var photos: [PhotoName]
     /// Folders the app knows about, for redaction.
     public var folders: [String]
@@ -81,8 +83,8 @@ public struct FeedbackContext: Sendable {
 
     public init(
         captured: Date, photo: Photo? = nil, edit: Edit? = nil, state: State, messages: [String] = [],
-        history: [String] = [], historyIndex: Int = 0, activity: [ActivityLog.Event] = [], photos: [PhotoName] = [],
-        folders: [String] = [], sidecar: Data? = nil, suggestion: String? = nil,
+        history: [String] = [], historyIndex: Int = 0, activity: [ActivityLog.Event] = [], activityLog: Bool = true,
+        photos: [PhotoName] = [], folders: [String] = [], sidecar: Data? = nil, suggestion: String? = nil,
     ) {
         self.captured = captured
         self.photo = photo
@@ -91,7 +93,8 @@ public struct FeedbackContext: Sendable {
         self.messages = messages
         self.history = history
         self.historyIndex = historyIndex
-        self.activity = activity
+        self.activity = activityLog ? activity : []
+        self.activityLog = activityLog
         self.photos = photos
         self.folders = folders
         self.sidecar = sidecar
@@ -118,6 +121,7 @@ public extension FeedbackContext {
             history: model.history.map(\.name),
             historyIndex: model.historyIndex,
             activity: model.activity.events,
+            activityLog: model.activity.isOn,
             photos: model.activity.photoNames.map { PhotoName(alias: $0.alias, fileName: $0.fileName) },
             folders: ([model.folder] + model.library.roots.map(\.url)).compactMap { $0?.path },
             sidecar: model.info == nil ? nil : try? sidecarEncoder.encode(model.sidecarToSave),

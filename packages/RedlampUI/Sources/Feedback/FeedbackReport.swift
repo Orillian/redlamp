@@ -68,7 +68,8 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
         public var system = true
         /// The open photo, its edit and its history.
         public var photo = true
-        /// What happened before the report, the editor's state and the messages on screen.
+        /// What happened before the report, from the activity log while it's on, the editor's state and the messages
+        /// on screen.
         public var activity = true
         public var log = true
         /// Off: photos are Photo A, Photo B.
@@ -297,6 +298,7 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
                 ("Photos selected", state.selectedPhotos > 1 ? "\(state.selectedPhotos)" : nil),
                 ("Hidden", state.hidden.isEmpty ? nil : state.hidden.joined(separator: ", ")),
                 ("On screen", context.messages.isEmpty ? nil : context.messages.joined(separator: " · ")),
+                ("Activity log", context.activityLog ? nil : "Off, so no activity is included"),
             ]))
         }
         if details.system {
@@ -446,7 +448,7 @@ extension FeedbackReport {
             historyIndex: details.photo ? context.historyIndex : nil,
             state: details.activity ? context.state : nil,
             messages: details.activity ? context.messages : nil,
-            activity: details.activity ? context.activity : nil,
+            activity: details.activity && context.activityLog ? context.activity : nil,
             log: details.log ? log : nil,
             photoNames: details.fileNames ? context.photos : nil,
         )

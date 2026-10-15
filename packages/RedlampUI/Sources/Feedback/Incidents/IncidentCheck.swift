@@ -36,6 +36,14 @@ public struct PendingIncident: Codable, Sendable, Hashable, Identifiable {
         self.folders = folders
         self.found = found
     }
+
+    /// It, as the activity log turned off leaves it: no activity. Its photos and folders stay, since they only take
+    /// names and paths out of what macOS or MetricKit wrote about it before a report is sent.
+    public var withoutActivity: PendingIncident {
+        var pending = self
+        pending.activity = []
+        return pending
+    }
 }
 
 /// What a session that has ended leaves to report: its crash, from macOS's crash report or

@@ -91,7 +91,8 @@ public enum FeedbackActions {
         model: EditorModel, context: FeedbackContext? = nil, windowShot: FeedbackReport.Screenshot? = nil,
         prefill: FeedbackPrefill? = nil,
     ) async -> FeedbackSheetModel {
-        let context = context ?? prefill?.incident.map { FeedbackContext(reporting: $0) }
+        let context = context
+            ?? prefill?.incident.map { FeedbackContext(reporting: $0, activityLog: model.activity.isOn) }
             ?? FeedbackContext.capture(from: model)
         let models = await model.engine.models()
         let system = SystemSnapshot.capture(models: models)

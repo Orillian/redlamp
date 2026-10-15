@@ -96,6 +96,10 @@ public final class FeedbackSheetModel {
         if context.photo == nil {
             report.details.photo = false
         }
+        if !context.activityLog, let incident = report.incident {
+            report.incident = incident.withoutActivity
+            report.details.activity = false
+        }
         self.report = report
         phase = defaults.integer(forKey: Self.noteKey) >= Self.noteVersion ? .form : .note
     }

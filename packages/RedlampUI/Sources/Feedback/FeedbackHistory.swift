@@ -183,6 +183,13 @@ public final class FeedbackHistory {
         save()
     }
 
+    /// The activity log is off: the crashes and hangs not reported yet keep no activity.
+    public func forgetActivity() {
+        guard incidents.contains(where: { !$0.activity.isEmpty }) else { return }
+        incidents = incidents.map(\.withoutActivity)
+        save()
+    }
+
     /// Reports whose issue has news: a reply or a change of state since they were last seen.
     public var newsCount: Int {
         reports.count { $0.hasNews }

@@ -22,23 +22,54 @@ public final class SessionRecorder {
     public let offers: Bool
     private let activity: ActivityLog
     private let history: FeedbackHistory
+    private let setting: ActivityLogSetting
+    private let folder: URL
     private let inbox = Inbox()
     private var watchdog: HangWatchdog?
     private var metricKit: MetricKitDiagnostics?
 
-    public init(
-        activity: ActivityLog, history: FeedbackHistory = .shared, development: Bool,
-        defaults: UserDefaults = .standard,
+    public convenience init(
+        activity: ActivityLog, history: FeedbackHistory = .shared, setting: ActivityLogSetting = .shared,
+        development: Bool, defaults: UserDefaults = .standard,
     ) {
         let info = Bundle.main.infoDictionary
         let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
         let header = SessionJournal.Header.current(
             bundleID: Bundle.main.bundleIdentifier ?? "app.redlamp.mac", version: version, development: development,
         )
-        journal = header.flatMap { try? SessionJournal(header: $0) }
+        self.init(
+            journal: header.flatMap { try? SessionJournal(header: $0) }, activity: activity, history: history,
+            setting: setting, offers: !development || defaults.bool(forKey: Self.offersInDevelopmentKey),
+        )
+    }
+
+    /// One keeping `journal`, kept in `folder`, as a test makes one.
+    init(
+        journal: SessionJournal?, activity: ActivityLog, history: FeedbackHistory, setting: ActivityLogSetting,
+        offers: Bool, folder: URL = SessionJournal.folder,
+    ) {
+        self.journal = journal
         self.activity = activity
         self.history = history
-        offers = !development || defaults.bool(forKey: Self.offersInDevelopmentKey)
+        self.setting = setting
+        self.folder = folder
+        self.offers = offers
+        setting.onChange { [weak self] isOn in
+            if !isOn {
+                self?.forgetActivity()
+            }
+        }
+    }
+
+    /// As the activity log is turned off: the journals of sessions that have ended, which the launch check would read,
+    /// are deleted, and the crashes and hangs not reported yet lose their activity. This session's journal forgets
+    /// its own as the log does.
+    func forgetActivity() {
+        activity.isOn = false
+        for session in PreviousSession.ended(in: folder) {
+            session.remove()
+        }
+        history.forgetActivity()
     }
 
     public func start() {
@@ -78,10 +109,9 @@ public final class SessionRecorder {
         journal?.quit()
     }
 
-    private func found(_ incidents: [PendingIncident]) {
-        if offers, !incidents.isEmpty {
-            history.add(incidents)
-        }
+    func found(_ incidents: [PendingIncident]) {
+        guard offers, !incidents.isEmpty else { return }
+        history.add(setting.isOn ? incidents : incidents.map(\.withoutActivity))
     }
 
     /// The names of Redlamp's own executables and frameworks, whose frames the release's dSYMs name.
