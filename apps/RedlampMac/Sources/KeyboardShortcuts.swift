@@ -4,7 +4,8 @@ import AppKit
 /// Routes Develop shortcuts from the keyboard to the registry (`ShortcutAction`).
 ///
 /// ⌘ combos belong to the menu bar (see `AppCommands`), which gives them menu items and
-/// native key equivalents; the item a ⌘ key reaches is brought up to date first (`MenuBarKeys`).
+/// native key equivalents; the item a ⌘ key reaches is brought up to date first (`MenuBarKeys`),
+/// and ⌘Q asks before it reaches Quit (`QuitConfirmation`).
 /// Everything else (single keys, Shift-keys, Tab, F-keys) is handled
 /// here, because menu key equivalents without ⌘ would fire while typing in a value field.
 /// The monitor steps aside whenever text is being edited.
@@ -18,7 +19,7 @@ final class KeyboardShortcuts {
     func install(model: EditorModel) {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if MenuBarKeys.prepare(for: event, model: model) {
+            if QuitConfirmation.handle(event) || MenuBarKeys.prepare(for: event, model: model) {
                 return nil
             }
             return Self.handle(event, model: model) ? nil : event

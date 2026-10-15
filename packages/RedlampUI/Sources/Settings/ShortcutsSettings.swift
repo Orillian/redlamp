@@ -3,10 +3,12 @@ import SwiftUI
 
 /// Settings › Shortcuts (LIB-36): every action in the command list behind the menus, the palette and the keys,
 /// with its keys. A key is recorded by pressing it, and one that collides is shown with what it collides with
-/// before anything is saved. Presets give the keys of Lightroom Classic, Photo Mechanic or Bridge.
+/// before anything is saved. Presets give the keys of Lightroom Classic, Photo Mechanic or Bridge. Below the list,
+/// whether ⌘Q asks before quitting (UX-53).
 struct ShortcutsSettings: View {
     @State private var editor = ShortcutEditor()
     @State private var presetToConfirm: KeymapPreset?
+    @AppStorage(QuitConfirmation.defaultsKey) private var asksBeforeQuitting = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -53,6 +55,10 @@ struct ShortcutsSettings: View {
             anything changes.
             """)
             .formFooter()
+            Divider()
+            Toggle("Ask before quitting with ⌘Q", isOn: $asksBeforeQuitting)
+                .help("Quit Redlamp in the Redlamp menu, the Dock’s Quit and logging out don’t ask")
+                .accessibilityIdentifier("settings.shortcuts.ask-before-quitting")
         }
         .padding(20)
         .confirmationDialog(
