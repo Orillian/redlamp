@@ -6,7 +6,7 @@ import { site } from "@/lib/site";
 
 const title = "Become a Redlamp ambassador";
 const description =
-  "Ten photographers to shape Redlamp: pick one feature each quarter that's built next, and have your edits shown, with your name, wherever Redlamp is seen.";
+  "Help decide what Redlamp builds next, as one of its ten founding ambassadors, and have your edits shown, with your name, wherever Redlamp is seen.";
 
 // Unlisted until the open call: not in the sitemap or the footer, and not indexed.
 export const metadata: Metadata = {

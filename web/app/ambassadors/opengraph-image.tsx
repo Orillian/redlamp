@@ -3,7 +3,7 @@ import path from "node:path";
 import { ImageResponse } from "next/og";
 import { ambassadors } from "@/content/ambassadors";
 
-export const alt = "Become a Redlamp ambassador: ten founding places for photographers";
+export const alt = "Become a Redlamp ambassador. Ten founding places for photographers. Help decide what Redlamp builds next, and have your edits shown with your name.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -35,7 +35,7 @@ export default async function OpenGraphImage() {
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 30 }}>
-          {["Pick one feature each quarter that's built next", "Your edits shown, with your name"].map((line) => (
+          {["Help decide what Redlamp builds next", "Your edits shown, with your name"].map((line) => (
             <div key={line} style={{ display: "flex", gap: 16, alignItems: "center" }}>
               <div style={{ display: "flex", width: 8, height: 8, borderRadius: 4, background: "#d9d0cb" }} />
               <span>{line}</span>
