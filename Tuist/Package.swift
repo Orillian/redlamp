@@ -17,8 +17,12 @@ let package = Package(
     let packageSettings = PackageSettings(
         // MLX's C++ core holds the Metal device and its caches, so it's linked once, as a framework.
         productTypes: ["Cmlx": .framework, "MLX": .framework],
-        // Apple Silicon only, as the app's own targets are (redlampBaseSettings).
-        baseSettings: .settings(base: ["ARCHS": "arm64"]),
+        // Apple Silicon only, as the app's own targets are (redlampBaseSettings). Redlamp's
+        // configurations, so the App Store build (ARC-22) finds the packages' frameworks beside its own.
+        baseSettings: .settings(
+            base: ["ARCHS": "arm64"],
+            configurations: [.debug(name: .debug), .release(name: .release), .release(name: "AppStore")],
+        ),
         // MLX's Swift API reaches its C++ core only through MLX's C API, so the core exports that
         // alone, and dead-stripping drops the C++ the C API doesn't reach.
         targetSettings: [

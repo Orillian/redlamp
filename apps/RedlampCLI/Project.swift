@@ -3,6 +3,7 @@ import ProjectDescriptionHelpers
 
 let project = Project(
     name: "RedlampCLI",
+    settings: .redlampProject,
     targets: [
         .target(
             name: "redlamp",

@@ -138,6 +138,34 @@ private let releaseSettings: SettingsDictionary = [
     "EAGER_LINKING": "YES",
 ]
 
+// MARK: - Configurations
+
+public extension ConfigurationName {
+    /// The Mac App Store build (ARC-22): Release, with `REDLAMP_APP_STORE` set in every project, since
+    /// Tuist can't vary a target's dependencies by configuration and some of what the App Store build
+    /// leaves out (the firmware model) sits in frameworks.
+    static let appStore: ConfigurationName = "AppStore"
+}
+
+/// What the AppStore configuration adds to Release.
+public let appStoreSettings: SettingsDictionary = [
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) REDLAMP_APP_STORE",
+]
+
+/// Every project's configurations: Debug, Release and AppStore, each reading `xcconfig` when given.
+public func redlampConfigurations(xcconfig: Path? = nil) -> [Configuration] {
+    [
+        .debug(name: .debug, xcconfig: xcconfig),
+        .release(name: .release, xcconfig: xcconfig),
+        .release(name: .appStore, settings: appStoreSettings, xcconfig: xcconfig),
+    ]
+}
+
+public extension Settings {
+    /// A project's own settings: Redlamp's three configurations and nothing else.
+    static let redlampProject: Settings = .settings(configurations: redlampConfigurations())
+}
+
 /// A function body or expression this slow to type-check fails the Debug build. The two
 /// diagnostics have no warning group, so warnings-as-errors makes them errors. CI's runner, three
 /// cores under load, sets both limits to 3000 (DEC-70, DEC-65).
@@ -175,6 +203,7 @@ public extension Target {
                             .merging(module.isEngineLayer ? ["SWIFT_OPTIMIZATION_LEVEL": "-O"] : [:]) { $1 },
                     ),
                     .release(name: .release, settings: releaseSettings),
+                    .release(name: .appStore, settings: releaseSettings),
                 ],
             ),
         )

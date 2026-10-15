@@ -16,10 +16,7 @@ let project = Project(
     name: "RedlampBenchApp",
     settings: .settings(
         base: redlampBaseSettings,
-        configurations: [
-            .debug(name: .debug, xcconfig: .relativeToRoot("Version.xcconfig")),
-            .release(name: .release, xcconfig: .relativeToRoot("Version.xcconfig")),
-        ],
+        configurations: redlampConfigurations(xcconfig: .relativeToRoot("Version.xcconfig")),
     ),
     targets: [
         .target(

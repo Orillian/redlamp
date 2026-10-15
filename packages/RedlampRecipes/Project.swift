@@ -3,6 +3,7 @@ import ProjectDescriptionHelpers
 
 let project = Project(
     name: Module.recipes.name,
+    settings: .redlampProject,
     targets: [
         .frameworkTarget(module: .recipes, resources: ["Resources/**"]),
         // Golden renders and chart lint need a real engine; only the tests link it.
