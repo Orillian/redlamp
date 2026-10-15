@@ -11,6 +11,9 @@ import RedlampEngineAPI
 /// hair_bench's heads that halves closed-form matting's error along the edge and keeps 43% of the
 /// stray strands against 15% (`vitmatte_bench.py`). With closed-form's narrower band it drops them.
 ///
+/// Its relative-position tables stay float16 (`decompress_vitmatte.py`): on macOS 27 Metal
+/// Performance Shaders Graph at times aborts as it prepares 8-bit ones for the GPU (MSK-33).
+///
 /// Its weights are Apache-2.0, trained on Composition-1k and Distinctions-646, whose terms the
 /// owner accepted as an exception to the licence gate (DEC-35).
 public final class ViTMatte: @unchecked Sendable {
@@ -25,7 +28,7 @@ public final class ViTMatte: @unchecked Sendable {
     private let model: MLModel
     private let lock = NSLock()
 
-    public init(manifest: ModelManifest, directory: URL, computeUnits: MLComputeUnits = computeUnits) throws {
+    public init(manifest: ModelManifest, directory: URL) throws {
         self.manifest = manifest
         guard let name = SAMSegmenter.packages(in: manifest).first
         else { throw ModelStoreError.unknownModel(manifest.id) }
@@ -33,19 +36,9 @@ public final class ViTMatte: @unchecked Sendable {
             package: directory.appending(path: "\(name).mlpackage"), key: "\(manifest.id)-v\(manifest.version)-\(name)",
         )
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = computeUnits
+        // On the Neural Engine a tile takes three times as long.
+        configuration.computeUnits = .cpuAndGPU
         model = try Inference.shared.load(compiled, configuration: configuration)
-    }
-
-    /// The GPU, but on macOS 27 and later the CPU: there Metal Performance Shaders Graph, which
-    /// runs Core ML's GPU work, at times aborts the process as it prepares a prediction, rebuilding
-    /// the matmul of global attention's 8-bit relative positions with an operand of the wrong shape
-    /// (MSK-33). On an M4 Max a tile takes 0.14 s on the GPU, 0.43 s on the CPU and 0.8 s with the
-    /// Neural Engine, whose matte also strays further from the GPU's.
-    public static let computeUnits = computeUnits(macOS: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
-
-    static func computeUnits(macOS version: Int) -> MLComputeUnits {
-        version >= 27 ? .cpuOnly : .cpuAndGPU
     }
 
     /// `coarse` with its unsure band solved against `image`, at the image's size. Only the tiles

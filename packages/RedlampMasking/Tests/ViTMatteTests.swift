@@ -1,16 +1,7 @@
-import CoreML
 import Testing
 @testable import RedlampMasking
 
 struct ViTMatteTests {
-    /// On macOS 27 Metal Performance Shaders Graph can abort preparing the model's GPU work, so
-    /// there it keeps off the GPU (MSK-33); macOS 26 keeps it.
-    @Test func `it runs on the GPU before macOS 27, and on the CPU from it`() {
-        #expect(ViTMatte.computeUnits(macOS: 26) == .cpuAndGPU)
-        #expect(ViTMatte.computeUnits(macOS: 27) == .cpuOnly)
-        #expect(ViTMatte.computeUnits(macOS: 28) == .cpuOnly)
-    }
-
     /// Tiles cover a side whole, the last flush with its end, and a side shorter than a tile is one.
     @Test func `tiles cover every side whole`() {
         #expect(ViTMatte.starts(4096) == [0, 896, 1792, 2688, 3072])
