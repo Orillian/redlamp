@@ -44,23 +44,42 @@ public struct CameraRawSettings: Sendable, Hashable {
     }
 
     public func number(_ name: String) -> Double? {
-        guard let text = text(name), let value = Double(text.trimmingCharacters(in: .whitespaces)) else { return nil }
+        guard let text = text(name), let value = Self.number(in: text[...]) else { return nil }
         return value.isFinite ? value : nil
     }
 
     /// A simple value with no text, as Lightroom writes a field it leaves unset
     /// (`crs:CameraModelRestriction=""`).
     public func isBlank(_ name: String) -> Bool {
-        text(name)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
+        text(name)?.unicodeScalars.allSatisfy(\.properties.isWhitespace) == true
     }
 
     /// `True` and `False` in any case, or a number, which is on unless it is zero.
     public func flag(_ name: String) -> Bool? {
-        switch text(name)?.lowercased() {
-        case "true": true
-        case "false": false
-        default: number(name).map { $0 != 0 }
+        guard let text = text(name) else { return nil }
+        if Self.text(text, is: "true") {
+            return true
         }
+        return Self.text(text, is: "false") ? false : number(name).map { $0 != 0 }
+    }
+
+    /// Whether `text` is the lowercase ASCII `word` in any case.
+    static func text(_ text: String, is word: String) -> Bool {
+        text.utf8.elementsEqual(word.utf8) { $0 | 0x20 == $1 }
+    }
+
+    /// The number `text` holds, white space around it aside. Settings are read on every core at once, and
+    /// Foundation's character sets serialise the threads that use them, so white space is told by Unicode's
+    /// own properties.
+    static func number(in text: Substring) -> Double? {
+        if let value = Double(text) {
+            return value
+        }
+        let scalars = text.unicodeScalars
+        guard let first = scalars.firstIndex(where: { !$0.properties.isWhitespace }),
+              let last = scalars.lastIndex(where: { !$0.properties.isWhitespace })
+        else { return nil }
+        return Double(Substring(scalars[first ... last]))
     }
 
     /// An array of simple values in its order, such as a curve's points (`"0, 0"`) or a brush's dabs.
