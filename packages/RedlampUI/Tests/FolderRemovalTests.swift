@@ -197,7 +197,9 @@ struct FolderRemovalTests {
         let suite = "folder-removal-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { UserDefaults().removePersistentDomain(forName: suite) }
-        FolderLibrary(defaults: defaults).add([sandbox.root])
+        let adding = FolderLibrary(defaults: defaults)
+        adding.add([sandbox.root])
+        try await sandbox.eventually { !FolderLibrary(defaults: defaults).roots.isEmpty }
         let library = FolderLibrary(defaults: defaults)
         let model = EditorModel(engine: StubEngine(), library: library)
         let paths = LibraryPaths(root: sandbox.base.appending(path: "Library", directoryHint: .isDirectory))
@@ -292,7 +294,9 @@ struct FolderRemovalTests {
         unsaved.close()
 
         // Folders kept without Trip, as the library was off when it lost it: Trip leaves as the library opens.
-        FolderLibrary(defaults: defaults).add([sandbox.root])
+        let adding = FolderLibrary(defaults: defaults)
+        adding.add([sandbox.root])
+        try await SourcesSandbox.eventually { !FolderLibrary(defaults: defaults).roots.isEmpty }
         let saved = FolderLibrary(defaults: defaults)
         #expect(saved.roots.map(\.url) == [sandbox.root])
         let service = try await launch(saved)
