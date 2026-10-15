@@ -190,7 +190,7 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
     private func update() {
         shownPhase = model.phase
         let settings = model.settings
-        destination.stringValue = settings.destination.path
+        destination.stringValue = model.hasDestination ? settings.destination.path : "Not chosen yet: Import asks for it"
         folders.text = model.folderText
         names.text = model.namesText
         folders.show(error: model.folderError)
@@ -308,6 +308,11 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
 
     func tokenField(_: NSTokenField, shouldAdd tokens: [Any], at _: Int) -> [Any] {
         tokens.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// What the destination's row shows.
+    var destinationShown: String {
+        destination.stringValue
     }
 
     @objc private func chooseDestination() {

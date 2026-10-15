@@ -351,6 +351,58 @@ extension ImportWindowTests {
         #expect(window.folderText == "{date:yyyy}" && window.namesText == "{date:yyyyMMdd}-{sequence:3}")
     }
 
+    @Test func `the first import has no destination until one is chosen, and an earlier version's stays chosen`(
+    ) async throws {
+        let fixture = try await ImportWindowFixture.make()
+        defer { fixture.remove() }
+        let model = fixture.model()
+        try await model.addFolder(fixture.folder("Card", count: 2))
+        await model.browsed()
+        #expect(!model.hasDestination && model.importBlocker == nil, "Import asks for it")
+        model.startImport()
+        #expect(model.phase == .choosing, "nothing is imported to Pictures by itself")
+
+        model.setDestination(fixture.destination)
+        #expect(model.hasDestination && ImportPreferences(defaults: fixture.defaults).hasDestination)
+        model.close()
+
+        let suite = "import-earlier-\(UUID().uuidString)"
+        let earlier = try #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        try earlier.set(
+            JSONEncoder().encode(ImportSettings(destination: fixture.destination)),
+            forKey: "import.settings",
+        )
+        #expect(ImportPreferences(defaults: earlier).hasDestination)
+    }
+
+    @Test func `the destination and the backup keep a bookmark each, and a folder no longer chosen loses its`(
+    ) async throws {
+        let fixture = try await ImportWindowFixture.make()
+        defer { fixture.remove() }
+        try FileManager.default.createDirectory(at: fixture.destination, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fixture.backup, withIntermediateDirectories: true)
+        let makes = FolderAccess.bookmark(for: fixture.destination) != nil
+        let model = fixture.model()
+        fixture.settle(model)
+        let both = Set([fixture.destination.path, fixture.backup.path].map { URL(fileURLWithPath: $0).path })
+        #expect(ImportPreferences(defaults: fixture.defaults).bookmarks.paths == (makes ? both : []))
+        model.setBackup(nil)
+        #expect(ImportPreferences(defaults: fixture.defaults).bookmarks
+            .paths == (makes ? [fixture.destination.path] : []))
+        model.close()
+
+        let suite = "import-earlier-\(UUID().uuidString)"
+        let earlier = try #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let settings = ImportSettings(destination: fixture.destination, backup: fixture.backup)
+        try earlier.set(JSONEncoder().encode(settings), forKey: "import.settings")
+        let preferences = ImportPreferences(defaults: earlier)
+        #expect(preferences.bookmarks.paths.isEmpty, "earlier versions kept none")
+        await preferences.bookmarkRemembered()
+        #expect(ImportPreferences(defaults: earlier).bookmarks.paths == (makes ? both : []))
+    }
+
     @Test func `a metadata preset chosen in To is written at the destination, its codes expanded, and kept for the next`(
     ) async throws {
         let fixture = try await ImportWindowFixture.make()

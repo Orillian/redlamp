@@ -23,10 +23,10 @@ extension ImportWindowModel {
             return "The name template has an error: \(namesError)"
         }
         let destination = LibraryService.path(settings.destination)
-        if let backup = settings.backup.map(LibraryService.path), backup == destination {
+        if hasDestination, let backup = settings.backup.map(LibraryService.path), backup == destination {
             return "The backup has to be somewhere other than the destination."
         }
-        if let source = sources.first(where: { source in
+        if hasDestination, let source = sources.first(where: { source in
             source.isIncluded && Self.isWithin(destination, LibraryService.path(source.source.url))
         }) {
             return "The destination is on \(source.source.name), which is being imported from."
@@ -41,9 +41,10 @@ extension ImportWindowModel {
         path == folder || path.hasPrefix(folder == "/" ? "/" : folder + "/")
     }
 
-    /// Import: the chosen photos of every source included, planned together and copied, as the type says.
+    /// Import: the chosen photos of every source included, planned together and copied, as the type says. Not before
+    /// the destination is chosen, which Import asks for first (`ImportWindowController`).
     func startImport() {
-        guard importBlocker == nil else { return }
+        guard hasDestination, importBlocker == nil else { return }
         let included = sources.filter { $0.isIncluded && $0.problem == nil }
         let settings = settings
         let destinationFileSystem = destinationFileSystem

@@ -11,7 +11,7 @@ public extension FolderLibrary {
     }
 
     /// Adds folders to the working set (a folder inside one already there isn't added again) and
-    /// returns them. Their bookmarks are made in the background.
+    /// returns them. Their bookmarks are made in the background, and each is saved once it has one.
     @discardableResult
     func add(_ folders: [URL]) -> [WorkingFolder] {
         var added: [WorkingFolder] = []
@@ -19,17 +19,12 @@ public extension FolderLibrary {
             let root = WorkingFolder(path: folder.standardizedFileURL.path)
             roots.append(root)
             added.append(root)
+            bookmarking[root.id] = .some(nil)
         }
         guard !added.isEmpty else { return [] }
-        saveSettings()
         watchRoots()
         for root in added {
-            startAccess(root)
-            let url = root.url
-            scheduler.submit(.lookAhead) {
-                let made = WorkingFolder.make(for: url, id: root.id)
-                Task { @MainActor [weak self] in self?.replaceRoot(made) }
-            }
+            bookmark(root, at: root.url)
         }
         return added
     }
@@ -42,7 +37,8 @@ public extension FolderLibrary {
     func remove(_ root: WorkingFolder) -> Task<Void, Never>? {
         roots.removeAll { $0.id == root.id }
         missing.remove(root.id)
-        stopAccess(root)
+        bookmarking.removeValue(forKey: root.id)
+        stopAccess(root.id)
         if let openFolder, root.contains(openFolder), self.root(containing: openFolder) == nil {
             open(nil)
         }
@@ -53,20 +49,34 @@ public extension FolderLibrary {
     }
 
     /// Points a missing root at the folder the user found it in. The library forgets the photos it had where
-    /// the root was, and reads them where it is.
+    /// the root was, and reads them where it is. Until its new bookmark is made, it's saved where it was.
     func locate(_ root: WorkingFolder, at url: URL) {
-        stopAccess(root)
+        stopAccess(root.id)
+        if bookmarking[root.id] == nil, let saved = roots.first(where: { $0.id == root.id }) {
+            bookmarking[root.id] = saved
+        }
         let moved = WorkingFolder(id: root.id, path: url.standardizedFileURL.path)
         replaceRoot(moved)
         missing.remove(root.id)
-        startAccess(moved)
         if moved.path != root.path {
             service?.remove(root.url, keeping: roots.map(\.url))
         }
         watchRoots()
+        bookmark(moved, at: url)
+    }
+
+    /// Makes `root`'s bookmark off the main thread, then saves the root with it and starts its access, unless it
+    /// left the working set or was located elsewhere meanwhile. `url` is a panel's or a drop's, which reaches the
+    /// folder until the app quits.
+    private func bookmark(_ root: WorkingFolder, at url: URL) {
         scheduler.submit(.lookAhead) {
             let made = WorkingFolder.make(for: url, id: root.id)
-            Task { @MainActor [weak self] in self?.replaceRoot(made) }
+            Task { @MainActor [weak self] in
+                guard let self, roots.contains(where: { $0.id == root.id && $0.path == made.path }) else { return }
+                bookmarking.removeValue(forKey: root.id)
+                replaceRoot(made)
+                startAccess(root.id, at: url)
+            }
         }
     }
 
@@ -86,12 +96,12 @@ public extension FolderLibrary {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 for (root, resolved) in found {
-                    if let resolved {
-                        if resolved != root {
-                            replaceRoot(resolved)
+                    if let (folder, url) = resolved {
+                        if folder != root {
+                            replaceRoot(folder)
                         }
                         missing.remove(root.id)
-                        startAccess(resolved)
+                        startAccess(root.id, at: url)
                     } else {
                         missing.insert(root.id)
                     }
@@ -116,14 +126,14 @@ public extension FolderLibrary {
                 // `missing` changes only when a root is found or lost: any change to it shows the roots
                 // again, and a change in a root's own folder comes here.
                 for (root, resolved) in found where roots.contains(where: { $0.id == root.id }) {
-                    if let resolved {
+                    if let (folder, url) = resolved {
                         if missing.contains(root.id) {
                             missing.remove(root.id)
-                            appeared.append(resolved)
-                            startAccess(resolved)
+                            appeared.append(folder)
+                            startAccess(root.id, at: url)
                         }
-                        if resolved != root {
-                            replaceRoot(resolved)
+                        if folder != root, bookmarking[root.id] == nil {
+                            replaceRoot(folder)
                         }
                     } else if !missing.contains(root.id) {
                         missing.insert(root.id)
@@ -227,14 +237,20 @@ public extension FolderLibrary {
 
     // MARK: - Access
 
-    private func startAccess(_ root: WorkingFolder) {
-        guard accessing.insert(root.path).inserted else { return }
-        FolderAccess.start(root.url)
+    /// Starts access to root `id` through `url`, the URL its bookmark resolved to, for as long as it stays in the
+    /// working set: once, however often its path changes.
+    private func startAccess(_ id: UUID, at url: URL) {
+        if let started = accessing[id] {
+            guard started != url else { return }
+            FolderAccess.stop(started)
+        }
+        accessing[id] = url
+        FolderAccess.start(url)
     }
 
-    private func stopAccess(_ root: WorkingFolder) {
-        guard accessing.remove(root.path) != nil else { return }
-        FolderAccess.stop(root.url)
+    private func stopAccess(_ id: UUID) {
+        guard let url = accessing.removeValue(forKey: id) else { return }
+        FolderAccess.stop(url)
     }
 }
 
@@ -277,9 +293,19 @@ extension FolderLibrary {
         }
     }
 
+    /// The roots as they're saved: each with its bookmark, which in the App Sandbox is what reaches it after a
+    /// relaunch. One whose bookmark is being made is saved as it was before (`bookmarking`): not at all, if it was
+    /// just added.
+    var savedRoots: [WorkingFolder] {
+        roots.compactMap { root in
+            guard let saved = bookmarking[root.id] else { return root }
+            return saved
+        }
+    }
+
     func saveSettings() {
         guard let defaults else { return }
-        defaults.set(try? JSONEncoder().encode(roots), forKey: Key.roots)
+        defaults.set(try? JSONEncoder().encode(savedRoots), forKey: Key.roots)
         defaults.set((openFolder ?? trash.folderBefore)?.standardizedFileURL.path, forKey: Key.open)
         defaults.set(expandedFolders.sorted(), forKey: Key.expanded)
         defaults.set(

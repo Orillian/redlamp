@@ -253,9 +253,12 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             label.setContentHuggingPriority(.init(1), for: .horizontal)
             let state = NSTextField(labelWithString: Self.describe(root))
-            state.textColor = root.state == .missing || root.state == .offline ? .systemRed : .secondaryLabelColor
+            state.textColor = [.missing, .offline, .needsAccess]
+                .contains(root.state) ? .systemRed : .secondaryLabelColor
             state.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-            let locate = NSButton(title: "Locate…", target: self, action: #selector(locateRoot(_:)))
+            let locate = root.state == .needsAccess
+                ? NSButton(title: "Allow Access…", target: self, action: #selector(allowAccess(_:)))
+                : NSButton(title: "Locate…", target: self, action: #selector(locateRoot(_:)))
             locate.tag = place
             locate.controlSize = .small
             locate.isEnabled = !model.isBusy
@@ -279,6 +282,7 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
             + "\(LightroomImportModel.count(root.photos, "photo")) found"
         case .notInLibrary: "Not in the library yet: Import adds it (\(LightroomImportModel.count(root.photos, "photo")))"
         case .missing: "Not found: Locate… says where it is now"
+        case .needsAccess: "Redlamp can't read it yet: Allow Access… lets it"
         case .offline: "On a disk that isn’t connected: connect it, then import"
         }
     }
@@ -307,6 +311,22 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         panel.canChooseFiles = false
         panel.prompt = "Locate"
         panel.message = "Where is this folder now? Lightroom Classic had it at \(path)."
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.model.locate(path, at: url)
+        }
+    }
+
+    /// A root Redlamp can't read, as each the App Sandbox wasn't given: its panel opens on it, and choosing it gives
+    /// access to it, one root at a time.
+    @objc private func allowAccess(_ sender: NSButton) {
+        guard let window, let path = rootPaths[sender.tag] else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Allow Access"
+        panel.message = "Lightroom Classic's photos are in this folder. Choose it to let Redlamp read it."
+        panel.directoryURL = URL(fileURLWithPath: path, isDirectory: true)
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.model.locate(path, at: url)

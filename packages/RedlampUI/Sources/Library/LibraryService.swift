@@ -463,6 +463,7 @@ extension LibraryService {
                 await report(.placed(locator))
             }
         }
+        Task.detached(priority: .utility) { _ = try? await core.roots.bookmark() }
         guard !Task.isCancelled else { return }
         for await event in core.tracker.start(roots.map { URL(fileURLWithPath: $0, isDirectory: true) }) {
             await followed(event, core: core, report: report)

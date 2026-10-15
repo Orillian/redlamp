@@ -138,7 +138,8 @@ struct LightroomPlanner {
 
     // MARK: - Folders
 
-    /// Finds each root on this Mac, and whether the library has it.
+    /// Finds each root on this Mac, and whether the library has it. A root Redlamp can't read, as every root the
+    /// App Sandbox wasn't given, needs access first: chosen in a panel, it comes in `moved` at its own path.
     mutating func locateRoots(library: [String]) {
         let catalogFolder = catalog.url.deletingLastPathComponent()
         for root in catalog.roots {
@@ -146,8 +147,8 @@ struct LightroomPlanner {
             var wasMoved = false
             if let url = moved[root.path] ?? moved[Self.trimmed(root.path)] {
                 path = LibraryIndexer.path(url)
-                wasMoved = true
-            } else if root.path.hasPrefix("/"), Self.isFolder(root.path) {
+                wasMoved = path != LibraryIndexer.path(URL(fileURLWithPath: root.path, isDirectory: true))
+            } else if root.path.hasPrefix("/"), Self.isFolder(root.path) || FolderAccess.reach(root.path) == .refused {
                 path = LibraryIndexer.path(URL(fileURLWithPath: root.path, isDirectory: true))
             } else if let relative = Self.relativePath(of: root), !relative.isEmpty {
                 let beside = catalogFolder.appending(path: relative, directoryHint: .isDirectory)
@@ -165,9 +166,16 @@ struct LightroomPlanner {
                 if libraryRoot(of: path) != nil {
                     state = .inLibrary
                     indexed.insert(root.id)
-                } else if Self.isFolder(path) {
-                    state = .notInLibrary
-                    foldersToAdd.append(URL(fileURLWithPath: path, isDirectory: true))
+                } else {
+                    switch FolderAccess.reach(path) {
+                    case .listable:
+                        state = .notInLibrary
+                        foldersToAdd.append(URL(fileURLWithPath: path, isDirectory: true))
+                    case .refused:
+                        state = .needsAccess
+                    case .absent:
+                        break
+                    }
                 }
             } else if root.path.hasPrefix("/") {
                 let own = LibraryIndexer.path(URL(fileURLWithPath: root.path, isDirectory: true))
@@ -219,6 +227,7 @@ struct LightroomPlanner {
             case .inLibrary: break
             case .notInLibrary: report.waiting += report.roots[place].photos
             case .missing: report.unlocated += report.roots[place].photos
+            case .needsAccess: report.needingAccess += report.roots[place].photos
             case .offline: report.offline += report.roots[place].photos
             }
         }

@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import Synchronization
 
 /// Folders taken out of the library (LIB-05, LIB-10), as Lightroom Classic's Remove takes a folder out of its
@@ -69,6 +70,28 @@ public final class LibraryRoots: Sendable {
             }
         }
         return removals
+    }
+
+    /// Makes a security-scoped bookmark for each root the index has without one (ARC-17): roots added before
+    /// bookmarks were kept, and those just indexed. The unsandboxed app makes one for any folder it can read, so the
+    /// App Sandbox reaches the root later without asking; a sandboxed one only while the root's access is started,
+    /// and a root that can't be found now gets one once it can. Returns how many were made. Reads the file system.
+    @discardableResult
+    public func bookmark() async throws -> Int {
+        let lacking = try await index.read { reader in
+            let removed = try reader.removedRoots()
+            return try reader.roots().filter { $0.bookmark == nil && removed[$0.id] == nil }
+        }
+        let made = lacking.compactMap { root in
+            FolderAccess.bookmark(for: URL(fileURLWithPath: root.path, isDirectory: true)).map { (root.id, $0) }
+        }
+        guard !made.isEmpty else { return 0 }
+        try await index.write { writer in
+            for (id, bookmark) in made {
+                try writer.setBookmark(bookmark, ofRoot: id)
+            }
+        }
+        return made.count
     }
 
     /// Sweeps what a removal a quit cut short left, after the indexer's runs asked for before: at launch.

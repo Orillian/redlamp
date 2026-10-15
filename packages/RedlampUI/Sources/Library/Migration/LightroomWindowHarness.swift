@@ -9,7 +9,7 @@ import RedlampLibrary
         model.choose(url)
     }
 
-    /// Locate…'s folder for the root folder the catalog calls `path`.
+    /// Locate…'s folder, or Allow Access…'s, for the root folder the catalog calls `path`.
     func locate(_ path: String, at url: URL) {
         model.locate(path, at: url)
     }

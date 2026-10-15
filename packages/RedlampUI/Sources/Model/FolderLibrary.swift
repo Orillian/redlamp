@@ -166,8 +166,11 @@ public final class FolderLibrary {
     /// The last photo shown in each folder (paths), most recent last.
     @ObservationIgnored var lastPhotos: [String: String] = [:]
     @ObservationIgnored var lastPhotoOrder: [String] = []
-    /// Roots whose access was started (security-scoped once sandboxed).
-    @ObservationIgnored var accessing: Set<String> = []
+    /// Roots whose access was started, by ID, and the URL each was started through.
+    @ObservationIgnored var accessing: [UUID: URL] = [:]
+    /// Roots whose bookmark is being made (`add`, `locate`), by ID, and what's saved of each meanwhile: nil for one
+    /// just added, which isn't saved until it has its bookmark.
+    @ObservationIgnored var bookmarking: [UUID: WorkingFolder?] = [:]
     /// The directories whose photos are shown (the open folder, and its subtree with subfolders).
     @ObservationIgnored var listedDirectories: Set<String> = []
     /// File-system watching (see `FolderLibrary+Watching`).

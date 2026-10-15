@@ -66,6 +66,12 @@ LUT, HALD and recipe imports are read once and copied into Redlamp's own folders
 
 Inside a granted folder, the spike found everything Redlamp does works: listing subfolders, writing, renaming, moving to the Trash (to the volume's `.Trashes`), FSEvents for the folder's changes, and an export staged in the system's item-replacement folder and moved in, on the Mac's own disk and on an external SSD. Access ends when it's stopped.
 
+Building step 2 (15 October 2026) found three more things, with an app opened by Launch Services and from the shell of an agent:
+
+- **A process inside a sandbox of another kind can't make a security-scoped bookmark at all:** macOS refuses with "Required entitlement com.apple.security.files.bookmarks.app-scope is missing or false", whether the process is signed with a team or ad hoc. Agents' shells run in such a sandbox (Cursor's, as Meta launches it), and so do the tests and the regression suite started from them; the build Mac's aren't. An app opened by Launch Services, ad hoc signed or not, makes them. So a bookmark is security-scoped wherever one can be made, and plain otherwise, and the working set says which it keeps.
+- **Unsandboxed, a plain bookmark resolved with security scope is refused** (`NSCocoaErrorDomain` 259), as in the sandbox, while a security-scoped one resolves either way. Earlier versions' bookmarks are resolved as plain ones.
+- **A bookmark resolves to whatever is at its recorded path when something is there,** so a folder replaced at its path is found there, as when the path was tried first, and only a folder renamed or moved is followed. It resolves to the folder's real path (`/private/tmp` for `/tmp`), so a folder added through a symbolic link keeps the path it was added by, or the library would take it for a new folder.
+
 ### Folders added before the update
 
 The spike made three bookmarks of a folder from the unsandboxed copy, with no panel, and resolved each in a sandboxed launch of its own:

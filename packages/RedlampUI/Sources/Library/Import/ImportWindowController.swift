@@ -199,8 +199,13 @@ public final class ImportWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
+    /// Import, which asks where the photos go first while no destination is chosen.
     @objc private func importChosen() {
         window?.makeFirstResponder(grid.collectionView)
+        guard model.hasDestination else {
+            askForDestination(backup: false) { [weak self] in self?.model.startImport() }
+            return
+        }
         model.startImport()
     }
 
@@ -234,7 +239,8 @@ public final class ImportWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
-    private func askForDestination(backup: Bool) {
+    /// The destination's or the backup's panel; `chosen` runs once one is chosen.
+    private func askForDestination(backup: Bool, then chosen: @escaping @MainActor () -> Void = {}) {
         guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -254,6 +260,7 @@ public final class ImportWindowController: NSWindowController, NSWindowDelegate 
             } else {
                 model.setDestination(url)
             }
+            chosen()
         }
     }
 }

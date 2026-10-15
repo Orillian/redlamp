@@ -17,6 +17,22 @@ import AppKit
         try await model.addFolder(folder)
     }
 
+    /// No destination chosen, as on a Mac Redlamp hasn't imported on, so Import asks for one.
+    static func forgetDestination() {
+        ImportPreferences.shared.forgetDestination()
+        current?.model.notify(.settings)
+    }
+
+    /// What To shows as the destination.
+    var destinationShown: String {
+        destinationView.destinationShown
+    }
+
+    /// The destination has its bookmark.
+    var keepsDestinationBookmark: Bool {
+        model.preferences.bookmarks.bookmark(for: model.settings.destination.path) != nil
+    }
+
     /// The card at `root`, its photos in `DCIM`, as the Mac would describe a card in a reader, shown.
     func add(card root: URL) async throws {
         let source = try await Task.detached(priority: .userInitiated) {

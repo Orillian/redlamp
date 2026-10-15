@@ -181,6 +181,45 @@ struct ExportTests {
         #expect(ExportPresetStore(defaults: defaults).previousPresetID == nil)
     }
 
+    @Test func `the folders exports go to keep a bookmark each, while a preset or Export with Previous names them`(
+    ) async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "export-bookmarks-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let (previous, preset) = (base.appending(path: "Previous"), base.appending(path: "Preset"))
+        for folder in [previous, preset] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        let makes = FolderAccess.bookmark(for: previous) != nil
+        func kept(_ paths: [URL]) -> Set<String> {
+            makes ? Set(paths.map(\.path)) : []
+        }
+        let defaults = defaults()
+        let store = ExportPresetStore(defaults: defaults)
+        var settings = ExportSettings()
+        settings.destinationFolder = previous
+        store.recordExport(settings, presetID: nil)
+        settings.destinationFolder = preset
+        let saved = store.savePreset(named: "Prints", settings: settings)
+        #expect(ExportPresetStore(defaults: defaults).bookmarks.paths == kept([previous, preset]))
+
+        store.deletePreset(saved.id)
+        #expect(ExportPresetStore(defaults: defaults).bookmarks.paths == kept([previous]))
+        settings.destinationFolder = nil
+        store.recordExport(settings, presetID: nil)
+        #expect(ExportPresetStore(defaults: defaults).bookmarks.paths.isEmpty, "exports beside their originals")
+
+        let earlier = self.defaults()
+        settings.destinationFolder = preset
+        try earlier.set(
+            JSONEncoder().encode([ExportPreset(name: "Prints", settings: settings)]),
+            forKey: "exportPresets",
+        )
+        let reopened = ExportPresetStore(defaults: earlier)
+        #expect(reopened.bookmarks.paths.isEmpty, "earlier versions kept none")
+        await reopened.bookmarkRemembered()
+        #expect(ExportPresetStore(defaults: earlier).bookmarks.paths == kept([preset]))
+    }
+
     @Test func `export with previous needs a previous export`() async throws {
         let fixture = try await openEditor()
         defer { fixture.cleanup() }

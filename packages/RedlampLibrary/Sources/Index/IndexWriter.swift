@@ -84,6 +84,14 @@ public extension LibraryIndex.Writer {
         return try returnedID(statement)
     }
 
+    /// Keeps `bookmark`, a security-scoped bookmark to the folder, for root `id`.
+    func setBookmark(_ bookmark: Data, ofRoot id: Int64) throws {
+        let statement = try database.cached("UPDATE roots SET bookmark = ? WHERE id = ?")
+        try statement.bind(bookmark, at: 1)
+        try statement.bind(id, at: 2)
+        try statement.run()
+    }
+
     /// Adds the folder, or updates the one at its path, and returns its ID: a new folder's is one no folder had
     /// (`IndexIDs`).
     @discardableResult

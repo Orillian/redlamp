@@ -29,6 +29,9 @@ struct RedlampApp: App {
             #endif
             DevelopPanels.usesSwiftUI = LaunchArguments.all.contains("--swiftui-panels")
         #endif
+        if FolderAccess.isSandboxed {
+            FolderSettingsCopy.restoreMissing()
+        }
         LensProfileIssues.current = { LCPProfileLibrary.user.issues }
         RedlampEngine.register(generativeFiller: { FluxFiller(model: $0) })
         let engine: any EditingEngine
@@ -113,6 +116,12 @@ struct RedlampApp: App {
                 ImportActions.start(model: model)
             }
             Self.openInitialFolder(model: model)
+            // The working set's and the library's roots get theirs as they're found again.
+            Task {
+                await ImportPreferences.shared.bookmarkRemembered()
+                await exports.bookmarkRemembered()
+            }
+            AppDelegate.folderSettings.start()
             #if DEBUG || REDLAMP_PROFILING
                 DebugSnapshot.scheduleIfRequested(model: model)
                 DebugPerformance.scheduleIfRequested(model: model)
@@ -232,6 +241,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var performWhatsNew: (@MainActor (WhatsNewItem.Action) -> Void)?
     /// This session's record for the next launch (`SessionRecorder`).
     static var session: SessionRecorder?
+    /// The copy of the settings that name folders, in Redlamp's own folder.
+    static let folderSettings = FolderSettingsCopy()
     /// How long after launch the highlights may still open; later, they wait for the next launch.
     static let newsWait: TimeInterval = 10
     let updates = Updates()
@@ -369,6 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Logger(subsystem: "app.redlamp.mac", category: "models").error("Quit with an AI model still running")
         }
         Self.closeLibrary?()
+        Self.folderSettings.write()
         Self.session?.quit()
     }
 

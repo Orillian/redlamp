@@ -76,6 +76,50 @@ struct WorkingSetTests {
         #expect(library.roots.first?.id == old.id)
     }
 
+    @Test func `a folder is saved once its bookmark is made, and one located again is saved where it was until then`(
+    ) async throws {
+        defer { cleanUp() }
+        try photos(["Old/a.ARW", "New/a.ARW"])
+        let library = FolderLibrary(defaults: defaults)
+        library.add([root.appending(path: "Old")])
+        #expect(library.roots.map(\.name) == ["Old"])
+        #expect(FolderLibrary(defaults: defaults).roots.isEmpty, "not saved without its bookmark")
+        try await eventually { FolderLibrary(defaults: defaults).roots.first?.bookmark != nil }
+        let saved = try #require(FolderLibrary(defaults: defaults).roots.first)
+        #expect(library.accessing.keys.sorted() == [saved.id])
+
+        library.locate(saved, at: root.appending(path: "New"))
+        #expect(library.roots.map(\.name) == ["New"])
+        #expect(FolderLibrary(defaults: defaults).roots == [saved], "saved where it was until its bookmark is made")
+        try await eventually { FolderLibrary(defaults: defaults).roots.first?.name == "New" }
+        let located = try #require(FolderLibrary(defaults: defaults).roots.first)
+        #expect(located.id == saved.id && located.bookmark != nil && located.bookmark != saved.bookmark)
+        #expect(library.accessing.keys.sorted() == [saved.id], "started once, however the path changes")
+
+        library.remove(located)
+        #expect(library.accessing.isEmpty && FolderLibrary(defaults: defaults).roots.isEmpty)
+    }
+
+    @Test func `an earlier version's working set gets security-scoped bookmarks as it's found, where they can be made`(
+    ) async throws {
+        defer { cleanUp() }
+        try photos(["Trip/a.ARW"])
+        let trip = root.appending(path: "Trip")
+        let plain = try #require(FolderAccess.plainBookmark(for: trip))
+        let id = UUID()
+        let earlier = "[{\"id\":\"\(id.uuidString)\",\"path\":\"\(trip.path)\",\"bookmark\":\"\(plain.base64EncodedString())\"}]"
+        defaults.set(Data(earlier.utf8), forKey: "folders.roots")
+
+        let library = FolderLibrary(defaults: defaults)
+        var restored = false
+        library.restore { _, _ in restored = true }
+        try await eventually { restored }
+        let saved = try #require(FolderLibrary(defaults: defaults).roots.first)
+        #expect(saved.id == id && saved.path == trip.standardizedFileURL.path)
+        #expect(saved.isSecurityScoped == (FolderAccess.bookmark(for: trip) != nil))
+        #expect(library.accessing[id] != nil)
+    }
+
     @Test func `removing a root closes its folder; nothing on disk changes`() async throws {
         defer { cleanUp() }
         try photos(["Trip/a.ARW"])

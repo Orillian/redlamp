@@ -683,16 +683,20 @@ extension ImportWindowModel {
         preferences.settings
     }
 
+    /// The destination was chosen; until it is, Import asks for it.
+    var hasDestination: Bool {
+        preferences.hasDestination
+    }
+
+    /// The destination, chosen in its panel at `url`.
     func setDestination(_ url: URL) {
-        preferences.update { $0.destination = URL(fileURLWithPath: LibraryService.path(url), isDirectory: true) }
+        preferences.chooseDestination(url)
         settingsChanged()
     }
 
-    /// A second copy at `url`; nil for none.
+    /// A second copy at `url`, chosen in its panel; nil for none.
     func setBackup(_ url: URL?) {
-        preferences.update { settings in
-            settings.backup = url.map { URL(fileURLWithPath: LibraryService.path($0), isDirectory: true) }
-        }
+        preferences.chooseBackup(url)
         settingsChanged()
     }
 

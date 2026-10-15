@@ -200,6 +200,31 @@ struct LightroomImportTests {
         #expect(notAdded.foldersToAdd.map(\.path) == [LibraryIndexer.path(elsewhere.url)])
     }
 
+    @Test func `a root Redlamp can't read needs access first, and once chosen at its own path it's added`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let shut = library.folder.url.appending(path: "Shut", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: shut.appending(path: "Trip"), withIntermediateDirectories: true)
+        let maker = try LightroomCatalogMaker(at: library.folder.url.appending(path: "Shut.lrcat"))
+        try maker.photo(maker.folder(maker.root(shut.path + "/"), "Trip/"), "A.JPG", rating: 3)
+        maker.close()
+        let catalog = try LightroomCatalog.read(maker.url)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: shut.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shut.path) }
+
+        let refused = try await LightroomPlan.make(catalog, index: library.sandbox.index, paths: library.paths)
+        #expect(refused.report.roots.map(\.state) == [.needsAccess])
+        #expect(refused.report.needingAccess == 1 && refused.report.waiting == 0 && refused.foldersToAdd.isEmpty)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shut.path)
+        let allowed = try await LightroomPlan.make(
+            catalog, index: library.sandbox.index, paths: library.paths, moved: [shut.path + "/": shut],
+        )
+        #expect(allowed.report.roots.map(\.state) == [.notInLibrary] && allowed.report.roots.first?.moved == false)
+        #expect(allowed.foldersToAdd.map(\.path) == [LibraryIndexer.path(shut)])
+    }
+
     @Test func `a root in a library folder whose disk isn't connected is offline, one that's gone is missing`(
     ) async throws {
         let library = try await Self.library()

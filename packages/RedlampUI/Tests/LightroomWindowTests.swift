@@ -86,6 +86,41 @@ struct LightroomWindowTests {
         }
     }
 
+    @Test func `a root folder Redlamp can't read asks for access, and once allowed it's added and imported`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let other = sandbox.base.appending(path: "Other", directoryHint: .isDirectory)
+        try sandbox.photos(["Day/B.jpg"], under: other, from: 1)
+        let catalog = sandbox.base.appending(path: "Catalog/Lightroom Catalog.lrcat")
+        try Self.catalog(root: sandbox.root, other: other, at: catalog)
+        let model = try await sandbox.open()
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: other.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: other.path) }
+
+        LightroomWindowController.show(editor: model)
+        let window = try #require(LightroomWindowController.current)
+        defer { window.close() }
+        window.choose(catalog: catalog)
+        try await sandbox.eventually { window.isReported }
+        #expect(window.report?.roots.map(\.state) == [.inLibrary, .needsAccess])
+        #expect(window.button("lightroom.locate.1")?.title == "Allow Access…")
+        #expect(window.button("lightroom.locate.0")?.title == "Locate…")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: other.path)
+        window.locate(other.standardizedFileURL.path + "/", at: other)
+        try await sandbox.eventually { window.isReported && window.report?.roots.last?.state == .notInLibrary }
+        #expect(window.report?.roots.last?.moved == false && window.report?.waiting == 1)
+        window.model.startImport()
+        try await sandbox.eventually(seconds: 90) { window.isImported }
+        #expect(window.outcome?.record.photos == 2, "\(window.problem ?? "")")
+        #expect(model.library.root(containing: other.appending(path: "Day/B.jpg")) != nil, "the folder is in Folders")
+        if let root = model.library.root(containing: other) {
+            await model.library.remove(root)?.value
+        }
+    }
+
     @Test func `a catalog that can't be read says why, and a moved folder is found where it's located`() async throws {
         let sandbox = SourcesSandbox()
         defer { sandbox.remove() }
