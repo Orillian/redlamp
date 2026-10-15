@@ -41,6 +41,9 @@ extension LibraryCommand {
         }
         let options = try Arguments(arguments, valued: ["--index", "--root"])
         let url = options.value("--index").map { URL(fileURLWithPath: $0) } ?? LibraryPaths.standard.index
+        if options.has("--census"), options.has("--apply") || options.has("--undo") {
+            throw CLIError(description: "--census only counts: leave out --apply and --undo")
+        }
         if options.has("--undo") {
             try await undoLightroom(index: url, json: options.has("--json"))
             return
@@ -60,8 +63,6 @@ extension LibraryCommand {
             moved[String(argument[..<equals])] = folder.standardizedFileURL
         }
         if options.has("--census") {
-            guard !options.has("--apply")
-            else { throw CLIError(description: "--census only counts: leave out --apply") }
             let given = options.value("--index") != nil
             guard !given || FileManager.default.fileExists(atPath: url.path) else {
                 throw CLIError(description: "no index at \(url.path): --index names a library's index")

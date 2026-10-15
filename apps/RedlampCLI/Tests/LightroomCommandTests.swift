@@ -168,14 +168,16 @@ struct LightroomCommandTests {
         }
     }
 
-    @Test func `the census takes no --apply, and an --index that isn't there is refused`() async throws {
+    @Test func `the census takes no --apply or --undo, and an --index that isn't there is refused`() async throws {
         let scratch = FileManager.default.temporaryDirectory.appending(path: "redlamp-census-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let catalog = scratch.appending(path: "Lightroom Catalog.lrcat")
         try Self.catalog(at: catalog, root: scratch.path + "/", photos: [("A.jpg", "AB", "s = {}")])
-        let applied = try await Self.run(["lightroom", catalog.path, "--census", "--apply"], in: scratch)
-        #expect(applied.status == 1 && applied.errors.contains("--census only counts"))
+        for other in ["--apply", "--undo"] {
+            let refused = try await Self.run(["lightroom", catalog.path, "--census", other], in: scratch)
+            #expect(refused.status == 1 && refused.errors.contains("--census only counts"), "\(other)")
+        }
         let missing = scratch.appending(path: "None/Index.sqlite")
         let unindexed = try await Self.run(
             ["lightroom", catalog.path, "--census", "--index", missing.path], in: scratch,
