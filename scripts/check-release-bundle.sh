@@ -17,8 +17,10 @@
 #
 # --app-store checks the Mac App Store build (ARC-22) as well, and fails when:
 #
-# - it holds Sparkle.framework, RedlampAutomation.framework, RedlampBench.framework or
-#   Contents/Helpers (the CLI), which that build leaves out (DEC-90);
+# - it holds Sparkle.framework or Sparkle's licence, RedlampAutomation.framework,
+#   RedlampBench.framework or Contents/Helpers (the CLI), which that build leaves out (DEC-90);
+# - it lacks a licence text Help › Acknowledgements shows: each in the app's
+#   Resources/Acknowledgements but Sparkle's (ARC-25);
 # - an executable, the app's or a helper's, isn't signed with com.apple.security.app-sandbox;
 # - the app's or an XPC service's version isn't three integers (DEC-92);
 # - the app has no PrivacyInfo.xcprivacy, or its Info.plist no ITSAppUsesNonExemptEncryption;
@@ -137,7 +139,7 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 if [ "$APP_STORE" = 1 ]; then
     excluded=()
-    for name in Sparkle.framework RedlampAutomation.framework RedlampBench.framework; do
+    for name in Sparkle.framework Sparkle-MIT.txt RedlampAutomation.framework RedlampBench.framework; do
         while IFS= read -r -d '' found; do
             excluded+=("${found#"$APP"/}")
         done < <(find "$APP" -name "$name" -print0)
@@ -146,6 +148,17 @@ if [ "$APP_STORE" = 1 ]; then
     if [ "${#excluded[@]}" -gt 0 ]; then
         echo "error: the App Store build holds what it leaves out (DEC-90, guidelines 2.3.1(a) and 2.4.5(vii)):" >&2
         printf '  %s\n' "${excluded[@]}" >&2
+        failed=1
+    fi
+
+    unbundled=()
+    for text in "$(dirname "$0")"/../apps/RedlampMac/Resources/Acknowledgements/*.txt; do
+        name="$(basename "$text")"
+        [ "$name" = Sparkle-MIT.txt ] || [ -f "$APP/Contents/Resources/$name" ] || unbundled+=("$name")
+    done
+    if [ "${#unbundled[@]}" -gt 0 ]; then
+        echo "error: the App Store build lacks licence texts Help › Acknowledgements shows (ARC-25):" >&2
+        printf '  %s\n' "${unbundled[@]}" >&2
         failed=1
     fi
 
@@ -232,4 +245,4 @@ if [ "$size_kb" -gt "$BUDGET_KB" ]; then
 fi
 [ "$failed" = 0 ] || exit 1
 echo "==> All $checked Mach-O files are arm64 only and stripped${DSYMS:+, each with its dSYM}; the app is $size_kb KB of $BUDGET_KB."
-[ "$APP_STORE" = 0 ] || echo "==> It's shaped for the App Store: none of what that build leaves out, a numeric version and the encryption key."
+[ "$APP_STORE" = 0 ] || echo "==> It's shaped for the App Store: none of what that build leaves out, its licence texts, a numeric version and the encryption key."

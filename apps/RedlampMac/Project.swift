@@ -143,7 +143,8 @@ let project = Project(
             deploymentTargets: .macOS(redlampMacOSVersion),
             infoPlist: .dictionary(appInfoPlist.merging(appStoreInfoPlist) { $1 }),
             sources: [.glob("Sources/**", excluding: ["Sources/Updates.swift"]), "AppStore/**/*.swift"],
-            resources: ["Resources/**"],
+            // Sparkle's licence goes only where Sparkle does, as Help › Acknowledgements lists it.
+            resources: [.glob(pattern: "Resources/**", excluding: ["Resources/Acknowledgements/Sparkle-MIT.txt"])],
             entitlements: .file(path: "AppStore/Redlamp.entitlements"),
             scripts: [numericVersion],
             dependencies: appDependencies,
