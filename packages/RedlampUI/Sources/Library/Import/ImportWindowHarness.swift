@@ -157,6 +157,14 @@ import AppKit
         model.summary
     }
 
+    /// What the window is doing, as a scenario's failure says it: the import's phase, whether the window is shown
+    /// and key, what holds Import back, and the line under the photos.
+    var state: String {
+        let shown = window?.isVisible != true ? "not shown" : window?.isKeyWindow == true ? "key" : "shown, not key"
+        let blocker = model.importBlocker.map { "Import held back: \($0)" } ?? "Import can start"
+        return "\(model.phase), \(shown); \(blocker); “\(model.summary)”"
+    }
+
     /// Takes the folder holding `url` out of Folders, as the scenarios leave Folders as they found it.
     static func forget(_ url: URL, in editor: EditorModel) {
         if let root = editor.library.root(containing: url) {

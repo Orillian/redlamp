@@ -85,7 +85,7 @@
             }
             try app.cutShortImport(of: scratch)
             try app.clickInImportWindow("import.roll-back")
-            try app.wait("the rollback, and nothing waiting to be resumed", timeout: 120) { _ in
+            try app.waitInImportWindow("the rollback, and nothing waiting to be resumed", timeout: 120) { _ in
                 ImportWindowController.current.map { $0.rollbackResult?.isOver == true && !$0.isInterrupted } == true
             }
             let result = try app.inImportWindow { $0.rollbackResult }
@@ -113,7 +113,7 @@
             }
             try app.cutShortImport(of: scratch)
             try app.clickInImportWindow("import.resume")
-            try app.wait("the import finished", timeout: 120) { _ in
+            try app.waitInImportWindow("the import finished", timeout: 120) { _ in
                 ImportWindowController.current.map { $0.isFinished && !$0.isInterrupted } == true
             }
             let result = try app.inImportWindow { $0.result.map { "\($0.verified) \($0.safeToErase)" } }
@@ -276,12 +276,16 @@
             try openImportWindow(on: scratch)
             try inImportWindow { $0.simulateForcedQuit(afterPhotos: 2) }
             try clickInImportWindow("import.import")
-            try wait("the import cut short", timeout: 120) { _ in ImportWindowController.current?.isFinished == true }
+            try waitInImportWindow("the import cut short", timeout: 120) { _ in
+                ImportWindowController.current?.isFinished == true
+            }
             try main { _ in ImportWindowController.current?.window?.performClose(nil) }
-            try wait("the window closed") { _ in ImportWindowController.current == nil }
+            try waitInImportWindow("the window closed") { _ in ImportWindowController.current == nil }
             try choose(.importPhotos)
             try waitForImportWindow()
-            try wait("the interrupted import offered") { _ in ImportWindowController.current?.isInterrupted == true }
+            try waitInImportWindow("the interrupted import offered") { _ in
+                ImportWindowController.current?.isInterrupted == true
+            }
         }
     }
 #endif

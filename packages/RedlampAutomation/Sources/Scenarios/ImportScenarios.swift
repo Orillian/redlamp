@@ -381,18 +381,29 @@
             pause(0.1)
         }
 
-        /// Clicks the control carrying `identifier` in the import window through the window, as the mouse does.
+        /// Clicks the control carrying `identifier` in the import window through the window, as the mouse does, once
+        /// it's shown and enabled: the window's controls follow its model a moment later, so a small folder browsed
+        /// within the window's first batch of events is browsed in the model while Import is still disabled, and a
+        /// click then does nothing.
         func clickInImportWindow(_ identifier: String) throws {
-            let location = try inImportWindow { window -> NSPoint in
-                guard let content = window.window?.contentView, let control = Self.view(identifier, in: content) else {
+            try inImportWindow { window in
+                guard let content = window.window?.contentView, Self.view(identifier, in: content) != nil else {
                     throw ScenarioFailure("\(identifier) isn't in the import window")
                 }
-                window.window?.makeKeyAndOrderFront(nil)
-                let frame = control.convert(control.bounds, to: nil)
-                return NSPoint(x: frame.midX, y: frame.midY)
+            }
+            try waitInImportWindow("\(identifier) shown and enabled") { _ in
+                guard let content = ImportWindowController.current?.window?.contentView,
+                      let control = Self.view(identifier, in: content)
+                else { return false }
+                return !control.isHiddenOrHasHiddenAncestor && (control as? NSControl)?.isEnabled != false
             }
             post { _ in
-                guard let window = ImportWindowController.current?.window else { return }
+                guard let window = ImportWindowController.current?.window, let content = window.contentView,
+                      let control = Self.view(identifier, in: content)
+                else { return }
+                window.makeKeyAndOrderFront(nil)
+                let frame = control.convert(control.bounds, to: nil)
+                let location = NSPoint(x: frame.midX, y: frame.midY)
                 let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
                     NSEvent.mouseEvent(
                         with: type, location: location, modifierFlags: [],
@@ -401,11 +412,52 @@
                     )
                 }
                 guard events.count == 2 else { return }
+                Self.lastImportClick = ImportClick(
+                    identifier: identifier,
+                    found: content.superview?.hitTest(location).map(Views.describe) ?? "nothing",
+                    isEnabled: (control as? NSControl)?.isEnabled != false, isKey: window.isKeyWindow, time: Date(),
+                )
                 // The button tracks the press, and takes the release from the queue as the mouse's.
                 NSApp.postEvent(events[1], atStart: false)
                 window.sendEvent(events[0])
             }
             pause(0.2)
+        }
+
+        /// The last click `clickInImportWindow` sent: what the window's hit test found under it, and whether the
+        /// control was enabled and the window key as it went.
+        struct ImportClick {
+            var identifier: String
+            var found: String
+            var isEnabled: Bool
+            var isKey: Bool
+            var time: Date
+        }
+
+        @MainActor private static var lastImportClick: ImportClick?
+
+        /// The import window as it is now, and what the last click in it found, for a wait's failure.
+        func importWindowState() -> String {
+            let state = try? main { _ -> String in
+                guard let window = ImportWindowController.current else { return "no import window" }
+                var text = "the import window: \(window.state)"
+                if let click = Self.lastImportClick {
+                    text += String(
+                        format: "; the click on %@ %.1f s ago found %@, %@, in %@", click.identifier,
+                        Date().timeIntervalSince(click.time), click.found, click.isEnabled ? "enabled" : "disabled",
+                        click.isKey ? "the key window" : "a window that wasn't key",
+                    )
+                }
+                return text
+            }
+            return state ?? "the main thread didn't answer"
+        }
+
+        /// Waits as `wait` does, a timeout saying what the import window was doing and what the last click in it found.
+        func waitInImportWindow(
+            _ what: String, timeout: Double = 10, until condition: @escaping @MainActor (EditorModel) -> Bool,
+        ) throws {
+            try wait("\(what) (\(importWindowState()))", timeout: timeout, until: condition)
         }
 
         @MainActor private static func view(_ identifier: String, in view: NSView) -> NSView? {
