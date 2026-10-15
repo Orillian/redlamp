@@ -218,7 +218,9 @@ public final class SAMSegmenter: @unchecked Sendable {
 ///
 /// Core ML compiles into the temporary folder, as large as the model (SAM 3's encoder is
 /// 850 MB), so one compile runs at a time: callers that ask while it runs wait and find it
-/// in Caches, rather than each compiling a copy.
+/// in Caches, rather than each compiling a copy. Processes share the folder (the app and the
+/// command-line tool, test runs side by side), so a compile takes its place in one step, and
+/// never replaces one another process put there first, which it may be using.
 public enum CompiledModels {
     private static let lock = NSLock()
     /// Older than this, a compile left in the temporary folder belongs to a launch that ended
@@ -226,7 +228,7 @@ public enum CompiledModels {
     static let leftoverAge: TimeInterval = 60 * 60
 
     public static var root: URL {
-        RedlampFolders.caches.appending(path: "CompiledModels")
+        RedlampFolders.compiledModels
     }
 
     /// Removes compiles of model versions `catalog` doesn't list; one is compiled again if needed.
@@ -253,9 +255,23 @@ public enum CompiledModels {
         let compiled = try MLModel.compileModel(at: package)
         defer { try? FileManager.default.removeItem(at: compiled) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: compiled, to: destination)
+        try place(compiled, at: destination)
         return destination
+    }
+
+    /// Moves `compile` to `destination`, or removes it if another process has put one there since.
+    static func place(_ compile: URL, at destination: URL) throws {
+        // Moved beside the destination first: a move from another volume is a copy, which
+        // mustn't be found there half made.
+        let staged = destination.deletingLastPathComponent()
+            .appending(path: ".\(UUID().uuidString)-\(destination.lastPathComponent)")
+        try FileManager.default.moveItem(at: compile, to: staged)
+        guard renamex_np(staged.path, destination.path, UInt32(RENAME_EXCL)) != 0 else { return }
+        let error = errno
+        try? FileManager.default.removeItem(at: staged)
+        if error != EEXIST {
+            throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO)
+        }
     }
 
     /// Removes compiles of the named model, `<name>.mlmodelc` or `<name>_<UUID>.mlmodelc`,

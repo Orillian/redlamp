@@ -44,4 +44,61 @@ struct CompiledModelsTests {
         CompiledModels.removeLeftovers(of: "Sam3ImageEncoder", in: url, now: now)
         #expect(try remaining(url) == Set(names))
     }
+
+    /// A scratch folder holding `CompiledModels`, where `destination` is, beside compiles as
+    /// `MLModel.compileModel` leaves them.
+    private func scratch() throws -> (url: URL, destination: URL) {
+        let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let root = url.appending(path: "CompiledModels")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return (url, root.appending(path: "vitmatte-base-v1-ViTMatteBaseW8.mlmodelc"))
+    }
+
+    /// A compile in `folder`, its model file holding `marker`.
+    private func compile(_ marker: String, in folder: URL) throws -> URL {
+        let url = folder.appending(path: "ViTMatteBaseW8_\(UUID().uuidString).mlmodelc")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try Data(marker.utf8).write(to: url.appending(path: "model.mil"))
+        return url
+    }
+
+    private func marker(_ compile: URL) throws -> String {
+        try String(contentsOf: compile.appending(path: "model.mil"), encoding: .utf8)
+    }
+
+    @Test func `a compile takes its place, leaving nothing beside it`() throws {
+        let (url, destination) = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let new = try compile("new", in: url)
+        try CompiledModels.place(new, at: destination)
+        #expect(try marker(destination) == "new")
+        #expect(try remaining(destination.deletingLastPathComponent()) == [destination.lastPathComponent])
+        #expect(!FileManager.default.fileExists(atPath: new.path))
+    }
+
+    @Test func `a compile another process put in place first stays, as it may be using it`() throws {
+        let (url, destination) = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try CompiledModels.place(compile("first", in: url), at: destination)
+        let second = try compile("second", in: url)
+        try CompiledModels.place(second, at: destination)
+        #expect(try marker(destination) == "first")
+        #expect(try remaining(destination.deletingLastPathComponent()) == [destination.lastPathComponent])
+        #expect(!FileManager.default.fileExists(atPath: second.path))
+    }
+
+    @Test func `compiles placed side by side leave one whole compile in place`() async throws {
+        let (url, destination) = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let compiles = try (0 ..< 8).map { try compile("\($0)", in: url) }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for compile in compiles {
+                group.addTask { try CompiledModels.place(compile, at: destination) }
+            }
+            try await group.waitForAll()
+        }
+        #expect(try (0 ..< 8).map(String.init).contains(marker(destination)))
+        #expect(try remaining(destination.deletingLastPathComponent()) == [destination.lastPathComponent])
+        #expect(compiles.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+    }
 }
