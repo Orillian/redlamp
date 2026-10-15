@@ -273,4 +273,51 @@ struct GrayMaskTests {
         #expect(sky[mid, skyRow] > 200)
         #expect(sky[mid, grassRow] < 40)
     }
+
+    /// A low sun's sky is warmer than it is blue from the top down: the estimate takes it by the
+    /// colour it has along the top, and stops at a pale tower and at a calm sea as bright as the
+    /// sky at the horizon.
+    @Test func `sky estimate finds a sunset's warm sky`() throws {
+        let region = try SkyEstimator.region(warmSunset(), seesSky: { _ in true })
+        func sky(_ x: Double, _ y: Double) -> Bool {
+            region.sky[Int(y * Double(region.height)) * region.width + Int(x * Double(region.width))]
+        }
+        #expect(sky(0.2, 0.15) && sky(0.5, 0.15) && sky(0.8, 0.6), "the sky")
+        #expect(!sky(0.5, 0.5), "the tower")
+        #expect(!sky(0.2, 0.85), "the sea")
+    }
+
+    /// A warm backdrop looks like a warm sky, so a warm sky needs Vision's classifier to see sky.
+    @Test func `a warm sky counts only when Vision sees sky`() throws {
+        let image = try warmSunset()
+        #expect(throws: MaskComputationError.nothingFound(.sky)) {
+            try SkyEstimator.region(image, seesSky: { _ in false })
+        }
+    }
+
+    /// 450 × 600: a golden sky down to the horizon two-thirds of the way down, its blue about 0.63
+    /// of its red at the top and 0.78 at the horizon; a pale tower in the middle from a quarter of
+    /// the way down; a blue-grey sea below.
+    private func warmSunset() throws -> CGImage {
+        let width = 450
+        let height = 600
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0 ..< height {
+            for x in 0 ..< width {
+                let index = (y * width + x) * 4
+                let t = Double(y) / 400
+                let rgb: (Double, Double, Double) = y >= 400 ? (110, 125, 140)
+                    : (200 ..< 250).contains(x) && y >= 150 ? (205, 200, 190)
+                    : (184 - 50 * t, 163 - 46 * t, 115 - 10 * t)
+                (pixels[index], pixels[index + 1], pixels[index + 2]) = (UInt8(rgb.0), UInt8(rgb.1), UInt8(rgb.2))
+            }
+        }
+        let provider = try #require(CGDataProvider(data: Data(pixels) as CFData))
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        return try #require(CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent,
+        ))
+    }
 }
