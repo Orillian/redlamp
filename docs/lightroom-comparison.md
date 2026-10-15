@@ -207,7 +207,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Panels that hide automatically or stay up | Yes | Done | Different | | UX-19, UX-43 | The filmstrip hides automatically or stays up with the photo fitted above it (the pin on the filmstrip, View › Filmstrip, its right-click menu, Settings); Lightroom offers Auto Hide & Show, Auto Hide and Manual for each panel |
 | Filmstrip scroll bar and thumbnail sizes | Yes (Classic) | Done | | | UX-42 | Also Home and End for the first and last photo, and the line of text above the thumbnails made optional |
 | Histogram you can drag to adjust | Yes | Done | | | | |
-| RGB and L*a*b* values of the pixel under the pointer | Yes | Done | Different | | UX-32 | Under the histogram; RGB in Display P3, where Lightroom uses Melissa RGB, and L*a*b* relative to D50 |
+| RGB and L*a*b* values of the pixel under the pointer | Yes | Done | Different | | UX-32 | Under the histogram; RGB in Display P3, where Lightroom uses Melissa RGB, and L\*a\*b\* relative to D50 |
 | Readout points pinned on the photo | No | Planned | | P3 | UX-40 | As Photoshop's colour samplers, with values that stay while sliders move |
 | Panel on/off switches | Yes | Done | | | UX-30 | Turn a panel's settings off and on without losing them |
 | Hiding Develop panels you don't use | Yes (Classic) | Planned | | P2 | UX-41 | From a panel header's right-click menu; a hidden panel that holds edits shows anyway |

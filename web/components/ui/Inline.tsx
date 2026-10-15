@@ -1,15 +1,18 @@
 import type { ReactNode } from "react";
 import { repoLink } from "@/lib/site";
 
-const TOKEN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*[^*]+\*)/g;
+const TOKEN = /(\\[!-\/:-@[-`{-~]|\*\*(?:\\.|[^*\\])+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*(?:\\.|[^*\\])+\*)/g;
 
-/** Renders the inline Markdown the README uses: bold, italics, code and links. */
+/** Renders the inline Markdown the README uses: bold, italics, code, links and backslash escapes. */
 export function Inline({ md }: { md: string }) {
   return <>{render(md)}</>;
 }
 
 function render(md: string): ReactNode[] {
   return md.split(TOKEN).map((part, i) => {
+    if (part.length === 2 && part.startsWith("\\")) {
+      return part[1];
+    }
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
         <strong key={i} className="font-semibold text-paper">
