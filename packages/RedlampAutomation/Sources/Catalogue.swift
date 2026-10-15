@@ -18,6 +18,7 @@
             + FilmstripScenarios.all
             + SyncScenarios.all + ExportScenarios.all
             + RecipeScenarios.all + StackScenarios.all + RawScenarios.all + FeedbackScenarios.all
+            + AcknowledgementsScenarios.all
             + ImportScenarios.all
             + ImportRollbackScenarios.all
             + LightroomScenarios.all
