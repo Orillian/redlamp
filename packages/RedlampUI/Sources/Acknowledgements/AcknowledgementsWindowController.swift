@@ -19,8 +19,11 @@ public final class AcknowledgementsModel {
     /// "Version 1.4 (812)", from the app's Info.plist.
     let version: String
     let source: URL
+    /// Where the licence texts are: the app's resources.
+    let bundle: Bundle
 
     public init(bundle: Bundle = .main) {
+        self.bundle = bundle
         let info = bundle.infoDictionary ?? [:]
         let short = info["CFBundleShortVersionString"] as? String ?? "–"
         version = (info["CFBundleVersion"] as? String).map { "Version \(short) (\($0))" } ?? "Version \(short)"
@@ -32,11 +35,11 @@ public final class AcknowledgementsModel {
 /// components and models it's made with and their licences, and the trademark notices.
 @MainActor
 public final class AcknowledgementsWindowController: NSWindowController, NSWindowDelegate {
-    public static let title = "Acknowledgements"
-    public static let menuTitle = "Acknowledgements…"
+    public nonisolated static let title = "Acknowledgements"
+    public nonisolated static let menuTitle = "Acknowledgements…"
     private static var current: AcknowledgementsWindowController?
 
-    public let model = AcknowledgementsModel()
+    public let model: AcknowledgementsModel
 
     /// Brings the window forward, opening it first if it isn't open.
     public static func show(engine: any EditingEngine) {
@@ -49,7 +52,8 @@ public final class AcknowledgementsWindowController: NSWindowController, NSWindo
         controller.showWindow(nil)
     }
 
-    init(engine: any EditingEngine) {
+    init(engine: any EditingEngine, model: AcknowledgementsModel = AcknowledgementsModel()) {
+        self.model = model
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 880, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],

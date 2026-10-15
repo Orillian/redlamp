@@ -125,8 +125,8 @@ struct AcknowledgementsView: View {
                 Link("Read its licence", destination: url)
             case let .byName(page, standard):
                 Text("""
-                Its files come with no licence file. Its publisher releases it under the \
-                \(info.licence ?? "licence its page names"), as the model's page says.
+                Its files come without a licence file. Its publisher releases it under the \
+                \(info.licence.map { "\($0) licence" } ?? "licence its page names"), as the model's page says.
                 """)
                 if let page {
                     Link("The model's page", destination: page)
@@ -151,7 +151,7 @@ struct AcknowledgementsView: View {
     private func texts(_ texts: [Acknowledgements.LicenceText]) -> some View {
         ForEach(texts) { text in
             Text(text.title).font(.headline).padding(.top, 8)
-            licence(text.contents() ?? "This build is missing \(text.file).")
+            licence(text.contents(in: model.bundle) ?? "This build is missing \(text.file).")
         }
     }
 
