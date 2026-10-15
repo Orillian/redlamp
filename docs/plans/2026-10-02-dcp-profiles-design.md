@@ -25,7 +25,7 @@ When a file opens with a LookTable or a tone curve, Redlamp bakes them into a 33
 
 1. Reader and HueSatMap behind process 4. Tests: the three fixtures read as expected; an identity HueSatMap changes nothing; the GPU matches a CPU reference of the specification's math; process 3 golden renders are unchanged.
 2. The Embedded Base Look. Tests: a curve-only bake reproduces the curve on neutrals; the Pixel's look renders; Amount 0 equals Redlamp Color.
-3. `.dcp` import: an imported profile's look becomes a Base Look, and its calibration is offered per camera model through a Calibration choice the edit pins.
+3. `.dcp` import: an imported profile's look becomes a Base Look, and its calibration is offered per camera model through a Calibration choice the edit pins. Built on 15 October 2026 as TON-51, with Adobe's XMP looks (TON-52), on DEC-85's terms: the photographer's profiles are read where Camera Raw installs them or where they chose them, never copied, and the Base Look reference is the calibration choice, since an Adobe look brings its profile's calibration ([design](2026-10-15-adobe-profiles-design.md)).
 4. Later (TON-14): the profiler writes DCPs.
 
 ## Out of scope
