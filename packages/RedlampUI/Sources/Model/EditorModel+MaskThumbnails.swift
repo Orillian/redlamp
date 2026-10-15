@@ -35,7 +35,7 @@ extension EditorModel {
             recipe: recipe,
             imageSize: info.pixelSize,
             includesCrop: true,
-            lens: info.lensCorrection,
+            lens: lensCorrection,
         )
         for mask in recipe.masks where thumbnails[mask.id] == nil {
             var shown = recipe

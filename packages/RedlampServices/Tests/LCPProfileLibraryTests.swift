@@ -301,6 +301,89 @@ struct LCPProfileLibraryTests {
         #expect(correction(info, in: library) == nil, "the 50 mm's file is read whole, and fails")
     }
 
+    @Test func `a profile an edit names is found by file name or name, under Custom whatever its lens`() throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var adapted = SyntheticLCP.Spec()
+        (adapted.lens, adapted.prettyName, adapted.focalLength) = ("Helios 44-2 58mm f/2", "Helios 44-2 58mm f/2", 58)
+        try write([adapted], to: "Helios.lcp")
+        try write([SyntheticLCP.Spec()], to: "Z 6 24-70.lcp")
+        let library = LCPProfileLibrary(directory: directory)
+        func named(_ choice: LensProfileChoice, _ info: ImageInfo = Self.info) -> LensCorrection? {
+            library.correction(
+                named: choice,
+                for: info,
+                sensorSize: PixelSize(width: 6000, height: 4000),
+                orientation: 0,
+            )
+        }
+        let helios = "Synthetic (Helios 44-2 58mm f/2)"
+        let custom = try #require(named(LensProfileChoice(setup: .custom, name: helios, fileName: "helios.LCP")))
+        #expect(custom.profileFileName == "Helios.lcp" && custom.profileName == "Helios 44-2 58mm f/2")
+        #expect(custom.profileProcess == nil && custom.profileFolder == .redlamp && custom.profileCamera == nil)
+        #expect(named(LensProfileChoice(setup: .custom, name: helios))?.profileFileName == "Helios.lcp")
+        // Default and Auto take a named profile only where it's of the photo's lens.
+        #expect(named(LensProfileChoice(setup: .auto, name: helios, fileName: "Helios.lcp")) == nil)
+        #expect(named(LensProfileChoice(setup: .defaults, fileName: "Z 6 24-70.lcp"))?
+            .profileFileName == "Z 6 24-70.lcp")
+        #expect(named(LensProfileChoice(setup: .custom, fileName: "Gone.lcp")) == nil)
+        // A manual lens, which the file doesn't name, on another body of the same format.
+        var manual = Self.info
+        (manual.model, manual.lens, manual.focalLength, manual.cropFactor) = ("Z 7", nil, nil, nil)
+        #expect(named(LensProfileChoice(setup: .custom, fileName: "Helios.lcp"), manual) == nil, "its sensor unknown")
+        manual.cropFactor = 1
+        adapted.sensorFormatFactor = 1
+        try write([adapted], to: "Helios.lcp")
+        let scaled = try #require(named(LensProfileChoice(setup: .custom, fileName: "Helios.lcp"), manual))
+        #expect(scaled.profileCamera == "Nikon Z 6")
+    }
+
+    @Test func `the profiles a photo can be given by hand cover its sensor, by make, model and name`() throws {
+        let library = LCPProfileLibrary(folders: [
+            .init(url: directory.appending(path: "Redlamp"), kind: .redlamp),
+            .init(url: directory.appending(path: "Camera Raw"), kind: .cameraRaw),
+        ])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        func lens(_ make: String, _ camera: String, _ lens: String, _ pretty: String, factor: Double?) -> SyntheticLCP
+            .Spec {
+            var spec = SyntheticLCP.Spec()
+            (spec.make, spec.model, spec.cameraName) = (make, camera, camera)
+            (spec.lens, spec.prettyName, spec.sensorFormatFactor) = (lens, pretty, factor)
+            return spec
+        }
+        try write([SyntheticLCP.Spec()], to: "Redlamp/z6.lcp")
+        try write([lens("SONY", "ILCE-7M3", "Batis 2/25", "Zeiss Batis 2/25", factor: 1)], to: "Camera Raw/Zeiss/b.lcp")
+        try write(
+            [lens(
+                "Canon",
+                "Canon EOS 5D Mark III",
+                "EF24-70mm f/2.8L II USM",
+                "Canon EF 24-70mm f/2.8L II USM",
+                factor: 1,
+            )],
+            to: "Camera Raw/Canon/a.lcp",
+        )
+        try write(
+            [lens("SONY", "ILCE-6400", "E 18-135mm", "Sony E 18-135mm", factor: 1.53)],
+            to: "Camera Raw/Sony/c.lcp",
+        )
+        var jpeg = lens("SONY", "ILCE-7M3", "FE 85mm F1.8", "Sony FE 85mm F1.8", factor: 1)
+        jpeg.raw = false
+        try write([jpeg], to: "Camera Raw/Sony/d.lcp")
+        var info = Self.info
+        info.cropFactor = 1
+        let options = library.options(for: info)
+        #expect(options.map(\.make) == ["Canon", "Nikon", "Zeiss"])
+        #expect(options.map(\.model) == [
+            "Canon EF 24-70mm f/2.8L II USM", "Nikon NIKKOR Z 24-70mm f/4 S", "Zeiss Batis 2/25",
+        ])
+        #expect(options.map(\.folder) == [.cameraRaw, .redlamp, .cameraRaw])
+        #expect(options[0].name == "Synthetic (Canon EF 24-70mm f/2.8L II USM)" && options[0].fileName == "a.lcp")
+        info.cropFactor = 1.53
+        #expect(library.options(for: info).count == 4, "an APS-C photo can take the APS-C profile too")
+        info.cropFactor = nil
+        #expect(library.options(for: info).map(\.make) == ["Nikon"], "without the photo's sensor size, its own body's")
+    }
+
     @Test func `a correction the file carries wins over the user's profile`() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         try write([SyntheticLCP.Spec()])

@@ -16,6 +16,7 @@
             colorGrading,
             detail,
             lensAndTransform,
+            LensProfileScenarios.choice,
             effectsAndCalibration,
             firmwareModel,
             adobeProfiles,

@@ -38,6 +38,10 @@ import SwiftUI
                 ).padding(.top, 1)),
                 rows.native(ProfileCorrectionsToggle()),
                 rows.header("Profile", profile),
+                rows.controls("Setup", LensProfileSetupPicker()),
+                rows.controls("Make", LensProfilePicker(level: .make)),
+                rows.controls("Model", LensProfilePicker(level: .model)),
+                rows.controls("Profile", LensProfilePicker(level: .profile)),
             ] + rows.sliders(profile) + [rows.header("Defringe", LensPanel.defringe)] + rows.sliders(LensPanel.defringe)
                 + [rows.header("Manual", manual)] + rows.sliders(manual),
         )

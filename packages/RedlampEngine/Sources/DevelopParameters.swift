@@ -256,7 +256,7 @@ enum DevelopParameters {
         )
 
         let full = session.orientedSize
-        let map = GeometryMap(recipe: recipe, imageSize: full, lens: session.info.lensCorrection)
+        let map = GeometryMap(recipe: recipe, imageSize: full, lens: session.lensCorrection(for: recipe))
         p.setOutputToImage(map.toImage.floatMatrix, imageAspect: Float(full.aspectRatio))
         p.lens = SIMD4(
             Float(map.lensDistortion), Float(recipe[.lensVignetting] / 100),

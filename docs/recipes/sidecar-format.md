@@ -105,6 +105,7 @@ Builds from before `customLabel`, `customLabelColor`, `mark`, `title`, `caption`
 | `spots` | [spot] | `[]` | Remove, Heal and Clone spots, applied in order before everything else. Written only when there are some. See [Spots](#spots). |
 | `appliedRecipe` | object? | | `{"id", "version", "name", "amount"}`, all required: the `.redrecipe` the edit was last built from, and its Amount in percent (0 to 200). Provenance only; rendering never reads it. |
 | `exposureAnchor` | object? | | `{"stops", "source", "camera"}`: where the photo's camera puts a metered grey, under Redlamp Reproduction and, from process 16, under every look. See [Exposure anchor](#exposure-anchor). |
+| `lensProfile` | object? | Default | `{"setup", "name", "fileName"}`, `setup` required: the lens profile chosen in the Lens Corrections panel. See [Lens profile](#lens-profile). |
 | `crop` | rect | full frame | Written only when it isn't the full frame. See [Crop and geometry](#crop-and-geometry). |
 | `orientation` | object | none | Written only when the photo is turned or flipped. See [Crop and geometry](#crop-and-geometry). |
 | `panelsOff` | [string] | `[]` | The Develop panels switched off, in panel order. Written only when a panel is off. See [Panel switches](#panel-switches). |
@@ -145,6 +146,18 @@ Where the photo's camera puts a metered 18% grey: the stops added to Exposure, i
 | `camera` | string? | The camera it belongs to: the model the file states, after its make unless the model names it (`Canon EOS R5`). |
 
 Fields a newer Redlamp adds inside it are kept and written back unchanged.
+
+### Lens profile
+
+The lens profile chosen in the Lens Corrections panel's Setup, Make, Model and Profile menus, as Lightroom's choose one, stored as Lightroom stores it (`crs:LensProfileSetup`, `LensProfileName` and `LensProfileFilename`), so that an edit brought across from Lightroom keeps its profile. Only names: the profile's models stay in its file, on the Mac it's on, and a sidecar never holds them (DEC-85). An edit without it is at Default with no profile named. It applies to raw photos, under Enable Profile Corrections and its amounts, from process 5.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `setup` | string | **Required.** `defaults` (Lightroom's Default) and `auto` use the profile matched to the photo's lens, or the one named here where it's on the Mac and is of the photo's lens; Redlamp keeps no lens defaults, so the two match alike. `custom` uses the one named here, whatever lens it was made for, as for an adapted or manual lens, in place of a correction the file carries. |
+| `name` | string? | The profile's name, such as `Adobe (Canon EF 24-70mm f/2.8L II USM)`. |
+| `fileName` | string? | Its file's name, which finds the profile first, whatever its case, in Redlamp's Lens Profiles folder and then in Camera Raw's. Without it, the name finds it. |
+
+A named profile that isn't on the Mac, or can't fit the photo, leaves the photo with what it would have at Default, and the panel says so. A profile made on another body, or for another frame, is scaled to the photo's as process 17 scales a matched one.
 
 ### Parameters
 

@@ -11,7 +11,8 @@ import Testing
 @MainActor
 struct EditorObservationTests {
     enum Control: CaseIterable, CustomTestStringConvertible {
-        case chromaticAberration, profileCorrections, frameStyle, processVersion, embeddedBaseLook
+        case chromaticAberration, profileCorrections, lensProfileSetup, lensProfileMenus, frameStyle, processVersion
+        case embeddedBaseLook
 
         var testDescription: String {
             "\(self)"
@@ -22,6 +23,8 @@ struct EditorObservationTests {
             switch self {
             case .chromaticAberration: _ = ParameterToggle.isOn(.lensRemoveChromaticAberration, in: model)
             case .profileCorrections: _ = ProfileCorrectionsToggle.isOn(in: model)
+            case .lensProfileSetup: _ = model.lensProfileSetup
+            case .lensProfileMenus: _ = LensProfilePicker.items(.profile, in: model)
             case .frameStyle: _ = FrameStylePicker.style(in: model)
             case .processVersion: _ = ProcessVersion.version(in: model)
             case .embeddedBaseLook: _ = BaseLookMenu.embeddedLook(in: model)
@@ -33,6 +36,9 @@ struct EditorObservationTests {
             switch self {
             case .chromaticAberration: model.setValue(.lensRemoveChromaticAberration, 1)
             case .profileCorrections: model.setValue(.lensProfile, model.value(.lensProfile) > 0.5 ? 0 : 1)
+            case .lensProfileSetup: model.setLensProfileSetup(.auto)
+            case .lensProfileMenus:
+                model.setLensProfileChoice(LensProfileChoice(setup: .custom, name: "Mine", fileName: "Mine.lcp"))
             case .frameStyle: model.setValue(.frameStyle, 1)
             case .processVersion, .embeddedBaseLook: model.setProcessVersion(1)
             }

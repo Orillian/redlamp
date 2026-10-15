@@ -209,11 +209,30 @@ public protocol EditingEngine: AnyObject, Sendable {
     func focusStack(
         at url: URL, maxLongEdge: Int, progress: @escaping @Sendable (Double) -> Void,
     ) async throws -> FocusStackPreview
+
+    /// The lens correction `recipe` renders `photo` with, before Enable Profile Corrections and its
+    /// amounts (`GeometryMap.profile`): the lens profile the edit names where it's on this Mac and
+    /// fits (LNS-15), else the photo's own (`ImageInfo.lensCorrection`). Overlays use it, so they
+    /// agree with the render. Answers from what's kept for the photo when it's the open one.
+    func lensCorrection(for recipe: EditRecipe, of photo: ImageInfo) -> LensCorrection?
+
+    /// The lens profiles on this Mac a photographer can choose for `photo` (LNS-15): those made
+    /// for raws on a sensor at least as large as its sensor, by make, model and name.
+    func lensProfileOptions(for photo: ImageInfo) async -> [LensProfileOption]
 }
 
 public extension EditingEngine {
     /// Engines without raw stages build every photo the same way.
     func expect(_: RawRevision, for _: URL) {}
+
+    /// Engines without the user's lens profiles have only what the photo carries.
+    func lensCorrection(for _: EditRecipe, of photo: ImageInfo) -> LensCorrection? {
+        photo.lensCorrection
+    }
+
+    func lensProfileOptions(for _: ImageInfo) async -> [LensProfileOption] {
+        []
+    }
 
     func registerBaseLooks(_ looks: [BaseLookSource]) {
         for look in looks {

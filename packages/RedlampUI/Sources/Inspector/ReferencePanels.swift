@@ -49,6 +49,10 @@ import SwiftUI
             )
             ProfileCorrectionsToggle()
             SubsectionHeader(title: "Profile", parameters: [.lensProfileDistortion, .lensProfileVignetting])
+            ControlRow(label: "Setup") { LensProfileSetupPicker() }
+            ControlRow(label: "Make") { LensProfilePicker(level: .make) }
+            ControlRow(label: "Model") { LensProfilePicker(level: .model) }
+            ControlRow(label: "Profile") { LensProfilePicker(level: .profile) }
             ParameterSlider(parameter: .lensProfileDistortion)
             ParameterSlider(parameter: .lensProfileVignetting)
             SubsectionHeader(title: "Defringe", parameters: Self.defringe)
@@ -99,9 +103,9 @@ struct ParameterToggle: View {
 struct ProfileCorrectionsToggle: View {
     @Environment(EditorModel.self) private var model
 
-    /// Whether the photo's lens correction applies at the edit's process version.
+    /// Whether the edit's lens correction applies at its process version.
     static func applies(in model: EditorModel) -> Bool {
-        model.info?.lensCorrection.map { model.processVersion >= $0.process } ?? false
+        model.lensCorrection.map { model.processVersion >= $0.process } ?? false
     }
 
     static func isOn(in model: EditorModel) -> Bool {
@@ -109,10 +113,11 @@ struct ProfileCorrectionsToggle: View {
     }
 
     var body: some View {
-        let lens = model.info?.lensCorrection
+        let lens = model.lensCorrection
         let applies = Self.applies(in: model)
         let issues = LensProfileIssues.current()
-        let notes = [LensPanelText.profile(lens), LensPanelText.issues(issues)].compactMap(\.self)
+        let notes = [LensPanelText.profile(lens), model.missingLensProfile, LensPanelText.issues(issues)]
+            .compactMap(\.self)
         if notes.isEmpty {
             toggle(lens, applies: applies)
         } else {
@@ -177,9 +182,26 @@ enum LensPanelText {
         )
     }
 
+    /// The profile an edit names that it can't use, and what stands in for it (LNS-15).
+    static func missing(_ choice: LensProfileChoice, onMac: Bool, standIn: LensCorrection?) -> Note {
+        let name = choice.name ?? choice.fileName ?? "the lens profile"
+        let using = switch standIn {
+        case nil: "no lens correction"
+        case let lens? where lens.source == .profile: "the lens profile for \(lens.profileName ?? "its lens")"
+        case let lens?: "the lens correction the \(lens.source.name) file carries"
+        }
+        return Note(
+            text: onMac ? "Profile can't be used: \(name)" : "Profile not on this Mac: \(name)",
+            help: "The lens profile “\(name)” " + (onMac ? "can't be used on this photo" : "isn't on this Mac")
+                + "; using \(using)",
+        )
+    }
+
     /// ", made on a Canon EOS 5D Mark III" for a profile made on another body than the photo's.
     private static func madeOn(_ lens: LensCorrection) -> String {
-        lens.profileCamera.map { ", made on a \($0)" } ?? ""
+        lens.profileCamera.map { camera in
+            ", made on " + ("AEIOU".contains(camera.prefix(1).uppercased()) ? "an " : "a ") + camera
+        } ?? ""
     }
 
     /// How many profiles couldn't be read, with each file and its reasons in the help.

@@ -140,22 +140,125 @@ public final class LCPProfileLibrary: Sendable {
     /// The match every process makes, as LNS-04 made it.
     private func ownBody(for info: ImageInfo, sensorSize: PixelSize, orientation: Int) -> LensCorrection? {
         guard let make = info.make, let lens = info.lens else { return nil }
-        let matches = profiles(in: [.redlamp]).map { profile in
+        let matches = profiles(in: [.redlamp]).map { url, profile in
             let camera = profile.subProfiles.filter { $0.isRaw && $0.matchesCamera(make: make, model: info.model) }
             let match = camera.map { $0.lensMatch(lens, make: make) }.max() ?? .unmatched
-            return (match: match, subProfiles: camera.filter { $0.lensMatch(lens, make: make) == match })
+            return (url: url, match: match, subProfiles: camera.filter { $0.lensMatch(lens, make: make) == match })
         }
         for wanted in [LCPProfile.SubProfile.LensMatch.lens, .prettyName] {
             for candidate in matches where candidate.match == wanted {
-                if let correction = LCPProfile.correction(
+                if var correction = LCPProfile.correction(
                     candidate.subProfiles, focalLength: info.focalLength, aperture: info.aperture, size: sensorSize,
                     orientation: orientation,
                 ) {
+                    correction.profileFileName = candidate.url.lastPathComponent
                     return correction
                 }
             }
         }
         return nil
+    }
+
+    /// The correction for a raw photo from the profile an edit names (LNS-15), found by its file's
+    /// name, whatever its case, or by its name where the choice gives no file name, the folders in
+    /// order. Custom takes it whatever lens it was made for; Default and Auto only where it's of the
+    /// photo's lens. Made on another body, or for another frame, it's scaled as process 17 scales
+    /// a profile. Nil where it isn't on this Mac or can't fit the photo.
+    public func correction(
+        named choice: LensProfileChoice, for info: ImageInfo, sensorSize: PixelSize, orientation: Int,
+    ) -> LensCorrection? {
+        guard choice.namesProfile, let photo = PhotoIdentity(info, requiringLens: false) else { return nil }
+        let order = folders.map(\.kind)
+        let named = firstSubProfiles().filter { file in
+            if let fileName = choice.fileName {
+                return file.url.lastPathComponent.caseInsensitiveCompare(fileName) == .orderedSame
+            }
+            return file.first?.profileName == choice.name
+        }.sorted { a, b in
+            let (folderA, folderB) = (order.firstIndex(of: a.folder) ?? 0, order.firstIndex(of: b.folder) ?? 0)
+            return folderA != folderB ? folderA < folderB : a.url.path < b.url.path
+        }
+        for file in named {
+            guard let profile = wholeProfile(file.url) else { continue }
+            let subProfiles = profile.subProfiles.filter(\.isRaw)
+            guard let first = subProfiles.first,
+                  choice.setup == .custom || photo.lensMatch(first, identified: nil) != nil,
+                  var correction = fitted(
+                      subProfiles,
+                      body: photo.body(first),
+                      info: info,
+                      size: sensorSize,
+                      orientation: orientation,
+                  )
+            else { continue }
+            correction.profileFolder = file.folder
+            correction.profileFileName = file.url.lastPathComponent
+            if photo.body(first) != .own {
+                correction.profileCamera = first.cameraPrettyName ?? first.model ?? first.make
+            }
+            return correction
+        }
+        return nil
+    }
+
+    /// The lens profiles a photographer can choose for a raw photo by hand (LNS-15): every folder's
+    /// profiles made for raws on the photo's own body or on a sensor at least as large as its sensor,
+    /// within a tenth, by make, model and name. Without the photo's crop factor, only those made on
+    /// its own body, which can apply without being scaled. An edit names a profile by its file's
+    /// name, so of files of one name only the first that can be used is listed, as it's the one used.
+    public func options(for info: ImageInfo) -> [LensProfileOption] {
+        guard let photo = PhotoIdentity(info, requiringLens: false) else { return [] }
+        let order = folders.map(\.kind)
+        let usable = firstSubProfiles().sorted { a, b in
+            let (folderA, folderB) = (order.firstIndex(of: a.folder) ?? 0, order.firstIndex(of: b.folder) ?? 0)
+            return folderA != folderB ? folderA < folderB : a.url.path < b.url.path
+        }.compactMap { file -> LensProfileOption? in
+            guard let first = file.first, first.isRaw else { return nil }
+            if photo.body(first) != .own {
+                guard let crop = info.cropFactor, let factor = first.sensorFormatFactor, factor <= crop * 1.1 else {
+                    return nil
+                }
+            }
+            let fileName = file.url.lastPathComponent
+            let model = first.lensPrettyName ?? first.lens ?? file.url.deletingPathExtension().lastPathComponent
+            return LensProfileOption(
+                make: model.split(separator: " ").first.map(String.init) ?? model, model: model,
+                name: first.profileName ?? model, fileName: fileName, folder: file.folder,
+            )
+        }
+        var seen = Set<String>()
+        return usable.filter { seen.insert($0.fileName.lowercased()).inserted }.sorted { a, b in
+            for (x, y) in [(a.make, b.make), (a.model, b.model), (a.name, b.name)] {
+                let order = x.localizedStandardCompare(y)
+                if order != .orderedSame {
+                    return order == .orderedAscending
+                }
+            }
+            let (folderA, folderB) = (order.firstIndex(of: a.folder) ?? 0, order.firstIndex(of: b.folder) ?? 0)
+            return folderA != folderB ? folderA < folderB : a.fileName < b.fileName
+        }
+    }
+
+    /// A profile's correction for a photo: as recorded on its own body where the frame fits, else
+    /// scaled to the photo's frame where its sensor covers the photo's within a tenth.
+    private func fitted(
+        _ subProfiles: [LCPProfile.SubProfile], body: PhotoIdentity.Body?, info: ImageInfo, size sensorSize: PixelSize,
+        orientation: Int,
+    ) -> LensCorrection? {
+        if body == .own, let correction = LCPProfile.correction(
+            subProfiles, focalLength: info.focalLength, aperture: info.aperture, size: sensorSize,
+            orientation: orientation,
+        ) {
+            return correction
+        }
+        let size = SIMD2(Double(sensorSize.width), Double(sensorSize.height))
+        guard let first = subProfiles.first, let crop = info.cropFactor, let factor = first.sensorFormatFactor,
+              factor <= crop * 1.1, let ratio = first.ratio(toCropFactor: crop, size: size)
+        else { return nil }
+        return LCPProfile.correction(
+            subProfiles, focalLength: info.focalLength, aperture: info.aperture, size: sensorSize,
+            orientation: orientation, fit: .scaled(ratio),
+        )
     }
 
     /// Process 17's match, from every folder: a profile of the photo's lens made on its own body,
@@ -166,7 +269,6 @@ public final class LCPProfileLibrary: Sendable {
     /// lens's other names, else, where the file names none, the one its maker's number identifies.
     private func acrossBodies(for info: ImageInfo, sensorSize: PixelSize, orientation: Int) -> LensCorrection? {
         guard let photo = PhotoIdentity(info) else { return nil }
-        let size = SIMD2(Double(sensorSize.width), Double(sensorSize.height))
         let listed = firstSubProfiles()
         let identified = photo.lens == nil ? identifiedLens(photo, among: listed) : nil
         let folderOrder = folders.map(\.kind)
@@ -198,23 +300,17 @@ public final class LCPProfileLibrary: Sendable {
                 subProfile.isRaw && photo.body(subProfile) == candidate.body
                     && photo.lensMatch(subProfile, identified: identified) == candidate.lens
             }
-            guard let first = subProfiles.first else { continue }
-            var correction: LensCorrection?
-            if candidate.body == .own {
-                correction = LCPProfile.correction(
-                    subProfiles, focalLength: info.focalLength, aperture: info.aperture, size: sensorSize,
-                    orientation: orientation,
-                )
-            }
-            if correction == nil, let crop = info.cropFactor, let factor = first.sensorFormatFactor,
-               factor <= crop * 1.1, let ratio = first.ratio(toCropFactor: crop, size: size) {
-                correction = LCPProfile.correction(
-                    subProfiles, focalLength: info.focalLength, aperture: info.aperture, size: sensorSize,
-                    orientation: orientation, fit: .scaled(ratio),
-                )
-            }
-            guard var correction else { continue }
+            guard let first = subProfiles.first,
+                  var correction = fitted(
+                      subProfiles,
+                      body: candidate.body,
+                      info: info,
+                      size: sensorSize,
+                      orientation: orientation,
+                  )
+            else { continue }
             correction.profileFolder = candidate.folder
+            correction.profileFileName = candidate.url.lastPathComponent
             if candidate.body != .own {
                 correction.profileCamera = first.cameraPrettyName ?? first.model ?? first.make
             }
@@ -254,7 +350,7 @@ public final class LCPProfileLibrary: Sendable {
     // MARK: - Files
 
     /// Every profile in Redlamp's folders, read whole, by path, read again where its file changed.
-    func profiles(in kinds: Set<LensProfileFolder> = [.redlamp]) -> [LCPProfile] {
+    func profiles(in kinds: Set<LensProfileFolder> = [.redlamp]) -> [(url: URL, profile: LCPProfile)] {
         let listed = folders.filter { kinds.contains($0.kind) }.flatMap { folder in
             listing(of: folder).map { (folder: folder.kind, file: $0) }
         }
@@ -270,7 +366,7 @@ public final class LCPProfileLibrary: Sendable {
                         size: listed.size,
                     )
                 }
-                return files[listed.url]?.profile
+                return files[listed.url]?.profile.map { (listed.url, $0) }
             }
         }
     }
@@ -423,13 +519,14 @@ private struct PhotoIdentity {
     /// lens name can match only if its key ends with one.
     let lensKeys: [String]
 
-    init?(_ info: ImageInfo) {
+    /// Nil without the photo's make, and, `requiringLens`, without its lens's name or number.
+    init?(_ info: ImageInfo, requiringLens: Bool = true) {
         guard let make = info.make else { return nil }
         let cameras = [(make: make, model: info.model)]
             + (info.canonicalMake.map { [(make: $0, model: info.canonicalModel ?? info.model)] } ?? [])
         let makes = Set(cameras.map { Self.makeKey($0.make) })
         let lens = info.lens.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-        guard lens != nil || info.lensID != nil else { return nil }
+        guard !requiringLens || lens != nil || info.lensID != nil else { return nil }
         self.cameras = cameras
         self.makes = makes
         self.lens = lens

@@ -95,7 +95,7 @@ public extension EditorModel {
     var canvasGeometry: GeometryMap? {
         info.map { info in
             GeometryMap(
-                recipe: recipe, imageSize: info.pixelSize, includesCrop: activeTool != .crop, lens: info.lensCorrection,
+                recipe: recipe, imageSize: info.pixelSize, includesCrop: activeTool != .crop, lens: lensCorrection,
             )
         }
     }
@@ -286,7 +286,7 @@ public extension EditorModel {
             cropIntent,
             recipe: next,
             imageSize: info.pixelSize,
-            lens: info.lensCorrection,
+            lens: engine.lensCorrection(for: next, of: info),
         )
     }
 

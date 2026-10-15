@@ -822,6 +822,20 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         session.withLock { $0 }?.embeddedLook
     }
 
+    /// The session kept for `photo`: the open one, or one decoded ahead.
+    private func keptSession(of photo: ImageInfo) -> ImageSession? {
+        currentSession().flatMap { $0.info.url == photo.url ? $0 : nil } ?? sessions.cached(photo.url)
+    }
+
+    public func lensCorrection(for recipe: EditRecipe, of photo: ImageInfo) -> LensCorrection? {
+        keptSession(of: photo)?.lensCorrection(for: recipe) ?? photo.lensCorrection
+    }
+
+    public func lensProfileOptions(for photo: ImageInfo) async -> [LensProfileOption] {
+        guard let resolver = keptSession(of: photo)?.lensProfiles else { return [] }
+        return await Task.detached(priority: .userInitiated) { resolver.options() }.value
+    }
+
     /// Makes the photo's embedded look renderable while it is open.
     private func registerEmbeddedLook(_ session: ImageSession) {
         if let look = session.embeddedLook {

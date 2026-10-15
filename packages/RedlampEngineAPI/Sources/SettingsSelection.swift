@@ -19,6 +19,8 @@ public enum EditField: String, Sendable, Hashable, CaseIterable {
     case processVersion
     /// Heal and Clone spots.
     case spots
+    /// The lens profile the Lens Corrections panel chose (LNS-15).
+    case lensProfile
 }
 
 /// One line of the checklist.
@@ -115,6 +117,7 @@ public struct SettingsGroup: Sendable, Hashable, Identifiable {
                 "lens.profile",
                 "Profile Corrections",
                 [.lensProfile, .lensProfileDistortion, .lensProfileVignetting],
+                fields: [.lensProfile],
             ),
             SettingsItem("lens.chromaticAberration", "Remove Chromatic Aberration", [.lensRemoveChromaticAberration]),
             SettingsItem("lens.defringe", "Defringe", [
@@ -367,6 +370,7 @@ public extension EditRecipe {
         case .orientation: orientation == other.orientation
         case .processVersion: processVersion == other.processVersion
         case .spots: spots == other.spots
+        case .lensProfile: lensProfileChoice == other.lensProfileChoice
         }
     }
 
@@ -386,6 +390,7 @@ public extension EditRecipe {
         case .orientation: orientation = source.orientation
         case .processVersion: processVersion = source.processVersion
         case .spots: spots = source.spots
+        case .lensProfile: lensProfileChoice = source.lensProfileChoice
         }
     }
 }

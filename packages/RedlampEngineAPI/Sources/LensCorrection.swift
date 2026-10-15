@@ -59,9 +59,10 @@ public struct LensCorrection: Codable, Sendable, Hashable {
     /// The lens a user's profile names, which the Lens panel shows (LNS-11); nil for a correction
     /// the file carries. Only a label: the correction renders the same without it.
     public var profileName: String?
-    /// The folder a lens profile was found in (LNS-16), and the camera it was made on where that's
-    /// another than the photo's (LNS-14). Only labels.
+    /// The folder a lens profile was found in (LNS-16), its file's name (LNS-15), and the camera it
+    /// was made on where that's another than the photo's (LNS-14). Only labels.
     public var profileFolder: LensProfileFolder?
+    public var profileFileName: String?
     public var profileCamera: String?
     /// The first process version whose matching finds this lens profile, where it's later than its
     /// source's: process 17 matches profiles made on other bodies and those in Camera Raw's folders.

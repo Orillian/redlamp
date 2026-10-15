@@ -58,6 +58,9 @@ final class ImageSession: @unchecked Sendable {
     let embeddedLook: BaseLookDefinition?
     /// The mattes the file carries, found while the session was built so they're never probed on the main thread.
     let embeddedMattes: Set<EmbeddedMatte>
+    /// The user's lens profiles as the photo's edits can name them (LNS-15); nil for a photo that
+    /// isn't raw, or without the user's profiles.
+    let lensProfiles: LensProfileResolver?
     /// The raw revision its pyramid was built at (`RawRevision`).
     let rawRevision: RawRevision
     /// What another raw revision builds a different pyramid from, kept for the photo's edits at
@@ -115,8 +118,10 @@ final class ImageSession: @unchecked Sendable {
         gainTableMap: GainTableMapTexture? = nil,
         embeddedLook: BaseLookDefinition? = nil,
         embeddedMattes: Set<EmbeddedMatte>,
+        lensProfiles: LensProfileResolver? = nil,
     ) {
         self.embeddedMattes = embeddedMattes
+        self.lensProfiles = lensProfiles
         self.rawRevision = rawRevision
         self.rawSource = rawSource
         self.noiseGain = noiseGain
@@ -192,6 +197,7 @@ final class ImageSession: @unchecked Sendable {
         gainTableMap = photo.gainTableMap
         embeddedLook = photo.embeddedLook
         embeddedMattes = photo.embeddedMattes
+        lensProfiles = photo.lensProfiles
         rawRevision = revision
         rawSource = nil
         chromaticAberration = LateralChromaticAberration.Cache()
@@ -234,11 +240,23 @@ final class ImageSession: @unchecked Sendable {
         gainTableMap = original.gainTableMap
         embeddedLook = original.embeddedLook
         embeddedMattes = original.embeddedMattes
+        lensProfiles = original.lensProfiles
         rawRevision = original.rawRevision
         rawSource = nil
         chromaticAberration = original.chromaticAberration
         retouchedFrom = original
         variantOf = nil
+    }
+
+    /// The lens correction `recipe` renders with, before its switch and amounts: the profile it
+    /// names where that's on this Mac and fits the photo (LNS-15), else the photo's own. Under
+    /// Default and Auto a correction the file carries comes first, as it does without a name.
+    func lensCorrection(for recipe: EditRecipe) -> LensCorrection? {
+        guard let choice = recipe.lensProfileChoice, choice.namesProfile, let lensProfiles,
+              choice.setup == .custom || info.lensCorrection.map({ $0.source == .profile }) != false,
+              let named = lensProfiles.correction(for: choice)
+        else { return info.lensCorrection }
+        return named
     }
 
     /// The maps made from its pixels.

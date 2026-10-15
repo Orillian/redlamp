@@ -90,6 +90,12 @@ struct SessionBuilder {
             gainTableMap: decoded.isRaw ? GainTableMapTexture(decoded.dngProfile?.gainTableMap, device: device) : nil,
             embeddedLook: embeddedLook,
             embeddedMattes: mattes.value(),
+            lensProfiles: decoded.isRaw ? lensProfiles.map { library in
+                LensProfileResolver(
+                    library: library, info: info, sensorSize: PixelSize(width: decoded.width, height: decoded.height),
+                    orientation: decoded.orientation,
+                )
+            } : nil,
         )
     }
 

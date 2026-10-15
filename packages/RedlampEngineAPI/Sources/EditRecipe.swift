@@ -152,6 +152,15 @@ public struct EditRecipe: Sendable, Hashable {
     /// Under Redlamp Reproduction, where the photo's camera puts a metered grey: its own, written
     /// when the look arrives and never copied from another photo (`EditRecipe.anchored`).
     public var exposureAnchor: ExposureAnchor?
+    /// The lens profile chosen in the Lens Corrections panel (LNS-15); nil at Default with none named.
+    public var lensProfileChoice: LensProfileChoice? {
+        didSet {
+            if lensProfileChoice != oldValue {
+                turnOn(.lens)
+            }
+        }
+    }
+
     /// The crop, in the straightened frame (see `GeometryMap`); its angle is `cropAngle`.
     public var crop: CropRect = .full
     /// The user's rotation and flip, after the camera's orientation.
@@ -240,6 +249,7 @@ public struct EditRecipe: Sendable, Hashable {
             && appliedRecipe == nil
             // From process 16 every raw's edit gets its camera's anchor when it's made (CAM-29).
             && (exposureAnchor == nil || processVersion >= 16)
+            && lensProfileChoice == nil
             && crop.isFull
             && orientation.isIdentity
             && panelsOff.isEmpty
@@ -271,6 +281,7 @@ extension EditRecipe: Codable {
         case version, processVersion, treatment, baseLook, whiteBalance, pointCurve, values, pointColor, masks
         case pointCurveRed, pointCurveGreen, pointCurveBlue
         case appliedRecipe, exposureAnchor, crop, orientation, spots, panelsOff
+        case lensProfile
         /// Format version 1's name for `baseLook`; read, never written.
         case profile
 
@@ -309,6 +320,7 @@ extension EditRecipe: Codable {
         spots = try container.decodeIfPresent([RetouchSpot].self, forKey: .spots) ?? []
         appliedRecipe = try container.decodeIfPresent(AppliedRecipe.self, forKey: .appliedRecipe)
         exposureAnchor = try container.decodeIfPresent(ExposureAnchor.self, forKey: .exposureAnchor)
+        lensProfileChoice = try container.decodeIfPresent(LensProfileChoice.self, forKey: .lensProfile)
         crop = try container.decodeIfPresent(CropRect.self, forKey: .crop) ?? .full
         orientation = try container.decodeIfPresent(ImageOrientation.self, forKey: .orientation) ?? .identity
         // After the settings, whose setters turn panels on.
@@ -348,6 +360,7 @@ extension EditRecipe: Codable {
         }
         try container.encodeIfPresent(appliedRecipe, forKey: .appliedRecipe)
         try container.encodeIfPresent(exposureAnchor, forKey: .exposureAnchor)
+        try container.encodeIfPresent(lensProfileChoice, forKey: .lensProfile)
         if !crop.isFull {
             try container.encode(crop, forKey: .crop)
         }

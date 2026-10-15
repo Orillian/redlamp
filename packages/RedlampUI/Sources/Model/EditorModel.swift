@@ -158,6 +158,9 @@ public final class EditorModel {
             if newValue.panelsOff != old.panelsOff {
                 withMutation(keyPath: \.panelsOff) {}
             }
+            if newValue.lensProfileChoice != old.lensProfileChoice {
+                withMutation(keyPath: \.lensProfileChoice) {}
+            }
             if newValue.pointColor.isEmpty != old.pointColor.isEmpty {
                 withMutation(keyPath: \.hasPointColor) {}
             }
@@ -203,6 +206,11 @@ public final class EditorModel {
     public var appliedRecipe: AppliedRecipe? {
         access(keyPath: \.appliedRecipe)
         return storedRecipe.appliedRecipe
+    }
+
+    public var lensProfileChoice: LensProfileChoice? {
+        access(keyPath: \.lensProfileChoice)
+        return storedRecipe.lensProfileChoice
     }
 
     public var whiteBalanceMode: WhiteBalanceMode {
@@ -613,6 +621,8 @@ public final class EditorModel {
     var cameraProfilesPhoto: URL?
     /// What the last Choose Camera Profiles… couldn't use, with the reasons, for its alert.
     public var cameraProfileIssues: [String] = []
+    /// The lens profiles on this Mac the open photo can be given by hand (LNS-15); nil until found.
+    public internal(set) var lensProfileOptions: [LensProfileOption]?
     /// The People parts the engine can make for the open photo.
     var offeredPersonParts: Set<PersonPart> = []
     /// A model the chosen mask needs, waiting for the user to agree to download it.
@@ -1298,6 +1308,8 @@ public final class EditorModel {
         availableAIMaskKinds = []
         Task { await refreshAvailableMasks() }
         Task { await refreshCameraProfiles() }
+        lensProfileOptions = nil
+        Task { await refreshLensProfileOptions() }
         maskMessage = nil
         readOnlyReason = read.protection
         hasUnmergedEdits = read.hasUnmergedConflicts
@@ -1970,6 +1982,7 @@ public final class EditorModel {
             case .whiteBalanceMode: whiteBalanceMode != .asShot
             case .pointCurve: CurveChannel.allCases.contains { pointCurve($0) != EditRecipe.linearPointCurve }
             case .pointColor: hasPointColor
+            case .lensProfile: lensProfileChoice != nil
             case .crop, .orientation, .processVersion, .spots: false
             }
         }

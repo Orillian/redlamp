@@ -478,7 +478,9 @@ final class DetailStage {
         if cache, PhotoKey(url: session.info.url, size: session.info.pixelSize) != cachedPhoto {
             keepOnly(session)
         }
-        let geometry = GeometryMap(recipe: recipe, imageSize: session.orientedSize, lens: session.info.lensCorrection)
+        let geometry = GeometryMap(
+            recipe: recipe, imageSize: session.orientedSize, lens: session.lensCorrection(for: recipe),
+        )
         let exact = Self.workArea(session: session, geometry: geometry, region: region, outputSize: outputSize)
         guard let passes = Self.passes(recipe, session: session, level: exact.level, masks: masks) else { return nil }
         let snapped = Self.snapped(exact, session: session)

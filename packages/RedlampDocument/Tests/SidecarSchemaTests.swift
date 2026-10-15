@@ -480,6 +480,10 @@ enum RichSidecar {
         recipe.orientation = ImageOrientation(quarterTurns: 1, mirrored: true)
         recipe.appliedRecipe = AppliedRecipe(id: "redlamp/film/portra-400", version: 2, name: "Portra 400", amount: 120)
         recipe.exposureAnchor = ExposureAnchor(stops: 0.94, source: .target, camera: "Canon EOS R5")
+        recipe.lensProfileChoice = LensProfileChoice(
+            setup: .custom, name: "Adobe (Canon EF 24-70mm f/2.8L II USM)",
+            fileName: "Canon EOS 5D Mark III (Canon EF 24-70mm f2.8L II USM) - RAW.lcp",
+        )
         recipe.pointColor = [
             PointColorSwatch(
                 color: .oklch(OKLCh(lightness: 0.64, chroma: 0.08, hue: 48)),

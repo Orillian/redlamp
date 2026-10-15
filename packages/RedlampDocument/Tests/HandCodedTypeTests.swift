@@ -43,16 +43,22 @@ struct HandCodedTypeTests {
         try check(everything, notWritten: ["session", "clearsHistory", "unsavedSessions"])
         try check(
             everything.recipe, renamed: ["whiteBalanceMode": "whiteBalance"],
-            notWritten: ["pointColor", "panelsOff", "unknownPanelsOff", "channelCurves"],
+            notWritten: ["pointColor", "panelsOff", "unknownPanelsOff", "channelCurves", "lensProfileChoice"],
         )
         var colored = everything.recipe
         colored.pointColor = [Self.pickedSwatch]
-        colored.panelsOff = [.detail, .lens]
         for (index, channel) in CurveChannel.colors.enumerated() {
             colored[curve: channel] = [CurvePoint(x: 0, y: 0.05 + 0.1 * Double(index)), CurvePoint(x: 1, y: 1)]
         }
+        colored.lensProfileChoice = LensProfileChoice(
+            setup: .custom,
+            name: "Mine (Helios 44-2)",
+            fileName: "Helios.lcp",
+        )
+        colored.panelsOff = [.detail, .lens]
         try check(colored, renamed: [
             "whiteBalanceMode": "whiteBalance", "unknownPanelsOff": "panelsOff", "channelCurves": "pointCurveRed",
+            "lensProfileChoice": "lensProfile",
         ])
         try check(#require(everything.recipe.exposureAnchor))
         try check(#require(everything.snapshots.first))

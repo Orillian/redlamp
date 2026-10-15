@@ -127,6 +127,55 @@ struct LensProfileRenderTests {
         #expect(zip(plain, unprofiled).allSatisfy { simd_abs($0 - $1).max() == 0 }, "turned off, nothing changes")
     }
 
+    /// A lens profile of an adapted lens made on the photo's own body, for its frame, as an LCP file.
+    static let adaptedProfile = """
+    <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="" xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+     xmlns:stCamera="http://ns.adobe.com/photoshop/1.0/camera-profile"><photoshop:CameraProfiles><rdf:Seq><rdf:li>
+    <rdf:Description stCamera:Make="SONY" stCamera:Model="ILCE-7M3" stCamera:Lens="Helios 44-2 58mm f/2"
+     stCamera:ProfileName="Mine (Helios 44-2)" stCamera:CameraRawProfile="True" stCamera:ImageWidth="384"
+     stCamera:ImageLength="256" stCamera:FocalLength="58" stCamera:ApertureValue="2">
+    <stCamera:PerspectiveModel><rdf:Description stCamera:FocalLengthX="1.4" stCamera:FocalLengthY="1.4"
+     stCamera:RadialDistortParam1="-0.1"><stCamera:VignetteModel><rdf:Description stCamera:FocalLengthX="1.4"
+     stCamera:FocalLengthY="1.4" stCamera:VignetteModelParam1="-0.5"/></stCamera:VignetteModel></rdf:Description>
+    </stCamera:PerspectiveModel></rdf:Description></rdf:li></rdf:Seq></photoshop:CameraProfiles></rdf:Description>
+    </rdf:RDF></x:xmpmeta>
+    """
+
+    @Test func `a profile an edit names replaces the photo's own correction under Custom, and renders`() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "lens-choice-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(Self.adaptedProfile.utf8).write(to: folder.appending(path: "Helios.lcp"))
+        let (width, height) = (Self.width, Self.height)
+        var info = ImageInfo(
+            url: URL(fileURLWithPath: "/adapted.arw"), pixelSize: PixelSize(width: width, height: height),
+            isRaw: true, sensorDescription: "synthetic", make: "Sony", model: "ILCE-7M3", lens: "Lens 0",
+        )
+        info.focalLength = 58
+        var decoded = DecodedImage(
+            width: width, height: height, layout: .linearRGB,
+            samples: (0 ..< width * height * 3).map { UInt16(truncatingIfNeeded: ($0 * 7919) % 65535) },
+            blackLevels: [0, 0, 0], whiteLevel: 65535, asShotMultipliers: SIMD3(1, 1, 1),
+            cameraToSRGB: [1, 0, 0, 0, 1, 0, 0, 0, 1], xyzToCamera: nil, orientation: 0, baselineExposure: 0,
+            info: info,
+        )
+        decoded.lensCorrection = Self.lens
+        let session = try SessionBuilder(
+            device: device, queue: queue, kernels: kernels, lensProfiles: LCPProfileLibrary(directory: folder),
+        ).build(decoded)
+        var recipe = EditRecipe()
+        #expect(session.lensCorrection(for: recipe) == Self.lens)
+        recipe.lensProfileChoice = LensProfileChoice(setup: .auto, name: "Mine (Helios 44-2)", fileName: "Helios.lcp")
+        #expect(session.lensCorrection(for: recipe) == Self.lens, "under Auto the file's own correction comes first")
+        recipe.lensProfileChoice?.setup = .custom
+        let named = try #require(session.lensCorrection(for: recipe))
+        #expect(named.source == .profile && named.profileFileName == "Helios.lcp")
+        #expect(try render(session, recipe) != render(session, EditRecipe()))
+        recipe.lensProfileChoice?.fileName = "Gone.lcp"
+        #expect(session.lensCorrection(for: recipe) == Self.lens, "a profile not on this Mac leaves the photo's own")
+    }
+
     /// The camera samples whose corrections process 16 reads (LNS-02).
     static let process16Samples = CameraGoldenTests.cameras.filter {
         ["Panasonic_DC-S5M2.RW2", "OM-System_OM-1-Mark-II.orf"].contains($0.lastPathComponent)

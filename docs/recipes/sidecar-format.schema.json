@@ -127,6 +127,7 @@
         },
         "appliedRecipe": { "$ref": "#/$defs/appliedRecipe" },
         "exposureAnchor": { "$ref": "#/$defs/exposureAnchor" },
+        "lensProfile": { "$ref": "#/$defs/lensProfile" },
         "crop": { "$ref": "#/$defs/cropRect", "default": { "left": 0, "top": 0, "right": 1, "bottom": 1 } },
         "orientation": { "$ref": "#/$defs/orientation", "default": { "quarterTurns": 0, "mirrored": false } },
         "panelsOff": {
@@ -318,6 +319,20 @@
         "camera": { "type": "string", "description": "The camera it belongs to: the model the file states, after its make unless the model names it." }
       },
       "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
+    },
+    "lensProfile": {
+      "description": "The lens profile chosen in the Lens Corrections panel, as Lightroom's Setup, Make, Model and Profile menus choose one (crs:LensProfileSetup, LensProfileName and LensProfileFilename). Names only: the profile's models stay in its file on the Mac. Absent at Default with no profile named.",
+      "type": "object",
+      "required": ["setup"],
+      "properties": {
+        "setup": {
+          "enum": ["defaults", "auto", "custom"],
+          "description": "defaults and auto: the profile matched to the photo's lens, or the one named here where it's on the Mac and is of the photo's lens. custom: the one named here, whatever lens it was made for."
+        },
+        "name": { "type": "string", "description": "The profile's name, such as \"Adobe (Canon EF 24-70mm f/2.8L II USM)\"." },
+        "fileName": { "type": "string", "description": "Its file's name, which finds it before the name does, whatever its case." }
+      },
+      "additionalProperties": false
     },
     "appliedRecipe": {
       "description": "The .redrecipe the edit was last built from. Provenance only: rendering never reads it.",
