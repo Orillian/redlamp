@@ -20,6 +20,8 @@ Only file names are listed until a profile is needed: Adobe's folder holds a pro
 
 A profile's look is `local/adobe/<profile>` for a DCP and `local/adobe/<profile>/<look>` for an XMP look over a DCP, each part 16 hex digits of a SHA-256 over what renders (the matrices, tables, curve and offsets; not names or copyright). The same files on another Mac give the same id. The reference's `version` is the bake's version, and it carries no `contentHash`: the id already pins the content, and nothing of the profile is stored anywhere.
 
+Only a camera's own profiles calibrate its photos. An edit synced or pasted onto a photo from another camera keeps naming the first camera's profile, and renders over the second camera's own: an XMP look over its profile of the same name with the same look hash, a DCP look as its profile of the same name, as Lightroom applies Adobe Color over each camera's Adobe Standard. A look the second camera has no profile for (a camera-matching look made for the first) is missing there, and Redlamp's look stands in.
+
 - Nothing of Adobe's is written by Redlamp: not in sidecars (the edit names the profile and its id), exported recipes, `.cube` exports, or Redlamp's Looks store. `BaseLookReference.staysOnThisMac` covers `local/adobe/`, so the paths that refuse DEC-73's looks refuse these too.
 - A profile renders only while its files are on the Mac, read where Adobe or the photographer put them.
 - ProfileEmbedPolicy says whether a profile may be copied or embedded in other files. Redlamp does neither, whatever the policy, so every policy allows the use described here; the menu's help names the policy.

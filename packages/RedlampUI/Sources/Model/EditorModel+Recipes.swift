@@ -117,7 +117,7 @@ public extension EditorModel {
         _ = recipes.revision
         if baseLook.isAdobeProfile {
             return cameraProfilesPhoto == info?.url
-                && !cameraProfileLooks.contains { $0.reference.isSameLook(as: baseLook) }
+                && !cameraProfileLooks.contains { $0.reference.isSameAdobeLook(as: baseLook) }
         }
         return !recipes.isAvailable(baseLook)
     }

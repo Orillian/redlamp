@@ -175,7 +175,7 @@ struct BaseLookMenu: View {
         Button {
             model.setBaseLook(look.reference)
         } label: {
-            if look.reference.isSameLook(as: current) {
+            if look.reference.isSameAdobeLook(as: current) {
                 Label(look.reference.name, systemImage: "checkmark")
             } else {
                 Text(look.reference.name)

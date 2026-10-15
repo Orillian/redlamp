@@ -181,7 +181,7 @@ struct AdobeProfileLookTests {
     ]
     static let patchSize = 8
 
-    func session(_ colors: [SIMD3<Float>]) throws -> ImageSession {
+    func session(_ colors: [SIMD3<Float>], model: String = "EOS R5") throws -> ImageSession {
         let size = Self.patchSize
         let (width, height) = (size * colors.count, size)
         let white: Float = 65535
@@ -199,7 +199,7 @@ struct AdobeProfileLookTests {
             sensorDescription: "synthetic",
         )
         info.make = "Canon"
-        info.model = "EOS R5"
+        info.model = model
         let decoded = DecodedImage(
             width: width, height: height, layout: .linearRGB, samples: samples, blackLevels: [0, 0, 0],
             whiteLevel: white, asShotMultipliers: SIMD3(1, 1, 1), cameraToSRGB: [1, 0, 0, 0, 1, 0, 0, 0, 1],
@@ -315,6 +315,47 @@ struct AdobeProfileLookTests {
         #expect(HueSatMapTests.worst(full, base) > 0.01, "the look changes the colours")
         let double = try render(photo, look: vivid.withAmount(200), engine: engine)
         #expect(HueSatMapTests.worst(double, full) > 0.005)
+    }
+
+    @Test func `a look chosen over another camera's profile renders over this camera's`() throws {
+        func standard(_ camera: String, shift: Float) -> Data {
+            Synthetic.dcp(
+                name: "Adobe Standard", camera: camera, colorMatrices: [Self.colorMatrix], illuminants: [21],
+                forwardMatrices: [Self.forward], toneCurve: [SIMD2(0, 0), SIMD2(0.18, 0.35), SIMD2(1, 1)],
+                baselineExposureOffset: Double(shift) / 100,
+            )
+        }
+        let r5 = standard("Canon EOS R5", shift: 10), r6 = standard("Canon EOS R6", shift: 20)
+        let colorData = Synthetic.xmpLook(name: "Adobe Color", lookTable: .uniform(shift: SIMD3(8, 1.2, 1)))
+        let faithful = Synthetic.xmpLook(
+            name: "Camera Faithful",
+            camera: "Canon EOS R5",
+            lookTable: .uniform(shift: SIMD3(2, 1, 1)),
+        )
+        let (engine, root) = try engine(with: [
+            "CameraProfiles/R5.dcp": r5, "CameraProfiles/R6.dcp": r6, "Settings/Color.xmp": colorData,
+            "Settings/Faithful.xmp": faithful,
+        ])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (dcp5, dcp6) = try (#require(DCPProfile(data: r5)), #require(DCPProfile(data: r6)))
+        let color = try AdobeLook(xmp: colorData)
+        func reference(_ dcp: DCPProfile, look: AdobeLook? = nil, name: String) -> BaseLookReference {
+            BaseLookReference(
+                id: BaseLookReference.adobeIDPrefix + dcp.identity + (look.map { "/" + $0.identity } ?? ""),
+                version: ProfileLookBake.version, name: name,
+            )
+        }
+        let photo = try session(Self.patches, model: "EOS R6")
+        let own = try render(photo, look: reference(dcp6, look: color, name: "Adobe Color"), engine: engine)
+        #expect(try render(photo, look: reference(dcp5, look: color, name: "Adobe Color"), engine: engine) == own)
+        let ownStandard = try render(photo, look: reference(dcp6, name: "Adobe Standard"), engine: engine)
+        #expect(try render(photo, look: reference(dcp5, name: "Adobe Standard"), engine: engine) == ownStandard)
+        // The R5's own profile never calibrates the R6's photo, even once registered.
+        _ = try render(session(Self.patches), look: reference(dcp5, name: "Adobe Standard"), engine: engine)
+        #expect(try render(photo, look: reference(dcp5, name: "Adobe Standard"), engine: engine) == ownStandard)
+        // A look made for the R5 alone has nothing to go over on the R6: Redlamp's look stands in.
+        let r5Only = try reference(dcp5, look: AdobeLook(xmp: faithful), name: "Camera Faithful")
+        #expect(!engine.resolveBaseLook(r5Only, session: photo).isAvailable)
     }
 
     @Test func `where the profile isn't on this Mac, Redlamp's look of the same name stands in`() throws {

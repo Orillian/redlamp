@@ -16,6 +16,20 @@ public extension BaseLookReference {
     var adobeStandIn: BuiltInBaseLook? {
         isAdobeProfile ? AdobeProfileStandIn.look(forProfileNamed: name) : nil
     }
+
+    /// What names an Adobe look apart from the camera whose profile it was chosen over: an XMP
+    /// look's hash, a `.dcp`'s name. A photo from another camera renders the look over its own
+    /// camera's profile of the same key, as Lightroom does when settings are synced across cameras.
+    var adobeLookKey: String? {
+        guard isAdobeProfile else { return nil }
+        let parts = id.dropFirst(Self.adobeIDPrefix.count).split(separator: "/")
+        return parts.count == 2 ? "look/\(parts[1])@\(version)" : "profile/\(name)@\(version)"
+    }
+
+    /// Whether `other` is the same Adobe look, perhaps over another camera's profile.
+    func isSameAdobeLook(as other: BaseLookReference) -> Bool {
+        isSameLook(as: other) || (adobeLookKey != nil && adobeLookKey == other.adobeLookKey)
+    }
 }
 
 /// One of the photographer's Adobe camera profiles that can render the open photo, as the Base

@@ -65,6 +65,27 @@ struct CameraProfileMenuTests {
         #expect(editor.treatment == .blackAndWhite)
     }
 
+    @Test func `a look chosen over another camera's profile isn't missing on this camera`() async throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let engine = StubEngine()
+        engine.cameraProfiles = Self.looks
+        let editor = try await open(engine)
+        let synced = BaseLookReference(
+            id: BaseLookReference.adobeIDPrefix + "fedcba9876543210/Adobe Color",
+            name: "Adobe Color",
+        )
+        editor.setBaseLook(synced)
+        #expect(!editor.isBaseLookMissing && editor.cameraProfileStandIn == nil)
+        let otherProfile = BaseLookReference(
+            id: BaseLookReference.adobeIDPrefix + "fedcba9876543210",
+            name: "Adobe Standard",
+        )
+        #expect(otherProfile.isSameAdobeLook(as: BaseLookReference(
+            id: BaseLookReference.adobeIDPrefix + "0011223344556677",
+            name: "Adobe Standard",
+        )))
+    }
+
     @Test func `where the profile isn't on this Mac, Redlamp's look of the same name stands in`() async throws {
         defer { try? FileManager.default.removeItem(at: folder) }
         let engine = StubEngine()

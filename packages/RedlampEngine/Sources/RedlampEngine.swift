@@ -859,13 +859,25 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         return entries
     }
 
-    /// The edit's look, after making its photo's Adobe looks renderable if it names one the
-    /// engine hasn't seen, such as a photo exported without being opened.
+    /// The edit's look. An Adobe look resolves through its photo's camera's own profiles, found
+    /// when first needed (a photo exported without being opened): only they calibrate its photos,
+    /// so a look chosen over another camera's profile renders over this camera's, and with
+    /// neither, Redlamp's look of the same name stands in.
     func resolveBaseLook(_ reference: BaseLookReference, session: ImageSession) -> BaseLookRegistry.Resolved {
-        if reference.isAdobeProfile, !baseLooks.canRender(reference) {
-            registerProfileLooks(for: session.photo)
+        guard reference.isAdobeProfile else { return baseLooks.resolve(reference) }
+        let entries = registerProfileLooks(for: session.photo)
+        guard let own = entries.first(where: { $0.look.reference.isSameLook(as: reference) })
+            ?? entries.first(where: { $0.look.reference.isSameAdobeLook(as: reference) })
+        else {
+            let standIn = reference.adobeStandIn ?? .color
+            return BaseLookRegistry.Resolved(
+                parameters: standIn.parameters,
+                table: nil,
+                tableSize: 0,
+                isAvailable: false,
+            )
         }
-        return baseLooks.resolve(reference)
+        return baseLooks.resolve(own.look.reference.withAmount(reference.amount))
     }
 }
 
