@@ -71,7 +71,8 @@ enum LibraryCommand {
                                   [--names <template>] [--raw-only] [--keywords <k>,…] [--index <path>]
                                   [--dry-run] [--json]
            redlamp library import --list | --roll-back <id>|last [--index <path>] [--json]
-           redlamp library lightroom <catalog> [--index <path>] [--root <old>=<new>]… [--apply] [--undo] [--json]
+           redlamp library lightroom <catalog> [--index <path>] [--root <old>=<new>]… [--apply] [--undo] [--census]
+                                     [--json]
       fixture  makes a synthetic library in <folder>: a fifth of the photos APFS clones of the raws in
                --raw-sources (tests/fixtures/raw) with their capture dates rewritten, the rest small JPEGs
                and HEICs with varied EXIF, GPS and IPTC; sidecars on 15% and other apps' .xmp on 5%; folders
