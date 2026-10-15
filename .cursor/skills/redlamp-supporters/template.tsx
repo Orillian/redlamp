@@ -348,7 +348,7 @@ const room: Room = {
       text: [
         "Will Redlamp stay free?\nYes. Every feature, build and fix is free for everyone, and the code is open source under MPL-2.0. A membership pays for the work. It doesn't buy anything other people can't have.",
         "Do members' bugs get fixed first?\nNo. Bugs are fixed in order of how much they hurt, whoever reports them, from Report a Bug in the app or on GitHub.",
-        "Does the ranking mean members decide the roadmap?\nMembers set the order of features I've already said yes to. What goes on the roadmap is still my call, and anyone can suggest something with Send Feedback in the app.",
+        "Does the ranking mean members decide the roadmap?\nMembers set the order of features I've already said yes to. What goes on the roadmap is still my call, and anyone can suggest something with Send Feedback in the app. Redlamp's ambassadors, photographers who send me an edit a month, have a pick of their own on the same terms; it doesn't take from yours.",
         "Is Redlamp made with AI?\nAgents write most of the code, directed by me and held to the checks in the repository, and their subscriptions are one of the costs above. Every model Redlamp uses runs on your Mac, and photos are never uploaded. The details are at redlamp.app/#ai.",
         "Can I give once instead?\nYes, on Ko-fi: ko-fi.com/pdcgomes.",
       ].join("\n\n"),

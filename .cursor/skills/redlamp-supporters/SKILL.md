@@ -13,6 +13,7 @@ Every page, post and change keeps to it:
 
 - Nothing is held back for supporters: no feature, build or fix. Bugs are fixed by severity, never by tier.
 - Members set the order of work the owner has already accepted. They don't decide what goes on the roadmap, and Report a Bug and Send Feedback stay the same for everyone.
+- Redlamp's ambassadors, photographers who send an edit a month and feedback, have a pick of their own each quarter on the same terms (DEC-86). It's separate from the members' ranking, and neither takes from the other: when both choose the same row, the ambassadors' second choice also goes next.
 - Money is reported in totals, and members are credited only as they ask to be.
 
 ## Where
