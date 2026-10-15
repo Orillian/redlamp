@@ -22,10 +22,10 @@ A row that needs a fix and also waits on a decision whose answer settles whether
 | --- | --- | --- | --- | --- | --- | --- |
 | 1. App Review Guidelines | 29 | 36 | 18 | 123 | 2 | 208 |
 | 2. App Store Connect | 2 | 21 | 9 | 6 | 2 | 40 |
-| 3. Technical checks | 15 | 20 | 1 | 2 | 5 | 43 |
+| 3. Technical checks | 15 | 21 | 1 | 3 | 3 | 43 |
 | 4. Apple's trademarks | 0 | 12 | 0 | 0 | 0 | 12 |
 | 5. Legal duties of a sale | 9 | 8 | 13 | 2 | 3 | 35 |
-| All | 55 | 97 | 41 | 133 | 12 | 338 |
+| All | 55 | 98 | 41 | 134 | 10 | 338 |
 
 ### Fixes, in the order to build them
 
@@ -342,10 +342,10 @@ Read on 15 October 2026 from App Store Connect Help and Apple's developer pages,
 | No hardened-runtime exceptions | No `com.apple.security.cs.*` exceptions (build audit §4.1) | Yes | Compliant | The shipped app carries no entitlements at all; MLX compiles Metal kernels, not executable code | — |
 | Network entitlement | `com.apple.security.network.client` for outgoing connections only, with no `network.server` (build audit §4.8) | Yes | Fix | Nothing in the app listens; only the CLI's bench server does (`BenchHTTPServer.swift`) | ARC-17 |
 | User-selected files | `com.apple.security.files.user-selected.read-write`, with security-scoped bookmarks for every stored path (Accessing files from the macOS App Sandbox) | Yes | Fix | Paths are stored without bookmarks: the working set, the library's roots, export destinations, the Lightroom catalog's folders | ARC-17 |
-| App-scope bookmarks entitlement | Whether `com.apple.security.files.bookmarks.app-scope` is still needed (build audit §4.1) | Yes | Unverified | Apple's page for it returns 404, and the current file-access article doesn't name it | Settled by resolving a bookmark without it during ARC-17 |
+| App-scope bookmarks entitlement | Whether `com.apple.security.files.bookmarks.app-scope` is still needed (build audit §4.1) | No | Not applicable | Not needed: Apple's DTS wrote in August 2025 that `files.user-selected.read-write` is accepted in its place, and ARC-17's spike made a security-scoped bookmark without it and resolved it in a later launch, on macOS 26.6.2 ([the study](../research/notes/ARC-17-app-sandbox.md#1-the-entitlements)) | — |
 | App group ID format | The app and the Background Assets extension share an app group (Downloading Apple-hosted asset packs) | Yes | Unverified | The group ID format the extension needs on macOS is unverified | Settled when INF-07 adds the capability |
 | Related items for sidecars | `NSIsRelatedItemType` for the sidecar types, so a photo opened on its own can write its sidecar (Accessing files from the macOS App Sandbox) | Yes | Fix | No `CFBundleDocumentTypes` (build audit §1.3) | ARC-17 |
-| Full-name sidecar packages as related items | Whether related items cover `IMG_0001.ARW.redlamp`, the photo's full name plus an extension, and a package (build audit §4.4) | Yes | Unverified | The sidecar is `image.appendingPathExtension("redlamp")` (`SidecarLocator.swift:52`) | Settled by ARC-17's spike |
+| Full-name sidecar packages as related items | Whether related items cover `IMG_0001.ARW.redlamp`, the photo's full name plus an extension, and a package (build audit §4.4) | Yes | Fix | They don't: ARC-17's spike, on macOS 26.6.2, was refused `IMG_0001.ARW.redlamp` beside a photo opened on its own, for writing and for reading, and allowed a package named `IMG_0001.redlamp` and `IMG_0001.xmp` ([the study](../research/notes/ARC-17-app-sandbox.md#a-photo-on-its-own)) | ARC-17: a photo opened on its own keeps its edit beside it once its folder is granted, as the owner decides |
 | Version string | "Three period-separated integers"; "only numeric characters (0-9) and periods" (`CFBundleShortVersionString`) | Yes | Compliant | In the AppStore configuration, the app's and the decoder service's `CFBundleShortVersionString` is `MARKETING_VERSION` without its stage, `0.3.2` for `0.3.2-alpha` (ARC-22, 5ab089dea); `check-release-bundle.sh --app-store` fails on any other | ARC-22, with the number DEC-92 chooses |
 | Version below 1.0 | Whether App Store Connect accepts a version below 1.0 (build audit §3.3) | If DEC-92 keeps 0.x | Unverified | No Apple page found says either way | Settled by the first TestFlight upload (ARC-23) |
 | Build number | "Increment the build version before you distribute a build" (`CFBundleVersion`) | Yes | Compliant | Release builds set it to the number of commits on `main` (`Version.xcconfig:3`) | — |
