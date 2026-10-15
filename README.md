@@ -882,9 +882,14 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [x] Menon Bayer demosaic with a dual pass for flat noisy areas, hot-pixel repair and highlight reconstruction that keeps a clipped sky's colour <!-- tracker: CAM-05, CAM-06, CAM-08, CAM-31 -->
 - [x] **Recipes:** one format for presets, profiles and LUTs, Base Look tables, camera recipe cards, `.cube`, `.3dl` and HaldCLUT import (with LUTs for S-Log3, LogC3, V-Log and Apple Log footage), 39 bundled recipes, and the Recipe Lab <!-- tracker: EDT-07, TON-11, TON-28 -->
 - [x] Before/After layouts, themes and a Settings window
+- [x] **Export dialog:** JPEG, HEIC, AVIF, PNG and TIFF, a file size limit, 8, 10 or 16 bits, sRGB or Display P3, resizing, metadata, presets and Export with Previous, developed at full resolution and downscaled last <!-- tracker: EDT-15, EDT-13 -->
+- [x] **Command palette** (⌘K): every action, Develop slider and picker from the keyboard, and a slider bar that adjusts by key <!-- tracker: UX-07 -->
+- [x] **Folders,** as in Lightroom Classic: remembered folders as a tree with counts, and a filmstrip that follows the disk and stays fast with any number of photos <!-- tracker: UX-08 -->
 - [ ] Versions of a photo, as Lightroom's virtual copies, kept in its one sidecar <!-- tracker: EDT-09 -->
 - [x] Edge-aware Highlights and Shadows, and edge-refined Dehaze <!-- tracker: TON-05, TON-27 -->
-- [x] **Film effects for recipes:** halation (the red glow around bright lights), bloom and diffusion, and film grain that varies with density and scales with output size <!-- tracker: TON-17, TON-18, TON-19 -->
+- [x] Red, green and blue curves in the Tone Curve, as Lightroom's point curve has <!-- tracker: TON-40 -->
+- [x] **Film effects for recipes:** halation (the red glow around bright lights), bloom and diffusion, film grain that varies with density and scales with output size, and light leaks, dust and scratches, and frames, with Mood recipes built on them <!-- tracker: TON-17, TON-18, TON-19, TON-25 -->
+- [x] **Film simulations:** 36 looks from 30 stocks, built physically from the manufacturers' datasheets, including pushed, overexposed, bleach-bypass and cross-processed variants, with a Film Looks window and each film's icon in the Recipes panel <!-- tracker: TON-26 -->
 - [x] DNG camera profiles: dual-illuminant colour, the embedded HueSatMap, and the profile's own look offered as a Base Look <!-- tracker: CAM-04 -->
 - [x] Calibration panel: Shadows Tint and the red, green and blue primaries' Hue and Saturation, and the Process version, which moves an edit to a newer rendering only when you ask
 - [x] Remove Chromatic Aberration, from the lens profile or measured from the photo's own edges, and Lightroom's Defringe (Purple and Green Amount and Hue) <!-- tracker: LNS-09 -->
@@ -898,6 +903,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [ ] **Best-in-class classical noise reduction** on raw data, profiled per camera and ISO, with the mosaic cleaned before demosaicing and deep shadows kept true <!-- tracker: DN-01, DN-05, DN-10, DN-12, DN-13 -->
 - [x] Better X-Trans demosaicing (Markesteijn) <!-- tracker: CAM-07 -->
 - [x] **Camera bench:** test your own camera's raws against the camera's own JPEG on your Mac, and send only the measurements, which build the evidence on the cameras page <!-- tracker: CAM-14, CAM-15, CAM-16, CAM-17 -->
+- [x] Nikon's High Efficiency NEFs and newer bodies such as the Sony A7 V, through Redlamp's own fork of LibRaw <!-- tracker: CAM-12, CAM-13, CAM-30 -->
 - [ ] ICC input profiles <!-- tracker: TON-10 -->
 - [x] **Point Color**, globally and inside masks, with Capture One's uniformity for evening out skin tones <!-- tracker: TON-29 -->
 - [ ] Lens corrections from the lensfun database (waits on counsel) <!-- tracker: LNS-03 -->
@@ -908,15 +914,20 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [x] The filmstrip: a scroll bar, thumbnails you can resize, Home and End for the first and last photo, and its line of text made optional <!-- tracker: UX-42 -->
 - [x] Looks in one place: each film stock once, in the Recipes panel with its icon, a short Base Look menu, and recipe search that finds Base Looks too <!-- tracker: UX-45 -->
 - [x] The pixel under the pointer under the histogram: its RGB percentages or L*a*b* values <!-- tracker: UX-32 -->
+- [x] Panel on/off switches, as Lightroom's, and a value on every control that has one, to type (with arithmetic) or scrub <!-- tracker: UX-30, UX-01, UX-28, UX-29 -->
+- [x] Sensor clipping, which marks the photosites the camera clipped, and a colour-assessment view <!-- tracker: UX-05 -->
+- [x] A welcome at first launch, What's New after each update, and Report a Bug or Send Feedback from the app with no GitHub account needed, with crash and hang reports offered on the next launch <!-- tracker: UX-09, UX-10, UX-11, UX-14 -->
 - [x] Masks: reorder masks and components, every overlay mode and its opacity <!-- tracker: MSK-21 -->
 - [x] Masks: a Color swatch <!-- tracker: MSK-23 -->
 - [x] Masks: local Whites and Blacks as true end points <!-- tracker: MSK-24 -->
+- [x] Masks: Detail, which keeps only a mask's textured or flat areas, and any mask reused inside another <!-- tracker: MSK-04, MSK-06 -->
+- [ ] **Mask edges that hold up:** a mask's edit applied to the sky's or the subject's own colour along its edge, so darkening a sky leaves no light rim along twigs and hair, and sky, subject and people edges refined per pixel, with the stray strands ViTMatte finds, that hold up in haze, backlight and flyaway hair <!-- tracker: MSK-27, MSK-28, MSK-29, MSK-31, MSK-32 -->
 
 ### Phase 3: Pro masking, healing, AI denoise, focus stacking, and looks *(in progress)*
 - [x] SAM-class object and face-part masks, depth range, mask refinement, mask presets, and recomputing AI masks for pasted settings <!-- tracker: MSK-10, MSK-14, MSK-17 -->
 - [x] Updating AI masks across a selection of photos <!-- tracker: EDT-17 -->
 - [x] Heal and Clone, as spots and brushed strokes, each finding its own source <!-- tracker: RM-01 -->
-- [x] Content-aware Remove, and removing people, objects and things named in words with a click <!-- tracker: RM-07, RM-08 -->
+- [x] Content-aware Remove, and removing people, objects and things named in words with a click, taking their cast shadows and reflections with them <!-- tracker: RM-07, RM-08, RM-13 -->
 - [ ] Removing an object picked by rectangle or brush, not only with a click <!-- tracker: RM-19 -->
 - [x] Remove Dust and Visualize Spots, for one photo or across a shoot <!-- tracker: RM-02 -->
 - [x] **Focus stacking:** stacks found in the filmstrip, alignment through focus breathing, depth-map fusion (Auto, Smooth and Detail), a retouch brush, and results that develop like a raw
@@ -936,10 +947,11 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [ ] The remaining film simulations (Eterna, Classic Negative, Nostalgic Negative, Pro Neg, Acros, Reala Ace), which need more photos with the camera's JPEG beside the raw; until then, Fujifilm's own published LUTs for ten simulations, which you download from Fujifilm, import in one step and fill the film slots that recipe cards use; and, as an experiment you turn on in Settings, a model of the camera's own processing for twenty simulations, with their Highlight and Shadow Tone, Color and D-Range settings <!-- tracker: TON-14, TON-20, TON-35, TON-43, TON-44, TON-45, TON-49, TON-50 -->
 - [ ] **Analogue film stocks:** film and digital shot side by side with charts, scanned and fitted by the profiler, with halation, bloom and grain per stock <!-- tracker: TON-21 -->
 - [ ] **The agent recipe studio at scale:** many more recipes developed from briefs, once the critics agree with human picks (about 200 pairwise verdicts) <!-- internal -->
+- [x] Each raw opens about as bright as its camera's own JPEG, from a table of 576 cameras Redlamp measures, never from Adobe's data <!-- tracker: CAM-29 -->
 - [ ] **Reproduction work:** a scene-referred rendering with no tone curve or look, exposure tied to each camera's metering with readouts in stops, readout points pinned on the photo, and Adobe RGB, ProPhoto and eciRGB v2 export <!-- tracker: TON-39, CAM-28, UX-40, EDT-26 -->
 - [ ] **Looks measured from other apps' filters at scale:** look references made on the iPhone with Redlamp Bench, fitted into ranked candidate looks in the Recipe Lab <!-- internal; tracker: TON-36, TON-37, TON-38 -->
 
-### Phase 4: 1.0
+### Phase 4: 1.0 *(in progress)*
 - [ ] **Edits made in Lightroom:** each photo's develop settings, from its XMP sidecar or a Lightroom Classic catalog, converted once with a report of what came across, photos edited in Lightroom's first versions included, and a catalog's virtual copies as versions <!-- tracker: EDT-12, EDT-23, EDT-31 -->
 - [ ] HDR and EDR editing and export <!-- tracker: TON-42 -->
 - [x] Batch export <!-- tracker: EDT-16 -->
