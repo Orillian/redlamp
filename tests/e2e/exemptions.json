@@ -108,10 +108,6 @@
     {
       "claim": "feature.saving.disks",
       "reason": "Needs iCloud Drive or an external or network disk; the conflict merges and coordinated writes are unit-tested (SidecarSafetyTests, OtherWriterTests)"
-    },
-    {
-      "claim": "action.virtualCopy",
-      "reason": "Virtual Copy is planned for Phase 2; the menu checks that its item is there and disabled"
     }
   ]
 }

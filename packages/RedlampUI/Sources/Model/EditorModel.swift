@@ -281,6 +281,15 @@ public final class EditorModel {
     /// The photo's earlier sessions, newest first. They load after the photo opens.
     public internal(set) var earlierSessions: [HistorySession] = []
     public private(set) var snapshots: [Snapshot] = []
+    /// The open photo's versions (EDT-09), as the menus and the filmstrip list them.
+    public internal(set) var versions: [EditorVersion] = []
+    /// The version open in place of the photo's own edit; nil while its own is.
+    public internal(set) var openVersion: UUID?
+    /// The open photo's sidecar as it was read, or as another writer's save left it, but for the edit open, which
+    /// `recipe`, `snapshots` and `photoMetadata` hold: saving puts them in it.
+    @ObservationIgnored var openSidecar = Sidecar(recipe: EditRecipe())
+    /// The version the photo opening opens in, rather than its own edit.
+    @ObservationIgnored var openingVersion: UUID?
     /// Frames go straight to the canvases; views only observe whether there is one.
     @ObservationIgnored public let frames = FrameFeed()
     public private(set) var hasFrame = false
@@ -1130,6 +1139,19 @@ public final class EditorModel {
         if photoMetadata != metadata {
             photoMetadata = metadata
         }
+        openSidecar = Sidecar(recipe: EditRecipe())
+        if openVersion != nil {
+            openVersion = nil
+        }
+        if !versions.isEmpty {
+            versions = []
+        }
+        putAwayEditTools()
+    }
+
+    /// Ends what was started on the edit open, as a photo or a version is left: eyedroppers, previews, the
+    /// selected mask and component, drawing, and the pickers, which found things in it.
+    private func putAwayEditTools() {
         endEyedroppers()
         if previewingRecipe != nil {
             previewingRecipe = nil
@@ -1364,19 +1386,27 @@ public final class EditorModel {
             library.update(opened.url) { $0.metadata = metadata }
             metadataChangesWhileOpening = []
         }
-        photoMetadata = metadata
-        let converted = read.protection == nil && sidecar?.recipe.isPristine ?? true
+        var held = sidecar ?? Sidecar(recipe: EditRecipe())
+        held.metadata = metadata.isEmpty ? nil : metadata
+        let converted = read.protection == nil && held.recipe.isPristine && held.versions.isEmpty
             ? read.lightroom.map {
                 Self.converting(
                     $0.edit, photo: $0.photo, opened, slotLooks: recipes.library.filledSlots,
                     adobeProfiles: read.adobeProfiles,
                 )
             } : nil
-        let loaded = withPhotoAnchor(
-            Self.asShot(converted ?? sidecar?.recipe ?? EditRecipe(), opened), of: opened, changed: converted != nil,
-        )
+        if let converted {
+            held.recipe = converted
+        }
+        openSidecar = held
+        openVersion = openingVersion.flatMap { held.version($0)?.id }
+        openingVersion = nil
+        versions = Self.versions(of: held)
+        let edit = held[edit: openVersion] ?? SidecarEdit(recipe: EditRecipe())
+        photoMetadata = edit.metadata ?? PhotoMetadata()
+        let loaded = withPhotoAnchor(Self.asShot(edit.recipe, opened), of: opened, changed: converted != nil)
         recipe = loaded
-        snapshots = sidecar?.snapshots ?? []
+        snapshots = edit.snapshots
         startSession(
             opening: opened.url, recipe: loaded, hasSidecar: sidecar != nil,
             title: converted.map { _ in Self.convertedStepTitle },
@@ -1386,13 +1416,7 @@ public final class EditorModel {
             scheduleSave()
         }
         isLoading = false
-        cropIntent = loaded.crop
-        uprightGuides = []
-        foundThings = []
-        cancelGenerativeFill()
-        generatedFills = [:]
-        regionOutlines = [:]
-        isPlacingGuides = false
+        startEditing(loaded)
         let frameSize = bordered(loaded).borderedSize(imageSize: opened.pixelSize)
         if !hasFrame {
             showOnCanvas(frameSize)
@@ -1409,6 +1433,53 @@ public final class EditorModel {
         if read.failed {
             readSidecarAgain(opened.url, after: sidecarReadRetryDelay)
         }
+    }
+
+    /// What the edit just opened starts with: its crop, and none of what was found or made on the one before.
+    private func startEditing(_ loaded: EditRecipe) {
+        cropIntent = loaded.crop
+        uprightGuides = []
+        foundThings = []
+        cancelGenerativeFill()
+        generatedFills = [:]
+        regionOutlines = [:]
+        isPlacingGuides = false
+    }
+
+    /// Opens the photo's own edit (`version` nil) or one of its versions in place of the edit open, the one left
+    /// saved first (EDT-09). Each has its own history, snapshots and metadata; `title` names the first step of the
+    /// session it starts.
+    func switchEdit(to version: UUID?, title: String? = nil) {
+        guard let info, opening == nil, info.url == selection, editStart == nil else { return }
+        guard version.map({ openSidecar.version($0) != nil }) ?? true else { return }
+        endNudgeRun()
+        saveNow()
+        openSidecar[edit: openVersion] = currentEdit
+        show(version, of: info, title: title)
+    }
+
+    /// Shows the edit `version` names, as `openSidecar` holds it, in a session of its own.
+    private func show(_ version: UUID?, of info: ImageInfo, title: String? = nil) {
+        openVersion = version
+        versions = Self.versions(of: openSidecar)
+        putAwayEditTools()
+        let edit = openSidecar[edit: version] ?? SidecarEdit(recipe: EditRecipe())
+        photoMetadata = edit.metadata ?? PhotoMetadata()
+        let loaded = withPhotoAnchor(Self.asShot(edit.recipe, info), of: info, changed: false)
+        recipe = loaded
+        snapshots = edit.snapshots
+        startSession(opening: info.url, recipe: loaded, hasSidecar: true, title: title)
+        startEditing(loaded)
+        let frameSize = bordered(loaded).borderedSize(imageSize: info.pixelSize)
+        if frameSize != canvas.imageSize {
+            pendingCanvas = (frameSize, generation &+ 1)
+        }
+        requestRender()
+    }
+
+    /// The edit open, with its snapshots and metadata, as saving writes it.
+    var currentEdit: SidecarEdit {
+        SidecarEdit(recipe: recipe, snapshots: snapshots, metadata: photoMetadata.isEmpty ? nil : photoMetadata)
     }
 
     /// Shows the open photo as another writer left it, or as merged with them. Not during a drag
@@ -1429,12 +1500,26 @@ public final class EditorModel {
     @discardableResult
     func showOtherWriters(_ theirs: Sidecar) -> Bool {
         guard let info, !isReadOnly, editStart == nil, !hasUnsavedChange else { return false }
+        var theirs = theirs
+        theirs.session = nil
+        theirs.unsavedSessions = []
+        theirs.clearsHistory = false
+        if let version = openVersion, theirs.version(version) == nil {
+            // They removed the version open: the photo's own edit opens in its place.
+            openSidecar = theirs
+            show(nil, of: info)
+            return true
+        }
         let previous = recipe
-        recipe = withPhotoAnchor(Self.asShot(theirs.recipe, info), of: info, changed: false)
-        snapshots = theirs.snapshots
         var metadata = theirs.metadata ?? PhotoMetadata()
         keepCullingShown(in: &metadata)
-        photoMetadata = metadata
+        theirs.metadata = metadata.isEmpty ? nil : metadata
+        openSidecar = theirs
+        versions = Self.versions(of: theirs)
+        let edit = theirs[edit: openVersion] ?? SidecarEdit(recipe: EditRecipe())
+        recipe = withPhotoAnchor(Self.asShot(edit.recipe, info), of: info, changed: false)
+        snapshots = edit.snapshots
+        photoMetadata = edit.metadata ?? PhotoMetadata()
         cropIntent = recipe.crop
         if recipe != previous {
             // As a paste, Auto Sync doesn't send it on to the rest of the selection.
@@ -1970,7 +2055,8 @@ public final class EditorModel {
         session.id
     }
 
-    /// A new session for the photo just opened; its earlier ones load in the background.
+    /// A new session for the edit just opened, the photo's own or `openVersion`'s; its earlier ones load in the
+    /// background. `title` names its first step in place of Opened or Import.
     private func startSession(opening url: URL, recipe: EditRecipe, hasSidecar: Bool, title: String? = nil) {
         history = [HistoryStep(action: .open, title: title ?? (hasSidecar ? "Opened" : "Import"), recipe: recipe)]
         historyIndex = 0
@@ -1980,9 +2066,12 @@ public final class EditorModel {
         historyTask?.cancel()
         guard hasSidecar else { return }
         let sidecars = library.sidecars.store(for: url)
+        let version = openVersion
         historyTask = Task {
-            let sessions = await Task.detached(priority: .utility) { sidecars.loadHistory(for: url) }.value
-            guard selection == url, !Task.isCancelled else { return }
+            let sessions = await Task.detached(priority: .utility) {
+                sidecars.loadHistory(for: url, version: version)
+            }.value
+            guard selection == url, openVersion == version, !Task.isCancelled else { return }
             earlierSessions = sessions.filter { $0.id != session.id }
         }
     }
@@ -2250,15 +2339,19 @@ public final class EditorModel {
         saves.enqueue(.sidecar(sidecar), for: url)
     }
 
-    /// The open photo's edit, metadata and this session's history, as saving writes them.
+    /// The open photo's edits and metadata, the one open as it is now, and this session's history, as saving
+    /// writes them. Fields this build doesn't know are left to the file's.
     var sidecarToSave: Sidecar {
-        var sidecar = Sidecar(
-            recipe: recipe, snapshots: snapshots, metadata: photoMetadata.isEmpty ? nil : photoMetadata,
-            session: HistorySession(
-                id: session.id,
-                started: session.started,
-                steps: Array(history.prefix(historyIndex + 1)),
-            ),
+        var sidecar = openSidecar
+        sidecar.unknownFields = [:]
+        sidecar.clearsHistory = false
+        sidecar[edit: openVersion] = currentEdit
+        sidecar.modified = Date()
+        sidecar.session = HistorySession(
+            id: session.id,
+            started: session.started,
+            steps: Array(history.prefix(historyIndex + 1)),
+            versionID: openVersion,
         )
         sidecar.unsavedSessions = unsavedSessions
         return sidecar

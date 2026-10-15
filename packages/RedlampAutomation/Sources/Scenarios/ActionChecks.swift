@@ -448,8 +448,10 @@
                     try app.main { model in model.snapshots.last.map(model.deleteSnapshot) }
                 })
             case .newPreset: .sheet(action)
-            case .virtualCopy:
-                ActionCheck(action: action, unavailable: "planned for \(action.plannedPhase ?? "a later phase")")
+            case .createVersion:
+                ActionCheck(action: action, observe: { "\($0.versions.count)" }, restore: { app in
+                    try app.main { model in model.openVersion.map(model.removeVersion) }
+                })
             case .previousSetting, .nextSetting:
                 ActionCheck(action: action, setUp: { app in
                     try app.main { $0.focusedParameter = .contrast }

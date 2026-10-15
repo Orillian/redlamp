@@ -160,7 +160,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
     case undo, redo, copySettings, copySettingsAgain, pasteSettings, pastePrevious, resetAll
     case syncSettings, syncSettingsAgain, undoSync, toggleAutoSync
     case autoTone, autoWhiteBalance, toggleBlackAndWhite, whiteBalanceSelector, calibrateFromTarget
-    case newSnapshot, newPreset, virtualCopy
+    case newSnapshot, newPreset, createVersion
     case previousSetting, nextSetting, increaseSetting, decreaseSetting, findAdjustment
 
     // Tools
@@ -224,7 +224,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .undo, .redo, .copySettings, .copySettingsAgain, .pasteSettings, .pastePrevious, .resetAll, .autoTone,
              .syncSettings, .syncSettingsAgain, .undoSync, .toggleAutoSync,
              .autoWhiteBalance, .toggleBlackAndWhite, .whiteBalanceSelector, .calibrateFromTarget, .newSnapshot,
-             .newPreset, .virtualCopy, .previousSetting, .nextSetting, .increaseSetting, .decreaseSetting,
+             .newPreset, .createVersion, .previousSetting, .nextSetting, .increaseSetting, .decreaseSetting,
              .findAdjustment:
             .develop
         case .editTool, .cropTool, .healTool, .maskingTool, .cropAspectLock, .rotateLeft, .rotateRight, .brushMask,
@@ -381,7 +381,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .calibrateFromTarget: "Calibrate from Target"
         case .newSnapshot: "New Snapshot"
         case .newPreset: "New Recipe…"
-        case .virtualCopy: "Create Virtual Copy"
+        case .createVersion: "Create Version"
         case .previousSetting: "Select Previous Setting"
         case .nextSetting: "Select Next Setting"
         case .increaseSetting: "Increase Setting (⇧ larger)"
@@ -564,7 +564,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .calibrateFromTarget: []
         case .newSnapshot: [.char("n", command: true)]
         case .newPreset: [.char("n", shift: true, command: true)]
-        case .virtualCopy: [.char("'", command: true)]
+        case .createVersion: [.char("'", command: true)]
         case .previousSetting: [.char(",")]
         case .nextSetting: [.char(".")]
         case .increaseSetting: [.char("=")]
@@ -648,13 +648,9 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// Where the feature lands on the roadmap; `nil` once it works.
+    /// Where the feature lands on the roadmap; `nil` once it works, as every action's does now.
     public var plannedPhase: String? {
-        switch self {
-        case .virtualCopy:
-            "Phase 2"
-        default: nil
-        }
+        nil
     }
 
     public var isAvailable: Bool {

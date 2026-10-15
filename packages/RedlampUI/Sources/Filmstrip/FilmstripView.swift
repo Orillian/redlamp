@@ -24,6 +24,7 @@ struct FilmstripView: View {
                     FilmstripSuggestion()
                     Spacer()
                     FilmstripStackButton()
+                    FilmstripVersions()
                     FilmstripPhotoInfo()
                     if floating {
                         FilmstripPin()
@@ -125,6 +126,7 @@ struct FilmstripStatus: View {
                 FilmstripSync()
                 FilmstripSuggestion()
                 FilmstripStackButton()
+                FilmstripVersions()
             }
             .font(Theme.captionFont)
             .foregroundStyle(Theme.secondaryLabel)
@@ -141,6 +143,7 @@ struct FilmstripStatus: View {
         model.batchExport.progress != nil || model.batchExport.summary != nil
             || model.settingsSync.progress != nil || model.isMultiSelecting || model.settingsSync.report != nil
             || !model.stackSuggestions.isEmpty || model.selection.map(SupportedFormats.isStack) == true
+            || model.module == .develop && !model.versions.isEmpty
     }
 }
 
@@ -254,6 +257,48 @@ private struct FilmstripStackButton: View {
                 .buttonStyle(.link)
                 .help("Change the stack's frames or method")
         }
+    }
+}
+
+/// In Develop, the edit open of a photo with versions (EDT-09): its own, "Original", or a version's name. Its menu
+/// opens
+/// another, makes a version of the one open, and renames or removes the version open.
+private struct FilmstripVersions: View {
+    @Environment(EditorModel.self) private var model
+
+    var body: some View {
+        if model.module == .develop, !model.versions.isEmpty {
+            Menu {
+                Toggle(EditorModel.originalName, isOn: shown(nil))
+                ForEach(model.versions) { version in
+                    Toggle(version.name, isOn: shown(version.id))
+                }
+                Divider()
+                Button("Create Version") { model.createVersion() }
+                    .disabled(!model.canChangeVersions)
+                if let open = model.openVersion {
+                    Button("Rename Version…") { model.chooseVersionName(open) }
+                        .disabled(!model.canChangeVersions)
+                    Button("Remove Version…") { model.confirmRemovingVersion(open) }
+                        .disabled(!model.canChangeVersions)
+                }
+            } label: {
+                Label(model.openEditName, systemImage: "square.on.square")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(!model.canOpenVersions)
+            .help("The photo's versions: each is another edit of it, with its own history and snapshots")
+            .automationIdentifier("filmstrip.versions")
+        }
+    }
+
+    private func shown(_ version: UUID?) -> Binding<Bool> {
+        Binding(get: { model.openVersion == version }, set: {
+            if $0 {
+                model.showVersion(version)
+            }
+        })
     }
 }
 

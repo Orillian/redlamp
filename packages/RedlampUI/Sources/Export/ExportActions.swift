@@ -260,12 +260,13 @@ public enum ExportActions {
     }
 
     /// Reads what `photos`' names are made from, off the main thread: the index's fields for those it has, the
-    /// fields their files and sidecars hold for the others.
+    /// fields their files and sidecars hold for the others. The version open has its own metadata (EDT-09).
     static func reader(
         for photos: SelectedPhotos, model: EditorModel,
     ) -> @Sendable () async -> [ExportNames.Photo] {
         let core = model.library.service?.core
         let sidecars = model.library.sidecars
+        let version = model.openPhoto.flatMap { $0.version == nil ? nil : (url: $0.url, metadata: model.photoMetadata) }
         return {
             let urls = await photos.all()
             var indexed: [URL: NamingFields] = [:]
@@ -280,7 +281,10 @@ public enum ExportActions {
                 }
             }
             return urls.map { url in
-                if let fields = indexed[url] {
+                if var fields = indexed[url] {
+                    if let version, version.url == url {
+                        fields.apply(version.metadata)
+                    }
                     return ExportNames.Photo(url: url, fields: fields)
                 }
                 let name = url.lastPathComponent, folder = url.deletingLastPathComponent().path
@@ -292,6 +296,9 @@ public enum ExportActions {
                     ?? NamingFields(name: name, folder: folder)
                 if let metadata = sidecars.store(for: url).load(for: url)?.metadata {
                     fields.apply(metadata)
+                }
+                if let version, version.url == url {
+                    fields.apply(version.metadata)
                 }
                 return ExportNames.Photo(url: url, fields: fields)
             }

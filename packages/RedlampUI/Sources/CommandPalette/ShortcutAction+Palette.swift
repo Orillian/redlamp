@@ -156,7 +156,7 @@ extension ShortcutAction {
         ],
         .newSnapshot: ["snapshot", "save state"],
         .newPreset: ["preset", "recipe", "save look"],
-        .virtualCopy: ["duplicate", "copy"],
+        .createVersion: ["virtual copy", "version", "duplicate", "copy"],
         .editTool: ["develop", "edit"],
         .cropTool: ["crop", "straighten", "rotate"],
         .healTool: ["heal", "remove", "clone", "spot"],
@@ -331,7 +331,7 @@ extension ShortcutAction {
         case .calibrateFromTarget: "scope"
         case .newSnapshot: "camera"
         case .newPreset: "plus.square.on.square"
-        case .virtualCopy: "square.on.square"
+        case .createVersion: "square.on.square"
         case .editTool: EditTool.edit.symbol
         case .cropTool, .cropAspectLock: EditTool.crop.symbol
         case .rotateLeft: "rotate.left"

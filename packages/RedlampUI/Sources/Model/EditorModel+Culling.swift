@@ -495,7 +495,7 @@ public extension EditorModel {
             library.setMetadata(rows) { place, metadata in values[place].apply(field, to: &metadata) }
             cullingOverlay.publishing = false
             if let active = selection.flatMap(library.index(of:)), let place = rows.firstIndex(of: active) {
-                values[place].apply(field, to: &photoMetadata)
+                changeOwnMetadata { values[place].apply(field, to: &$0) }
             }
         }
         if open, let selection {
@@ -513,8 +513,10 @@ public extension EditorModel {
         }
         cullingOverlay.publishing = false
         if let active = selection.flatMap(library.index(of:)), let place = rows.firstIndex(of: active) {
-            for field in fields {
-                values[place].apply(field, to: &photoMetadata)
+            changeOwnMetadata { metadata in
+                for field in fields {
+                    values[place].apply(field, to: &metadata)
+                }
             }
         }
     }
@@ -770,8 +772,11 @@ public extension EditorModel {
         if opening == nil {
             setting(&photoMetadata)
         }
-        forgetCulling(url)
-        library.update(url) { setting(&$0.metadata) }
+        // A version's metadata is its own: the photo's row shows the photo's.
+        if openVersion == nil {
+            forgetCulling(url)
+            library.update(url) { setting(&$0.metadata) }
+        }
         remember(after.customLabel.map { [$0] } ?? [])
         if info != nil, opening == nil {
             saveNow()

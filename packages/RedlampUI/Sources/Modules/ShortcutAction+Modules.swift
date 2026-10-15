@@ -10,7 +10,7 @@ extension ShortcutAction {
              .panelBasic, .panelToneCurve, .panelColorMixer, .panelColorGrading, .panelDetail, .panelLens,
              .panelTransform, .panelEffects, .panelCalibration,
              .resetAll, .autoTone, .autoWhiteBalance, .toggleBlackAndWhite, .whiteBalanceSelector,
-             .calibrateFromTarget, .newSnapshot, .newPreset, .virtualCopy, .previousSetting, .nextSetting,
+             .calibrateFromTarget, .newSnapshot, .newPreset, .createVersion, .previousSetting, .nextSetting,
              .increaseSetting, .decreaseSetting, .findAdjustment,
              .cropAspectLock, .rotateLeft, .rotateRight,
              .brushMask, .linearMask, .radialMask, .colorRangeMask, .luminanceRangeMask, .depthRangeMask,

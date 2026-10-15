@@ -123,6 +123,9 @@ public extension EditorModel {
             calibrationTargetActive.toggle()
         case .newSnapshot: createSnapshot()
         case .newPreset: RecipeActions.createRecipe(model: self)
+        case .createVersion:
+            guard canChangeVersions else { return false }
+            createVersion()
         case .previousSetting: cycleFocusedParameter(by: -1)
         case .nextSetting: cycleFocusedParameter(by: 1)
         case .increaseSetting: nudgeFocusedParameter(direction: 1, large: shifted)
@@ -258,6 +261,7 @@ public extension EditorModel {
             return photo
         case .autoWhiteBalance, .whiteBalanceSelector: return whiteBalance
         case .calibrateFromTarget: return canCalibrateFromTarget
+        case .createVersion: return canChangeVersions
         case .editTool, .maskingTool, .cancel, .showShortcuts, .openFolder, .importPhotos, .filmLooks, .commandPalette:
             return true
         case .testCamera: return onTestCamera != nil

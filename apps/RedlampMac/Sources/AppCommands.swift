@@ -143,7 +143,47 @@ struct AppCommands: Commands {
         Divider()
         item(.newSnapshot)
         item(.newPreset)
-        item(.virtualCopy)
+        item(.createVersion)
+        versionItems
+    }
+
+    /// The open photo's edits, its own and its versions, to open, and the version open to rename or remove (EDT-09).
+    @ViewBuilder private var versionItems: some View {
+        let shown = menu.shown
+        Menu("Versions") {
+            Toggle(EditorModel.originalName, isOn: Binding(
+                get: { menu.shown.openVersion == nil },
+                set: {
+                    if $0 {
+                        model.showVersion(nil)
+                    }
+                },
+            ))
+            ForEach(shown.versions) { version in
+                Toggle(version.name, isOn: Binding(
+                    get: { menu.shown.openVersion == version.id },
+                    set: {
+                        if $0 {
+                            model.showVersion(version.id)
+                        }
+                    },
+                ))
+            }
+            Divider()
+            Button("Rename Version…") {
+                if let open = menu.shown.openVersion {
+                    model.chooseVersionName(open)
+                }
+            }
+            .disabled(shown.openVersion == nil || !shown.canChangeVersions)
+            Button("Remove Version…") {
+                if let open = menu.shown.openVersion {
+                    model.confirmRemovingVersion(open)
+                }
+            }
+            .disabled(shown.openVersion == nil || !shown.canChangeVersions)
+        }
+        .disabled(!shown.canOpenVersions)
     }
 
     /// Focus stacks, stacks, and moving through the photos.

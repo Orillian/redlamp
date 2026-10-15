@@ -59,10 +59,8 @@ struct DriverTests {
         #expect(Target.filmstrip("DSC_0750.NEF").identifier == "filmstrip.DSC_0750.NEF")
     }
 
-    @Test func `a planned action's menu item says when it arrives`() {
-        let title = Menus.title(of: .virtualCopy)
-        #expect(title.hasPrefix(ShortcutAction.virtualCopy.title))
-        #expect(title.contains(ShortcutAction.virtualCopy.plannedPhase ?? "-"))
+    @Test func `an action's menu item is titled as the action`() {
+        #expect(Menus.title(of: .createVersion) == ShortcutAction.createVersion.title)
         #expect(Menus.title(of: .export) == ShortcutAction.export.title)
     }
 

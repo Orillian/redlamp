@@ -7,6 +7,7 @@
     public enum Catalogue {
         public static let all: [Scenario] = SmokeScenarios.all
             + DevelopScenarios.all + ViewingScenarios.all + WorkspaceScenarios.all + HistoryScenarios.all
+            + VersionScenarios.all
             + MaskingScenarios.all + MasksPanelScenarios.all + PointColorScenarios.all + CropScenarios.all
             + HealingScenarios.all
             + LibraryScenarios.all + ModuleScenarios.all + OtherAppsScenarios.all + SavingScenarios.all

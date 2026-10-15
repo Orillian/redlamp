@@ -34,6 +34,11 @@ import RedlampLibrary
         public internal(set) var filmstripSize: FilmstripSize?
         /// The view whose Auto Advance the Photo menu's item sets.
         public internal(set) var autoAdvancePlace = AutoAdvancePlace.develop
+        /// The open photo's versions, and the one open, nil while its own edit is (EDT-09).
+        public internal(set) var versions: [EditorVersion] = []
+        public internal(set) var openVersion: UUID?
+        public internal(set) var canOpenVersions = false
+        public internal(set) var canChangeVersions = false
     }
 
     public private(set) var shown = Shown()
@@ -135,6 +140,10 @@ import RedlampLibrary
         shown.filmstripShowsInfoLine = model.filmstripShowsInfoLine
         shown.filmstripSize = model.filmstripSize
         shown.autoAdvancePlace = model.autoAdvancePlace
+        shown.versions = model.versions
+        shown.openVersion = model.openVersion
+        shown.canOpenVersions = model.canOpenVersions
+        shown.canChangeVersions = model.canChangeVersions
         return shown
     }
 

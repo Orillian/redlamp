@@ -312,12 +312,6 @@
             }
             try app.expect(checks.count > 40, "Only \(checks.count) actions have a menu item")
             try app.checkEach(checks, { "\($0.action.rawValue) by menu" }) { check in
-                if check.action == .virtualCopy {
-                    let item = try app.menuItem(Menus.title(of: .virtualCopy))
-                    try app.expect(item.found && !item.enabled, "Virtual Copy's planned item should be disabled")
-                    app.covered(.action(.virtualCopy), via: .menu)
-                    return
-                }
                 try check.run(app, via: .menu)
                 try app.open(first)
             }

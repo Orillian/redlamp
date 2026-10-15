@@ -109,10 +109,4 @@ struct ShortcutEditorTests {
         editor.search = ""
         #expect(editor.sections.flatMap(\.1).count == ShortcutAction.allCases.count, "every action, keys or not")
     }
-
-    @Test func `a planned action's key isn't recorded`() {
-        let editor = editor()
-        editor.record(.virtualCopy)
-        #expect(editor.recording == nil)
-    }
 }
