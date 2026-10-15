@@ -3,9 +3,9 @@
   "file": "STREET.ARW",
   "hooks": {
     "become": ["BECOME A REDLAMP", "AMBASSADOR"],
+    "say": ["AMBASSADORS HAVE", "A SAY IN REDLAMP"],
     "wanted": ["REDLAMP NEEDS", "AMBASSADORS"],
-    "first": ["REDLAMP'S FIRST", "AMBASSADORS"],
-    "pick": ["AMBASSADORS HELP", "PICK WHAT'S NEXT"],
+    "credit": ["AMBASSADORS GET", "THEIR EDITS SHOWN"],
     "photographers": ["PHOTOGRAPHERS,", "BE AN AMBASSADOR"]
   },
   "lines": {
@@ -13,7 +13,7 @@
     "pick": "YOUR PICK",
     "print": ["YOUR EDITS SHOWN"],
     "handle": "@YOUR.HANDLE",
-    "onePerson": ["FREE RAW EDITOR", "BY ONE PERSON"],
+    "onePerson": ["FREE RAW EDITOR", "RUN BY ONE PERSON"],
     "needs": ["IT NEEDS YOUR", "EDITS AND IDEAS"],
     "editor": ["EDIT A PHOTO", "IN REDLAMP"],
     "cta": ["APPLY AT", "REDLAMP.APP/JOIN"]
