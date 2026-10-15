@@ -290,7 +290,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | --- | --- | --- | --- | --- | --- | --- |
 | Mac | Yes | Done | Different | | | macOS 26 on Apple Silicon, free and open source, with no subscription. Not sandboxed yet; photos decode in a sandboxed service |
 | Windows | Yes | Out of scope | | | | Redlamp is built for Apple's platforms |
-| iPad and iPhone | Yes | Planned | | P5 | MOB-05, MOB-07, MOB-08, MOB-09, MOB-10 | The same engine, after 1.0 |
+| iPad and iPhone | Yes | Planned | | P5 | MOB-05, MOB-07, MOB-08, MOB-09, MOB-10, MOB-11 | The same engine, after 1.0 |
 | Edits shared between Macs | Yes (cloud) | Done | Behind | | | Through iCloud Drive: sidecars sync safely and conflicting copies merge. A photo that's open doesn't reload yet when another Mac changes its edit |
 | A library shared between Macs | Yes (cloud) | Planned | | P4 | LIB-37 | Ratings, keywords and collections another Mac changes, through iCloud Drive or a shared volume, merged field by field |
 | Working on your photos away from home | Yes (cloud) | Planned | | P4 | LIB-47 | Over your own private network, such as Tailscale, with the photos left on a drive at home rather than in a cloud; a study first |

@@ -980,7 +980,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [ ] Coordinated sidecar I/O through Files, and edits moving between devices <!-- tracker: MOB-06 -->
 - [ ] Tiled rendering for large exports within iPhone and iPad memory <!-- internal; tracker: ARC-05 -->
 - [ ] On-device timing of the AI models on iPhone and iPad, and performance-lab tiers for both <!-- internal; tracker: DN-04 -->
-- [ ] App Store releases for iPad and iPhone
+- [ ] App Store releases for iPad and iPhone <!-- tracker: MOB-11 -->
 
 ### Later
 - CloudKit sync with lightweight proxy RAW files
