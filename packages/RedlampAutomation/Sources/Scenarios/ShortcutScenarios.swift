@@ -303,8 +303,15 @@
             guard !app.settingsControlsDrawnBySwiftUI else {
                 throw app.leftOutSettingsStep("Settings › Shortcuts' Ask before quitting with ⌘Q")
             }
+            // The window grows to the tab as it shows it, so the checkbox is clicked once it stays put. The click turns
+            // the question back on only if the checkbox shows it off, as Don't ask again left it.
             try app.openSettings(tab: "Shortcuts")
-            try app.expect(try !app.isOn(setting, inWindowTitled: "Shortcuts"), "Settings › Shortcuts' checkbox is on")
+            let place = PlaceBox()
+            try app.wait("Settings › Shortcuts' checkbox in place") { _ in
+                let frame = RunningApp.settingsWindow.flatMap { Views.find(setting, in: $0) }
+                defer { place.last = frame }
+                return frame != nil && frame == place.last
+            }
             try app.click(setting, inWindowTitled: "Shortcuts")
             try app.wait("Settings › Shortcuts to turn the question back on") { _ in QuitConfirmation.asks }
             try app.closeSettings()

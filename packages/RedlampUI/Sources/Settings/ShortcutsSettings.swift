@@ -58,7 +58,7 @@ struct ShortcutsSettings: View {
             Divider()
             Toggle("Ask before quitting with ⌘Q", isOn: $asksBeforeQuitting)
                 .help("Quit Redlamp in the Redlamp menu, the Dock’s Quit and logging out don’t ask")
-                .accessibilityIdentifier("settings.shortcuts.ask-before-quitting")
+                .automationIdentifier("settings.shortcuts.ask-before-quitting")
         }
         .padding(20)
         .confirmationDialog(

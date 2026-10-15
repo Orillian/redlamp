@@ -702,17 +702,16 @@
         }
 
         /// Clicks the control carrying `identifier` in the window titled `title`, such as a switch
-        /// in Settings, through that window as the mouse does. While the app isn't active or the
-        /// window isn't key, the press goes nowhere, even on a switch that accepts first mouse
-        /// (the mouse's would activate them first), so there the control is clicked as the
-        /// keyboard clicks it.
+        /// in Settings, or the SwiftUI control marked with it (`automationIdentifier`), through that
+        /// window as the mouse does. While the app isn't active or the window isn't key, the press
+        /// goes nowhere, even on a switch that accepts first mouse (the mouse's would activate them
+        /// first), so there the control is clicked as the keyboard clicks it.
         func click(_ identifier: String, inWindowTitled title: String) throws {
             let location = try main { _ -> NSPoint in
                 guard let window = Views.window(titled: title) else { throw ScenarioFailure("No \(title) window") }
-                guard let control = Views.accessible(identifier, in: window) else {
-                    throw ScenarioFailure("\(identifier) isn't in the \(title) window")
-                }
-                let frame = control.convert(control.bounds, to: nil)
+                guard let frame = Views.accessible(identifier, in: window).map({ $0.convert($0.bounds, to: nil) })
+                    ?? Views.find(identifier, in: window)
+                else { throw ScenarioFailure("\(identifier) isn't in the \(title) window") }
                 return NSPoint(x: frame.midX, y: frame.midY)
             }
             post { _ in
