@@ -67,6 +67,10 @@ final class LightroomCatalogMaker {
       image INTEGER NOT NULL DEFAULT 0, position NOT NULL DEFAULT '', stack INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE Adobe_imageDevelopSettings (id_local INTEGER PRIMARY KEY, digest, hasDevelopAdjustments,
       hasDevelopAdjustmentsEx, image INTEGER, processVersion, text);
+    CREATE TABLE Adobe_libraryImageDevelopSnapshot (id_local INTEGER PRIMARY KEY, id_global UNIQUE NOT NULL, digest,
+      hasDevelopAdjustments, image INTEGER, locked, name, snapshotID, text);
+    CREATE TABLE Adobe_libraryImageDevelopHistoryStep (id_local INTEGER PRIMARY KEY, id_global UNIQUE NOT NULL,
+      dateCreated, digest, hasDevelopAdjustments, image INTEGER, name, relValueString, text, valueString);
     """
 
     /// A new catalog at `url`, made as Lightroom leaves one it has closed: in rollback-journal mode.
@@ -132,11 +136,13 @@ final class LightroomCatalogMaker {
         return id
     }
 
-    /// A photo in `folder`: its file and its image, `master` making it a virtual copy of that image.
+    /// A photo in `folder`: its file and its image, `master` making it a virtual copy of that image, with
+    /// Lightroom's rotation code and the file's size as the catalog records them.
     @discardableResult
     func photo(
         _ folder: Int64, _ name: String, rating: Int? = nil, pick: Int = 0, label: String = "",
-        sidecars: String? = nil, master: Int64? = nil, copyName: String? = nil,
+        sidecars: String? = nil, master: Int64? = nil, copyName: String? = nil, orientation: String? = nil,
+        size: (width: Int, height: Int)? = nil,
     ) throws -> Int64 {
         let file = id()
         let stem = (name as NSString).deletingPathExtension
@@ -148,9 +154,12 @@ final class LightroomCatalogMaker {
         )
         let image = id()
         try run(
-            "INSERT INTO Adobe_images (id_local, id_global, colorLabels, copyName, masterImage, pick, rating, rootFile) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [image, "image-\(image)", label, copyName, master, pick, rating, file],
+            "INSERT INTO Adobe_images (id_local, id_global, colorLabels, copyName, masterImage, pick, rating, rootFile, "
+                + "orientation, fileWidth, fileHeight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                image, "image-\(image)", label, copyName, master, pick, rating, file, orientation, size?.width,
+                size?.height,
+            ],
         )
         return image
     }
@@ -331,4 +340,225 @@ final class LightroomCatalogMaker {
             [photo],
         )
     }
+
+    /// The image's Develop settings as the catalog keeps them: `text` a Lua table, as `LightroomSettingsText`
+    /// writes one.
+    func develop(_ image: Int64, _ text: String?, processVersion: String? = nil, digest: String? = nil) throws {
+        try run(
+            "INSERT INTO Adobe_imageDevelopSettings (image, digest, hasDevelopAdjustments, hasDevelopAdjustmentsEx, "
+                + "processVersion, text) VALUES (?, ?, 1, 1, ?, ?)",
+            [image, digest, processVersion, text],
+        )
+    }
+
+    @discardableResult
+    func snapshot(_ image: Int64, name: String, text: String) throws -> Int64 {
+        let id = id()
+        try run(
+            "INSERT INTO Adobe_libraryImageDevelopSnapshot (id_local, id_global, digest, image, name, snapshotID, text) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [id, "snapshot-\(id)", "digest-\(id)", image, name, "S\(id)", text],
+        )
+        return id
+    }
+
+    /// `steps` steps of the image's history in Develop, each with settings `text`.
+    func history(_ image: Int64, steps: Int, text: String = "s = { Exposure2012 = 0.1 }") throws {
+        for step in 0 ..< steps {
+            let id = id()
+            try run(
+                "INSERT INTO Adobe_libraryImageDevelopHistoryStep (id_local, id_global, image, name, text) "
+                    + "VALUES (?, ?, ?, ?, ?)",
+                [id, "step-\(id)", image, "Step \(step + 1)", text],
+            )
+        }
+    }
+}
+
+/// Develop settings as a catalog keeps them, a Lua table (EDT-23), written for tests with the names ExifTool's
+/// `crs` tables give and in the form `docs/research/notes/EDT-lightroom-develop-settings.md` describes: never
+/// settings Lightroom wrote.
+enum LightroomSettingsText {
+    /// A raw's settings at Process 2012's and later defaults, about 3.5 KB once written, one `name = value` a line.
+    static let defaults: [(name: String, value: String)] = defaultsText.split(separator: "\n").map { line in
+        let parts = line.split(separator: "=", maxSplits: 1)
+        return (parts[0].trimmingCharacters(in: .whitespaces), parts[1].trimmingCharacters(in: .whitespaces))
+    }
+
+    private static let defaultNames = Set(defaults.map(\.name))
+
+    /// The defaults with `changes` (each a setting's Lua value: `"0.35"`, `"\"Camera Standard\""`) put in their
+    /// place or added, and `fields` written as given, in the catalog's form: `s = { … }`.
+    static func text(_ changes: [String: String] = [:], _ fields: [String] = []) -> String {
+        var written = defaults.map { name, value in "\(name) = \(changes[name] ?? value)" }
+        written += changes.filter { !defaultNames.contains($0.key) }.sorted { $0.key < $1.key }
+            .map { "\($0.key) = \($0.value)" }
+        written += fields
+        return "s = {\n\t" + written.joined(separator: ",\n\t") + ",\n}\n"
+    }
+
+    /// Lightroom 11's and later masks: `MaskGroupBasedCorrections = { … }`.
+    static func masks(_ corrections: [String]) -> String {
+        "MaskGroupBasedCorrections = { \(corrections.joined(separator: ", ")) }"
+    }
+
+    /// One mask: its components and its own settings.
+    static func correction(_ masks: [String], _ settings: String = "LocalExposure2012 = 0.5") -> String {
+        "{ What = \"Correction\", CorrectionActive = true, CorrectionAmount = 1, "
+            + "CorrectionMasks = { \(masks.joined(separator: ", ")) }\(settings.isEmpty ? "" : ", " + settings) }"
+    }
+
+    /// One component of a mask.
+    static func mask(_ what: String, _ fields: String = "") -> String {
+        "{ What = \"\(what)\", MaskActive = true, MaskBlendMode = 0, MaskInverted = false, MaskValue = 1"
+            + (fields.isEmpty ? " }" : ", \(fields) }")
+    }
+
+    /// One spot: `RetouchAreas`' entries.
+    static func spot(_ type: String, method: String? = nil, masks: [String]) -> String {
+        "{ SpotType = \"\(type)\"" + (method.map { ", Method = \"\($0)\"" } ?? "")
+            + ", Feather = 0.25, Opacity = 1, SourceState = \"sourceAutoComputed\", SourceX = 0.4, OffsetY = 0.1, "
+            + "Masks = { \(masks.joined(separator: ", ")) } }"
+    }
+
+    private static let defaultsText = """
+    Version = "15.5"
+    ProcessVersion = "11.0"
+    WhiteBalance = "As Shot"
+    Temperature = 5450
+    Tint = 4
+    Exposure2012 = 0
+    Contrast2012 = 0
+    Highlights2012 = 0
+    Shadows2012 = 0
+    Whites2012 = 0
+    Blacks2012 = 0
+    Texture = 0
+    Clarity2012 = 0
+    Dehaze = 0
+    Vibrance = 0
+    Saturation = 0
+    ParametricShadows = 0
+    ParametricDarks = 0
+    ParametricLights = 0
+    ParametricHighlights = 0
+    ParametricShadowSplit = 25
+    ParametricMidtoneSplit = 50
+    ParametricHighlightSplit = 75
+    Sharpness = 40
+    SharpenRadius = 1
+    SharpenDetail = 25
+    SharpenEdgeMasking = 0
+    LuminanceSmoothing = 0
+    LuminanceNoiseReductionDetail = 50
+    LuminanceNoiseReductionContrast = 0
+    ColorNoiseReduction = 25
+    ColorNoiseReductionDetail = 50
+    ColorNoiseReductionSmoothness = 50
+    HueAdjustmentRed = 0
+    HueAdjustmentOrange = 0
+    HueAdjustmentYellow = 0
+    HueAdjustmentGreen = 0
+    HueAdjustmentAqua = 0
+    HueAdjustmentBlue = 0
+    HueAdjustmentPurple = 0
+    HueAdjustmentMagenta = 0
+    SaturationAdjustmentRed = 0
+    SaturationAdjustmentOrange = 0
+    SaturationAdjustmentYellow = 0
+    SaturationAdjustmentGreen = 0
+    SaturationAdjustmentAqua = 0
+    SaturationAdjustmentBlue = 0
+    SaturationAdjustmentPurple = 0
+    SaturationAdjustmentMagenta = 0
+    LuminanceAdjustmentRed = 0
+    LuminanceAdjustmentOrange = 0
+    LuminanceAdjustmentYellow = 0
+    LuminanceAdjustmentGreen = 0
+    LuminanceAdjustmentAqua = 0
+    LuminanceAdjustmentBlue = 0
+    LuminanceAdjustmentPurple = 0
+    LuminanceAdjustmentMagenta = 0
+    SplitToningShadowHue = 0
+    SplitToningShadowSaturation = 0
+    SplitToningHighlightHue = 0
+    SplitToningHighlightSaturation = 0
+    SplitToningBalance = 0
+    ColorGradeMidtoneHue = 0
+    ColorGradeMidtoneSat = 0
+    ColorGradeShadowLum = 0
+    ColorGradeMidtoneLum = 0
+    ColorGradeHighlightLum = 0
+    ColorGradeBlending = 50
+    ColorGradeGlobalHue = 0
+    ColorGradeGlobalSat = 0
+    ColorGradeGlobalLum = 0
+    AutoLateralCA = 0
+    LensProfileEnable = 0
+    LensProfileSetup = "LensDefaults"
+    LensManualDistortionAmount = 0
+    VignetteAmount = 0
+    DefringePurpleAmount = 0
+    DefringePurpleHueLo = 30
+    DefringePurpleHueHi = 70
+    DefringeGreenAmount = 0
+    DefringeGreenHueLo = 40
+    DefringeGreenHueHi = 60
+    PerspectiveUpright = 0
+    PerspectiveVertical = 0
+    PerspectiveHorizontal = 0
+    PerspectiveRotate = 0
+    PerspectiveAspect = 0
+    PerspectiveScale = 100
+    PerspectiveX = 0
+    PerspectiveY = 0
+    UprightVersion = 151388160
+    UprightCenterMode = 0
+    UprightCenterNormX = 0.5
+    UprightCenterNormY = 0.5
+    UprightFocalMode = 0
+    UprightFocalLength35mm = 35
+    UprightPreview = false
+    UprightTransformCount = 6
+    UprightFourSegmentsCount = 0
+    PostCropVignetteAmount = 0
+    PostCropVignetteMidpoint = 50
+    PostCropVignetteFeather = 50
+    PostCropVignetteRoundness = 0
+    PostCropVignetteStyle = 1
+    PostCropVignetteHighlightContrast = 0
+    GrainAmount = 0
+    GrainSize = 25
+    GrainFrequency = 50
+    ShadowTint = 0
+    RedHue = 0
+    RedSaturation = 0
+    GreenHue = 0
+    GreenSaturation = 0
+    BlueHue = 0
+    BlueSaturation = 0
+    ConvertToGrayscale = false
+    OverrideLookVignette = false
+    ToneCurveName2012 = "Linear"
+    ToneCurvePV2012 = { 0, 0, 255, 255 }
+    ToneCurvePV2012Red = { 0, 0, 255, 255 }
+    ToneCurvePV2012Green = { 0, 0, 255, 255 }
+    ToneCurvePV2012Blue = { 0, 0, 255, 255 }
+    CameraProfile = "Adobe Standard"
+    CameraProfileDigest = "00112233445566778899AABBCCDDEEFF"
+    HasSettings = true
+    HasCrop = false
+    CropTop = 0
+    CropLeft = 0
+    CropBottom = 1
+    CropRight = 1
+    CropAngle = 0
+    CropConstrainToWarp = 0
+    AlreadyApplied = false
+    Look = { Name = "Adobe Color", Amount = 1, Cluster = "", Copyright = "", Group = { ["x-default"] = "Profiles" }, \
+    Parameters = { Version = "15.5", ProcessVersion = "11.0", ConvertToGrayscale = false, \
+    CameraProfile = "Adobe Standard", LookTable = "FFEEDDCCBBAA99887766554433221100", \
+    ToneCurvePV2012 = { 0, 0, 22, 16, 40, 35, 127, 127, 224, 230, 240, 246, 255, 255 } }, SupportsAmount = false, \
+    SupportsMonochrome = false, SupportsOutputReferred = false, UUID = "0F1E2D3C4B5A69788796A5B4C3D2E1F0" }
+    """
 }

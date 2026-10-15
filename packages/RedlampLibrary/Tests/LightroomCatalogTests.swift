@@ -130,6 +130,14 @@ struct LightroomCatalogTests {
     /// it stopped without closing: the change is made in a scratch copy, and the copy and its log copied while
     /// it's open, since closing it would move the log's changes into the catalog.
     static func leaveLog(from source: URL, at target: URL, renaming name: String, to newName: String) throws {
+        try leaveLog(
+            from: source, at: target,
+            changing: "UPDATE AgLibraryFile SET idx_filename = '\(newName)' WHERE idx_filename = '\(name)'",
+        )
+    }
+
+    /// `source` at `target` with `sql`'s change still in its write-ahead log.
+    static func leaveLog(from source: URL, at target: URL, changing sql: String) throws {
         let folder = target.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let scratch = folder.appending(path: "scratch.lrcat")
@@ -137,7 +145,7 @@ struct LightroomCatalogTests {
         let database = try SQLiteDatabase(path: scratch.path)
         try database.execute("PRAGMA journal_mode=WAL")
         try database.execute("PRAGMA wal_autocheckpoint=0")
-        try database.execute("UPDATE AgLibraryFile SET idx_filename = '\(newName)' WHERE idx_filename = '\(name)'")
+        try database.execute(sql)
         try withExtendedLifetime(database) {
             try FileManager.default.copyItem(at: scratch, to: target)
             try FileManager.default.copyItem(atPath: scratch.path + "-wal", toPath: target.path + "-wal")

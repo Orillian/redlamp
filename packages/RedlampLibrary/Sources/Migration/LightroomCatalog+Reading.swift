@@ -5,11 +5,16 @@ import Synchronization
 /// Reads a catalog's tables into a `LightroomCatalog`, looking each table and column up first.
 struct LightroomCatalogReader {
     let database: SQLiteDatabase
+    /// It reads a copy of the catalog with its write-ahead log, as Lightroom leaves one it didn't close.
+    let copied: Bool
     /// The catalog's tables, by their names in lower case: SQLite matches names ignoring case.
     private let tables: Set<String>
 
-    init(_ database: SQLiteDatabase) throws {
+    static let copiedNote = "Lightroom didn't close the catalog: it was read from a copy, with its log"
+
+    init(_ database: SQLiteDatabase, copied: Bool = false) throws {
         self.database = database
+        self.copied = copied
         tables = try Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").map {
             ($0.string(at: 0) ?? "").lowercased()
         })
@@ -26,27 +31,39 @@ struct LightroomCatalogReader {
     }
 
     func read(url: URL) throws -> LightroomCatalog {
+        var catalog = try files(url: url)
+        var notes = catalog.notes
+        var places: [Int64: Int] = [:]
+        for (place, photo) in catalog.photos.enumerated() {
+            places[photo.id] = place
+        }
+        try readIPTC(into: &catalog.photos, places: places, notes: &notes)
+        try readXMP(into: &catalog.photos, places: places, notes: &notes)
+        try readGPS(into: &catalog.photos, places: places)
+        catalog.keywords = try keywords(notes: &notes)
+        try readKeywordLinks(into: &catalog.photos, places: places, keywords: catalog.keywords)
+        catalog.collections = try collections(notes: &notes)
+        catalog.stacks = try stackCount()
+        catalog.edited = try editedCount()
+        if copied {
+            notes.append(Self.copiedNote)
+        }
+        catalog.notes = notes
+        return catalog
+    }
+
+    /// The catalog's root folders, folders, photos with their names and fields from `Adobe_images`, and virtual
+    /// copies: what finding its photos in the library needs.
+    func files(url: URL) throws -> LightroomCatalog {
         var catalog = LightroomCatalog(url: url)
         catalog.version = try version()
         catalog.roots = try roots()
         catalog.folders = try folders()
         var notes: [String] = []
-        var (photos, copies) = try photos(notes: &notes)
-        var places: [Int64: Int] = [:]
-        for (place, photo) in photos.enumerated() {
-            places[photo.id] = place
-        }
-        try readIPTC(into: &photos, places: places, notes: &notes)
-        try readXMP(into: &photos, places: places, notes: &notes)
-        try readGPS(into: &photos, places: places)
-        catalog.keywords = try keywords(notes: &notes)
-        try readKeywordLinks(into: &photos, places: places, keywords: catalog.keywords)
-        catalog.collections = try collections(notes: &notes)
-        catalog.photos = photos
+        var copies: [LightroomCatalog.VirtualCopy]
+        (catalog.photos, copies) = try photos(notes: &notes)
         copies.sort { $0.id < $1.id }
         catalog.virtualCopies = copies
-        catalog.stacks = try stackCount()
-        catalog.edited = try editedCount()
         catalog.notes = notes
         return catalog
     }
@@ -319,7 +336,7 @@ struct LightroomCatalogReader {
         """).first { $0.int(at: 0) } ?? 0
     }
 
-    private func editedCount() throws -> Int {
+    func editedCount() throws -> Int {
         let columns = try columns("Adobe_imageDevelopSettings")
         let column = columns.contains("hasdevelopadjustmentsex") ? "hasDevelopAdjustmentsEx"
             : columns.contains("hasdevelopadjustments") ? "hasDevelopAdjustments" : nil

@@ -142,13 +142,23 @@ public extension LightroomCatalog {
     /// Reads the catalog at `url`, off the caller's thread is best: a catalog of 100,000 photos takes about a
     /// second.
     static func read(_ url: URL) throws(LightroomCatalogError) -> LightroomCatalog {
+        try opened(url) { reader in try reader.read(url: url) }
+    }
+}
+
+extension LightroomCatalog {
+    /// Opens the catalog at `url` as `read` does and gives `body` its reader: a catalog with a write-ahead log
+    /// beside it is read from a copy that's deleted once `body` returns, so whatever is read of it is read there.
+    static func opened<Result>(
+        _ url: URL, _ body: (LightroomCatalogReader) throws -> Result,
+    ) throws(LightroomCatalogError) -> Result {
         let path = url.path
         guard FileManager.default.fileExists(atPath: path) else { throw .noSuchFile(path) }
         guard !FileManager.default.fileExists(atPath: lockURL(of: url).path) else { throw .openInLightroom(path) }
         let log = URL(fileURLWithPath: path + "-wal")
         let logSize = (try? FileManager.default.attributesOfItem(atPath: log.path)[.size] as? Int) ?? 0
         if logSize > 0 {
-            return try readCopy(url, log: log)
+            return try openedCopy(url, log: log, body)
         }
         let database: SQLiteDatabase
         do {
@@ -159,12 +169,12 @@ public extension LightroomCatalog {
         } catch {
             throw .unreadable(path, error.message)
         }
-        return try read(database, url: url)
+        return try reading(database, url: url, copied: false, body)
     }
 
     /// `file:` with the path's characters SQLite reads apart escaped, opened immutable: SQLite reads the file
     /// as it is, takes no lock and makes no `-shm` or `-wal` beside it.
-    internal static func immutableURI(_ path: String) -> String {
+    static func immutableURI(_ path: String) -> String {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "?#%")
         let escaped = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
@@ -173,7 +183,9 @@ public extension LightroomCatalog {
 
     /// The catalog and its write-ahead log copied to a temporary folder and read there, where SQLite may
     /// replay the log into the copy.
-    private static func readCopy(_ url: URL, log: URL) throws(LightroomCatalogError) -> LightroomCatalog {
+    private static func openedCopy<Result>(
+        _ url: URL, log: URL, _ body: (LightroomCatalogReader) throws -> Result,
+    ) throws(LightroomCatalogError) -> Result {
         let folder = FileManager.default.temporaryDirectory
             .appending(path: "Lightroom catalog \(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -183,9 +195,7 @@ public extension LightroomCatalog {
             try FileManager.default.copyItem(at: url, to: copy)
             try FileManager.default.copyItem(at: log, to: URL(fileURLWithPath: copy.path + "-wal"))
             let database = try SQLiteDatabase(path: copy.path, flags: [.readWrite])
-            var catalog = try read(database, url: url)
-            catalog.notes.append("Lightroom didn't close the catalog: it was read from a copy, with its log")
-            return catalog
+            return try reading(database, url: url, copied: true, body)
         } catch let error as LightroomCatalogError {
             throw error
         } catch {
@@ -193,13 +203,15 @@ public extension LightroomCatalog {
         }
     }
 
-    private static func read(_ database: SQLiteDatabase, url: URL) throws(LightroomCatalogError) -> LightroomCatalog {
+    private static func reading<Result>(
+        _ database: SQLiteDatabase, url: URL, copied: Bool, _ body: (LightroomCatalogReader) throws -> Result,
+    ) throws(LightroomCatalogError) -> Result {
         do {
-            let reader = try LightroomCatalogReader(database)
+            let reader = try LightroomCatalogReader(database, copied: copied)
             guard reader.has("Adobe_images"), reader.has("AgLibraryFile"), reader.has("AgLibraryFolder") else {
                 throw LightroomCatalogError.notACatalog(url.path)
             }
-            return try reader.read(url: url)
+            return try body(reader)
         } catch let error as LightroomCatalogError {
             throw error
         } catch let error as SQLiteError where error.extendedCode & 0xFF == SQLITE_NOTADB {
