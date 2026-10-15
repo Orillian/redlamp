@@ -1,6 +1,6 @@
 # The rooms
 
-Redlamp is run from five rooms: canvases beside the chat in Cursor, each kept up to date by agents through a skill, where the owner sees where things stand and makes the decisions that are his. Releases, the reports people file, the blog, press outreach and support each have one. This document says what each room is for, what it shows and how it works; each room's skill has what an agent needs to keep it.
+Redlamp is run from six rooms: canvases beside the chat in Cursor, each kept up to date by agents through a skill, where the owner sees where things stand and makes the decisions that are his. Releases, the reports people file, the blog, press outreach, support and the ambassadors each have one. This document says what each room is for, what it shows and how it works; each room's skill has what an agent needs to keep it.
 
 ## How a room works
 
@@ -54,6 +54,15 @@ Where Redlamp's funding is run: the pages people join from, the tiers, what Redl
 - **What the owner does:** approves the tiers and the copy, enters the figures, and posts every letter, poll and report himself.
 - **What agents do:** draft the pages, gather each month's letter from what the repository records, propose each quarter's shortlist from the tracker, and write the quarterly report from the totals.
 - **Its rule:** nothing is held back for supporters, and supporters' details stay out of the repository: credits only as a member asks, money only in totals.
+
+## The ambassadors room
+
+Where Redlamp's ambassador programme is run: photographers who send an edit a month made in Redlamp and honest feedback, and in return pick one feature a quarter that's built next (DEC-86) and have their edits shown with their name. [Skill](../.cursor/skills/redlamp-ambassadors/SKILL.md), [template](../.cursor/skills/redlamp-ambassadors/template.tsx) and [room.py](../.cursor/skills/redlamp-ambassadors/room.py).
+
+- **What it shows:** what needs the owner and the campaign's plan; the applications from redlamp.app/ambassadors, with thumbnails of their photos and their scores on the rubric; the candidates for each wave of invitations, each with an invitation to copy; the cohort; the quarterly picks; and the log and decisions. Its tabs are Overview, Applications, Candidates, Ambassadors, Picks, Plan, Decisions and Log.
+- **What the owner does:** shortlists, accepts or declines each application, sends every invitation and reply, holds the calls, and approves each quarter's shortlist.
+- **What agents do:** `room.py sync` reads the applications from their private repository; agents find and score candidates, draft invitations and replies, onboard the cohort, prepare each month's call and each quarter's pick, and record it in the tracker.
+- **Its rule:** applicants', candidates' and ambassadors' details stay out of the public repository, and nothing is held back for ambassadors.
 
 ## Workstream canvases
 
