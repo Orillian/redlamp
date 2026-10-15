@@ -2,6 +2,7 @@ import Foundation
 import RedlampDocument
 import RedlampEngineAPI
 import RedlampRecipes
+import Synchronization
 
 /// The photographer's Adobe camera profiles in the Base Look menu (TON-51, TON-52): those Camera
 /// Raw installs, and files they choose, read where they are and never copied (DEC-85).
@@ -10,13 +11,21 @@ public extension EditorModel {
     static let chosenCameraProfilesKey = "app.redlamp.chosenCameraProfiles"
 
     /// The chosen files and folders where they are now; those that can't be found are left out.
+    /// Each one's access starts once and lasts as long as the app runs, since the engine reads
+    /// them whenever a photo from their camera renders.
     static func chosenCameraProfiles(in defaults: UserDefaults?) -> [URL] {
         (defaults?.array(forKey: chosenCameraProfilesKey) as? [Data] ?? []).compactMap { bookmark in
             guard let url = FolderAccess.resolve(bookmark)?.url else { return nil }
-            FolderAccess.start(url)
+            startedCameraProfiles.withLock { started in
+                if started.insert(url.standardizedFileURL.path).inserted {
+                    FolderAccess.start(url)
+                }
+            }
             return url
         }
     }
+
+    private static let startedCameraProfiles = Mutex<Set<String>>([])
 
     /// Lists the open photo's camera's profiles again: when it opens, and after files are chosen.
     func refreshCameraProfiles() async {
@@ -46,7 +55,8 @@ public extension EditorModel {
         let kept = Self.chosenCameraProfiles(in: defaults)
         let added = accepted.filter { url in !kept.contains { $0.standardizedFileURL == url.standardizedFileURL } }
         if !added.isEmpty {
-            defaults?.set((kept + added).compactMap(FolderAccess.bookmark(for:)), forKey: Self.chosenCameraProfilesKey)
+            let bookmarks = (kept + added).compactMap { FolderAccess.bookmark(for: $0, readOnly: true) }
+            defaults?.set(bookmarks, forKey: Self.chosenCameraProfilesKey)
             engine.setChosenCameraProfiles(defaults == nil ? kept + added : Self.chosenCameraProfiles(in: defaults))
         }
         cameraProfileIssues = issues
