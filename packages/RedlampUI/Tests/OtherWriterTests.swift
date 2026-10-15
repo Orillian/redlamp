@@ -105,8 +105,7 @@ struct OtherWriterTests {
         model.saveNow()
         await model.saves.flush()
         try await eventually { model.recipe[.contrast] == 40 }
-        // With the photo's own exposure anchor, which their edit was written without.
-        #expect(model.recipe == theirs.recipe.anchored(model.photoAnchor))
+        #expect(model.recipe == theirs.recipe)
         #expect(model.currentMetadata == PhotoMetadata(rating: 5, flag: .pick))
         #expect(model.snapshots.map(\.name) == ["Made on the other Mac"])
         #expect(model.history.last?.name == "Edit from Another Mac")

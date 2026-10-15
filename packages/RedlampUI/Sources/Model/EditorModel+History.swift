@@ -49,17 +49,22 @@ public extension EditorModel {
 }
 
 extension EditorModel {
-    /// Records the edit as a step. With `value`, the step shows the value it changed in `previous`
-    /// and now, or only now when they read the same. `autoSyncs` false for a step that reaches the
-    /// rest of the selection another way.
+    /// Records the edit as a step, with the photo's exposure anchor from process 16 if it has none
+    /// (`withPhotoAnchor`). With `value`, the step shows the value it changed in `previous` and now,
+    /// or only now when they read the same. `autoSyncs` false for a step that reaches the rest of
+    /// the selection another way; `anchors` false for an edit taken as another writer left it.
     func recordHistory(
         _ action: HistoryAction,
         _ title: String,
         from previous: EditRecipe? = nil,
         value: ((EditRecipe) -> String)? = nil,
         autoSyncs: Bool = true,
+        anchors: Bool = true,
     ) {
         guard opening == nil else { return }
+        if anchors {
+            anchorChangedEdit()
+        }
         let after = value?(recipe)
         let before = previous.flatMap { value?($0) }
         let prior = history.indices.contains(historyIndex) ? history[historyIndex].recipe : previous

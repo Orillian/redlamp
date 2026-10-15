@@ -40,8 +40,8 @@ public extension EditorModel {
 
     /// The camera's calibration differs from the anchor the edit renders with.
     var canUpdateCalibration: Bool {
-        guard recipe.baseLook.isReproduction, let photo = photoAnchor else { return false }
-        let current = recipe.exposureAnchor ?? .typical(for: info?.cameraName)
+        guard recipe.baseLook.isReproduction, let photo = photoAnchor, let info else { return false }
+        let current = renderedAnchor(of: recipe, info)
         return photo.stops != current.stops || photo.source != current.source
     }
 
@@ -53,8 +53,9 @@ public extension EditorModel {
     /// The status line under the Base Look: how the edit's exposure is anchored.
     var calibrationStatus: String {
         guard let info, info.isRaw else { return "Not a raw photo: shown in its file's own light" }
-        guard let anchor = recipe.exposureAnchor, anchor.source == .target else {
-            guard recipe.exposureAnchor?.source == .estimated else { return "Not calibrated: typical exposure" }
+        let anchor = renderedAnchor(of: recipe, info)
+        guard anchor.source == .target else {
+            guard anchor.source == .estimated else { return "Not calibrated: typical exposure" }
             return "Not calibrated: exposure estimated for \(info.cameraName ?? "this camera")"
         }
         let camera = anchor.camera ?? info.cameraName ?? "this camera"
@@ -84,8 +85,7 @@ public extension EditorModel {
     /// for this camera, and gives it to the edit with Exposure 0, in one step.
     func calibrate(toReference lstar: Double) {
         guard let target = calibrationTarget, let info, info.isRaw, let camera = info.cameraName else { return }
-        let measured = target.recipe.exposureAnchor?.stops(baseline: info.baselineExposure ?? 0)
-            ?? ExposureAnchor.typicalStops
+        let measured = renderedAnchor(of: target.recipe, info).stops(baseline: info.baselineExposure ?? 0)
         let stops = Self.stops(from: target, to: lstar) + target.recipe[.exposure] + measured
         do {
             try cameras.calibrate(CameraCalibrations.Entry(
@@ -147,12 +147,23 @@ extension EditorModel {
         return edit.anchored(photoAnchor(for: info, process: edit.processVersion))
     }
 
-    /// `edit` of the photo `info` describes with the photo's anchor when it has none from process 16,
-    /// new or written without one by another writer: an edit keeps the anchor its camera has when
-    /// it's made (CAM-29), and one read from disk without it is the same edit.
-    func withPhotoAnchor(_ edit: EditRecipe, of info: ImageInfo) -> EditRecipe {
-        guard edit.processVersion >= 16, edit.exposureAnchor == nil else { return edit }
-        return edit.anchored(photoAnchor(for: info, process: edit.processVersion))
+    /// `edit` of the photo `info` describes with the anchor it takes from process 16 when it has
+    /// none (CAM-29). A change gives it the photo's own, so the edit keeps the anchor its camera
+    /// has when it's made. Reading it, new or as a sidecar or another writer has it, gives it only
+    /// the camera's calibration: without an anchor it renders with the camera's estimate, as the
+    /// engine takes it, and the editor shows the edit as it's written.
+    func withPhotoAnchor(_ edit: EditRecipe, of info: ImageInfo, changed: Bool) -> EditRecipe {
+        guard edit.processVersion >= 16, edit.exposureAnchor == nil,
+              let photo = photoAnchor(for: info, process: edit.processVersion),
+              changed || photo.source == .target else { return edit }
+        return edit.anchored(photo)
+    }
+
+    /// The anchor `edit` renders with on the photo `info` describes: its own, or else the one the
+    /// engine takes (`ImageSession.baseExposure(for:)`).
+    func renderedAnchor(of edit: EditRecipe, _ info: ImageInfo) -> ExposureAnchor {
+        edit.exposureAnchor ?? (edit.processVersion >= 16 ? ExposureAnchorTable.bundled.anchor(for: info) : nil)
+            ?? .typical(for: info.cameraName)
     }
 
     /// The anchor an edit at `process` of a photo that isn't open gets: its camera's calibration,

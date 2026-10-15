@@ -1304,7 +1304,7 @@ public final class EditorModel {
             metadataChangesWhileOpening = []
         }
         photoMetadata = metadata
-        let loaded = withPhotoAnchor(Self.asShot(sidecar?.recipe ?? EditRecipe(), opened), of: opened)
+        let loaded = withPhotoAnchor(Self.asShot(sidecar?.recipe ?? EditRecipe(), opened), of: opened, changed: false)
         recipe = loaded
         snapshots = sidecar?.snapshots ?? []
         startSession(opening: opened.url, recipe: loaded, hasSidecar: sidecar != nil)
@@ -1353,7 +1353,7 @@ public final class EditorModel {
     func showOtherWriters(_ theirs: Sidecar) -> Bool {
         guard let info, !isReadOnly, editStart == nil, !hasUnsavedChange else { return false }
         let previous = recipe
-        recipe = withPhotoAnchor(Self.asShot(theirs.recipe, info), of: info)
+        recipe = withPhotoAnchor(Self.asShot(theirs.recipe, info), of: info, changed: false)
         snapshots = theirs.snapshots
         var metadata = theirs.metadata ?? PhotoMetadata()
         keepCullingShown(in: &metadata)
@@ -1361,7 +1361,7 @@ public final class EditorModel {
         cropIntent = recipe.crop
         if recipe != previous {
             // As a paste, Auto Sync doesn't send it on to the rest of the selection.
-            recordHistory(.paste, "Edit from Another Mac", from: previous)
+            recordHistory(.paste, "Edit from Another Mac", from: previous, anchors: false)
             requestRender()
         }
         return true
@@ -1926,12 +1926,17 @@ public final class EditorModel {
         autoSyncs: Bool = true,
     ) {
         guard next != recipe else { return }
-        let next = info.map { withPhotoAnchor(next, of: $0) } ?? next
         let previous = recipe
         recipe = next
         recordHistory(action, title, from: previous, value: value, autoSyncs: autoSyncs)
         requestRender()
         scheduleSave()
+    }
+
+    /// Gives the changed edit the photo's exposure anchor, as `recordHistory` records it.
+    func anchorChangedEdit() {
+        guard let info else { return }
+        recipe = withPhotoAnchor(recipe, of: info, changed: true)
     }
 
     // MARK: - Panels

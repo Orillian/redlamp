@@ -59,7 +59,7 @@ struct ReproductionAnchorTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let cameras = CameraCalibrations(file: nil)
         let editor = try await open(cameras: cameras)
-        #expect(editor.recipe.exposureAnchor == Self.estimate, "a new edit gets its camera's estimate (CAM-29)")
+        #expect(editor.recipe.exposureAnchor == nil, "a new edit takes its camera's estimate with its first change")
         #expect(editor.recipe.isPristine)
         let steps = editor.history.count
         editor.setBaseLook(BuiltInBaseLook.reproduction.reference)
@@ -72,6 +72,20 @@ struct ReproductionAnchorTests {
         try cameras.calibrate(Self.calibrated)
         editor.setBaseLook(BuiltInBaseLook.reproduction.reference)
         #expect(editor.recipe.exposureAnchor == ExposureAnchor(stops: 0.82, source: .target, camera: "Canon EOS R5"))
+    }
+
+    @Test func `from process 16 a change writes the camera's estimate, and reading an edit gives it a calibration`(
+    ) async throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cameras = CameraCalibrations(file: nil)
+        let editor = try await open(cameras: cameras)
+        #expect(editor.calibrationStatus == "Not calibrated: exposure estimated for Canon EOS R5")
+        editor.setValue(.exposure, 0.5)
+        #expect(editor.recipe.exposureAnchor == Self.estimate, "written with the edit's first change")
+        try cameras.calibrate(Self.calibrated)
+        let other = try await open("IMG_0002.CR3", cameras: cameras)
+        #expect(other.recipe.exposureAnchor?.source == .target, "the engine can't know a calibration")
+        #expect(other.recipe.isPristine)
     }
 
     @Test func `a later calibration reaches the edit only through Update Calibration`() async throws {
