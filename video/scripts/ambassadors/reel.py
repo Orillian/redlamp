@@ -1,11 +1,15 @@
 """
-The ambassadors reel (docs/plans/2026-10-15-ambassadors-promo.md): Redlamp's ambassador programme told as an
-episode of the feature videos, under the header REDLAMP · AMBASSADORS, in eight bars at 100 BPM. The hook stands
-over the lamp warming, as the opener's first bar does, re-timed to the reel's grid; on the first hit the lamp
-rises into the header's mark as the dashboard comes in; an edit brightens a pixel-art street at dusk; the Basic
-panel turns into a roadmap and one row lifts as the viewer's pick; on the drop the street comes up out of white
-as a post with the viewer's handle under it; ten empty frames are laid out for the founding places and one is
-ringed; then the ask over the lamp, fading to the wall the reel loops back to.
+The ambassadors reel (docs/plans/2026-10-15-ambassadors-promo.md): Redlamp's ambassador programme told in four
+acts, in the look of the feature videos, under the header REDLAMP · AMBASSADORS, in eight bars at 100 BPM.
+
+1. What this is: the hook names the programme over the lamp warming, as the opener's first bar does, re-timed to
+   the reel's grid.
+2. Why it matters: on the first hit the lamp rises into the header's mark as a roadmap fills the stage and the
+   viewer's pick lifts out of it; then a print comes up out of white as a post with the viewer's handle under it.
+3. Why Redlamp needs you: a roll of film, dark but for the frame of the one person who makes Redlamp, fills with
+   photographers on the drop, one frame left empty and ringed for the viewer.
+4. How to apply: an edit made on the street at dusk, then the address over the lamp, fading to the wall the reel
+   loops back to.
 
 Its timings are src/ambassadors/cues.json, which scripts/ambassadors-score.py reads too, and its words are
 src/ambassadors/copy.json. frame(c, beat, hook) draws any moment, and sounds() lists each sound on screen.
@@ -30,6 +34,8 @@ HOOKS = COPY["hooks"]
 LINES = COPY["lines"]
 FILE = COPY["file"]
 
+STAGE = w.Rect(4, 104, 208, 183)
+ROADMAP = w.Rect(4, 106, 208, 180)
 PHOTO_PANEL = w.Rect(4, 106, 208, 90)
 HIST = w.Rect(4, 198, 208, 20)
 BASIC = w.Rect(4, 220, 178, 66)
@@ -40,12 +46,17 @@ PRINT = w.Rect(44, 110, 128, 160)
 STRIP = w.Rect(44, 270, 128, 12)
 PAPER = "#f3eee8"
 LAMP_Y = 168
+INK = "#17110f"
 
-# The lamp takes the half beat after the first hit to rise into the header's mark, and the dashboard develops
-# in over the same half beat.
+# The lamp takes the half beat after the first hit to rise into the header's mark, and the roadmap develops in
+# over the same half beat.
 MOVE = 0.5
-# Panels and labels develop in over six frames, as the series' cards do.
-APPEAR = 6 / PER_BEAT
+# Labels develop in over two frames.
+POP = 2 / PER_BEAT
+
+
+def between(b, start, end):
+    return w.between(b, start, end)
 
 
 # ---------------------------------------------------------------- the street
@@ -172,7 +183,7 @@ def warmth(b):
 def rising(c, b):
     """The lamp shrinking and rising into the header's mark over the half beat after the first hit, drawing its
     light in with it, so the mark that appears where it lands is the picture's one red light."""
-    t = w.ease(w.between(b, CUE["dashboard"], CUE["dashboard"] + MOVE))
+    t = w.ease(between(b, CUE["roadmap"], CUE["roadmap"] + MOVE))
     _, (mx, my) = header_at(c)
     cx, cy = c.w / 2 + (mx - c.w / 2) * t, w.LAMP_Y + (my - w.LAMP_Y) * t
     r = w.LAMP_R + (4.5 - w.LAMP_R) * t
@@ -181,7 +192,7 @@ def rising(c, b):
     w.safelight(c, cx, cy, r, warm)
 
 
-# ---------------------------------------------------------------- bar 1
+# ---------------------------------------------------------------- act 1
 
 def opening(c, b, hook):
     """Bar 1: the opener's first bar, its 100 frames at 72 BPM drawn into the reel's first 72, so the hook stands
@@ -189,17 +200,7 @@ def opening(c, b, hook):
     w.opener(c, b * w.OPENER_PER_BEAT, {"title": FEATURE}, HOOKS[hook], FEATURE)
 
 
-# ---------------------------------------------------------------- bars 2 and 3: the dashboard
-
-def basic(c, b):
-    """The Basic panel as meters, the one being dragged lit. Returns each knob's place."""
-    active = next((name for (name, _), (press, *_, release) in DRAGS if press <= b < release), None)
-    rows = []
-    for s in SLIDERS:
-        v = value_at(s.label, b)
-        rows.append((s.label, s.accent, value_text(s.reach, v), 0.5 + v / (2 * s.reach), s.label == active))
-    return w.meters(c, BASIC, rows, right="4 SLIDERS", track=TRACK)
-
+# ---------------------------------------------------------------- act 2: the roadmap
 
 # The roadmap's rows: a sprite each, in its own accent, for rows that could be on January's shortlist (Accepted, Not
 # started, in Phase 2, S or M, and aimed at no release): zoom with the scroll wheel (UX-38), the Targeted Adjustment
@@ -212,101 +213,64 @@ ROW_SPRITES = [
     (["###.####", "#.#.....", "###.####", "........", "###.####", "#.#.....", "###.####", "........"], "sky"),
     (["###.....", "#..####.", "#......#", "#......#", "#......#", "#......#", "########", "........"], "green"),
 ]
-ROW_BARS = [66, 92, 54, 78]
+# The bars where the names would be; the picked row's is short, so YOUR PICK has room beside it.
+ROW_BARS = [118, 28, 92, 136]
+ROW_STEP = 36
 PICKED = 1
 
 
 def roadmap_rows(c, p, b):
-    """The roadmap's rows in the panel's content rect `p`: the picked row lit while it's pressed, then lifted two
-    pixels out of the list with a shadow and a gold rim, and YOUR PICK beside it."""
+    """The roadmap's rows at twice the size of the series' panels, in the panel's content rect `p`: the picked row lit
+    while it's pressed, then lifted out of the list with a shadow and a gold rim, and YOUR PICK beside it."""
     names = COPY.get("rows") or []
+    rows = []
     for i, (art, accent) in enumerate(ROW_SPRITES):
-        y = p.y + 2 + i * 12
+        y = p.y + 8 + i * ROW_STEP
         lifted = i == PICKED and b >= CUE["pick"]
         if i == PICKED and CUE["pickPress"] <= b < CUE["pick"]:
-            c.rect(p.x - 2, y - 2, p.w + 4, 11, "raised")
+            c.rect(p.x - 2, y - 4, p.w + 4, 24, "raised")
         if lifted:
-            y -= 2
-            c.rect(p.x - 1, y - 1, p.w + 4, 12, "shadow")
-            c.rect(p.x - 3, y - 3, p.w + 4, 12, "raised")
-            c.box(p.x - 3, y - 3, p.w + 4, 12, "gold")
-        c.sprite(p.x, y, art, {"#": f"{accent}.light" if lifted else accent})
+            y -= 3
+            c.rect(p.x, y - 2, p.w + 2, 24, "shadow")
+            c.rect(p.x - 3, y - 5, p.w + 4, 24, "raised")
+            c.box(p.x - 3, y - 5, p.w + 4, 24, "gold")
+        c.sprite(p.x + 2, y, art, {"#": f"{accent}.light" if lifted else accent}, scale=2)
         if i < len(names):
-            c.text(p.x + 12, y + 2, names[i], "white" if lifted else "text")
+            c.text(p.x + 26, y + 4, names[i], "white" if lifted else "text", font="large")
         else:
-            c.rect(p.x + 12, y + 3, ROW_BARS[i], 3, "muted" if lifted else "line")
+            c.rect(p.x + 26, y + 6, ROW_BARS[i], 5, "muted" if lifted else "line")
         if lifted:
-            w.appear(c, w.between(b, CUE["pick"], CUE["pick"] + 2 / PER_BEAT),
-                     lambda c, y=y: c.text(176, y + 1, LINES["pick"], "gold", font="large", align="right"))
-    return [w.Rect(p.x, p.y + 2 + i * 12 - (2 if i == PICKED and b >= CUE["pick"] else 0), p.w, 8)
-            for i in range(len(ROW_SPRITES))]
-
-
-def roadmap(c, b):
-    """Bar 3's panel in the Basic panel's place. Returns each row's rect."""
-    p = c.panel(*BASIC, "ROADMAP", color="sky")
-    return roadmap_rows(c, p, b)
+            w.appear(c, between(b, CUE["pick"], CUE["pick"] + POP),
+                     lambda c, y=y: c.text(176, y + 1, LINES["pick"], "gold", font="large", scale=2, align="right"))
+        rows.append(w.Rect(p.x, y, p.w, 16))
+    return rows
 
 
 def glide(a, z, t):
     return round(a[0] + (z[0] - a[0]) * t), round(a[1] + (z[1] - a[1]) * t)
 
 
-def pointer_at(knobs, rows, b):
-    """The pointer: on Exposure's knob as the dashboard comes in, moving with each knob it drags, gliding from
-    one to the next, then to the second row of the roadmap, which it presses and lets go on the pick."""
-    (first, _), (press1, *_, release1) = DRAGS[0]
-    (second, _), (press2, *_, release2) = DRAGS[1]
-    if b < release1:
-        return knobs[first], press1 <= b
-    if b < press2:
-        return glide(knobs[first], knobs[second], w.ease(w.between(b, release1, press2))), False
-    if b < CUE["roadmap"] + 0.5 or rows is None:
-        return knobs[second], press2 <= b < release2
-    row = rows[PICKED]
-    target = (row.x + 44, row.y + 3)
-    if b < CUE["pickPress"]:
-        return glide(knobs[second], target, w.ease(w.between(b, CUE["roadmap"] + 0.5, CUE["pickPress"]))), False
-    return target, b < CUE["pick"]
-
-
-def knob_x(label, v):
-    """Where a meter's knob is at value v, as w.meters places it."""
-    reach = next(s.reach for s in SLIDERS if s.label == label)
-    t0, t1 = BASIC.x + TRACK[0], BASIC.x + TRACK[1]
-    return round(t0 + (0.5 + v / (2 * reach)) * (t1 - t0))
-
-
-def dashboard(c, b, *, rising_lamp=True):
-    """Bars 2 and 3: the header, the street in the photo panel with its histogram and level, the Basic panel's
-    meters and, from the roadmap's cue, the roadmap in their place, the pointer, and the bar's caption. Over the
-    half beat after the first hit the whole dashboard develops in under the lamp rising into the header."""
-    coming = b < CUE["dashboard"] + MOVE
+def roadmap(c, b):
+    """Bar 2: the header, and a roadmap filling the stage, which develops in under the lamp as it rises into the
+    header's mark. The pointer comes in from the right to the second row, presses it and lets it go on the pick."""
+    coming = b < CUE["roadmap"] + MOVE
     before = c.img.copy()
     header(c, mark=not coming)
-    img = picture({name: value_at(name, b) for name, _ in DRAGGED}, (PHOTO_PANEL.w - 8, PHOTO_PANEL.h - 16))
-    w.photo_panel(c, PHOTO_PANEL, img, b, FILE, horizon=KERB)
-    w.histogram(c, img, HIST)
-    c.seg_column(*LEVEL, min(1.0, float(np.asarray(img).mean()) / 255 * 2.2), "gold", seg=2, gap=1)
-    if b < CUE["roadmap"]:
-        knobs, rows = basic(c, b), None
-    else:
-        meters = w.canvas()
-        meters.img.paste(c.img)
-        knobs = basic(meters, CUE["roadmap"] - 0.01)
-        rows = roadmap(c, b)
-        w.develop(c, meters.img, w.between(b, CUE["roadmap"], CUE["roadmap"] + APPEAR))
-    at, pressed = pointer_at(knobs, rows, b)
-    w.pointer(c, *at, pressed=pressed)
+    p = c.panel(*ROADMAP, "ROADMAP", color="sky")
+    rows = roadmap_rows(c, p, b)
     if coming:
-        w.develop(c, before, w.between(b, CUE["dashboard"], CUE["dashboard"] + MOVE))
-        if rising_lamp:
-            rising(c, b)
-    w.caption(c, LINES["dashboard"] if b < CUE["roadmap"] else LINES["roadmap"])
+        w.develop(c, before, between(b, CUE["roadmap"], CUE["roadmap"] + MOVE))
+        rising(c, b)
+    if b >= CUE["roadmap"] + 0.5:
+        row = rows[PICKED]
+        target = (row.x + 60, row.y + 8)
+        at = glide((w.W + 6, row.y + 30), target, w.ease(between(b, CUE["roadmap"] + 0.5, CUE["pickPress"])))
+        w.pointer(c, *at, pressed=CUE["pickPress"] <= b < CUE["pick"])
+    w.caption(c, LINES["roadmap"])
     return []
 
 
-# ---------------------------------------------------------------- bar 4: the post
+# ---------------------------------------------------------------- act 2: the post
 
 def strip(c, x, y):
     """The credit strip under the print: the Redlamp mark in white, so it isn't a second red light, and the
@@ -317,40 +281,40 @@ def strip(c, x, y):
 
 
 def post(c, b):
-    """Bar 4, the drop: the stage turns into a post, whose print comes up out of white into the street as edited
-    over the beat, and the credit strip slides up out of its bottom edge and lands on the credit's cue. Nothing on
-    the post counts anything."""
+    """Bar 3: the stage turns into a post, whose print comes up out of white into the street as edited over the
+    beat, and the credit strip slides up out of its bottom edge and lands on the credit's cue. Nothing on the post
+    counts anything."""
     header(c)
     c.rect(*POST, "panel")
     c.box(*POST, "line")
     c.rect(*PRINT, PAPER)
     before = c.img.copy()
     c.img.paste(picture(TARGET, (PRINT.w, PRINT.h)), (PRINT.x, PRINT.y))
-    w.develop(c, before, w.ease(w.between(b, CUE["drop"], CUE["developed"])))
-    if b < CUE["drop"] + 0.5:
+    w.develop(c, before, w.ease(between(b, CUE["print"], CUE["developed"])))
+    if b < CUE["print"] + 0.5:
         c.sparkles(PRINT.x, PRINT.y, PRINT.w, PRINT.h, 26, ["white", "gold.light"], seed=int(b * PER_BEAT))
-    slide = w.between(b, CUE["credit"] - 0.5, CUE["credit"])
+    slide = between(b, CUE["credit"] - 0.5, CUE["credit"])
     if slide > 0:
         window = c.sub(STRIP.w, POST.y2 - 1 - STRIP.y, bg="panel")
         strip(window, 0, round((1 - w.ease(slide)) * window.h))
         c.paste(window, STRIP.x, STRIP.y)
-    w.caption(c, LINES["drop"])
+    w.caption(c, LINES["print"])
     return []
 
 
-# ---------------------------------------------------------------- bar 5: ten frames
+# ---------------------------------------------------------------- act 3: the roll
 
 FRAME = (34, 23)
-STAGE = w.Rect(4, 104, 208, 183)
 STRIP_YS = [160, 203]
-# Each strip's frames, from the stage's left edge, running off both its edges: (x, the burst's index), or None for
-# a frame at the edge, which is already on the roll. The burst takes the ten whole frames one a sixteenth.
+# Each strip's frames, from the stage's left edge, running off both its edges: (x, what it holds). The maker's frame
+# is lit from the bar's first beat, the frames at the edges come up on the drop, and the burst takes the others one
+# a sixteenth, by its index.
 STRIPS = [
-    [(-16, None), (22, 0), (60, 1), (98, 2), (136, 3), (174, 4)],
-    [(6, 5), (44, 6), (82, 7), (120, 8), (158, 9), (196, None)],
+    [(-16, "edge"), (22, 0), (60, 1), (98, "maker"), (136, 2), (174, 3)],
+    [(6, 4), (44, 5), (82, 6), (120, 7), (158, 8), (196, "edge")],
 ]
-RINGED = 6
-INK = "#17110f"
+# The burst's frame left for the viewer, which the marker rings.
+YOU = 5
 
 
 class Face(NamedTuple):
@@ -367,12 +331,11 @@ class Face(NamedTuple):
     freckles: bool = False
 
 
-# Nine photographers in the frames the burst fills, in its order, and None for the viewer's frame, which the marker
-# rings. Nothing in them is red, so the lamp stays the picture's one red light.
+# The photographers in the burst's order, and None for the viewer's frame. Nothing in them is red, so the lamp stays
+# the picture's one red light.
 FACES = [
     Face(("#7a4a2a", "#5f381f"), INK, "afro", None, "round", "grin", "violet.dark", "gold"),
     Face(("#e0ac7e", "#c08c5f"), "#6b4226", "short", "beanie:gold", "dots", "beard", "sky.dark", "green"),
-    Face(("#f1c9a5", "#d4a682"), "#3b2416", "bun", None, "camera", "smile", "green.dark", "violet"),
     Face(("#c68a5d", "#a66d43"), "cyan", "mohawk", None, "wink", "tongue", "gold.dark", "line"),
     Face(("#a5683f", "#86512f"), INK, "short", "bucket:green", "shades", "smile", "cyan.dark", "orange"),
     Face(("#f3d6bd", "#d9b496"), "#e8c66a", "long", "headphones:violet", "dots", "smile", "blue.dark", "sky"),
@@ -381,9 +344,9 @@ FACES = [
     Face(("#f1c9a5", "#d4a682"), "#c8642a", "short", "cap:sky", "dots", "grin", "violet.dark", "gold", freckles=True),
     Face(("#5a3620", "#432716"), "violet.light", "curly", None, "square", "smile", "gold.dark", "green"),
 ]
-# The two photographers in the frames at the strips' edges, half in view.
+# The photographers half in view at the strips' edges: a camera held up to the eye, and a bun and shades.
 EDGE_FACES = [
-    Face(("#e0ac7e", "#c08c5f"), "#a3a8b0", "short", None, "round", "smile", "green.dark", "sky"),
+    Face(("#f1c9a5", "#d4a682"), "#3b2416", "bun", None, "camera", "smile", "green.dark", "violet"),
     Face(("#8d5a37", "#704429"), INK, "bun", None, "shades", "grin", "sky.dark", "violet"),
 ]
 
@@ -499,6 +462,31 @@ def portrait(face):
     return c
 
 
+def maker():
+    """The one person who makes Redlamp, head and shoulders behind an open laptop in a dark room, lit by its
+    screen. No logo on the lid, and nothing red."""
+    c = w.canvas(*FRAME)
+    c.rect(0, 0, *FRAME, "#0b0f1a")
+    oval(c, 17, 13, 16, 11, "#141c30")
+    tone, shade = "#e6bc96", "#bf9370"
+    oval(c, 17, 26, 12, 7.5, "#34405a")
+    c.rect(15, 15, 5, 3, shade)
+    oval(c, 17, 9.5, 6.5, 7.5, shade)
+    oval(c, 16.5, 9, 6, 7.2, tone)
+    for y in (9, 10):
+        c.px(10, y, shade)
+        c.px(24, y, shade)
+    oval(c, 17, 5.5, 7, 4.5, "#2a1d16", rows=(0, 5))
+    c.rect(14, 10, 1, 1, INK)
+    c.rect(20, 10, 1, 1, INK)
+    c.rect(13, 9, 3, 1, "#2a1d16")
+    c.rect(19, 9, 3, 1, "#2a1d16")
+    c.rect(5, 14, 24, 9, "#6b778f")
+    c.rect(5, 14, 24, 1, "#a7b1c6")
+    c.rect(5, 22, 24, 1, "#4a5468")
+    return c
+
+
 def silhouette():
     """The viewer's frame: the default profile picture, a head and shoulders in outline grey, waiting for a face."""
     c = w.canvas(*FRAME)
@@ -508,14 +496,14 @@ def silhouette():
     return c
 
 
-_portraits = {}
+_pictures = {}
 
 
-def frame_picture(face):
-    """A frame's picture: a photographer, or the viewer's silhouette for None."""
-    if face not in _portraits:
-        _portraits[face] = portrait(face) if face else silhouette()
-    return _portraits[face]
+def frame_picture(what):
+    """A frame's picture: a photographer, the maker, or the viewer's silhouette for None."""
+    if what not in _pictures:
+        _pictures[what] = maker() if what == "maker" else portrait(what) if what else silhouette()
+    return _pictures[what]
 
 
 def burst():
@@ -523,45 +511,51 @@ def burst():
     return [first + i * every for i in range(round((last - first) / every))]
 
 
-def ringed_centre():
+def holds(role, edges):
+    """When a frame comes up, and its picture: the maker's at the start of the act, the edges' on the drop, and
+    each of the others on its shot of the burst."""
+    if role == "maker":
+        return CUE["onePerson"], frame_picture("maker")
+    if role == "edge":
+        return CUE["drop"], frame_picture(next(edges))
+    return burst()[role], frame_picture(FACES[role])
+
+
+def you_centre():
     """The centre of the viewer's frame, which the marker rings."""
-    row, x = next((row, x) for row, frames in enumerate(STRIPS) for x, k in frames if k == RINGED)
+    row, x = next((row, x) for row, frames in enumerate(STRIPS) for x, role in frames if role == YOU)
     return STAGE.x + x + FRAME[0] / 2, STRIP_YS[row] + FRAME[1] / 2
 
 
-def contact(c, b):
-    """Bar 5: a contact sheet, two strips of 3:2 film running off both edges of the stage on their film base, with
-    their sprocket holes, so it reads as a roll of photographers rather than a count. The ten whole frames are taken
-    one a sixteenth to a motor drive's burst, each flashing white: nine photographers, and the viewer's frame, empty
-    but for the default profile picture; then a white marker rings that one, the way a frame is marked on a contact
-    sheet."""
+def roll(c, b):
+    """Bars 4 and 5: two strips of film running off both edges of the stage, so it reads as a roll rather than a
+    count. Every frame is dark but the maker's, which comes up as the act begins; on the drop the others come up to
+    a motor drive's burst, each flashing white, until every frame holds a photographer but the viewer's, empty but
+    for the default profile picture, which a white marker then rings."""
     header(c)
-    shots = burst()
     edges = iter(EDGE_FACES)
     for sy, frames in zip(STRIP_YS, STRIPS):
-        strip = c.sub(STAGE.w, FRAME[1] + 12, bg="shadow")
-        strip.hline(0, 0, STAGE.w, "line")
-        strip.hline(0, strip.h - 1, STAGE.w, "line")
+        film = c.sub(STAGE.w, FRAME[1] + 12, bg="shadow")
+        film.hline(0, 0, STAGE.w, "line")
+        film.hline(0, film.h - 1, STAGE.w, "line")
         for hx in range(2, STAGE.w, 6):
-            strip.rect(hx, 2, 3, 2, "dim")
-            strip.rect(hx, strip.h - 4, 3, 2, "dim")
-        for x, k in frames:
-            if k is None:
-                picture_ = frame_picture(next(edges))
-            elif b < shots[k]:
-                continue
-            elif b < shots[k] + 2 / PER_BEAT:
-                strip.rect(x, 6, *FRAME, "white")
-                continue
+            film.rect(hx, 2, 3, 2, "dim")
+            film.rect(hx, film.h - 4, 3, 2, "dim")
+        for x, role in frames:
+            at, picture_ = holds(role, edges)
+            if b < at:
+                film.rect(x, 6, *FRAME, "bg")
+                film.box(x, 6, *FRAME, "line")
+            elif b < at + POP:
+                film.rect(x, 6, *FRAME, "white")
             else:
-                picture_ = frame_picture(FACES[k])
-            strip.paste(picture_, x, 6)
-            strip.box(x, 6, *FRAME, "dim")
-        c.paste(strip, STAGE.x, sy - 6)
-    p = w.between(b, CUE["ring"], CUE["ring"] + 0.25)
+                film.paste(picture_, x, 6)
+                film.box(x, 6, *FRAME, "text" if role == "maker" and b < CUE["drop"] else "dim")
+        c.paste(film, STAGE.x, sy - 6)
+    p = between(b, CUE["ring"], CUE["ring"] + 0.25)
     if p > 0:
-        ring(c, *ringed_centre(), p)
-    w.caption(c, LINES["sheet"])
+        ring(c, *you_centre(), p)
+    w.caption(c, LINES["onePerson"] if b < CUE["drop"] else LINES["needs"])
     return []
 
 
@@ -579,37 +573,79 @@ def ring(c, cx, cy, p):
         c.rect(x - 1, y - 1, 2, 2, "white")
 
 
-# ---------------------------------------------------------------- bars 6 to 8: the end card
+# ---------------------------------------------------------------- act 4: the editor
+
+def basic(c, b):
+    """The Basic panel as meters, the one being dragged lit. Returns each knob's place."""
+    active = next((name for (name, _), (press, *_, release) in DRAGS if press <= b < release), None)
+    rows = []
+    for s in SLIDERS:
+        v = value_at(s.label, b)
+        rows.append((s.label, s.accent, value_text(s.reach, v), 0.5 + v / (2 * s.reach), s.label == active))
+    return w.meters(c, BASIC, rows, right="4 SLIDERS", track=TRACK)
+
+
+def knob_x(label, v):
+    """Where a meter's knob is at value v, as w.meters places it."""
+    reach = next(s.reach for s in SLIDERS if s.label == label)
+    t0, t1 = BASIC.x + TRACK[0], BASIC.x + TRACK[1]
+    return round(t0 + (0.5 + v / (2 * reach)) * (t1 - t0))
+
+
+def editor(c, b):
+    """Bar 6: the editor, with the street the viewer saw as a print, as opened, its histogram, its level and the
+    Basic panel's meters; the pointer drags Exposure, then Vibrance, and the street brightens and takes its colour."""
+    header(c)
+    img = picture({name: value_at(name, b) for name, _ in DRAGGED}, (PHOTO_PANEL.w - 8, PHOTO_PANEL.h - 16))
+    w.photo_panel(c, PHOTO_PANEL, img, b, FILE, horizon=KERB)
+    w.histogram(c, img, HIST)
+    c.seg_column(*LEVEL, min(1.0, float(np.asarray(img).mean()) / 255 * 2.2), "gold", seg=2, gap=1)
+    knobs = basic(c, b)
+    (first, _), (press1, *_, release1) = DRAGS[0]
+    (second, _), (press2, *_, release2) = DRAGS[1]
+    if b < release1:
+        at, pressed = knobs[first], press1 <= b
+    elif b < press2:
+        at, pressed = glide(knobs[first], knobs[second], w.ease(between(b, release1, press2))), False
+    else:
+        at, pressed = knobs[second], press2 <= b < release2
+    w.pointer(c, *at, pressed=pressed)
+    w.caption(c, LINES["editor"])
+    return []
+
+
+# ---------------------------------------------------------------- act 4: the end card
 
 def end_card(c, b):
-    """The end card, as the series': the lamp comes on, its light spreading in six steps over the beat, with the
-    end line in the caption's place; then the address in its place from the call to action's cue; the light
-    blooms out a step and settles back on the last hit; then everything dissolves into the wall, gone by the
-    last frame, which is frame 0's wall."""
-    light = math.ceil(6 * w.ease(w.between(b, CUE["endLine"], CUE["endLine"] + 1))) / 6
-    bloom = math.ceil(3 * math.sin(math.pi * w.between(b, CUE["lastHit"], CUE["lastHit"] + 1))) / 3
+    """Bars 7 and 8: the lamp comes on, its light spreading in six steps over the beat, with the address in the
+    caption's place above it; the light blooms out a step and settles back on the last hit; then everything
+    dissolves into the wall, gone by the last frame, which is frame 0's wall."""
+    light = math.ceil(6 * w.ease(between(b, CUE["cta"], CUE["cta"] + 1))) / 6
+    bloom = math.ceil(3 * math.sin(math.pi * between(b, CUE["lastHit"], CUE["lastHit"] + 1))) / 3
     c.glow(c.w / 2, LAMP_Y, 120 * (0.4 + 0.6 * light) + 10 * bloom, "#2a0e12", amount=0.9 * light, levels=4)
     c.glow(c.w / 2, LAMP_Y, 52 + 6 * bloom, "red.dark", amount=0.35 * light, levels=3)
     w.lamp(c, c.w / 2, LAMP_Y)
-    w.caption(c, LINES["endLine"] if b < CUE["cta"] else LINES["cta"])
+    w.caption(c, LINES["cta"])
     last = (FRAMES - 1) / PER_BEAT
-    gone = w.between(b, CUE["fade"], last)
+    gone = between(b, CUE["fade"], last)
     if gone > 0:
         c.dissolve(min(1.0, gone), "bg")
     return []
 
 
-def frame(c, b, hook="pick"):
+def frame(c, b, hook=None):
     """The picture at beat b, drawn on c, with `hook`'s words in the first bar. All pixel art, so no overlays."""
-    if b < CUE["dashboard"]:
-        opening(c, b, hook)
+    if b < CUE["roadmap"]:
+        opening(c, b, hook or next(iter(HOOKS)))
         return []
-    if b < CUE["drop"]:
-        return dashboard(c, b)
-    if b < CUE["sheet"]:
+    if b < CUE["print"]:
+        return roadmap(c, b)
+    if b < CUE["onePerson"]:
         return post(c, b)
-    if b < CUE["endLine"]:
-        return contact(c, b)
+    if b < CUE["editor"]:
+        return roll(c, b)
+    if b < CUE["cta"]:
+        return editor(c, b)
     return end_card(c, b)
 
 
@@ -620,23 +656,23 @@ def pan(x):
 
 
 def sounds():
-    """Each sound on screen, (beat, kind, pan): the lamp's light rushing into the mark, each drag's press, ticks
-    and release with its knob, the roadmap opening, the row's press and its lift, the developer washing over the
-    print, the strip landing, a shutter for each frame of the burst, the marker's squeak and the lamp's switch."""
+    """Each sound on screen, (beat, kind, pan): the lamp's light rushing into the mark, the row's press and its
+    lift, the developer washing over the print, the strip landing, a shutter as the maker's frame comes up and one
+    for each frame of the burst, the marker's squeak, each drag's press, ticks and release with its knob, and the
+    lamp's switch."""
     _, (mx, _) = header_at(w.canvas())
-    out = [(CUE["dashboard"], "rise", pan(mx))]
+    row_x = ROADMAP.x + 4 + 60
+    out = [(CUE["roadmap"], "rise", pan(mx)), (CUE["pickPress"], "press", pan(row_x)),
+           (CUE["pick"], "release", pan(row_x)), (CUE["pick"], "lift", pan(150)),
+           (CUE["print"], "wash", pan(PRINT.cx)), (CUE["credit"], "lands", pan(STRIP.cx))]
+    shot_x = {role: STAGE.x + x + FRAME[0] // 2 for frames in STRIPS for x, role in frames}
+    out.append((CUE["onePerson"], "shutter", pan(shot_x["maker"])))
+    out += [(at, "shutter", pan(shot_x[k])) for k, at in enumerate(burst())]
+    out.append((CUE["ring"], "marker", pan(you_centre()[0])))
     for (name, target), (press, *ticks, release) in DRAGS:
         out += [(press, "press", pan(knob_x(name, 0))), (release, "release", pan(knob_x(name, target)))]
         out += [(t, "tick", pan(knob_x(name, value_at(name, t)))) for t in ticks]
-    out.append((CUE["roadmap"], "unroll", pan(BASIC.cx)))
-    out += [(CUE["pickPress"], "press", pan(BASIC.x + 52)), (CUE["pick"], "release", pan(BASIC.x + 52)),
-            (CUE["pick"], "lift", pan(150))]
-    out.append((CUE["drop"], "wash", pan(PRINT.cx)))
-    out.append((CUE["credit"], "lands", pan(STRIP.cx)))
-    shot_x = {k: STAGE.x + x + FRAME[0] // 2 for frames in STRIPS for x, k in frames if k is not None}
-    out += [(at, "shutter", pan(shot_x[k])) for k, at in enumerate(burst())]
-    out.append((CUE["ring"], "marker", pan(ringed_centre()[0])))
-    out.append((CUE["endLine"], "switch", 0.0))
+    out.append((CUE["cta"], "switch", 0.0))
     return sorted(out)
 
 
@@ -650,24 +686,27 @@ def words(lines):
     return " / ".join([lines] if isinstance(lines, str) else lines)
 
 
+LEAD = next(iter(HOOKS))
 PANELS = [
-    w.Panel(1, 0.0, at(3.9), words(HOOKS["pick"]),
-            "A deep hit and its sub on the first frame, a drone and a pad swelling with the lamp's warmth, a kick "
+    w.Panel(1, 0.0, at(3.9), words(HOOKS[LEAD]),
+            "Act 1. A deep hit and its sub on the first frame, a drone and a pad swelling with the lamp's warmth, a kick "
             "muffled as if through a wall, and the arpeggio growing out of nothing from the third beat."),
-    w.Panel(2, 2.4, at(6.6), words(LINES["dashboard"]),
-            "The first hit: the kick, the bass and the arpeggio, and air rushing up with the lamp into the mark; a "
-            "press, two ticks and a release for each slider."),
-    w.Panel(3, 4.8, at(10.6), words(LINES["roadmap"]) + ", then " + LINES["pick"],
-            "The full beat with its gated snare and air as the roadmap opens; the press, then a two-note lift as the "
-            "row rises; falling toms into the stop."),
-    w.Panel(4, 7.2, at(14.6), words(LINES["drop"]) + ", then " + LINES["handle"],
-            "The drop, the loudest bar: the boom, the low brass, the chord and the series' glass sting, a paper wash "
-            "under the develop, and a soft landing as the strip arrives."),
-    w.Panel(5, 9.6, at(19.6), words(LINES["sheet"]),
-            "The groove holds; ten shutters a sixteenth apart as the frames are laid out, then a marker's squeak."),
-    w.Panel(6, 12.0, at(21.5), words(LINES["endLine"]),
-            "A switch as the lamp comes on, a low swell as its light spreads, and the closing phrase."),
-    w.Panel(7, 14.4, at(25.5), words(LINES["cta"]), "A soft crash as the address comes in, over the dominant chord."),
+    w.Panel(2, 2.4, at(6.6), words(LINES["roadmap"]) + ", then " + LINES["pick"],
+            "Act 2. The first hit: the kick, the bass and the arpeggio, and air rushing up with the lamp into the mark; "
+            "the row's press, then a two-note lift as it rises."),
+    w.Panel(3, 4.8, at(10.6), words(LINES["print"]) + ", then " + LINES["handle"],
+            "The full beat and the riff come in, with the series' glass sting and the developer's wash as the print "
+            "comes up, and a soft landing as the strip arrives."),
+    w.Panel(4, 7.2, at(14.6), words(LINES["onePerson"]),
+            "Act 3. The music thins to the drone, a muffled kick and the riff's first notes; a shutter as the maker's "
+            "frame comes up; a riser and a snare roll into the stop."),
+    w.Panel(5, 9.6, at(19.6), words(LINES["needs"]),
+            "The drop, the loudest bar: the boom, the low brass, the chord and a crash, nine shutters a sixteenth apart "
+            "as the roll fills, then the marker's squeak."),
+    w.Panel(6, 12.0, at(22.6), words(LINES["editor"]),
+            "Act 4. The groove holds and the closing phrase begins; a press, two ticks and a release for each slider."),
+    w.Panel(7, 14.4, at(25.5), words(LINES["cta"]),
+            "A switch as the lamp comes on, a low swell as its light spreads, and a soft crash over the dominant chord."),
     w.Panel(8, 16.8, at(30.6), words(LINES["cta"]) + ", fading",
             "The last hit on the tonic with a smaller boom, then the last chord dies away as the picture fades."),
 ]

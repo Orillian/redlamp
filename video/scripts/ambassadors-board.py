@@ -32,7 +32,7 @@ def load(path, name):
 reel = load(HERE / "ambassadors/reel.py", "ambassadors_reel")
 boards = load(HERE / "features-boards.py", "features_boards")
 OUT = w.VIDEO / "out/ambassadors"
-COVER = round(reel.CUE["dashboard"] * reel.PER_BEAT) - 1
+COVER = round(reel.CUE["roadmap"] * reel.PER_BEAT) - 1
 
 CLAIM = ("Each quarter, ambassadors pick one feature from a shortlist of the roadmap, and it's built next; their edits "
          "are shown with their name; ten founding places; unpaid; apply at redlamp.app/join with a photo edited in Redlamp.")
@@ -40,8 +40,8 @@ SOURCE = ("The programme, plans/2026-10-15-ambassadors.md in the private redlamp
           "the ambassadors' pick); DEC-86 in the tracker; the page, web/content/ambassadors.ts; /join redirects to its form "
           "(web/next.config.ts).")
 PHOTO = ("No photo: a pixel-art street at dusk stands in, developed by Exposure +1.00 and Vibrance +40. The roadmap's rows "
-         "are drawn for UX-38, UX-35, UX-41 and UX-37, each Accepted and Not started in Phase 2. The photographers on the "
-         "contact sheet are drawn characters, not real people or ambassadors.")
+         "are drawn for UX-38, UX-35, UX-41 and UX-37, each Accepted and Not started in Phase 2. The maker at the laptop "
+         "and the photographers on the roll are drawn characters, not real people or ambassadors.")
 
 
 def main():

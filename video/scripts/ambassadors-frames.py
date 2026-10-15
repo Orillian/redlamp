@@ -78,7 +78,7 @@ def main():
         frames_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = folder / "frames.json"
         manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() and args.hook else {"frames": {}}
-        shared = round(reel.CUE["dashboard"] * reel.PER_BEAT)
+        shared = round(reel.CUE["roadmap"] * reel.PER_BEAT)
         written = set()
         for i, hook in enumerate(hooks):
             names = []

@@ -28,7 +28,7 @@ export function RemotionRoot() {
   const feature: FeatureVideoProps = { episode: "e01", hook: "a", score: "score", opener: true, guides: false, manifest: null };
   // The episodes built so far, each listed under Features on its own so it opens in one click.
   const featureEpisodes = ["e01", "e02", "e03", "e04", "e05", "e07", "e08", "e11", "e12"];
-  const ambassadors: AmbassadorsReelProps = { hook: "pick", score: "score", guides: false, manifest: null };
+  const ambassadors: AmbassadorsReelProps = { hook: "become", score: "score", guides: false, manifest: null };
   return (
     <>
       <Composition

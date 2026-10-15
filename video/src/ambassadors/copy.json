@@ -2,20 +2,20 @@
   "header": "AMBASSADORS",
   "file": "STREET.ARW",
   "hooks": {
-    "pick": ["PICK WHAT REDLAMP", "BUILDS NEXT"],
-    "credit": ["YOUR EDITS SHOWN", "WITH YOUR NAME"],
-    "edit": ["APPLY WITH", "ONE EDIT"],
-    "say": ["A SAY IN WHAT", "REDLAMP BUILDS"],
-    "become": ["BECOME A REDLAMP", "AMBASSADOR"]
+    "become": ["BECOME A REDLAMP", "AMBASSADOR"],
+    "wanted": ["REDLAMP NEEDS", "AMBASSADORS"],
+    "first": ["REDLAMP'S FIRST", "AMBASSADORS"],
+    "pick": ["AMBASSADORS HELP", "PICK WHAT'S NEXT"],
+    "photographers": ["PHOTOGRAPHERS,", "BE AN AMBASSADOR"]
   },
   "lines": {
-    "dashboard": ["A FREE RAW EDITOR", "FOR MAC"],
     "roadmap": ["PICK WHAT'S NEXT"],
     "pick": "YOUR PICK",
-    "drop": ["YOUR EDITS SHOWN"],
+    "print": ["YOUR EDITS SHOWN"],
     "handle": "@YOUR.HANDLE",
-    "sheet": ["FOR PHOTOGRAPHERS", "LIKE YOU"],
-    "endLine": ["EDIT A PHOTO", "IN REDLAMP"],
+    "onePerson": ["FREE RAW EDITOR", "BY ONE PERSON"],
+    "needs": ["IT NEEDS YOUR", "EDITS AND IDEAS"],
+    "editor": ["EDIT A PHOTO", "IN REDLAMP"],
     "cta": ["APPLY AT", "REDLAMP.APP/JOIN"]
   },
   "rows": []
