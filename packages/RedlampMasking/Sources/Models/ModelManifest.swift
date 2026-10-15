@@ -65,6 +65,21 @@ public struct ModelManifest: Codable, Sendable, Hashable, Identifiable {
         files.reduce(0) { $0 + $1.bytes }
     }
 
+    /// Where it's published, for people to read: the Hugging Face repository its files are fetched
+    /// from, or the GitHub release that holds them.
+    public var page: URL {
+        let path = source.path()
+        if source.host() == "huggingface.co", let resolve = path.range(of: "/resolve/") {
+            return URL(string: "https://huggingface.co\(path[..<resolve.lowerBound])") ?? source
+        }
+        if source.host() == "github.com", path.contains("/releases/download/") {
+            let release = path.replacingOccurrences(of: "/releases/download/", with: "/releases/tag/")
+            return URL(string: "https://github.com\(release.hasSuffix("/") ? String(release.dropLast()) : release)")
+                ?? source
+        }
+        return source
+    }
+
     /// Where `file` is fetched from: by its path under the source, except from a GitHub release,
     /// whose assets can't hold folders, so each `/` of the path is `__` in the asset's name.
     public func remote(_ file: File) -> URL {

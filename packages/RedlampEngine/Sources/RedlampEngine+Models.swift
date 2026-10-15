@@ -76,14 +76,18 @@ public extension RedlampEngine {
         case let .downloading(fraction): .downloading(fraction)
         case .ready: .ready
         }
+        let licence = manifest.files.first { $0.path == "LICENSE.txt" }
+        let local = state == .ready && licence != nil ? await ModelStore.shared.location(of: manifest) : nil
         return ModelInfo(
             id: manifest.id, name: manifest.name, purpose: manifest.purpose, downloadBytes: manifest.downloadBytes,
             state: state, isEvaluationOnly: manifest.evaluationOnly,
             isCleared: manifest.cleared && !manifest.evaluationOnly, isPublished: manifest.isPublished,
             decision: manifest.decision, licence: manifest.licenses.weights,
-            licenceURL: manifest.files.first { $0.path == "LICENSE.txt" }.map(manifest.remote),
+            licenceURL: licence.map(manifest.remote),
             trainingData: manifest.licenses.data, minimumMemory: manifest.minimumMemory, fitsThisMac: manifest.fits(),
             testedMemory: manifest.testedMemory, testedOnThisMac: manifest.isTested(),
+            codeLicence: manifest.licenses.code, page: manifest.page,
+            licenceFile: local.map { $0.appending(path: "LICENSE.txt") },
         )
     }
 }

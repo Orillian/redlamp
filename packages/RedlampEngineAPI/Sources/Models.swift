@@ -25,6 +25,12 @@ public struct ModelInfo: Sendable, Hashable, Identifiable {
     /// the download.
     public var licence: String?
     public var licenceURL: URL?
+    /// Its code's licence, which can differ from its weights' ("MIT" for ViTMatte's).
+    public var codeLicence: String?
+    /// Where it's published: its repository on Hugging Face, or its release on GitHub.
+    public var page: URL?
+    /// The licence that came with the download, once it's on this Mac.
+    public var licenceFile: URL?
     /// The datasets its weights were trained on, as its manifest names them.
     public var trainingData: [String]
     /// The least memory it runs in, in bytes, and whether this Mac has that much.
@@ -38,8 +44,12 @@ public struct ModelInfo: Sendable, Hashable, Identifiable {
         id: String, name: String, purpose: String, downloadBytes: Int, state: State, isEvaluationOnly: Bool = false,
         isCleared: Bool = true, isPublished: Bool = true, decision: String? = nil, licence: String? = nil,
         licenceURL: URL? = nil, trainingData: [String] = [], minimumMemory: Int? = nil, fitsThisMac: Bool = true,
-        testedMemory: Int? = nil, testedOnThisMac: Bool = true,
+        testedMemory: Int? = nil, testedOnThisMac: Bool = true, codeLicence: String? = nil, page: URL? = nil,
+        licenceFile: URL? = nil,
     ) {
+        self.codeLicence = codeLicence
+        self.page = page
+        self.licenceFile = licenceFile
         self.trainingData = trainingData
         self.minimumMemory = minimumMemory
         self.fitsThisMac = fitsThisMac

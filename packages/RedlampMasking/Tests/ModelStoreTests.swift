@@ -67,6 +67,21 @@ struct ModelStoreTests {
         #expect(sam.remote(encoder).absoluteString.hasSuffix("/resolve/main/\(encoder.path)"))
     }
 
+    @Test func `a model's page is its Hugging Face repository or its GitHub release`() {
+        #expect(
+            ModelCatalog.manifest("sam2.1-tiny")?.page.absoluteString
+                == "https://huggingface.co/apple/coreml-sam2.1-tiny",
+        )
+        #expect(
+            ModelCatalog.manifest("depth-anything-v2-small")?.page.absoluteString
+                == "https://huggingface.co/apple/coreml-depth-anything-v2-small",
+        )
+        #expect(
+            ModelCatalog.manifest("owlv2-base")?.page.absoluteString
+                == "https://github.com/pdcgomes/redlamp/releases/tag/models-owlv2-base-v1",
+        )
+    }
+
     @Test func `an unpublished model can't be downloaded`() async throws {
         let root = try temporary()
         let source = try temporary()
