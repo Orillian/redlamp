@@ -149,7 +149,7 @@
     }
 
     enum FeedbackScenarios {
-        static let all: [Scenario] = [reportABug, yourReports, cameraBench]
+        static let all: [Scenario] = [reportABug, yourReports, cameraBench, activityLogOff]
 
         static let reportABug = Scenario(
             "feedback.report-a-bug",
