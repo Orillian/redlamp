@@ -20,6 +20,7 @@ public extension SidecarStore {
 extension SidecarStore {
     static func historyFiles(in sidecar: URL) -> [URL] {
         let directory = sidecar.appending(path: historyDirectory)
+        FileTrace.note(.list, directory)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         return names.filter { $0.hasSuffix(".json") }.sorted().map { directory.appending(path: $0) }
     }

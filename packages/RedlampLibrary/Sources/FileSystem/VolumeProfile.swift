@@ -18,6 +18,9 @@ public struct VolumeProfile: Sendable, Hashable {
     /// Charged when an operation's file isn't the one the operation before it was served:
     /// the time a disk's head takes to get there.
     public var seek: Duration
+    /// Charged in `seek`'s place, by `DiskReplay`, when the operation is in the folder the one before it
+    /// was served in: a short move of the head and the rotation it waits for. Nil charges `seek`.
+    public var nearSeek: Duration?
     /// What the volume says it is, in place of what the volume underneath says; nil keeps that.
     public var isLocal: Bool?
     public var isInternal: Bool?
@@ -50,8 +53,8 @@ public struct VolumeProfile: Sendable, Hashable {
 
     public init(
         name: String, latency: Duration = .zero, jitter: Double = 0, bandwidth: Double? = nil,
-        maxInFlight: Int? = nil, seek: Duration = .zero, isLocal: Bool? = nil, isInternal: Bool? = nil,
-        disconnect: Disconnect? = nil,
+        maxInFlight: Int? = nil, seek: Duration = .zero, nearSeek: Duration? = nil, isLocal: Bool? = nil,
+        isInternal: Bool? = nil, disconnect: Disconnect? = nil,
     ) {
         self.name = name
         self.latency = latency
@@ -59,6 +62,7 @@ public struct VolumeProfile: Sendable, Hashable {
         self.bandwidth = bandwidth
         self.maxInFlight = maxInFlight.map { max($0, 1) }
         self.seek = seek
+        self.nearSeek = nearSeek
         self.isLocal = isLocal
         self.isInternal = isInternal
         self.disconnect = disconnect
@@ -70,6 +74,13 @@ public struct VolumeProfile: Sendable, Hashable {
     /// One head: operations take turns, and moving to another file costs a seek.
     public static let spinning = VolumeProfile(
         name: "spinning", bandwidth: 160_000_000, maxInFlight: 1, seek: .milliseconds(8), isInternal: false,
+    )
+
+    /// A 2.5-inch USB hard disk at 5,400 rpm (LIB-53): about 12 ms to seek and 5.5 ms of rotation to
+    /// another place, a few milliseconds within a folder, about 100 MB a second, one operation at a time.
+    public static let usb25 = VolumeProfile(
+        name: "usb-2.5", bandwidth: 100_000_000, maxInFlight: 1, seek: .microseconds(17500),
+        nearSeek: .milliseconds(6), isInternal: false,
     )
 
     public static let nas = VolumeProfile(
@@ -87,7 +98,7 @@ public struct VolumeProfile: Sendable, Hashable {
         isLocal: false, isInternal: false,
     )
 
-    public static let presets: [VolumeProfile] = [.ssd, .spinning, .nas, .wifi, .vpn]
+    public static let presets: [VolumeProfile] = [.ssd, .spinning, .usb25, .nas, .wifi, .vpn]
 
     public static func named(_ name: String) -> VolumeProfile? {
         presets.first { $0.name == name.lowercased() }

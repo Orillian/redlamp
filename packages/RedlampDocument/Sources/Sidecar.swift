@@ -547,15 +547,18 @@ public struct SidecarStore: Sendable {
         // A new package, or a single-file sidecar becoming one: built beside it, then moved in.
         let staging = hiddenSibling(of: destination)
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
+        FileTrace.note(.makeFolder, staging)
         do {
             try writeBitmaps(of: sidecar, into: staging)
             try edits.create(json, staging.appending(path: editFile))
             try writeHistory(of: sidecar, in: staging)
+            FileTrace.note(.stat, destination)
             if fileManager.fileExists(atPath: destination.path) {
                 _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
             } else {
                 try fileManager.moveItem(at: staging, to: destination)
             }
+            FileTrace.note(.rename, destination)
         } catch {
             try? fileManager.removeItem(at: staging)
             throw error
@@ -563,6 +566,7 @@ public struct SidecarStore: Sendable {
     }
 
     static func isPackage(_ url: URL) -> Bool {
+        FileTrace.note(.stat, url)
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
@@ -612,6 +616,7 @@ public struct SidecarStore: Sendable {
             written.append(data)
         }
         let masks = package.appending(path: masksDirectory)
+        FileTrace.note(.list, masks)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: masks.path)) ?? []
         for file in files where file.hasSuffix(".png") {
             let sha256 = String(file.dropLast(4))

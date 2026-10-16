@@ -17,6 +17,9 @@ public enum Thumbnails {
             return image
         }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        if FileTrace.isOn {
+            FileTrace.note(.read, url, bytes: (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -43,6 +46,7 @@ public enum Thumbnails {
         guard let file = try? NSData(contentsOf: url, options: .alwaysMapped),
               let (preview, flip) = smallestPreview(in: Data(referencing: file), atLeast: maxPixelSize)
         else { return nil }
+        FileTrace.note(.read, url, bytes: preview.length)
         return decode(preview, flip: flip, in: file, maxPixelSize: maxPixelSize)
     }
 

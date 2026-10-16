@@ -1,4 +1,5 @@
 import Foundation
+import RedlampEngineAPI
 import Synchronization
 
 /// What a batch makes of one photo's sidecar, decided from the sidecar as the batch reads it.
@@ -158,6 +159,9 @@ extension SidecarStore {
         } catch {
             return Self.unreadable(place, error)
         }
+        if sidecar != nil {
+            FileTrace.note(.versions, write)
+        }
         if sidecar != nil, !conflicts.versions(write).isEmpty {
             return nil
         }
@@ -294,6 +298,7 @@ extension SidecarStore {
                 throw error
             }
         }
+        FileTrace.note(.rename, file)
     }
 
     /// Writes `data` to a new file at `file`; on failure, none is left there. Calls a signal interrupts
@@ -325,6 +330,7 @@ extension SidecarStore {
             unlink(file.path)
             throw failure
         }
+        FileTrace.note(.create, file, bytes: data.count)
     }
 }
 

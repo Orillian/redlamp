@@ -1,4 +1,5 @@
 import Foundation
+import RedlampEngineAPI
 
 /// Where photos' `.redlamp` sidecars are kept (DEC-43): beside each photo, `IMG_1234.ARW.redlamp`,
 /// or, for the folders that keep them in Redlamp on this Mac, in a folder on the Mac's own disk by
@@ -113,8 +114,12 @@ public struct SidecarLocator: Sendable, Hashable {
     /// of one it evicted.
     private static func isPresent(_ sidecar: URL) -> Bool {
         let placeholder = sidecar.deletingLastPathComponent().appending(path: ".\(sidecar.lastPathComponent).icloud")
-        return FileManager.default.fileExists(atPath: sidecar.path)
-            || FileManager.default.fileExists(atPath: placeholder.path)
+        FileTrace.note(.stat, sidecar)
+        if FileManager.default.fileExists(atPath: sidecar.path) {
+            return true
+        }
+        FileTrace.note(.stat, placeholder)
+        return FileManager.default.fileExists(atPath: placeholder.path)
     }
 
     /// When the sidecar's edit was saved, as it records it; nil when it can't be read.

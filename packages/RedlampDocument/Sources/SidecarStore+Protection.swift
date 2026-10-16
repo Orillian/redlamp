@@ -107,6 +107,7 @@ extension SidecarStore {
             if count > 0 {
                 data.append(contentsOf: buffer[0 ..< count])
             } else if count == 0 {
+                FileTrace.note(.read, file, bytes: data.count)
                 return data
             } else if errno != EINTR {
                 throw readError(errno, file)
@@ -142,8 +143,12 @@ extension SidecarStore {
     /// a file it evicted.
     static func isPresent(_ url: URL) -> Bool {
         let placeholder = url.deletingLastPathComponent().appending(path: ".\(url.lastPathComponent).icloud")
-        return FileManager.default.fileExists(atPath: url.path) || FileManager.default
-            .fileExists(atPath: placeholder.path)
+        FileTrace.note(.stat, url)
+        if FileManager.default.fileExists(atPath: url.path) {
+            return true
+        }
+        FileTrace.note(.stat, placeholder)
+        return FileManager.default.fileExists(atPath: placeholder.path)
     }
 
     static func protection(_ data: Data) -> SidecarProtection? {

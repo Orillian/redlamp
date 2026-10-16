@@ -8,7 +8,8 @@ import Testing
 /// (`TEST_RUNNER_REDLAMP_LIGHTROOM_BENCH=1` through `xcodebuild`), `REDLAMP_LIGHTROOM_BENCH_PHOTOS` setting
 /// how many; every run measures 5,000.
 struct LightroomBenchTests {
-    /// The library's photos as rows of an index, in folders of 1,000 on disk where their sidecars go, and a
+    /// The library's photos as rows of an index, in folders of `perFolder` (1,000) on disk where their sidecars go, and
+    /// a
     /// catalog of them: a third rated, a tenth picked and a twentieth rejected, a fifth labelled, three keywords
     /// each from a list of 2,000 in a hierarchy, a fifth in one of 50 collections in 5 sets, 10 smart
     /// collections, captions on a third, and XMP for every photo, Develop settings in it and a title in a fifth.
@@ -28,12 +29,12 @@ struct LightroomBenchTests {
     /// With `edits`, each photo has Develop settings as `settings` writes them, a rotation and a size, three
     /// history steps, a tenth two snapshots and a twentieth a virtual copy with settings of its own; the index
     /// has the files' EXIF orientations.
-    static func library(photos count: Int, edits: Bool = false) async throws -> Library {
+    static func library(photos count: Int, edits: Bool = false, perFolder: Int = 1000) async throws -> Library {
         let photos = try TemporaryFolder()
         let library = try TemporaryFolder()
         let index = try await LibraryIndex.open(at: library.url.appending(path: "Index.sqlite"))
         let root = LibraryIndexer.path(photos.url)
-        let folders = (count + 999) / 1000
+        let folders = (count + perFolder - 1) / perFolder
         for folder in 0 ..< folders {
             try FileManager.default.createDirectory(
                 at: photos.url.appending(path: String(format: "Shoot %03d", folder)), withIntermediateDirectories: true,
@@ -47,7 +48,7 @@ struct LightroomBenchTests {
                 let id = try writer.upsertFolder(FolderRecord(
                     root: rootID, parent: top, path: root + String(format: "/Shoot %03d", folder),
                 ))
-                let names = (folder * 1000 ..< min((folder + 1) * 1000, count))
+                let names = (folder * perFolder ..< min((folder + 1) * perFolder, count))
                 _ = try writer.upsertPhotos(names.map { number in
                     PhotoRecord(
                         folder: id, name: String(format: "IMG_%06d.CR3", number), size: 1000,
@@ -86,14 +87,14 @@ struct LightroomBenchTests {
                     size = turned ? (width: 4000, height: 6000) : (width: 6000, height: 4000)
                 }
                 let photo = try maker.photo(
-                    folderIDs[number / 1000], String(format: "IMG_%06d.CR3", number),
+                    folderIDs[number / perFolder], String(format: "IMG_%06d.CR3", number),
                     rating: number % 3 == 0 ? number % 5 + 1 : nil,
                     pick: number % 10 == 0 ? 1 : number % 20 == 1 ? -1 : 0,
                     label: number % 5 == 0 ? ["Red", "Yellow", "Green", "Blue", "Purple"][number / 5 % 5] : "",
                     orientation: edits ? (turned ? "BC" : "AB") : nil, size: size,
                 )
                 if edits {
-                    try settingsSizes.append(Self.edit(photo, number, folder: folderIDs[number / 1000], in: maker))
+                    try settingsSizes.append(Self.edit(photo, number, folder: folderIDs[number / perFolder], in: maker))
                 }
                 for step in 0 ..< 3 {
                     try maker.tag(photo, keywords[(number * 7 + step * 131) % keywords.count])

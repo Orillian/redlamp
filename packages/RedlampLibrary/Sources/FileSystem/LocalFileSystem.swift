@@ -1,4 +1,5 @@
 import Foundation
+import RedlampEngineAPI
 
 /// The Mac's own file system: a listing carries its entries' attributes (asked for up front, so
 /// they come back with the listing itself), and a read is one `pread` on a descriptor opened for
@@ -15,6 +16,7 @@ public struct LocalFileSystem: LibraryFileSystem {
     public init() {}
 
     public func contentsOfDirectory(at url: URL) throws -> [FileEntry] {
+        FileTrace.note(.list, url)
         let entries = try FileManager.default.contentsOfDirectory(
             at: url, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles],
         )
@@ -25,6 +27,7 @@ public struct LocalFileSystem: LibraryFileSystem {
     }
 
     public func attributes(of url: URL) throws -> FileEntry {
+        FileTrace.note(.stat, url)
         // A new URL: the caller's caches the values it was first asked for.
         let fresh = URL(fileURLWithPath: url.path)
         return try FileEntry(url.lastPathComponent, fresh.resourceValues(forKeys: Self.keySet))
@@ -58,6 +61,7 @@ public struct LocalFileSystem: LibraryFileSystem {
             return total
         }
         data.count = count
+        FileTrace.note(.read, url, bytes: count)
         return data
     }
 

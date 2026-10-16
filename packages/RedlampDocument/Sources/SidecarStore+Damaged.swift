@@ -1,4 +1,5 @@
 import Foundation
+import RedlampEngineAPI
 
 /// A damaged edit (`SidecarProtection.damaged`) is set aside in its package, never deleted, so the
 /// photo can start a new edit and the old one can still be recovered by hand.
@@ -40,8 +41,9 @@ extension SidecarStore {
 
     /// The damaged edits set aside in the package at `sidecar`, oldest first.
     static func damagedCopies(in sidecar: URL) -> [URL] {
-        guard isPackage(sidecar), let names = try? FileManager.default.contentsOfDirectory(atPath: sidecar.path)
-        else { return [] }
+        guard isPackage(sidecar) else { return [] }
+        FileTrace.note(.list, sidecar)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: sidecar.path) else { return [] }
         return names.filter { $0.hasPrefix(damagedPrefix) && $0.hasSuffix(".json") }.sorted()
             .map { sidecar.appending(path: $0) }
     }
