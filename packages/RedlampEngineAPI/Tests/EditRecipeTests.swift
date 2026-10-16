@@ -96,6 +96,41 @@ struct EditRecipeTests {
         #expect(recipe.values.isEmpty)
     }
 
+    private func object(_ value: some Encodable) throws -> [String: JSONValue] {
+        guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
+        else { return [:] }
+        return object
+    }
+
+    @Test func `provenance round trips, and an edit without it writes none`() throws {
+        var recipe = EditRecipe()
+        recipe[.exposure] = 0.35
+        #expect(try object(recipe)["provenance"] == nil)
+
+        recipe.provenance = EditProvenance(
+            source: .lightroomCatalog, path: "/Lightroom/Catalog.lrcat", photo: 42, digest: "D1",
+            date: Date(timeIntervalSince1970: 1_800_000_000), approximated: ["CameraProfile"], leftOut: ["LensBlur"],
+        )
+        let decoded = try JSONDecoder().decode(EditRecipe.self, from: JSONEncoder().encode(recipe))
+        #expect(decoded == recipe)
+        var converted = EditRecipe()
+        converted.provenance = recipe.provenance
+        #expect(!converted.isPristine, "a converted edit counts as an edit")
+
+        let sparse = EditProvenance(source: .xmpSidecar, path: "/Photos/IMG_1.xmp", date: Date())
+        #expect(try Set(object(sparse).keys) == ["source", "path", "date"])
+    }
+
+    @Test func `provenance keeps a source and fields a newer Redlamp wrote`() throws {
+        let json = #"{"source":"captureOne","path":"/Sessions/A","date":0,"session":"Morning"}"#
+        var decoded = try JSONDecoder().decode(EditProvenance.self, from: Data(json.utf8))
+        #expect(decoded.source == EditProvenance.Source(rawValue: "captureOne"))
+        decoded.leftOut = ["Grain"]
+        let written = try object(decoded)
+        #expect(written["session"] == .string("Morning") && written["source"] == .string("captureOne"))
+        #expect(written["leftOut"] == .array([.string("Grain")]))
+    }
+
     @Test func `keeps unknown keys through a round trip`() throws {
         let json = #"""
         {"version":1,"values":{"basic.exposure":0.5,"future.parameter":3},

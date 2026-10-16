@@ -98,10 +98,12 @@ public struct LightroomPhotoImport: Sendable {
     public var provenance: LightroomProvenance
     let edit: Edit
 
-    /// The photo's edit, at the current process version. It's made each time it's read, which takes longer
-    /// than converting the settings, so a report of many photos needn't make their edits.
+    /// The photo's edit, at the current process version, with its provenance. It's made each time it's read,
+    /// which takes longer than converting the settings, so a report of many photos needn't make their edits.
     public var recipe: EditRecipe {
-        edit.recipe
+        var recipe = edit.recipe
+        recipe.provenance = provenance.recorded
+        return recipe
     }
 
     /// What the edit is made of.
@@ -137,8 +139,7 @@ public struct LightroomPhotoImport: Sendable {
     }
 }
 
-/// Where a photo's converted edit came from, as its provenance is to record it (EDT-23): the import keeps it
-/// beside the edit until the sidecar format has a place for it.
+/// Where a photo's converted edit came from (EDT-23), which its recipe records (`recorded`).
 public struct LightroomProvenance: Sendable, Hashable {
     public enum Source: Sendable, Hashable {
         /// A Lightroom Classic catalog, with Lightroom's photo or virtual copy in it (`Adobe_images.id_local`)
@@ -162,5 +163,24 @@ public struct LightroomProvenance: Sendable, Hashable {
         self.date = date
         self.approximated = approximated
         self.leftOut = leftOut
+    }
+
+    /// As the recipe records it (`EditRecipe.provenance`).
+    public var recorded: EditProvenance {
+        switch source {
+        case let .catalog(url, photo, digest):
+            EditProvenance(
+                source: .lightroomCatalog, path: url.path, photo: photo, digest: digest, date: date,
+                approximated: approximated, leftOut: leftOut,
+            )
+        case let .sidecar(url):
+            EditProvenance(
+                source: .xmpSidecar, path: url.path, date: date, approximated: approximated, leftOut: leftOut,
+            )
+        case let .embedded(url):
+            EditProvenance(
+                source: .embeddedXMP, path: url.path, date: date, approximated: approximated, leftOut: leftOut,
+            )
+        }
     }
 }

@@ -104,6 +104,7 @@ Builds from before `customLabel`, `customLabelColor`, `mark`, `title`, `caption`
 | `masks` | [mask] | `[]` | Local adjustments, applied in order on top of the global edit; at most 16. Written only when there are some. See [Masks](#masks). |
 | `spots` | [spot] | `[]` | Remove, Heal and Clone spots, applied in order before everything else. Written only when there are some. See [Spots](#spots). |
 | `appliedRecipe` | object? | | `{"id", "version", "name", "amount"}`, all required: the `.redrecipe` the edit was last built from, and its Amount in percent (0 to 200). Provenance only; rendering never reads it. |
+| `provenance` | object? | | Where an edit converted from Lightroom's develop settings came from. Provenance only; rendering never reads it. See [Provenance](#provenance). |
 | `exposureAnchor` | object? | | `{"stops", "source", "camera"}`: where the photo's camera puts a metered grey, under Redlamp Reproduction and, from process 16, under every look. See [Exposure anchor](#exposure-anchor). |
 | `lensProfile` | object? | Default | `{"setup", "name", "fileName"}`, `setup` required: the lens profile chosen in the Lens Corrections panel. See [Lens profile](#lens-profile). |
 | `crop` | rect | full frame | Written only when it isn't the full frame. See [Crop and geometry](#crop-and-geometry). |
@@ -158,6 +159,24 @@ The lens profile chosen in the Lens Corrections panel's Setup, Make, Model and P
 | `fileName` | string? | Its file's name, which finds the profile first, whatever its case, in Redlamp's Lens Profiles folder and then in Camera Raw's. Without it, the name finds it. |
 
 A named profile that isn't on the Mac, or can't fit the photo, leaves the photo with what it would have at Default, and the panel says so. A profile made on another body, or for another frame, is scaled to the photo's as process 17 scales a matched one.
+
+### Provenance
+
+An edit converted from Lightroom's develop settings, from a Lightroom Classic catalog or from XMP, records where it came from, once, when it's converted (EDT-23, EDT-12). Editing the photo afterwards keeps it; copying and pasting settings doesn't carry it to another photo. Rendering never reads it, and an edit without it is one made in Redlamp.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `source` | string | **Required.** `lightroomCatalog`, `xmpSidecar` (an `.xmp` beside the photo, written by Lightroom, Camera Raw or Bridge) or `embeddedXMP` (XMP inside the photo's own file). A name a newer Redlamp wrote is kept. |
+| `path` | string | **Required.** The catalog's path, the sidecar's, or the photo's own for embedded XMP, as it was when the edit was converted. |
+| `photo` | integer? | The photo or virtual copy in the catalog (`Adobe_images.id_local`). |
+| `digest` | string? | The catalog's digest of the settings (`Adobe_imageDevelopSettings.digest`), which tells a later import whether they changed since. |
+| `date` | date | **Required.** When the settings were converted. |
+| `approximated` | [string] | The settings carried over to the nearest Redlamp control or scale, by their Camera Raw names (`CameraProfile`, `Exposure2012`), in the conversion report's order. Written only when there are some. |
+| `leftOut` | [string] | The settings left out of the edit, by name, in the same order: those Redlamp doesn't have, those only files Lightroom made can settle, and `orientation` for the catalog's rotation while Lightroom's codes aren't known. Written only when there are some. |
+
+A photo brought from a catalog with its profile approximated and Lens Blur left out has `"provenance": {"source": "lightroomCatalog", "path": "/Users/ana/Pictures/Lightroom/Lightroom Catalog.lrcat", "photo": 48213, "digest": "8c1f0e4b2a6d", "date": "2026-10-16T08:30:00Z", "approximated": ["CameraProfile"], "leftOut": ["LensBlur"]}`.
+
+Builds from before `provenance` keep it as an unknown key.
 
 ### Parameters
 

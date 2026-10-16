@@ -150,6 +150,8 @@ public struct EditRecipe: Sendable, Hashable {
     public var spots: [RetouchSpot] = []
     /// The shared recipe this edit was last built from.
     public var appliedRecipe: AppliedRecipe?
+    /// Where the edit came from when it was converted from Lightroom's develop settings.
+    public var provenance: EditProvenance?
     /// Under Redlamp Reproduction, where the photo's camera puts a metered grey: its own, written
     /// when the look arrives and never copied from another photo (`EditRecipe.anchored`).
     public var exposureAnchor: ExposureAnchor?
@@ -248,6 +250,7 @@ public struct EditRecipe: Sendable, Hashable {
             && masks.isEmpty
             && spots.isEmpty
             && appliedRecipe == nil
+            && provenance == nil
             // From process 16 every raw's edit gets its camera's anchor when it's made (CAM-29).
             && (exposureAnchor == nil || processVersion >= 16)
             && lensProfileChoice == nil
@@ -282,7 +285,7 @@ extension EditRecipe: Codable {
         case version, processVersion, treatment, baseLook, whiteBalance, pointCurve, values, pointColor, masks
         case pointCurveRed, pointCurveGreen, pointCurveBlue
         case appliedRecipe, exposureAnchor, crop, orientation, spots, panelsOff
-        case lensProfile
+        case lensProfile, provenance
         /// Format version 1's name for `baseLook`; read, never written.
         case profile
 
@@ -320,6 +323,7 @@ extension EditRecipe: Codable {
         masks = try container.decodeIfPresent([MaskLayer].self, forKey: .masks) ?? []
         spots = try container.decodeIfPresent([RetouchSpot].self, forKey: .spots) ?? []
         appliedRecipe = try container.decodeIfPresent(AppliedRecipe.self, forKey: .appliedRecipe)
+        provenance = try container.decodeIfPresent(EditProvenance.self, forKey: .provenance)
         exposureAnchor = try container.decodeIfPresent(ExposureAnchor.self, forKey: .exposureAnchor)
         lensProfileChoice = try container.decodeIfPresent(LensProfileChoice.self, forKey: .lensProfile)
         crop = try container.decodeIfPresent(CropRect.self, forKey: .crop) ?? .full
@@ -360,6 +364,7 @@ extension EditRecipe: Codable {
             try container.encode(spots, forKey: .spots)
         }
         try container.encodeIfPresent(appliedRecipe, forKey: .appliedRecipe)
+        try container.encodeIfPresent(provenance, forKey: .provenance)
         try container.encodeIfPresent(exposureAnchor, forKey: .exposureAnchor)
         try container.encodeIfPresent(lensProfileChoice, forKey: .lensProfile)
         if !crop.isFull {

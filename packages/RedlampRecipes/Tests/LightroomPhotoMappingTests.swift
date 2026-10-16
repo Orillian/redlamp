@@ -420,7 +420,10 @@ struct LightroomPhotoMappingTests {
             settings, photo: Self.raw, source: .sidecar(URL(filePath: "/Photos/IMG_0001.xmp")),
             date: Date(timeIntervalSince1970: 0),
         )
-        #expect(xmp.recipe == lua.recipe)
+        var recipe = xmp.recipe
+        #expect(recipe.provenance?.source == .xmpSidecar && recipe.provenance?.path == "/Photos/IMG_0001.xmp")
+        recipe.provenance = lua.recipe.provenance
+        #expect(recipe == lua.recipe)
         #expect(xmp.report == lua.report)
         #expect(LightroomPhoto.holdsEdit(settings))
     }
@@ -440,6 +443,11 @@ struct LightroomPhotoMappingTests {
             source: .catalog(Self.catalog, photo: 42, digest: "D1"), date: Date(timeIntervalSince1970: 0),
             approximated: ["Exposure2012"], leftOut: ["LensBlur", "orientation"],
         ))
+        #expect(leftOut.recipe.provenance == EditProvenance(
+            source: .lightroomCatalog, path: Self.catalog.path, photo: 42, digest: "D1",
+            date: Date(timeIntervalSince1970: 0), approximated: ["Exposure2012"], leftOut: ["LensBlur", "orientation"],
+        ))
+        #expect(!leftOut.recipe.isPristine)
     }
 
     @Test func `presets, and XMP without develop settings, don't hold a photo's edit`() throws {

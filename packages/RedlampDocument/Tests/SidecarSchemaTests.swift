@@ -479,6 +479,11 @@ enum RichSidecar {
         recipe.crop = CropRect(left: 0.08, top: 0.05, right: 0.94, bottom: 0.9)
         recipe.orientation = ImageOrientation(quarterTurns: 1, mirrored: true)
         recipe.appliedRecipe = AppliedRecipe(id: "redlamp/film/portra-400", version: 2, name: "Portra 400", amount: 120)
+        recipe.provenance = EditProvenance(
+            source: .lightroomCatalog, path: "/Users/ana/Pictures/Lightroom/Lightroom Catalog.lrcat", photo: 48213,
+            digest: "8c1f0e4b2a6d", date: Date(timeIntervalSince1970: 1_791_000_000), approximated: ["CameraProfile"],
+            leftOut: ["LensBlur"],
+        )
         recipe.exposureAnchor = ExposureAnchor(stops: 0.94, source: .target, camera: "Canon EOS R5")
         recipe.lensProfileChoice = LensProfileChoice(
             setup: .custom, name: "Adobe (Canon EF 24-70mm f/2.8L II USM)",

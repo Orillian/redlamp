@@ -126,6 +126,7 @@
           "description": "Remove, Heal and Clone spots, applied in order before everything else."
         },
         "appliedRecipe": { "$ref": "#/$defs/appliedRecipe" },
+        "provenance": { "$ref": "#/$defs/provenance" },
         "exposureAnchor": { "$ref": "#/$defs/exposureAnchor" },
         "lensProfile": { "$ref": "#/$defs/lensProfile" },
         "crop": { "$ref": "#/$defs/cropRect", "default": { "left": 0, "top": 0, "right": 1, "bottom": 1 } },
@@ -347,6 +348,34 @@
           "minimum": 0,
           "maximum": 200,
           "description": "The recipe's Amount when it was applied, in percent."
+        }
+      },
+      "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
+    },
+    "provenance": {
+      "description": "Where an edit converted from Lightroom's develop settings came from, recorded when it was converted. Provenance only: rendering never reads it.",
+      "type": "object",
+      "required": ["source", "path", "date"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "lightroomCatalog, xmpSidecar or embeddedXMP. A name a newer Redlamp wrote is kept."
+        },
+        "path": { "type": "string", "description": "The catalog's path, the sidecar's, or the photo's own for embedded XMP." },
+        "photo": { "type": "integer", "description": "The photo or virtual copy in the catalog (Adobe_images.id_local)." },
+        "digest": { "type": "string", "description": "The catalog's digest of the settings (Adobe_imageDevelopSettings.digest)." },
+        "date": { "$ref": "#/$defs/date" },
+        "approximated": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "The settings carried over approximately, by their Camera Raw names. Written only when there are some."
+        },
+        "leftOut": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "The settings left out of the edit, by name. Written only when there are some."
         }
       },
       "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
