@@ -2,7 +2,7 @@
 
 File › Import from Lightroom Classic… (LIB-29) works, but while it imports it shows a 140-point bar and one sentence. A photographer whose import ran for hours from a 2.5-inch USB disk asked why it was so slow, and the window couldn't tell them which stage it was in, how fast it was going or whether it had stopped. This design makes the window a screen people can read while it works (LIB-52), and makes the import faster on spinning disks (LIB-53).
 
-**Status (2026-10-16):** the wireframes are drawn and wait on the owner's review; the rows are accepted. The window and the model are being changed today by EDT-23's step 9 (one sidecar write per photo, `edt-23/catalog-edits`) and EDT-34 (the window's first screen, `edt-34/import-window`), so what touches them waits until those land. The owner chose to wireframe the whole window, EDT-34's first screen included, and to measure on a simulated spinning disk, as he has none.
+**Status (2026-10-16):** the wireframes are drawn and wait on the owner's review; the rows are accepted; the simulated disk and its baselines are built on `lib-53/spinning-disks` (Measurements), and the indexing fixes are next. The window and the model are being changed today by EDT-23's step 9 (one sidecar write per photo, `edt-23/catalog-edits`) and EDT-34 (the window's first screen, `edt-34/import-window`), so what touches them waits until those land. The owner chose to wireframe the whole window, EDT-34's first screen included, and to measure on a simulated spinning disk, as he has none.
 
 ## The screen (LIB-52)
 
@@ -51,7 +51,12 @@ It compares one way of working with another; it doesn't stand for a real disk. A
 
 ## Measurements
 
-None yet.
+On the simulated 2.5-inch disk, 16 October: file operations traced on the build Mac and replayed through `usb-2.5` (`FileTrace`, `DiskReplay`, `LightroomDiskBenchTests` on `lib-53/spinning-disks`, 531ff5fcb), projected to 100,000 photos.
+
+- **The import's writes** (2,000 bench photos in folders of 200): 1.7 h on main (16.5 operations a photo, 4.5 reaching the disk, 6,072 moves between folders); 1.0 h with step 9's one write per photo (10 operations, 3 reaching the disk, 3,660 moves); 0.3 h for step 9's writes regrouped one folder at a time (10 moves), which is what writing one folder at a time on a spinning disk would give.
+- **Indexing the catalog's new folders** (600 clones of the fixture raws, read as an external disk's two readers read them, each thumbnail's read charged at the raw's preview: ARW 1,150 KB, CR3 458 KB, DNG 186 KB, NEF 701 KB, RAF 2,667 KB): 0.9 h as run; 0.4 h of it the reads the import waits for, and 0.4 h thumbnails, which can follow the import.
+
+So an import of 100,000 photos into new folders on such a disk waits about 2.6 h on main, about 1.9 h with step 9, and about 0.7 h with step 9, thumbnails after the import's reads and writes one folder at a time. Low Power Mode or heat can still stop the indexing outright until the import's folders are read first.
 
 ## Reply to the report
 
