@@ -1,12 +1,17 @@
 import Foundation
+import RedlampDocument
 import Testing
 @testable import RedlampLibrary
 
-/// The index at a million photos, or `REDLAMP_INDEX_BENCH_PHOTOS`. Skipped unless `REDLAMP_INDEX_BENCH=1`, which
-/// xcodebuild hands to the tests from `TEST_RUNNER_REDLAMP_INDEX_BENCH=1`, so CI stays fast.
+/// The index at a million photos, or `REDLAMP_INDEX_BENCH_PHOTOS`, with a version of every
+/// `REDLAMP_INDEX_BENCH_VERSIONS`th photo's edit (LIB-48) when that's set, each a row of its own. Skipped unless
+/// `REDLAMP_INDEX_BENCH=1`, which xcodebuild hands to the tests from `TEST_RUNNER_REDLAMP_INDEX_BENCH=1`, so CI stays
+/// fast.
 struct IndexBenchmarkTests {
     private static let photoCount = ProcessInfo.processInfo.environment["REDLAMP_INDEX_BENCH_PHOTOS"]
         .flatMap(Int.init) ?? 1_000_000
+    private static let versionEvery = ProcessInfo.processInfo.environment["REDLAMP_INDEX_BENCH_VERSIONS"]
+        .flatMap(Int.init)
     private static let batchSize = 1000
     private static let perFolder = 200
     private static let root = "/Volumes/Bench/Photos"
@@ -46,6 +51,8 @@ struct IndexBenchmarkTests {
 
         var synthetic = SyntheticIndexPhotos(seed: 2026, cameraIDs: cameras, lensIDs: lenses)
         var writing = Duration.zero
+        var versioning = Duration.zero
+        var versionCount = 0
         var samplePaths: [String] = []
         var sampleFileIDs: [UInt64] = []
         var sampleKeys: [Data] = []
@@ -61,14 +68,33 @@ struct IndexBenchmarkTests {
             sampleFileIDs.append(photos[sample].fileID ?? 0)
             sampleKeys.append(photos[sample].contentKey ?? Data())
             let start = ContinuousClock.now
-            try await index.write { try $0.upsertPhotos(photos) }
+            let ids = try await index.write { try $0.upsertPhotos(photos) }
             writing += ContinuousClock.now - start
+            if let every = Self.versionEvery {
+                let files = ids.enumerated().filter { ($0.offset + batch * Self.batchSize) % every == 0 }.map(\.element)
+                let start = ContinuousClock.now
+                try await index.write { writer in
+                    for file in files {
+                        try writer.setVersions([Self.version(of: file)], ofPhoto: file)
+                    }
+                }
+                versioning += ContinuousClock.now - start
+                versionCount += files.count
+            }
         }
         let seconds = writing / .seconds(1)
         Self.report(String(
             format: "insert: %ld rows in %.1f s, %.0f rows/s (batches of %ld, one transaction each)",
             Self.photoCount, seconds, Double(Self.photoCount) / seconds, Self.batchSize,
         ))
+        if versionCount > 0 {
+            Self.report(String(
+                format: "versions: %ld rows, one for every %ldth photo, in %.1f s, %.0f rows/s, as the indexer "
+                    + "writes them",
+                versionCount, Self.versionEvery ?? 0, versioning / .seconds(1),
+                Double(versionCount) / (versioning / .seconds(1)),
+            ))
+        }
 
         try index.onWriterAndWait { try $0.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
         let size = try FileManager.default.attributesOfItem(atPath: index.url.path)[.size] as? Int ?? 0
@@ -86,7 +112,7 @@ struct IndexBenchmarkTests {
                     return rows
                 }
             }
-            #expect(rows == Self.photoCount)
+            #expect(rows == Self.photoCount + versionCount)
             Self.report(String(
                 format: "hot-column scan, run %ld: %@, %.0f rows/s", run, Self.milliseconds(scan),
                 Double(rows) / (scan / .seconds(1)),
@@ -225,5 +251,13 @@ private extension IndexBenchmarkTests {
         let start = ContinuousClock.now
         let result = try await body()
         return (result, ContinuousClock.now - start)
+    }
+
+    /// A version as an import of Lightroom's virtual copies makes them: edited, rated, with a keyword.
+    static func version(of photo: Int64) -> VersionSummary {
+        VersionSummary(
+            id: UUID(), name: "Copy 1", created: Date(timeIntervalSince1970: 1_700_000_000), hasEdits: true,
+            metadata: PhotoMetadata(rating: Int(photo % 6), keywords: photo % 3 == 0 ? ["Copies/Warm"] : nil),
+        )
     }
 }
