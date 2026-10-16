@@ -62,7 +62,7 @@ The first release also has no automatic updater. For now, Homebrew is the easies
 
 ```
 brew tap pdcgomes/redlamp https://github.com/pdcgomes/redlamp
-brew install --cask redlamp
+brew install --cask pdcgomes/redlamp/redlamp
 ```
 
 You can also download the signed and notarised app from the [latest release on GitHub](https://github.com/pdcgomes/redlamp/releases/latest).

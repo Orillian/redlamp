@@ -41,7 +41,7 @@ export const site = {
     "mise run generate",
     "mise run run",
   ],
-  homebrew: ["brew tap pdcgomes/redlamp https://github.com/pdcgomes/redlamp", "brew install --cask redlamp"],
+  homebrew: ["brew tap pdcgomes/redlamp https://github.com/pdcgomes/redlamp", "brew install --cask pdcgomes/redlamp/redlamp"],
 } as const;
 
 /** Turns a README-relative link into one that works from the website. */

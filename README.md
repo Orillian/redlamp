@@ -1025,10 +1025,10 @@ Redlamp runs on Apple Silicon Macs with **macOS 26** or later. Download the [lat
 
 ```bash
 brew tap pdcgomes/redlamp https://github.com/pdcgomes/redlamp
-brew install --cask redlamp
+brew install --cask pdcgomes/redlamp/redlamp
 ```
 
-This installs the latest signed and notarized Redlamp.app in `/Applications` and puts the [`redlamp` command-line tool](#command-line-tool) on your `PATH`. The tap is this repository, so the explicit URL is needed the first time.
+This installs the latest signed and notarized Redlamp.app in `/Applications` and puts the [`redlamp` command-line tool](#command-line-tool) on your `PATH`. The tap is this repository, so the explicit URL is needed the first time. Since Homebrew 7, casks from taps other than Homebrew's own load only once you trust them, and naming the cask in full, as above, trusts this one. If you tapped Redlamp earlier and Homebrew refuses to load it, run `brew trust --cask pdcgomes/redlamp/redlamp` once.
 
 ```bash
 brew upgrade --cask redlamp          # update to the latest release
