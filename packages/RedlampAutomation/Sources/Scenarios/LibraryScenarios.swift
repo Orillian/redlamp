@@ -841,6 +841,7 @@
             "Base Looks' search finds a film stock, which previews, and a click applies it with its grain, keeping "
                 + "the vignette",
             claims: [.feature("recipes.favorites"), .feature("recipes.applying")],
+            needsFocus: true,
         ) { app in
             try app.openWorking()
             try app.main { $0.expandedSidebarSections.insert(.baseLooks) }
@@ -860,7 +861,13 @@
                     .main { model in BaseLookPreviews.choice(id: ektar.id, model: model).map { model.previewLook($0) } }
             }
             try app.main { $0.previewLook(nil) }
-            try app.clickControl("baseLooks.look.\(ektar.id)")
+            let focused = try app.focus()
+            if focused {
+                try app.clickRow("baseLooks.look.\(ektar.id)")
+            } else {
+                try app
+                    .main { model in BaseLookPreviews.choice(id: ektar.id, model: model).map { model.chooseLook($0) } }
+            }
             try app.wait("\(ektar.name) chosen") { $0.baseLook.id == ektar.id }
             try app.expect(
                 try app.main { $0.value(.vignetteAmount) } == -30,
@@ -868,7 +875,7 @@
             )
             try app.expect(try app.main { $0.value(.grainAmount) } > 0, "\(ektar.name) came without its grain")
             try app.choose(.resetAll)
-            app.covered([.feature("recipes.favorites"), .feature("recipes.applying")], via: .mouse)
+            app.covered([.feature("recipes.favorites"), .feature("recipes.applying")], via: focused ? .mouse : .model)
         }
 
         static let baseLookMenu = Scenario(

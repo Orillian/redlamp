@@ -298,6 +298,19 @@
             pause(0.2)
         }
 
+        /// Clicks the left panel's row carrying `identifier` (a look, a recipe, a History step) through the editor
+        /// window, as the mouse does: the list acts on the row as the click ends, taking the release from the queue
+        /// while it tracks the press. A list ignores a press in a window that isn't key, which a person's click makes
+        /// key first, so the scenario takes focus for it (`focus()`).
+        func clickRow(_ identifier: String) throws {
+            let key = try main { _ in Views.editorWindow?.isKeyWindow == true }
+            try expect(
+                key,
+                "\(identifier) can't be clicked: a list takes a press only in a key window, and this one isn't",
+            )
+            try clickControl(identifier)
+        }
+
         /// Right-clicks the left panel's row carrying `identifier`, as the mouse does, and chooses the item `path`
         /// names in the menu that opens, a submenu's title first ("Move To", then the set). The menu tracks inside
         /// the press, so the driver asks the main thread nothing until the press has begun: a question queued with
