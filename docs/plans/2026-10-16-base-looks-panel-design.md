@@ -17,6 +17,7 @@ Today Redlamp lists every film stock, the firmware model's simulations and impor
 3. **A film stock brings its look and its own grain, halation and bloom,** and Black & White for a monochrome stock, wherever it's chosen. Every other setting stays as it was, the rest of Effects included. Today a film stock is applied as a recipe that includes the whole Effects group, so choosing another film after editing resets the vignette, light leak, dust and frame.
 4. **Basic's Base Look menu stays as it is for now.**
 5. **Show in Finder and Move to Trash** for the photographer's own and installed recipes and imported looks, and **hiding whole built-in groups** in either panel.
+6. **Leaving a film stock for a look that isn't one takes the film's grain, halation and bloom away** (answered later the same day). Going from Portra 400 to Redlamp Color leaves no film grain behind.
 
 ## The left column
 
@@ -48,9 +49,11 @@ Hovering a look previews it as a click applies it; a click applies it as one His
 
 A look that isn't a film stock sets the Base Look, as `EditorModel.setBaseLook` does today, Black & White included for a monochrome look.
 
-A film stock sets its Base Look, Black & White for a monochrome stock, and the film's eight parameters: Grain Amount, Size, Roughness and Color, Halation Amount and Size, Bloom Amount and Size. The ones the stock doesn't list take their defaults, so moving from CineStill 800T to Portra 400 takes the bloom away. Nothing else changes. Choosing a look that isn't a film stock leaves those eight as they are.
+A film stock sets its Base Look, Black & White for a monochrome stock, and the film's eight parameters: Grain Amount, Size, Roughness and Color, Halation Amount and Size, Bloom Amount and Size. The ones the stock doesn't list take their defaults, so moving from CineStill 800T to Portra 400 takes the bloom away. Nothing else changes.
 
-One choice in RedlampRecipes does this for every place a film stock is chosen: the Base Looks panel, the Film Looks window (whose header Amount becomes the Base Look's) and ⌘K. Edits made before keep their settings, and the edit's applied recipe stays recorded; nothing renders differently, so there's no new process version. The CLI and the MCP server keep applying the bundled film recipes as they do today.
+A look that isn't a film stock, chosen while the photo's look is one, also returns those eight to their defaults (decision 6), whatever they were set to since, so going from Portra 400 to Redlamp Color leaves no grain. Its Apply Without Grain, Halation and Bloom does the same. Chosen while the photo's look isn't a film stock, it leaves them as they are, so grain the photographer added on Redlamp Color stays when they try Vivid. The photo's look counts as a film stock whether a choice or a recipe (a mood) set it. Recipes apply as they do today (decision 2).
+
+One choice in RedlampRecipes does this wherever a look is chosen: the Base Looks panel, Basic's Base Look menu and browser, the Film Looks window (whose header Amount becomes the Base Look's) and ⌘K. Hovering a look previews it as that choice would apply it. Edits made before keep their settings, and the edit's applied recipe stays recorded; nothing renders differently, so there's no new process version. The CLI and the MCP server keep applying the bundled film recipes as they do today.
 
 ## The Recipes panel
 
@@ -79,7 +82,7 @@ One visual browser for every look, the Film Looks window grown to cover them all
 
 ## Tests, scenarios and docs
 
-- **RedlampRecipes:** which recipes are looks; a film stock's choice keeps vignette, light leak, dust and frame, sets its eight parameters, sets Black & White for a monochrome stock and takes bloom away when the next stock has none; hidden folders are saved and read; Move to Trash leaves the look renderable and unlisted.
+- **RedlampRecipes:** which recipes are looks; a film stock's choice keeps vignette, light leak, dust and frame, sets its eight parameters, sets Black & White for a monochrome stock and takes bloom away when the next stock has none; a look that isn't a film stock, chosen over one, returns the eight to their defaults, and chosen over a look that isn't one, keeps the photographer's own grain; hidden folders are saved and read; Move to Trash leaves the look renderable and unlisted.
 - **RedlampUI:** the column's order; Base Looks' folders, search, favourites and Amount row; recipe rows' marks; which menus show Show in Finder, Move to Trash and Hide; Recipes search without Base Looks; ⌘K's two pages.
 - **Regression scenarios** (`RedlampAutomation`), each through the user's own input: search Base Looks and apply a film stock over an edit with a vignette, which stays; Show in Finder and Move to Trash on an imported recipe; hide and show a built-in folder. The scenarios that used Recipes › Film Stocks or Base Looks in recipe search move to the panel. A Report a Bug feature for Base Looks.
 - **Docs:** the README's first goal, its Develop and Recipes bullets, and Film simulations; the Lightroom comparison's Profiles, Presets and Each look in one place rows; the manual's Recipes and Base Look pages; the site's features; the redlamp-look-icons skill, which places icons in the Recipes panel.
