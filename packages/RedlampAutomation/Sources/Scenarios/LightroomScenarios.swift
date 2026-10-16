@@ -13,8 +13,9 @@
         static let importEdits = Scenario(
             "library.lightroom-edits",
             "File › Import from Lightroom Classic… brings a photo's Lightroom edit and snapshot into its sidecar with its "
-                + "fields, the photo opens in Develop with them, and Undo Import takes the edit back there, as a step of "
-                + "its history",
+                + "fields, and its virtual copy as a version; the photo opens in Develop with them, the version from "
+                +
+                "Photo › Versions, and Undo Import takes the edit back there, as a step of its history, and the version",
             claims: [.action(.importFromLightroom)],
         ) { app in
             let scratch = try SourcesScratch(
@@ -51,6 +52,12 @@
                     && written?.snapshots.map(\.name) == ["Brighter"] && written?.metadata?.rating == 5,
                 "the first photo's sidecar: \(String(describing: written))",
             )
+            let copy = written?.versions.first
+            try app.expect(
+                written?.versions.count == 1 && copy?.name == "Copy 1" && copy?.recipe[.exposure] == -0.5
+                    && copy?.metadata?.rating == 4,
+                "the virtual copy, as a version: \(String(describing: written?.versions))",
+            )
 
             try app.main { model in
                 Views.editorWindow?.makeKeyAndOrderFront(nil)
@@ -62,6 +69,14 @@
             }
             let snapshots = try app.main { model in model.snapshots.map(\.name) }
             try app.expect(snapshots == ["Brighter"], "the snapshots in Develop: \(snapshots)")
+            try app.wait("the virtual copy among the photo's versions") { $0.versions.map(\.name) == ["Copy 1"] }
+            try app.choose("Copy 1")
+            try app.wait("the version's own edit, from Photo › Versions") { model in
+                model.openVersion != nil && abs(model.value(.exposure) + 0.5) < 1e-6
+                    && model.photoMetadata.rating == 4
+            }
+            try app.choose(EditorModel.originalName)
+            try app.wait("the photo's own edit again") { $0.openVersion == nil && $0.recipe[.exposure] == 0.75 }
 
             try app.wait("Undo Import", timeout: 30) { _ in
                 LightroomWindowController.current?.button("lightroom.undo")?.enabled == true
@@ -73,6 +88,10 @@
             try app.wait("the edit taken back in Develop, as a step of its history", timeout: 30) { model in
                 model.recipe.isPristine && model.snapshots.isEmpty
                     && model.history.last?.title == "Undo Import from Lightroom Classic"
+            }
+            try app.wait("the version taken back in Develop") { $0.versions.isEmpty }
+            try app.wait("the sidecar without it", timeout: 15) { _ in
+                SidecarStore(locator: .besidePhotos).load(for: photo)?.versions.isEmpty ?? true
             }
             app.covered(.action(.importFromLightroom), via: .menu)
         }

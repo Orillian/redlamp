@@ -2,10 +2,12 @@ import Foundation
 
 /// A Lightroom Classic catalog of a folder, made by the run with the tables the import reads: three photos
 /// rated, picked, rejected and labelled, one in the Quick Collection, a keyword with a synonym, a title, a
-/// collection in a set, and two smart collections, one whose rule maps and one whose doesn't.
+/// collection in a set, two smart collections, one whose rule maps and one whose doesn't, and a virtual copy of
+/// the first photo, Copy 1, rated 4.
 @_spi(Harness) public enum LightroomScratchCatalog {
     /// `otherRoots` are root folders the catalog names without photos in them, such as one that has moved. With
-    /// `edits`, the first photo has Develop settings (Exposure +0.75, Contrast +20) and a snapshot, Brighter (EDT-23).
+    /// `edits`, the first photo has Develop settings (Exposure +0.75, Contrast +20) and a snapshot, Brighter, and its
+    /// virtual copy settings of its own (Exposure −0.5) (EDT-23).
     public static func make(of folder: URL, tag: String, otherRoots: [URL] = [], edits: Bool = false) throws -> URL {
         let url = folder.deletingLastPathComponent()
             .appending(path: "lightroom-\(tag)/Lightroom Catalog.lrcat")
@@ -88,7 +90,8 @@ import Foundation
             CREATE TABLE Adobe_libraryImageDevelopSnapshot (id_local INTEGER PRIMARY KEY, id_global UNIQUE NOT NULL,
               digest, hasDevelopAdjustments, image INTEGER, locked, name, snapshotID, text);
             INSERT INTO Adobe_imageDevelopSettings VALUES (90, 'd1', 1, 1, 21, '15.4',
-              's = { ProcessVersion = "15.4", Exposure2012 = 0.75, Contrast2012 = 20, }');
+              's = { ProcessVersion = "15.4", Exposure2012 = 0.75, Contrast2012 = 20, }'),
+              (92, 'd3', 1, 1, 24, '15.4', 's = { ProcessVersion = "15.4", Exposure2012 = -0.5, }');
             INSERT INTO Adobe_libraryImageDevelopSnapshot VALUES (91, 's1', 'd2', 1, 21, 0, 'Brighter', 'S1',
               's = { ProcessVersion = "15.4", Exposure2012 = 1.5, }');
             """)
