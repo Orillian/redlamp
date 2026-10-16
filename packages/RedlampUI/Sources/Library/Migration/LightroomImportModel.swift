@@ -28,6 +28,8 @@ final class LightroomImportModel {
     private(set) var progress: LightroomImport.Progress?
     /// While the folders are added: photos the index has in them, of those the catalog has there.
     private(set) var indexed: (done: Int, total: Int)?
+    /// While the folders are added: photos the index has under each, by its path.
+    private(set) var indexedRoots: [String: Int] = [:]
     private(set) var outcome: LightroomImport.Outcome?
     /// What went wrong last, in words.
     private(set) var problem: String?
@@ -247,13 +249,14 @@ final class LightroomImportModel {
                 break
             }
             let paths = folders.map(\.path)
-            let done = await (try? core.index.read { reader in
-                try paths.reduce(0) { count, path in
-                    guard let folder = try reader.folder(path: path) else { return count }
-                    return try count + reader.photoIDs(inSubtreeOf: folder.id).count
+            let counts = await (try? core.index.read { reader in
+                try paths.reduce(into: [String: Int]()) { counts, path in
+                    guard let folder = try reader.folder(path: path) else { return }
+                    counts[path] = try reader.photoCount(inSubtreeOf: folder.id)
                 }
-            }) ?? 0
-            indexed = (min(done, total), total)
+            }) ?? [:]
+            indexedRoots = counts
+            indexed = (min(counts.values.reduce(0, +), total), total)
             changed()
             if ready {
                 return true

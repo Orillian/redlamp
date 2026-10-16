@@ -140,6 +140,53 @@ struct LightroomDiskBenchTests {
         #expect(order == ["/a/1/A.CR3", "/a/1/B.CR3", "/a/1 copy/A.CR3", "/a/1/sub/A.CR3", "/a/2/C.CR3"])
     }
 
+    /// What one of the import window's polls costs while the catalog's folders are indexed, which it does every
+    /// 500 ms: the photos under a root folder fetched and counted, as it did, or counted in the index.
+    /// `REDLAMP_LIGHTROOM_POLL_PHOTOS` sets how many photos are under it (100,000 by default).
+    @Test(.measuresSpeed)
+    func `a poll of the photos indexed under a root folder, fetched or counted`() async throws {
+        let count = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_POLL_PHOTOS"].flatMap { Int($0) } ?? 100_000
+        let folder = try TemporaryFolder()
+        let index = try await LibraryIndex.open(at: folder.url.appending(path: "Index.sqlite"))
+        defer { index.closeAndWait() }
+        let root = "/Volumes/Bench/Photos"
+        try await index.write { writer in
+            let volume = try writer.upsertVolume(VolumeRecord(uuid: "POLL-VOLUME", name: "Bench", kind: .spinning))
+            let rootID = try writer.upsertRoot(RootRecord(volume: volume, path: root))
+            let top = try writer.upsertFolder(FolderRecord(root: rootID, parent: nil, path: root))
+            for shoot in 0 ..< (count + 199) / 200 {
+                let id = try writer.upsertFolder(FolderRecord(
+                    root: rootID, parent: top, path: root + String(format: "/Shoot %03d", shoot),
+                ))
+                _ = try writer.upsertPhotos((shoot * 200 ..< min(shoot * 200 + 200, count)).map { number in
+                    PhotoRecord(folder: id, name: String(format: "IMG_%06d.CR3", number), size: 1000)
+                })
+            }
+        }
+        var fetched: [Duration] = []
+        var counted: [Duration] = []
+        for _ in 0 ..< 7 {
+            var start = ContinuousClock.now
+            let ids = try await index.read { reader in
+                try reader.folder(path: root).map { try reader.photoIDs(inSubtreeOf: $0.id).count } ?? 0
+            }
+            fetched.append(ContinuousClock.now - start)
+            start = ContinuousClock.now
+            let total = try await index.read { reader in
+                try reader.folder(path: root).map { try reader.photoCount(inSubtreeOf: $0.id) } ?? 0
+            }
+            counted.append(ContinuousClock.now - start)
+            #expect(ids == count && total == count)
+        }
+        let median = { (times: [Duration]) in
+            String(format: "%.1f ms", times.sorted()[times.count / 2].seconds * 1000)
+        }
+        print(
+            "LIGHTROOM-POLL-BENCH \(count) photos under a root folder, in folders of 200: one poll fetching their IDs "
+                + "\(median(fetched)), counting them in the index \(median(counted)) (medians of 7)",
+        )
+    }
+
     /// The size of the embedded preview the app's thumbnail reads of `raw`: the smallest reaching 384 pixels.
     static func previewLength(of raw: URL) async throws -> Int {
         let data = try Data(contentsOf: raw)

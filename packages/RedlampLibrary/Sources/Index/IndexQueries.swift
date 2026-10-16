@@ -145,6 +145,17 @@ public extension IndexQueries {
         return try statement.map { $0.int64(at: 0) }
     }
 
+    /// The photos in `folder` and the folders under it, counted without reading them.
+    func photoCount(inSubtreeOf folder: Int64) throws -> Int {
+        guard let path = try self.folder(id: folder)?.path else { return 0 }
+        let statement = try database.cached("""
+        SELECT count(*) FROM folders f JOIN photos p ON p.folder = f.id
+        WHERE f.path = ?1 OR (f.path >= ?2 AND f.path < ?3)
+        """)
+        try statement.bindSubtree(of: path)
+        return try statement.first { $0.int(at: 0) } ?? 0
+    }
+
     func photoCount() throws -> Int {
         try database.cached("SELECT count(*) FROM photos").first { $0.int(at: 0) } ?? 0
     }
