@@ -219,10 +219,12 @@ struct LightroomBenchTests {
         var undo: Duration
         var parts: Int
         var progress: Int
+        var written = 0
     }
 
-    static func measure(photos count: Int) async throws -> Measured {
-        let library = try await Self.library(photos: count)
+    /// With `edits`, each photo's edit and snapshots are imported with its fields (EDT-23).
+    static func measure(photos count: Int, edits: Bool = false) async throws -> Measured {
+        let library = try await Self.library(photos: count, edits: edits)
         defer { library.index.closeAndWait() }
         let clock = ContinuousClock()
         var started = clock.now
@@ -247,9 +249,16 @@ struct LightroomBenchTests {
         try await importer.undo()
         let undone = clock.now - started
         let parts = (count + importer.partSize - 1) / importer.partSize
-        print("LIGHTROOM-BENCH \(count) photos: read \(read), report \(planned), import \(ran) in \(parts) parts "
-            + "(\(outcome.written) sidecars written, \(progress.count) progress reports), undo \(undone)")
-        return Measured(read: read, plan: planned, run: ran, undo: undone, parts: parts, progress: progress.count)
+        var load = [0.0, 0.0, 0.0]
+        getloadavg(&load, 3)
+        print("LIGHTROOM-BENCH \(count) photos\(edits ? " with edits" : ""): read \(read), report \(planned), import "
+            + "\(ran) in \(parts) parts (\(outcome.written) sidecars written, \(progress.count) progress reports), undo "
+            + "\(undone), on \(ProcessInfo.processInfo.activeProcessorCount) cores at a load of "
+            + String(format: "%.0f", load[0]))
+        return Measured(
+            read: read, plan: planned, run: ran, undo: undone, parts: parts, progress: progress.count,
+            written: outcome.written,
+        )
     }
 
     @Test(.measuresSpeed)
@@ -301,6 +310,20 @@ struct LightroomBenchTests {
             + "cores at a load of \(String(format: "%.0f", load[0])); \(edits.full) in full, \(edits.approximated) approximated, "
             + "\(edits.leftOut) with settings left out")
         return took
+    }
+
+    @Test(.measuresSpeed)
+    func `a catalog of 5,000 photos is imported with their edits, each photo's sidecar written once`() async throws {
+        let measured = try await Self.measure(photos: 5000, edits: true)
+        #expect(measured.written == 5000)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_BENCH"] == "1"), .measuresSpeed)
+    func `a catalog of 100,000 photos is imported with their edits, each photo's sidecar written once`() async throws {
+        let photos = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_BENCH_PHOTOS"].flatMap { Int($0) }
+            ?? 100_000
+        let measured = try await Self.measure(photos: photos, edits: true)
+        #expect(measured.written == photos)
     }
 
     @Test(.measuresSpeed)
