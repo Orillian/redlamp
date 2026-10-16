@@ -212,6 +212,7 @@ public struct BorderParams {
     public var text5 = SIMD4<Float>(0, 0, 0, 0)
     public var text6 = SIMD4<Float>(0, 0, 0, 0)
     public var text7 = SIMD4<Float>(0, 0, 0, 0)
+    public var area = SIMD4<Float>(0, 0, 0, 0)
 
     public init() {}
 

@@ -103,7 +103,7 @@ extension RedlampEngine {
     }
 
     static func borderParams(
-        _ recipe: EditRecipe, layout: BorderLayout, size _: PixelSize, region: ImageRect, area: PhotoArea?, file: URL?,
+        _ recipe: EditRecipe, layout: BorderLayout, size: PixelSize, region: ImageRect, area: PhotoArea?, file: URL?,
     ) -> BorderParams {
         let recipe = recipe.rendered
         var params = BorderParams()
@@ -113,6 +113,7 @@ extension RedlampEngine {
             )
         }
         params.region = SIMD4(Float(region.x), Float(region.y), Float(region.width), Float(region.height))
+        params.area = SIMD4(Float(size.width), Float(size.height), 0, 0)
         let aspect = Double(layout.canvasSize.width) / Double(max(layout.canvasSize.height, 1))
         params.canvas = SIMD4(Float(aspect), Float(layout.style.rawValue), 0, 0)
         let rect = layout.photoRect

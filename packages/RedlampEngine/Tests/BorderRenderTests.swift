@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
-import RedlampEngine
 import RedlampEngineAPI
 import Testing
+@testable import RedlampEngine
 
 /// Borders around the photo (TON-53, TON-54): the canvas grows, the photo is untouched, and the
 /// histogram counts only the photo.
@@ -72,6 +72,24 @@ struct BorderRenderTests {
         #expect(Self.pixel(pixels, width: 660, 330, 2) == SIMD3(255, 255, 255))
         #expect(Self.pixel(pixels, width: 660, 330, 30 - 9).x < 10, "the keyline")
         #expect(Self.pixel(pixels, width: 660, 330, 30 - 3) == SIMD3(255, 255, 255), "the gap")
+    }
+
+    @Test(.enabled(if: BaseLookTests.canRender))
+    func `a still rendered in tiles draws the keyline on every side, the smaller last tiles included`() async throws {
+        let url = try FilmEffectsTests.flat(0.45, size: 600)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let engine = try RedlampEngine(stillTile: 256)
+        _ = try await engine.open(url)
+        var recipe = Self.edit(.plain, [.borderSize: 5, .borderKeylineWidth: 1, .borderKeylineGap: 1])
+        recipe[.sharpenAmount] = 40
+        let pixels = try await BaseLookTests.pixels(engine.renderStill(StillRequest(recipe: recipe)))
+        // The photo spans 30...630 of 660; the keyline is 6 to 12 pixels out from it on each side.
+        for (x, y) in [(330, 21), (21, 330), (639, 330), (330, 639)] {
+            #expect(Self.pixel(pixels, width: 660, x, y).x < 10, "the keyline at \(x), \(y)")
+        }
+        for (x, y) in [(633, 330), (330, 633), (650, 330), (330, 650)] {
+            #expect(Self.pixel(pixels, width: 660, x, y) == SIMD3(255, 255, 255), "white at \(x), \(y)")
+        }
     }
 
     @Test(.enabled(if: BaseLookTests.canRender))

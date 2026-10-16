@@ -102,6 +102,7 @@ struct BorderParams {
     float4 text5;
     float4 text6;
     float4 text7;
+    float4 area;              // xy the rendered part's size in pixels: a still's last tiles are smaller than their texture
 };
 
 // One Point Color swatch (TON-29): its colour, the range of colours around it that it selects, and

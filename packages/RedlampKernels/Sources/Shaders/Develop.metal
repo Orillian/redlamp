@@ -707,7 +707,7 @@ kernel void rl_border(
     constant BorderParams &b [[buffer(1)]],
     uint2 gid [[thread_position_in_grid]])
 {
-    uint width = out.get_width(), height = out.get_height();
+    uint width = uint(b.area.x), height = uint(b.area.y);
     if (gid.x >= width || gid.y >= height) return;
     if (float(gid.x) >= b.photoPixels.x && float(gid.x) < b.photoPixels.z && float(gid.y) >= b.photoPixels.y
         && float(gid.y) < b.photoPixels.w) return;
