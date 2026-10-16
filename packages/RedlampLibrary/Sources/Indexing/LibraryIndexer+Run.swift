@@ -216,7 +216,7 @@ extension LibraryIndexer {
             var volumes: [VolumeWork] = []
             for (entry, record) in zip(entries, records) {
                 guard let io = byVolume[entry.key]?.io else { continue }
-                let prioritised: @Sendable () -> Set<String> = { [indexer] in indexer.prioritised }
+                let prioritised: @Sendable () -> LibraryIndexer.Priorities = { [indexer] in indexer.prioritised }
                 let readers = Self.photoWorkers(io)
                 let volume = VolumeWork(
                     key: entry.key, id: record.volume, roots: record.roots.map(\.path), io: io,
@@ -259,13 +259,14 @@ extension LibraryIndexer {
             return volumes
         }
 
-        /// The folders a run starts from: its roots and the folders on screen the index has below
-        /// them, which are listed first without waiting for the walk to reach them; or the folders
-        /// named, each found from the nearest folder above it that the index has.
+        /// The folders a run starts from: its roots and the folders on screen and roots read first that the
+        /// index has below them, which are listed first without waiting for the walk to reach them; or the
+        /// folders named, each found from the nearest folder above it that the index has.
         private func seeds(for request: Request, roots: [RootRecord]) -> [WalkQueue.Item] {
             switch request {
             case .roots:
-                let shown = indexer.prioritised
+                let wanted = indexer.prioritised
+                let shown = wanted.folders.union(wanted.roots)
                 return roots.map { root in
                     WalkQueue.Item(
                         path: root.path,
@@ -322,9 +323,10 @@ extension LibraryIndexer {
             roots.filter { path == $0 || path.hasPrefix($0 == "/" ? $0 : $0 + "/") }.max { $0.count < $1.count }
         }
 
-        /// Whether `path` is a folder of `wanted` or leads to one the walk hasn't been handed.
-        static func leads(_ path: String, to wanted: Set<String>, queued: Set<String>) -> Bool {
-            wanted.contains { folder in
+        /// Whether `path` is a folder of `wanted`, or under a root of its, or leads to one the walk hasn't been
+        /// handed.
+        static func leads(_ path: String, to wanted: LibraryIndexer.Priorities, queued: Set<String>) -> Bool {
+            wanted.isUnderRoot(path) || wanted.folders.union(wanted.roots).contains { folder in
                 folder == path || (!queued.contains(folder) && root(of: folder, among: [path]) != nil)
             }
         }
@@ -460,9 +462,10 @@ extension LibraryIndexer.Run {
         guard let listing = try? await indexer.index.folderHolds.list(item.path) else { return }
         defer { listing.done() }
         let url = URL(fileURLWithPath: item.path, isDirectory: true)
-        // Only the way to the folders on screen goes ahead of photos: the walk always has another
-        // listing waiting, and photos waiting behind every one wouldn't be read until it ended.
-        let ahead = indexer.prioritised.contains { Self.root(of: $0, among: [item.path]) != nil }
+        // Only the way to the folders read first, and the folders under the roots read first, go ahead of
+        // photos: the walk always has another listing waiting, and photos waiting behind every one wouldn't
+        // be read until it ended.
+        let ahead = indexer.prioritised.leads(item.path)
         let entries: [FileEntry]
         do {
             entries = try await volume.io.contentsOfDirectory(at: url, priority: ahead ? .high : .normal)

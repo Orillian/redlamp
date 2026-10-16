@@ -94,8 +94,10 @@ struct LightroomDiskBenchTests {
     }
 
     /// The volumes the index bench's indexer reads through: one that answers at once, whose order of operations
-    /// is the SSD's, and the 2.5-inch disk itself in real time, whose one head makes what waits for it wait.
-    static let indexedVolumes = ["external", VolumeProfile.usb25.name]
+    /// is the SSD's, and the 2.5-inch disk itself in real time, whose one head makes what waits for it wait; the
+    /// last in Low Power Mode until the photos' folders are indexed, the import's root read first.
+    static let indexedVolumes = ["external", VolumeProfile.usb25.name, lowPower]
+    static let lowPower = VolumeProfile.usb25.name + " in Low Power Mode, read first"
 
     @Test(.measuresSpeed, arguments: indexedVolumes)
     func `indexing a catalog's folders on a simulated 2.5-inch disk, thumbnails and all`(
@@ -144,8 +146,10 @@ struct LightroomDiskBenchTests {
             )
             return context?.makeImage()
         }
-        let profile = try #require(volume == "external"
-            ? VolumeProfile(name: "external", isInternal: false) : VolumeProfile.named(volume))
+        let name = String(volume.prefix { $0 != " " })
+        let profile = try #require(name == "external"
+            ? VolumeProfile(name: "external", isInternal: false) : VolumeProfile.named(name))
+        let relaxed = Atomic(volume != Self.lowPower)
         let width = CoreCounts.performance
         let maker = StoreThumbnailMaker(store: store, image: image)
         let indexer = LibraryIndexer(
@@ -153,22 +157,33 @@ struct LightroomDiskBenchTests {
             fileSystem: SimulatedFileSystem(profile: profile),
             scheduler: WorkScheduler(
                 widths: WorkScheduler.Widths(onScreen: width, lookAhead: width, background: width),
-                canRunBackground: { true },
+                canRunBackground: { relaxed.load(ordering: .relaxed) },
             ),
             thumbnails: maker.thumbnails,
         )
+        if volume == Self.lowPower {
+            indexer.readFirst([photos.url])
+        }
+        let folders = (count + 199) / 200
         let start = ContinuousClock.now
         var indexed = Duration.zero
         let operations = try await Self.traced(under: photos.url) {
-            for await _ in indexer.index([photos.url]) {}
-            indexed = ContinuousClock.now - start
+            var done = 0
+            for await event in indexer.index([photos.url]) {
+                guard case let .folderIndexed(folder) = event, folder.inserted > 0 else { continue }
+                done += 1
+                if done == folders {
+                    indexed = ContinuousClock.now - start
+                    relaxed.store(true, ordering: .relaxed)
+                }
+            }
             let deadline = ContinuousClock.now + .seconds(600)
             while made.load(ordering: .relaxed) < count, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
         }
         let finished = ContinuousClock.now - start
-        #expect(made.load(ordering: .relaxed) == count)
+        #expect(made.load(ordering: .relaxed) == count && indexed > .zero)
         let isThumbnail = { (operation: FileTrace.Operation) in operation.purpose == FileTrace.thumbnail }
         let last = try #require(operations.lastIndex { !isThumbnail($0) })
         let disk = DiskReplay(profile: .usb25)
@@ -178,7 +193,7 @@ struct LightroomDiskBenchTests {
         let afterwards = disk.replay(operations.filter(isThumbnail))
         let read = previews.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value / 1000) KB" }.joined(separator: ", ")
         let io = indexer.volumes.all.first
-        let real = profile.maxInFlight == nil ? "" : "; on the simulated disk itself, indexed in "
+        let real = profile.maxInFlight == nil ? "" : "; on the simulated disk itself, the photos' folders indexed in "
             + "\(String(format: "%.1f", indexed.seconds)) s (\(Self.hours(indexed.seconds, photos: count))) and "
             + "thumbnails made by \(String(format: "%.1f", finished.seconds)) s "
             + "(\(Self.hours(finished.seconds, photos: count)))"

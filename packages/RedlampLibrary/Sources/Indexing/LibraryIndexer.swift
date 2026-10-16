@@ -7,8 +7,9 @@ import Synchronization
 /// indexed at, and for each new or changed photo reads its first `PhotoMetadataReader.headLength`
 /// bytes once, for its content key and metadata, then its sidecars, and writes the rows in batches.
 ///
-/// The folders asked for come first (`prioritise`, the folders on screen), then the newest by
-/// modification date; their photos in Finder's order. A run that stops partway leaves every folder
+/// The folders asked for come first (`prioritise`, the folders on screen), then those under the roots
+/// read first (`readFirst`, an import's), then the newest by modification date; their photos in Finder's
+/// order. A run that stops partway leaves every folder
 /// it didn't finish to the next, which reads only the photos the index doesn't hold as they are.
 /// A photo that vanishes from its folder while one with its file identifier, size and date appears
 /// on the same volume was renamed or moved in the Finder: its row moves, keeping its ID. A photo the
@@ -16,8 +17,8 @@ import Synchronization
 /// library's change: the read isn't written, and the photo is read again once the library is done
 /// (`PhotoWrites`). Runs go one at a time, in the order they're asked for.
 ///
-/// Photos of the folders asked for are read on the scheduler's on-screen lane, the others on its
-/// background lane, which waits in Low Power Mode and while the Mac is hot.
+/// Photos of the folders asked for and under the roots read first are read on the scheduler's on-screen
+/// lane, the others on its background lane, which waits in Low Power Mode and while the Mac is hot.
 public final class LibraryIndexer: Sendable {
     public struct Configuration: Sendable, Hashable {
         /// Photos written in one transaction, at most.
@@ -77,6 +78,8 @@ public final class LibraryIndexer: Sendable {
 
     private struct State {
         var prioritised: Set<String> = []
+        /// The roots read first, each as many times as it was asked for.
+        var first: [String: Int] = [:]
         var last: Task<Void, Never>?
         /// The photo queues of the runs going, told when the folders asked for change.
         var queues: [Followed] = []
@@ -132,8 +135,37 @@ public final class LibraryIndexer: Sendable {
     /// The folders to index first, replacing those asked for before: the folders on screen.
     public func prioritise(_ folders: [URL]) {
         let paths = Set(folders.map(Self.path))
+        reprioritise { $0.prioritised = paths }
+    }
+
+    /// Indexes `roots` first, every folder under them included, beside the folders on screen and until
+    /// `stopReadingFirst` is called with them as often: an import's root folders, which it waits for while
+    /// they're indexed. Their photos are read on the scheduler's on-screen lane, which Low Power Mode, heat
+    /// and other work on screen don't stop, and through their volume's readers before anything else but the
+    /// folders on screen.
+    public func readFirst(_ roots: [URL]) {
+        let paths = roots.map(Self.path)
+        reprioritise { state in
+            for path in paths {
+                state.first[path, default: 0] += 1
+            }
+        }
+    }
+
+    /// Stops reading `roots` first, once each has been stopped as often as it was asked for.
+    public func stopReadingFirst(_ roots: [URL]) {
+        let paths = roots.map(Self.path)
+        reprioritise { state in
+            for path in paths {
+                guard let count = state.first[path] else { continue }
+                state.first[path] = count > 1 ? count - 1 : nil
+            }
+        }
+    }
+
+    private func reprioritise(_ change: (inout State) -> Void) {
         let queues = state.withLock { state in
-            state.prioritised = paths
+            change(&state)
             state.queues.removeAll { $0.queue == nil }
             return state.queues.compactMap(\.queue)
         }
@@ -150,8 +182,38 @@ public final class LibraryIndexer: Sendable {
         }
     }
 
-    var prioritised: Set<String> {
-        state.withLock { $0.prioritised }
+    var prioritised: Priorities {
+        state.withLock { Priorities(folders: $0.prioritised, roots: Set($0.first.keys)) }
+    }
+
+    /// The folders indexed first: those on screen, and those under the roots read first.
+    struct Priorities: Sendable {
+        var folders: Set<String> = []
+        var roots: Set<String> = []
+
+        var isEmpty: Bool {
+            folders.isEmpty && roots.isEmpty
+        }
+
+        /// Whether `folder`'s photos are read first.
+        func contains(_ folder: String) -> Bool {
+            folders.contains(folder) || isUnderRoot(folder)
+        }
+
+        /// Whether `folder` is one of the roots read first, or under one.
+        func isUnderRoot(_ folder: String) -> Bool {
+            roots.contains { Self.holds($0, folder) }
+        }
+
+        /// Whether listing `path` leads to folders read first: it's one of them, or above one.
+        func leads(_ path: String) -> Bool {
+            folders.contains { Self.holds(path, $0) } || roots.contains { Self.holds($0, path) || Self.holds(path, $0) }
+        }
+
+        /// Whether `folder` is `path` or a folder under it.
+        static func holds(_ folder: String, _ path: String) -> Bool {
+            path == folder || path.hasPrefix(folder == "/" ? folder : folder + "/")
+        }
     }
 
     private func start(_ request: Request) -> AsyncStream<LibraryIndexerEvent> {

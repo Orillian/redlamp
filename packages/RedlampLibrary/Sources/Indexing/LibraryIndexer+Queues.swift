@@ -25,10 +25,10 @@ extension LibraryIndexer {
             var waiters: [CheckedContinuation<Item?, Never>] = []
         }
 
-        private let prioritised: @Sendable () -> Set<String>
+        private let prioritised: @Sendable () -> Priorities
         private let state = Mutex(State())
 
-        init(prioritised: @escaping @Sendable () -> Set<String>) {
+        init(prioritised: @escaping @Sendable () -> Priorities) {
             self.prioritised = prioritised
         }
 
@@ -103,10 +103,9 @@ extension LibraryIndexer {
 
         private func take(_ state: inout State) -> Item? {
             guard !state.closed || !state.waiting.isEmpty else { return nil }
-            let wanted = state.waiting.isEmpty ? [] : prioritised()
+            let wanted = state.waiting.isEmpty ? Priorities() : prioritised()
             let item = wanted.isEmpty ? state.waiting.popFirst()
-                : state.waiting.remove { item in wanted.contains { $0 == item.path || $0.hasPrefix(item.path + "/") } }
-                ?? state.waiting.popFirst()
+                : state.waiting.remove { wanted.leads($0.path) } ?? state.waiting.popFirst()
             if item != nil {
                 state.listing += 1
             }
@@ -114,9 +113,10 @@ extension LibraryIndexer {
         }
     }
 
-    /// The photos a run has yet to read, folder by folder: the folders asked for first, then the
-    /// newest, each folder's photos in Finder's order. While a listing on the way to a folder asked
-    /// for is waiting or under way, or a photo of one is being read, only the folders asked for are
+    /// The photos a run has yet to read, folder by folder: the folders asked for first, then those under
+    /// the roots read first, newest first, then the other folders, newest first, each folder's photos in
+    /// Finder's order. While a listing on the way to a folder asked for is waiting or under way, or a photo
+    /// of one is being read, only the folders asked for are
     /// read: the others' photos would otherwise be read, and their folders finished, before the
     /// folders asked for were, and their reads would slow those on a spinning disk or a share. Each
     /// photo handed out is `done` once its job has finished, whether it was read or not.
@@ -131,6 +131,8 @@ extension LibraryIndexer {
         private struct State {
             var folders: [String: Folder] = [:]
             var order = Heap<(path: String, modified: Date)> { $0.modified > $1.modified }
+            /// Of `order`, the folders under the roots read first.
+            var first = Heap<(path: String, modified: Date)> { $0.modified > $1.modified }
             var adding = true
             /// Listings on the way to folders asked for, not yet done.
             var holds = 0
@@ -145,10 +147,10 @@ extension LibraryIndexer {
             finished: [CheckedContinuation<PhotoJob?, Never>],
         )
 
-        private let prioritised: @Sendable () -> Set<String>
+        private let prioritised: @Sendable () -> Priorities
         private let state = Mutex(State())
 
-        init(prioritised: @escaping @Sendable () -> Set<String>) {
+        init(prioritised: @escaping @Sendable () -> Priorities) {
             self.prioritised = prioritised
         }
 
@@ -159,6 +161,9 @@ extension LibraryIndexer {
                 if state.folders[path] == nil {
                     state.folders[path] = Folder(path: path, modified: modified, jobs: jobs)
                     state.order.insert((path, modified))
+                    if prioritised().isUnderRoot(path) {
+                        state.first.insert((path, modified))
+                    }
                 } else {
                     state.folders[path]?.jobs += jobs
                 }
@@ -194,7 +199,14 @@ extension LibraryIndexer {
 
         /// The folders asked for changed: what they held back may go.
         func reprioritised() {
-            resume(state.withLock { hand(&$0) })
+            resume(state.withLock { state in
+                let wanted = prioritised()
+                state.first = Heap { $0.modified > $1.modified }
+                for folder in state.folders.values where wanted.isUnderRoot(folder.path) {
+                    state.first.insert((folder.path, folder.modified))
+                }
+                return hand(&state)
+            })
         }
 
         /// What's waiting, handed to the readers waiting for it; once nothing more will come, the
@@ -257,6 +269,7 @@ extension LibraryIndexer {
                 let dropped = state.folders.values.flatMap { $0.jobs[$0.next...] }
                 state.folders = [:]
                 state.order = Heap { $0.modified > $1.modified }
+                state.first = Heap { $0.modified > $1.modified }
                 defer { state.waiters = [] }
                 return (dropped, state.waiters)
             }
@@ -267,13 +280,21 @@ extension LibraryIndexer {
         }
 
         private func take(_ state: inout State) -> PhotoJob? {
-            let wanted = state.folders.isEmpty && state.reading.isEmpty ? [] : prioritised()
-            for path in wanted {
+            let wanted = state.folders.isEmpty && state.reading.isEmpty ? Priorities() : prioritised()
+            for path in wanted.folders {
                 if let job = takeJob(from: path, &state) {
                     return job
                 }
             }
-            guard state.holds == 0, !wanted.contains(where: { state.reading[$0] != nil }) else { return nil }
+            while let top = state.first.first {
+                if wanted.isUnderRoot(top.path), let job = takeJob(from: top.path, &state) {
+                    return job
+                }
+                _ = state.first.popFirst()
+            }
+            guard state.holds == 0, wanted.isEmpty || !state.reading.keys.contains(where: wanted.contains) else {
+                return nil
+            }
             while let top = state.order.first {
                 if let job = takeJob(from: top.path, &state) {
                     return job

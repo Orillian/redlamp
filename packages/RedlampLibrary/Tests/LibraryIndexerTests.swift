@@ -451,6 +451,87 @@ extension LibraryIndexerTests {
         #expect(indexed.count == sandbox.fixture.folders.count)
     }
 
+    @Test func `the roots read first are indexed first, every folder under them included`() async throws {
+        let sandbox = try await IndexerSandbox.make(.init(photos: 900, seed: 28, shapes: []))
+        defer { sandbox.remove() }
+        let folders = sandbox.fixture.folders.map(\.path)
+        func under(_ top: String) -> [String] {
+            folders.filter { $0 == top || $0.hasPrefix(top + "/") }
+        }
+        let top = try #require(Set(folders.compactMap { $0.split(separator: "/").first.map(String.init) }).sorted()
+            .first { under($0).count > 1 })
+        let indexer = LibraryIndexer(index: sandbox.index, configuration: .testing(batchSize: 50))
+        indexer.readFirst([sandbox.root.appending(path: top)])
+        let run = await IndexerRun.collect(indexer.index([sandbox.root]))
+        let indexed = run.indexedFolders
+        #expect(Set(indexed.prefix(under(top).count)) == Set(under(top).map(sandbox.path)), "\(top): \(indexed)")
+        #expect(indexed.count == folders.count)
+        #expect(run.failures.isEmpty, "\(run.failures)")
+    }
+
+    /// The folders with photos `indexer` indexes of `roots`, until they're all of `expected`, or `limit` passes.
+    static func indexed(
+        _ roots: [URL], by indexer: LibraryIndexer, until expected: Set<String>, within limit: Duration,
+    ) async -> Set<String> {
+        await withTaskGroup(of: Set<String>?.self) { group in
+            group.addTask {
+                var indexed = Set<String>()
+                for await event in indexer.index(roots) {
+                    if case let .folderIndexed(folder) = event, folder.inserted > 0 {
+                        indexed.insert(folder.path)
+                    }
+                    if indexed.isSuperset(of: expected) {
+                        break
+                    }
+                }
+                return indexed
+            }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? []
+        }
+    }
+
+    @Test func `the roots read first are indexed while background work waits, as in Low Power Mode`() async throws {
+        let sandbox = try await IndexerSandbox.make(.init(photos: 200, seed: 34, shapes: []))
+        defer { sandbox.remove() }
+        let expected = Set(sandbox.fixture.folders.map { sandbox.path($0.path) })
+        let scheduler = WorkScheduler(
+            widths: .init(onScreen: 4, lookAhead: 2, background: 4), canRunBackground: { false },
+        )
+        let waiting = LibraryIndexer(index: sandbox.index, scheduler: scheduler, configuration: .testing())
+        #expect(await Self.indexed([sandbox.root], by: waiting, until: expected, within: .seconds(1)).isEmpty)
+        let first = LibraryIndexer(index: sandbox.index, scheduler: scheduler, configuration: .testing())
+        first.readFirst([sandbox.root])
+        #expect(await Self.indexed([sandbox.root], by: first, until: expected, within: .seconds(60)) == expected)
+    }
+
+    @Test func `roots are read first until they're stopped as often as they were asked for`() async throws {
+        let folder = try TemporaryFolder()
+        let index = try await LibraryIndex.open(at: folder.url.appending(path: "Index.sqlite"), readers: 1)
+        defer { index.closeAndWait() }
+        let indexer = LibraryIndexer(index: index)
+        let root = URL(fileURLWithPath: "/Volumes/Photos/Catalog", isDirectory: true)
+        indexer.prioritise([URL(fileURLWithPath: "/Volumes/Photos/Shown")])
+        indexer.readFirst([root])
+        indexer.readFirst([root])
+        #expect(indexer.prioritised.contains("/Volumes/Photos/Catalog/2019/Trip"))
+        #expect(indexer.prioritised.contains("/Volumes/Photos/Shown"))
+        #expect(!indexer.prioritised.contains("/Volumes/Photos/Catalogue"))
+        #expect(indexer.prioritised.leads("/Volumes/Photos") && indexer.prioritised
+            .leads("/Volumes/Photos/Catalog/2019"))
+        indexer.stopReadingFirst([root])
+        #expect(indexer.prioritised.contains("/Volumes/Photos/Catalog"))
+        indexer.stopReadingFirst([root])
+        #expect(!indexer.prioritised.contains("/Volumes/Photos/Catalog") && indexer.prioritised.roots.isEmpty)
+        indexer.prioritise([])
+        #expect(indexer.prioritised.isEmpty)
+    }
+
     @Test func `a folder on screen the index has is compared before the walk reaches it`() async throws {
         let sandbox = try await IndexerSandbox.make(.init(photos: 300, seed: 30, shapes: [.deepTree]))
         defer { sandbox.remove() }
