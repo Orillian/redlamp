@@ -78,12 +78,13 @@ sections = [
 [[part]]
 number = "5"
 id = "looks"
-title = "Looks and Recipes"
+title = "Base Looks and Recipes"
 band = "blue"
-deck = "Give a photo a look in one click, from Redlamp's film simulations or your own recipes."
+deck = "Choose the photo's look first, from its camera profiles, Redlamp's looks, film stocks or your LUTs, then start the edit from a recipe or your own adjustments."
 sections = [
+  { id = "looks.base-looks", title = "The Base Looks panel" },
+  { id = "looks.film", title = "Film stocks and the Film Looks window" },
   { id = "looks.recipes", title = "Applying recipes" },
-  { id = "looks.film", title = "Film looks" },
   { id = "looks.making", title = "Making and sharing recipes" },
   { id = "looks.importing", title = "Importing presets and LUTs" },
 ]
