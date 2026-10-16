@@ -442,7 +442,9 @@ public final class LightroomImport: Sendable {
                     continue
                 }
                 guard entry.state == .finished else { continue }
-                _ = try await inTurn { [metadata] in try await metadata.undo(batch.id) }
+                _ = try await inTurn { [self, metadata] in
+                    try await metadata.run(leavingOpenPhoto(metadata.planUndo(batch.id)))
+                }
                 live?.namesChanged()
             }
         }
@@ -455,6 +457,26 @@ public final class LightroomImport: Sendable {
             throw LightroomImportError.partlyUndone(failed)
         }
         return record
+    }
+
+    /// `plan`, the Undo of one of the import's batches, with the edit it gave the photo open in the editor taken
+    /// back there instead, while that edit is as the import left it; one no longer open stays in the plan.
+    private func leavingOpenPhoto(_ plan: MetadataPlan) async -> MetadataPlan {
+        guard let editor, let open = await editor.open(),
+              let place = plan.batch.photos.firstIndex(where: { $0.path == open }),
+              let undo = plan.batch.photos[place].undo, let made = undo.sidecarAfter["recipe"],
+              made != undo.sidecarBefore["recipe"], let after = made.decoded(as: EditRecipe.self),
+              let before = undo.sidecarBefore["recipe"]?.decoded(as: EditRecipe.self)
+        else { return plan }
+        let had = Set((undo.sidecarBefore["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id))
+        let added = (undo.sidecarAfter["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id)
+        guard await editor.change(open, before, after, [], Set(added).subtracting(had)) != .notOpen else { return plan }
+        var batch = plan.batch
+        for key in MetadataBatch.developKeys {
+            batch.photos[place].undo?.sidecarBefore[key] = nil
+            batch.photos[place].undo?.sidecarAfter[key] = nil
+        }
+        return MetadataPlan(batch: batch)
     }
 
     /// Takes back an edit the import made in the editor, while the photo's edit is as the import left it: there,

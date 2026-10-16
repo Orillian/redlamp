@@ -168,7 +168,7 @@ final class LightroomImportModel {
             phase = .importing
             progress = LightroomImport.Progress(done: 0, total: plan.photoCount, part: 0, parts: 1)
             changed()
-            let importer = Self.importer(core)
+            let importer = Self.importer(core, editor: editor)
             let shown = Mutex<ContinuousClock.Instant?>(nil)
             let result = await Task.detached(priority: .userInitiated) { [stopping] () -> Result<
                 LightroomImport.Outcome, any Error,
@@ -197,11 +197,11 @@ final class LightroomImportModel {
 
     /// The library's import, each of its batches in the library's turn for changes, the photos it changes
     /// followed by other apps' metadata.
-    static func importer(_ core: LibraryCore) -> LightroomImport {
+    static func importer(_ core: LibraryCore, editor: EditorModel?) -> LightroomImport {
         LightroomImport(
             index: core.index, paths: core.paths, live: core.live,
             turn: { body in await core.change { await body() } },
-            changed: { ids in core.changed(ids) },
+            changed: { ids in core.changed(ids) }, editor: editor?.lightroomEditor,
         )
     }
 
@@ -316,7 +316,7 @@ final class LightroomImportModel {
         phase = .undoing
         problem = nil
         changed()
-        let importer = Self.importer(core)
+        let importer = Self.importer(core, editor: editor)
         work = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<
                 LightroomImportRecord,
@@ -347,7 +347,7 @@ final class LightroomImportModel {
 
     private func readLastImport() async {
         guard let core else { return }
-        let importer = Self.importer(core)
+        let importer = Self.importer(core, editor: editor)
         lastImport = await Task.detached { try? importer.lastImport() }.value
         changed()
     }

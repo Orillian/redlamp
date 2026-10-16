@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import RedlampDocument
+import RedlampEngineAPI
 import RedlampLibrary
 
 /// ⌘Z for an import from Lightroom Classic (LIB-29): an import that ends having changed photos goes on Undo as a
@@ -23,12 +25,46 @@ extension EditorModel {
     /// An import that ended, `record` as the library keeps it: on Undo, newest, ending every Redo, unless it changed
     /// nothing or is there already.
     func pushLightroomImport(_ record: LightroomImportRecord) {
-        guard !record.batches.isEmpty, !record.undone,
+        guard !(record.batches.isEmpty && (record.inEditor ?? []).isEmpty), !record.undone,
               !lightroomSteps.undo.contains(where: { $0.record == record.id }) else { return }
         let step = LightroomStep(record: record.id, photos: record.photos)
         step.turn = nextLibraryTurn()
         lightroomSteps.undo.append(step)
         endLibraryRedo()
+    }
+
+    /// The import's way to the photo open here (EDT-23): its edit is made as a step of its history, as Settings
+    /// Sync makes a batch's, never by its sidecar being written behind it.
+    var lightroomEditor: LightroomEditor {
+        LightroomEditor { [weak self] in
+            await self?.openPhotoPath
+        } change: { [weak self] path, recipe, over, adding, removing in
+            await self?.changeFromLightroom(path, recipe, over: over, adding: adding, removing: removing) ?? .notOpen
+        }
+    }
+
+    /// The path of the photo open here, or opening, as the index has it.
+    private var openPhotoPath: String? {
+        guard let url = opening ?? selection, isOpen(url) else { return nil }
+        let path = url.standardizedFileURL.path
+        return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+
+    /// The photo at `path` given `recipe` as a step titled as Undo Import's or the import's, while its edit is
+    /// `over` (nil: while it's unedited), and its snapshots changed.
+    private func changeFromLightroom(
+        _ path: String, _ next: EditRecipe, over: EditRecipe?, adding: [Snapshot], removing: Set<UUID>,
+    ) async -> LightroomEditor.Outcome {
+        let url = URL(fileURLWithPath: path)
+        await finishOpening(url)
+        guard let visit = currentVisit, visit.url.standardizedFileURL == url.standardizedFileURL else {
+            return isOpen(url) ? .left : .notOpen
+        }
+        guard !isReadOnly, over.map({ recipe == $0 }) ?? recipe.isPristine else { return .left }
+        let (before, had) = (recipe, snapshots)
+        commit(next, .paste, over == nil ? "Import from Lightroom Classic" : "Undo Import from Lightroom Classic")
+        changeSnapshots(adding: adding, removing: removing)
+        return .changed(before, had, recipe)
     }
 
     /// Whether an import from Lightroom Classic, or its Undo, is running: ⌘Z takes an import back once it's done.
@@ -46,7 +82,7 @@ extension EditorModel {
             window.model.undo(step.record)
             return true
         }
-        let importer = LightroomImportModel.importer(core)
+        let importer = LightroomImportModel.importer(core, editor: self)
         Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<
                 LightroomImportRecord,

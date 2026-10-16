@@ -1898,6 +1898,15 @@ public final class EditorModel {
 
     // MARK: - Snapshots
 
+    /// `adding` after the snapshots, and those with IDs in `removing` taken off, as an import from Lightroom Classic
+    /// brings and takes back the photo's snapshots (EDT-23).
+    func changeSnapshots(adding: [Snapshot], removing: Set<UUID>) {
+        guard !adding.isEmpty || snapshots.contains(where: { removing.contains($0.id) }) else { return }
+        snapshots.removeAll { removing.contains($0.id) }
+        snapshots += adding
+        scheduleSave()
+    }
+
     public func createSnapshot() {
         guard opening == nil else { return }
         let formatter = DateFormatter()
