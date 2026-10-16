@@ -186,7 +186,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Ratings, flags and colour labels | Yes | Done | | | | Saved with the photo's edit, shown in the grid, the loupe and the filmstrip |
 | Batch export | Yes | Done | | | EDT-16 | |
 | Batch rename | Yes | In progress | | P4 | LIB-25, LIB-26 | Rename Photos (F2): naming templates shared with importing, batch export and capture sessions, a live preview of every new name, and Undo; Move to Folder and Copy to Folder from the menus, photos dragged onto a folder (⌥ to copy), and Stop partway |
-| Open photos edited in Lightroom | Yes | In progress | | P4 | EDT-12 | Converts Lightroom's XMP sidecars once, and never writes them |
+| Open photos edited in Lightroom | Yes | In progress | | P4 | EDT-12 | Converts the edits in Lightroom's XMP sidecars, and in the XMP inside DNG, JPEG, TIFF and HEIC files, once: when you open the photo, or for a folder or selection with Convert Lightroom Edits…, with a report and Undo; raws use your own Adobe profiles where they're on your Mac; never writes Lightroom's XMP |
 | Bring a Lightroom Classic catalog's edits across | Yes (Lightroom's migration from Classic) | In progress | | P4 | EDT-23, EDT-33, EDT-34 | Each photo's develop settings, converted once with a report, and its virtual copies as versions, read without changing the catalog; its ratings, keywords and collections come across with the library; one window finds the catalog, its presets and your Adobe profiles, and edits render in those profiles when they're on your Mac |
 | Match Total Exposures | Yes (Classic) | Undecided | | | EDT-21 | |
 

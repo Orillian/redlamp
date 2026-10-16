@@ -55,7 +55,7 @@ A few looks carry develop settings (Exposure, Shadows, Clarity, the colour mixer
 
 ## Stand-ins
 
-By name: Adobe Color, Portrait, Landscape, Neutral, Vivid and Monochrome to Redlamp's look of that name; Adobe Standard to Redlamp Color; camera-matching and creative profiles by the words in their names (a B&W or Monochrome look to Monochrome, Neutral or Flat to Neutral, Vivid or Velvia to Vivid, Portrait or Astia to Portrait, Landscape to Landscape), else Redlamp Color. The Lightroom edits design maps names the same way, and EDT-33 uses this table.
+By name: Adobe Color, Portrait, Landscape, Neutral, Vivid and Monochrome to Redlamp's look of that name; Adobe Standard to Redlamp Color; camera-matching and creative profiles by the words in their names (a B&W or Monochrome look to Monochrome, Neutral or Flat to Neutral, Vivid or Velvia to Vivid, Portrait or Astia to Portrait, Landscape to Landscape), else Redlamp Color. The Lightroom edits converter shares only the six Adobe Raw looks' names with this table (`AdobeProfileStandIn.adobeRawLooks`, EDT-33); its camera-matching and creative words differ from these, so a profile missing at conversion can get another look than the stand-in a render picks (Camera Monotone, Natural and Muted, Camera Soft, the creative B&W looks, Fujifilm's simulations). Whether the two become one list is the owner's to decide.
 
 ## Tests
 
