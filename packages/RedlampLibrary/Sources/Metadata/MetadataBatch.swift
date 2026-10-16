@@ -26,25 +26,29 @@ struct MetadataBatch: JournalBatch, Hashable {
         var develop: Develop?
     }
 
-    /// An edit and its snapshots, as the sidecar writes them (`recipe` and items of `snapshots`). They're carried
-    /// among the photo's values under the sidecar's own keys, so the log and Undo take them as they take fields.
+    /// An edit and its snapshots, as the sidecar writes them (`recipe` and items of `snapshots`), and the versions it
+    /// brings beside them (items of `versions`, EDT-09). They're carried among the photo's values under the
+    /// sidecar's own keys, so the log and Undo take them as they take fields (`MetadataBatch+Versions`).
     struct Develop: Sendable, Hashable, Codable {
-        var recipe: JSONValue
-        var snapshots: [JSONValue]
-
-        /// The sidecar's `recipe` and `snapshots` once the batch is done, from `current`'s: the edit, and the
-        /// snapshots after those it has, while `unedited`; as they are otherwise, a photo edited in Redlamp
-        /// keeping its edit.
-        func applied(to current: MetadataValues, unedited: Bool) -> MetadataValues {
-            let recipe = current["recipe"] ?? .null
-            let snapshots = current["snapshots"] ?? .null
-            guard unedited else { return ["recipe": recipe, "snapshots": snapshots] }
-            return ["recipe": self.recipe, "snapshots": .array((snapshots.arrayValue ?? []) + self.snapshots)]
+        /// A version's ID, name and date.
+        struct Version: Sendable, Hashable, Codable {
+            var id: UUID
+            var name: String
+            var created: Date
         }
+
+        /// Nil when only versions come.
+        var recipe: JSONValue?
+        var snapshots: [JSONValue]
+        /// Versions the photo gets after those it has; nil in batches from before versions.
+        var versions: [JSONValue]?
+        /// The version the edit and its snapshots go in while the photo is edited, which takes the photo's metadata
+        /// as a new version does; nil: an edited photo keeps its edit, and this one is dropped.
+        var whileEdited: Version?
     }
 
     /// The sidecar's keys an edit takes, beside the metadata's.
-    static let developKeys: Set = ["recipe", "snapshots"]
+    static let developKeys: Set = ["recipe", "snapshots", "versions"]
 
     struct Undo: Sendable, Hashable, Codable {
         var sidecarBefore: MetadataValues
@@ -118,10 +122,10 @@ struct MetadataBatch: JournalBatch, Hashable {
     }
 
     /// What the photo's sidecar holds of the fields once the batch is done, from what it holds now;
-    /// `fallback` is what the index shows, for a field the sidecar holds none of, and `unedited` whether
-    /// its recipe holds no edit.
+    /// `fallback` is what the index shows, for a field the sidecar holds none of, and `sidecar` the whole
+    /// sidecar, for an edit the batch brings.
     func sidecarAfter(
-        _ photo: Photo, current: MetadataValues, fallback: MetadataValues, unedited: Bool = true,
+        _ photo: Photo, current: MetadataValues, fallback: MetadataValues, sidecar: Sidecar? = nil,
     ) -> MetadataValues {
         if let undo = photo.undo {
             return undone(current, before: undo.sidecarBefore, after: undo.sidecarAfter)
@@ -129,7 +133,13 @@ struct MetadataBatch: JournalBatch, Hashable {
         let fields = current.filter { !Self.developKeys.contains($0.key) }
         let after = PhotoMetadata.canonical((photo.edits ?? edit).applied(to: fields, fallback: fallback))
         guard let develop = photo.develop else { return after }
-        return after.merging(develop.applied(to: current, unedited: unedited)) { $1 }
+        return after.merging(develop.applied(
+            to: current,
+            of: sidecar ?? Sidecar(recipe: EditRecipe()),
+            fields: after,
+        )) {
+            $1
+        }
     }
 }
 

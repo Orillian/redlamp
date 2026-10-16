@@ -344,9 +344,7 @@ public final class LibraryMetadata: Sendable {
     ) -> (before: MetadataValues, after: MetadataValues) {
         let sidecar = sidecar ?? Sidecar(recipe: EditRecipe())
         let before = sidecar.values(batch.keys(of: photo))
-        let after = batch.sidecarAfter(
-            photo, current: before, fallback: photo.index, unedited: sidecar.recipe.isPristine,
-        )
+        let after = batch.sidecarAfter(photo, current: before, fallback: photo.index, sidecar: sidecar)
         return (before, after)
     }
 

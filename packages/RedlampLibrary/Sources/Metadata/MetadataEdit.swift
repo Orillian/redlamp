@@ -121,8 +121,8 @@ extension [String: FieldEdit] {
 
 /// `current` with what a batch made of `before` to give `after` taken back, field by field: a field it
 /// holds as the batch left it goes back; a list that changed since (of paths, or snapshots by their IDs)
-/// loses what the batch added and gets back what it took off; any other field that changed since stays as
-/// it is, an edit among them.
+/// loses what the batch added and gets back what it took off; versions that changed since are taken back
+/// one at a time (`undoneVersions`); any other field that changed since stays as it is, an edit among them.
 func undone(_ current: MetadataValues, before: MetadataValues, after: MetadataValues) -> MetadataValues {
     var result = current
     for key in Set(before.keys).union(after.keys) {
@@ -146,6 +146,8 @@ func undone(_ current: MetadataValues, before: MetadataValues, after: MetadataVa
             let given = Set(made.arrayValue?.map(id) ?? [])
             list += (was.arrayValue ?? []).filter { !given.contains(id($0)) && !kept.contains(id($0)) }
             result[key] = .array(list)
+        } else if case .array = now, key == "versions" {
+            result[key] = undoneVersions(now, was: was, made: made)
         }
     }
     return result
@@ -190,8 +192,8 @@ extension PhotoMetadata {
 }
 
 extension Sidecar {
-    /// What it holds of `keys`, `.null` for each field it doesn't: its metadata's fields, and its edit and
-    /// snapshots (`recipe`, `snapshots`) as it writes them.
+    /// What it holds of `keys`, `.null` for each field it doesn't: its metadata's fields, and its edit,
+    /// snapshots and versions (`recipe`, `snapshots`, `versions`) as it writes them.
     func values(_ keys: some Sequence<String>) -> MetadataValues {
         let keys = Set(keys)
         var values = PhotoMetadata.canonical(
@@ -202,6 +204,9 @@ extension Sidecar {
         }
         if keys.contains("snapshots") {
             values["snapshots"] = JSONValue(sidecar: snapshots) ?? .null
+        }
+        if keys.contains("versions") {
+            values["versions"] = versionsValue
         }
         return values
     }
@@ -221,6 +226,10 @@ extension Sidecar {
         if let snapshots = values["snapshots"] {
             guard let list = snapshots == .null ? [] : snapshots.decoded(as: [Snapshot].self) else { return nil }
             sidecar.snapshots = list
+        }
+        if let versions = values["versions"] {
+            guard let changed = sidecar.setting(versions: versions) else { return nil }
+            sidecar = changed
         }
         return sidecar
     }
