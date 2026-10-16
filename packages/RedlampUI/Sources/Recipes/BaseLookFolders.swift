@@ -75,7 +75,16 @@ struct LookFolder {
 enum BaseLookFolders {
     static let favorites = "Favorites"
     static let inThisPhoto = "In This Photo"
+    static let adobeRaw = "Adobe Raw"
+    static let cameraMatching = "Camera Matching"
     static let creative = "Creative"
+
+    /// The folders that come with Redlamp or with Adobe's camera profiles, which can be hidden (UX-55), in the
+    /// panel's order. Favorites, In This Photo, the photographer's own profiles, Fujifilm LUTs and Imported can't.
+    static let builtIn = [
+        adobeRaw, cameraMatching, creative, BaseLookGroups.redlamp, BaseLookGroups.filmStyles, FilmLookCatalog.group,
+        RecipeLibrary.firmwareGroup, BaseLookGroups.reproduction,
+    ]
 
     /// Favorites, In This Photo, the photo's camera profiles, Redlamp, Film Styles, Film Stocks,
     /// Firmware Model, Fujifilm LUTs, Imported and Reproduction, each only when it has looks and isn't

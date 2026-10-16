@@ -146,6 +146,15 @@ public final class RecipeCatalog {
         return library.hiddenFolders(in: panel)
     }
 
+    /// The folders `panel` can hide, in its order (UX-55): Recipes' bundled groups, and Base Looks' Adobe camera
+    /// profile folders and Redlamp's own.
+    public func builtInFolders(in panel: RecipePanel) -> [String] {
+        switch panel {
+        case .recipes: library.bundledGroups
+        case .baseLooks: BaseLookFolders.builtIn
+        }
+    }
+
     /// The file Redlamp keeps a recipe made here or installed in, for Show in Finder.
     public func file(of recipe: Recipe) -> URL? {
         library.file(of: recipe)
@@ -222,6 +231,11 @@ public final class RecipeCatalog {
     /// Moves a recipe made here or installed to the Trash; its looks keep rendering in their edits.
     public func moveToTrash(_ recipe: Recipe) {
         perform { try library.moveToTrash(recipe) }
+    }
+
+    /// Lists an installed look no recipe uses nowhere, keeping its file for the edits that use it.
+    public func unlist(_ look: BaseLookReference) {
+        perform { try library.unlist(look) }
     }
 
     /// Hides one of a panel's built-in folders, or shows it again.

@@ -7,8 +7,8 @@ import RedlampRecipes
 /// A row of a sidebar list: a recipe group, a recipe or one of the other rows.
 final class SidebarNode: NSObject {
     enum Kind {
-        /// A folder of recipes or looks, with how many it holds.
-        case group(String, count: Int? = nil)
+        /// A folder of recipes or looks in its panel, with how many it holds.
+        case group(String, count: Int? = nil, panel: RecipePanel)
         case recipe(Recipe)
         /// A look in the Base Looks panel, highlighted while it's the photo's; a search result shows
         /// its folder.

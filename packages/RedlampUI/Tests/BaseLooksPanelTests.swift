@@ -182,7 +182,7 @@ struct BaseLooksPanelTests {
             return outline.frameOfCell(atColumn: 0, row: row)
         }
         let redlamp = try frame {
-            if case let .group(name, _) = $0 {
+            if case let .group(name, _, _) = $0 {
                 name == BaseLookGroups.redlamp
             } else {
                 false

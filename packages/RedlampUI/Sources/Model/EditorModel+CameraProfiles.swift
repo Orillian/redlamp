@@ -69,8 +69,8 @@ public extension EditorModel {
         var sections: [(name: String, looks: [CameraProfileLook])] = []
         for look in cameraProfileLooks {
             let name = switch look.group {
-            case .adobeRaw: "Adobe Raw"
-            case .cameraMatching: "Camera Matching"
+            case .adobeRaw: BaseLookFolders.adobeRaw
+            case .cameraMatching: BaseLookFolders.cameraMatching
             case let .creative(group): group
             case let .own(group): group ?? "Your Profiles"
             }

@@ -200,6 +200,18 @@ public enum RecipeActions {
         return (panel.urls, choice.space)
     }
 
+    /// Selects the file Redlamp keeps a recipe in, in Finder: an imported look's is the recipe that holds it,
+    /// and a Lightroom preset's the recipe made from it.
+    public static func showInFinder(_ recipe: Recipe, model: EditorModel) {
+        guard let file = model.recipes.file(of: recipe) else { return }
+        reveal([file])
+    }
+
+    /// Shows files in Finder; the regression suite notes them instead.
+    @_spi(Harness) public static var reveal: @MainActor ([URL]) -> Void = { urls in
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
     /// Saves a self-contained `.redrecipe` for sharing.
     public static func export(_ recipe: Recipe, model: EditorModel) {
         let panel = NSSavePanel()

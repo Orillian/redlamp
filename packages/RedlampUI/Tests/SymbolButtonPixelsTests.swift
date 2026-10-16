@@ -528,7 +528,8 @@ struct SymbolButtonPixelsTests {
 
     /// A row each look shows: a recipe group in the panels, Marked in the Library's source list.
     private func row(in look: SidebarOutlineView.Look) -> SidebarNode {
-        look == .panel ? SidebarNode(.group("Favorites")) : SidebarNode(.source(SourceRow(source: .marked, count: 12)))
+        look == .panel ? SidebarNode(.group("Favorites", panel: .recipes))
+            : SidebarNode(.source(SourceRow(source: .marked, count: 12)))
     }
 
     @Test func `a row's icon and chevron are their own shape, on whole pixels, at 1x and 2x, in both looks`() throws {

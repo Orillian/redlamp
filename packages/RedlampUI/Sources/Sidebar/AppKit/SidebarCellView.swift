@@ -123,9 +123,10 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         addSubview(label)
         var symbol: String?
         switch node.kind {
-        case let .group(name, count):
+        case let .group(name, count, panel):
             label.stringValue = name
             label.textColor = Palette.secondaryLabel.nsColor
+            setAccessibilityIdentifier("\(panel.rawValue).folder.\(name)")
             showChevron()
             symbol = "folder"
             if let count {
@@ -134,6 +135,7 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         case let .recipe(recipe):
             label.stringValue = recipe.name
             label.textColor = Palette.label.nsColor
+            setAccessibilityIdentifier("recipes.recipe.\(recipe.id)")
             // A recipe that sets a Base Look shows it, its look's icon or the Base Looks symbol (DEC-104).
             let look = Self.lookSet(by: recipe, model: model)
             toolTip = [
@@ -499,7 +501,7 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
             })
             if model.recipes.isUserRecipe(recipe) {
                 menu.addItem(.separator())
-                menu.addItem(NSMenuItem(title: "Delete Recipe") { [model] in model.recipes.delete(recipe) })
+                Self.fileItems(recipe, model: model).forEach(menu.addItem)
             }
         case let .look(entry, _, _):
             let favorite = model.recipes.isFavorite(id: entry.favoriteID)
@@ -511,8 +513,18 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 menu.addItem(item)
                 menu.delegate = self
             }
-        case let .group(name, _) where name == FilmLookCatalog.group:
-            return Self.filmStocksMenu(model: model)
+            if let recipe = entry.recipe, model.recipes.isUserRecipe(recipe) {
+                menu.addItem(.separator())
+                Self.fileItems(recipe, model: model).forEach(menu.addItem)
+            } else if entry.recipe == nil, entry.folder == RecipeLibrary.importedLooksFolder {
+                // Its file in Looks/ is named by its content, so there's nothing to show in Finder.
+                menu.addItem(.separator())
+                menu.addItem(NSMenuItem(title: "Remove from Base Looks") { [model] in
+                    model.recipes.unlist(entry.look)
+                })
+            }
+        case let .group(name, _, panel):
+            return Self.groupMenu(name, in: panel, model: model)
         case let .folder(row):
             return Self.folderMenu(row, model: model, anchor: self)
         case let .source(row):
@@ -525,6 +537,22 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         return menu
     }
 
+    /// A folder's menu in Base Looks or Recipes: Film Stocks' Open Film Looks, then Hide for a built-in
+    /// folder (UX-55). Nil for a folder with neither, such as Favorites or one of your lists.
+    static func groupMenu(_ name: String, in panel: RecipePanel, model: EditorModel) -> NSMenu? {
+        let menu = panel == .baseLooks && name == FilmLookCatalog.group ? filmStocksMenu(model: model) : NSMenu()
+        if model.recipes.builtInFolders(in: panel).contains(name),
+           !model.recipes.hiddenFolders(in: panel).contains(name) {
+            if !menu.items.isEmpty {
+                menu.addItem(.separator())
+            }
+            menu.addItem(NSMenuItem(title: "Hide “\(name)”") { [model] in
+                model.recipes.setHidden(name, in: panel, true)
+            })
+        }
+        return menu.items.isEmpty ? nil : menu
+    }
+
     /// The Film Stocks folder's menu: Open Film Looks.
     static func filmStocksMenu(model: EditorModel) -> NSMenu {
         let menu = NSMenu()
@@ -533,6 +561,15 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         menu.autoenablesItems = false
         menu.addItem(item)
         return menu
+    }
+
+    /// Show in Finder and Move to Trash, for a recipe made here or installed: Show in Finder selects the file
+    /// Redlamp keeps it in, and Move to Trash moves every version of it there (UX-55).
+    static func fileItems(_ recipe: Recipe, model: EditorModel) -> [NSMenuItem] {
+        [
+            NSMenuItem(title: "Show in Finder") { [model] in RecipeActions.showInFinder(recipe, model: model) },
+            NSMenuItem(title: "Move to Trash") { [model] in model.recipes.moveToTrash(recipe) },
+        ]
     }
 
     /// Apply Base Look Only, for a recipe with a Base Look: sets its look, without a film stock's grain,

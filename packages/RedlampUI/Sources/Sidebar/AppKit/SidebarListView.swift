@@ -98,11 +98,11 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
 
         baseLooks.content = { [weak self] in self?.lookRows() ?? [] }
         baseLooks.isExpanded = { [weak self] node in
-            guard case let .group(name, _) = node.kind else { return false }
+            guard case let .group(name, _, _) = node.kind else { return false }
             return self?.expandedLookFolders.contains(name) ?? false
         }
         baseLooks.expansionChanged = { [weak self] node, expanded in
-            guard case let .group(name, _) = node.kind else { return }
+            guard case let .group(name, _, _) = node.kind else { return }
             if expanded {
                 self?.expandedLookFolders.insert(name)
             } else {
@@ -196,7 +196,7 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
 
     private func lookNode(_ folder: LookFolder, look: BaseLookReference) -> SidebarNode {
         SidebarNode(
-            .group(folder.name, count: folder.count),
+            .group(folder.name, count: folder.count, panel: .baseLooks),
             children: folder.subfolders.map { lookNode($0, look: look) }
                 + folder.entries.map { SidebarNode(.look($0, current: $0.isLook(of: look), showsFolder: false)) },
         )
@@ -214,7 +214,7 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
         if trimmed.isEmpty {
             rows += model.recipes.sections.map { section in
                 SidebarNode(
-                    .group(section.name, count: section.recipes.count),
+                    .group(section.name, count: section.recipes.count, panel: .recipes),
                     children: section.recipes.map { SidebarNode(.recipe($0)) },
                 )
             }
@@ -245,7 +245,7 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
 
     private func isExpanded(_ node: SidebarNode) -> Bool {
         switch node.kind {
-        case let .group(name, _): expandedGroups.contains(name)
+        case let .group(name, _, _): expandedGroups.contains(name)
         case let .session(session): expandedSessions.contains(session.id)
         default: false
         }
@@ -253,7 +253,7 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
 
     private func setExpanded(_ node: SidebarNode, _ expanded: Bool) {
         switch node.kind {
-        case let .group(name, _):
+        case let .group(name, _, _):
             if expanded {
                 expandedGroups.insert(name)
             } else {
