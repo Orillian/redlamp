@@ -24,6 +24,8 @@ public struct VolumeProfile: Sendable, Hashable {
     /// What the volume says it is, in place of what the volume underneath says; nil keeps that.
     public var isLocal: Bool?
     public var isInternal: Bool?
+    /// Whether it says its disk spins, in place of what the volume underneath says; nil keeps that.
+    public var isRotational: Bool?
     public var disconnect: Disconnect?
 
     /// When the volume goes away, and what its operations do then.
@@ -54,7 +56,7 @@ public struct VolumeProfile: Sendable, Hashable {
     public init(
         name: String, latency: Duration = .zero, jitter: Double = 0, bandwidth: Double? = nil,
         maxInFlight: Int? = nil, seek: Duration = .zero, nearSeek: Duration? = nil, isLocal: Bool? = nil,
-        isInternal: Bool? = nil, disconnect: Disconnect? = nil,
+        isInternal: Bool? = nil, isRotational: Bool? = nil, disconnect: Disconnect? = nil,
     ) {
         self.name = name
         self.latency = latency
@@ -65,6 +67,7 @@ public struct VolumeProfile: Sendable, Hashable {
         self.nearSeek = nearSeek
         self.isLocal = isLocal
         self.isInternal = isInternal
+        self.isRotational = isRotational
         self.disconnect = disconnect
     }
 
@@ -74,13 +77,14 @@ public struct VolumeProfile: Sendable, Hashable {
     /// One head: operations take turns, and moving to another file costs a seek.
     public static let spinning = VolumeProfile(
         name: "spinning", bandwidth: 160_000_000, maxInFlight: 1, seek: .milliseconds(8), isInternal: false,
+        isRotational: true,
     )
 
     /// A 2.5-inch USB hard disk at 5,400 rpm (LIB-53): about 12 ms to seek and 5.5 ms of rotation to
     /// another place, a few milliseconds within a folder, about 100 MB a second, one operation at a time.
     public static let usb25 = VolumeProfile(
         name: "usb-2.5", bandwidth: 100_000_000, maxInFlight: 1, seek: .microseconds(17500),
-        nearSeek: .milliseconds(6), isInternal: false,
+        nearSeek: .milliseconds(6), isInternal: false, isRotational: true,
     )
 
     public static let nas = VolumeProfile(

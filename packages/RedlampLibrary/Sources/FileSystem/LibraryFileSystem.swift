@@ -36,12 +36,16 @@ public struct VolumeInfo: Sendable, Hashable {
     public let isLocal: Bool
     /// On the Mac's internal bus rather than an external drive.
     public let isInternal: Bool
+    /// On a disk that spins, with one head (true), or on solid state (false); nil when the device doesn't say,
+    /// as some USB bridges don't, or can't be asked.
+    public let isRotational: Bool?
 
-    public init(uuid: String?, name: String?, isLocal: Bool, isInternal: Bool) {
+    public init(uuid: String?, name: String?, isLocal: Bool, isInternal: Bool, isRotational: Bool? = nil) {
         self.uuid = uuid
         self.name = name
         self.isLocal = isLocal
         self.isInternal = isInternal
+        self.isRotational = isRotational
     }
 }
 

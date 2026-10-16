@@ -56,7 +56,8 @@ public final class VolumeIO: Sendable {
     private let watchdog = DispatchQueue(label: "app.redlamp.library.volume-io", qos: .utility)
 
     /// Readers for `volume` with the width its kind starts at: a network volume's 4, an internal
-    /// disk's performance cores, an external disk's 2; adapting within 1 to the performance cores.
+    /// disk's performance cores, an external disk's 2, a disk that spins 1; adapting within 1 to the
+    /// performance cores, but on a disk that spins, whose one head another reader would only queue behind.
     public init(
         volume: VolumeInfo, fileSystem: any LibraryFileSystem, probe: URL, timeout: Duration = .seconds(10),
         probeIntervals: ClosedRange<Duration> = .seconds(1) ... .seconds(30),
@@ -69,7 +70,7 @@ public final class VolumeIO: Sendable {
         self.timeout = timeout
         self.probeIntervals = probeIntervals
         self.clock = clock
-        let maximum = max(maximumWidth, 1)
+        let maximum = volume.isRotational == true ? 1 : max(maximumWidth, 1)
         state = Mutex(State(
             concurrency: VolumeConcurrency(initial: Self.initialWidth(for: volume), range: 1 ... maximum),
             probeDelay: probeIntervals.lowerBound,
@@ -79,6 +80,7 @@ public final class VolumeIO: Sendable {
     /// The width a volume's readers start at, by what it is.
     public static func initialWidth(for volume: VolumeInfo) -> Int {
         guard volume.isLocal else { return 4 }
+        guard volume.isRotational != true else { return 1 }
         return volume.isInternal ? CoreCounts.performance : 2
     }
 

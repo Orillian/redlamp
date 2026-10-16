@@ -1,5 +1,7 @@
 import Foundation
+import IOKit
 import RedlampEngineAPI
+import Synchronization
 
 /// The Mac's own file system: a listing carries its entries' attributes (asked for up front, so
 /// they come back with the listing itself), and a read is one `pread` on a descriptor opened for
@@ -67,12 +69,55 @@ public struct LocalFileSystem: LibraryFileSystem {
 
     public func volume(of url: URL) throws -> VolumeInfo {
         let values = try URL(fileURLWithPath: url.path).resourceValues(forKeys: Self.volumeKeys)
+        let isLocal = values.volumeIsLocal ?? false
         return VolumeInfo(
             uuid: values.volumeUUIDString,
             name: values.volumeName,
-            isLocal: values.volumeIsLocal ?? false,
+            isLocal: isLocal,
             isInternal: values.volumeIsInternal ?? false,
+            isRotational: isLocal ? Self.isRotational(url) : nil,
         )
+    }
+
+    /// Whether the device the volume holding `url` is on spins: what the "Medium Type" of its "Device
+    /// Characteristics" says, "Rotational" or "Solid State", found from the volume's BSD device (statfs's
+    /// `f_mntfromname`) up the I/O Registry's parents. Nil when it says neither, or the registry can't be asked.
+    static func isRotational(_ url: URL) -> Bool? {
+        var info = statfs()
+        guard statfs(url.path, &info) == 0 else { return nil }
+        let device = withUnsafeBytes(of: info.f_mntfromname) { bytes in
+            String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        guard device.hasPrefix("/dev/") else { return nil }
+        // A BSD name can be another disk's once its own is unplugged; a mount's file system ID is its own.
+        let mount = "\(device) \(info.f_fsid.val.0) \(info.f_fsid.val.1)"
+        if let known = rotational.withLock({ $0[mount] }) {
+            return known
+        }
+        let found = mediumType(ofBSDName: String(device.dropFirst(5))).flatMap { medium -> Bool? in
+            switch medium {
+            case "Rotational": true
+            case "Solid State": false
+            default: nil
+            }
+        }
+        rotational.withLock { $0[mount] = .some(found) }
+        return found
+    }
+
+    /// What each mount's device said, by its device and file system ID.
+    private static let rotational = Mutex<[String: Bool?]>([:])
+
+    private static func mediumType(ofBSDName name: String) -> String? {
+        guard let matching = IOBSDNameMatching(kIOMainPortDefault, 0, name) else { return nil }
+        let media = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+        guard media != 0 else { return nil }
+        defer { IOObjectRelease(media) }
+        let found = IORegistryEntrySearchCFProperty(
+            media, kIOServicePlane, "Device Characteristics" as CFString, kCFAllocatorDefault,
+            IOOptionBits(kIORegistryIterateRecursively | kIORegistryIterateParents),
+        )
+        return (found as? [String: Any])?["Medium Type"] as? String
     }
 }
 

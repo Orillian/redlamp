@@ -348,7 +348,11 @@ extension LibraryIndexer {
 
         static func kind(of volume: VolumeInfo) -> VolumeRecord.Kind {
             guard volume.isLocal else { return .network }
-            return volume.isInternal ? .ssd : .unknown
+            switch volume.isRotational {
+            case true?: return .spinning
+            case false?: return .ssd
+            case nil: return volume.isInternal ? .ssd : .unknown
+            }
         }
 
         /// A root whose volume can't be found: the photos already indexed on it are marked offline.

@@ -49,11 +49,13 @@ public final class SimulatedFileSystem: LibraryFileSystem {
             return VolumeInfo(
                 uuid: mounted.uuid, name: mounted.name,
                 isLocal: profile.isLocal ?? info.isLocal, isInternal: profile.isInternal ?? info.isInternal,
+                isRotational: profile.isRotational ?? info.isRotational,
             )
         }
         return VolumeInfo(
             uuid: info.uuid, name: info.name,
             isLocal: profile.isLocal ?? info.isLocal, isInternal: profile.isInternal ?? info.isInternal,
+            isRotational: profile.isRotational ?? info.isRotational,
         )
     }
 
