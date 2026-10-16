@@ -310,7 +310,7 @@ enum LibraryQueryValues {
             try numeric(text, for: field)
         case .date:
             try dates(text)
-        case .trait, .flag, .label, .marked, .edited, .missing, .offline, .unreadable:
+        case .trait, .flag, .label, .marked, .edited, .version, .missing, .offline, .unreadable:
             try word(text, for: field)
         case .has, .orientation, .ext:
             try attribute(text, for: field)
@@ -387,7 +387,7 @@ enum LibraryQueryValues {
                 return .label(nil)
             }
             return ColorLabel(rawValue: lowered).map { .label($0) } ?? .text(text)
-        case .marked, .edited, .missing, .offline, .unreadable:
+        case .marked, .edited, .version, .missing, .offline, .unreadable:
             switch lowered {
             case "yes": return .bool(true)
             case "no": return .bool(false)

@@ -175,6 +175,8 @@ indirect enum QueryPlan: Sendable, Hashable {
             return yes ? .leaf(.bit(Packed.marked)) : .not(.leaf(.bit(Packed.marked)))
         case let (.edited, .bool(yes)):
             return yes ? .leaf(.bit(Packed.edited)) : .not(.leaf(.bit(Packed.edited)))
+        case let (.version, .bool(yes)):
+            return yes ? .leaf(.bit(Packed.version)) : .not(.leaf(.bit(Packed.version)))
         case let (.missing, .bool(yes)), let (.offline, .bool(yes)), let (.unreadable, .bool(yes)):
             let state: PhotoRecord.State = field == .missing ? .missing : field == .offline ? .offline : .unreadable
             let leaf = QueryPlan.leaf(.state(UInt8(state.rawValue)))

@@ -1,8 +1,8 @@
 import Foundation
 import RedlampDocument
 
-/// The packed `UInt16` of each row: rating (3 bits), flag (2), label (3), marked, edited, and the
-/// details `has` asks about.
+/// The packed `UInt16` of each row: rating (3 bits), flag (2), label (3), marked, edited, the
+/// details `has` asks about (5), and whether it's a version (LIB-48).
 enum Packed {
     static let flagShift: UInt16 = 3
     static let labelShift: UInt16 = 5
@@ -10,6 +10,7 @@ enum Packed {
     static let edited: UInt16 = 1 << 9
     /// `Details` from here up.
     static let detailsShift: UInt16 = 10
+    static let version: UInt16 = 1 << 15
 
     static func pack(_ row: ColumnStore.Row) -> UInt16 {
         let hot = row.hot
@@ -18,6 +19,7 @@ enum Packed {
         packed |= UInt16(clamping: max(0, min(7, hot.label))) << labelShift
         packed |= hot.marked ? marked : 0
         packed |= hot.edited ? edited : 0
+        packed |= row.isVersion ? version : 0
         return packed | (row.details.rawValue & 0x1F) << detailsShift
     }
 

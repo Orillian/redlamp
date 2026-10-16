@@ -42,12 +42,14 @@ public struct ColumnStore: Sendable {
         /// The widest f-number of its lens at its focal length, and its focal length in 35 mm terms.
         public var widestAperture: Double?
         public var focal35: Double?
+        /// A version of its file's edit (LIB-48), Lightroom Classic's virtual copy, rather than the file's own photo.
+        public var isVersion: Bool
 
         public init(
             _ hot: HotColumns, shutter: Double? = nil, details: Details = [], sidecarModified: Double? = nil,
             size: Int64 = 0, modified: Double? = nil, state: PhotoRecord.State = [], creator: String? = nil,
             copyright: String? = nil, location: PhotoLocation? = nil, customLabel: String? = nil, width: Int? = nil,
-            height: Int? = nil, widestAperture: Double? = nil, focal35: Double? = nil,
+            height: Int? = nil, widestAperture: Double? = nil, focal35: Double? = nil, isVersion: Bool = false,
         ) {
             self.hot = hot
             self.shutter = shutter
@@ -64,6 +66,7 @@ public struct ColumnStore: Sendable {
             self.height = height
             self.widestAperture = widestAperture
             self.focal35 = focal35
+            self.isVersion = isVersion
         }
     }
 

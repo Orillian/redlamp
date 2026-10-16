@@ -72,20 +72,20 @@ extension IndexQueries {
         return try statement.first { $0.string(at: 0) } ?? nil
     }
 
-    /// What `columnRow` reads, columns 0 to 35.
+    /// What `columnRow` reads, columns 0 to 36.
     private static var columnRowSQL: String {
         """
         p.id, p.folder, p.captured, p.camera, p.lens, p.rating, p.flag, p.label, p.marked, p.edited, p.iso, \
         p.aperture, p.focal, p.kind, p.name, p.shutter, \(ColumnEncoding.locationSQL), \(ColumnEncoding.titleSQL), \
         \(ColumnEncoding.captionSQL), \(ColumnEncoding.xmpSQL), p.sidecar_modified, p.size, p.modified, p.state, \
         p.creator, p.copyright, p.sublocation, p.city, p.province, p.country, p.country_code, p.custom_label, \
-        p.width, p.height, p.widest_aperture, p.focal35
+        p.width, p.height, p.widest_aperture, p.focal35, p.version != ''
         """
     }
 
     /// The columns `columnRowSQL` selects.
     private static var columnRowCount: Int32 {
-        36
+        37
     }
 
     /// The photo's row as `columnRowSQL` selects it, without keywords.
@@ -117,6 +117,7 @@ extension IndexQueries {
         columns.height = row.optionalInt(at: 33)
         columns.widestAperture = row.optionalDouble(at: 34)
         columns.focal35 = row.optionalDouble(at: 35)
+        columns.isVersion = row.bool(at: 36)
         return columns
     }
 }

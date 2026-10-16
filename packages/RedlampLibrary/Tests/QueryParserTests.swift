@@ -81,6 +81,7 @@ struct QueryParserTests {
             ("missing:yes", Self.filter(.missing, .equal, .bool(true))),
             ("offline:No", Self.filter(.offline, .equal, .bool(false))),
             ("unreadable:yes", Self.filter(.unreadable, .equal, .bool(true))),
+            ("Version:No", Self.filter(.version, .equal, .bool(false))),
             ("creator:\"Ana Silva\"", Self.filter(.creator, .equal, .text("Ana Silva"))),
             ("copyright:©", Self.filter(.copyright, .equal, .text("©"))),
             ("sublocation:Alfama", Self.filter(.sublocation, .equal, .text("Alfama"))),

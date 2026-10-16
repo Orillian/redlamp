@@ -52,6 +52,9 @@ public indirect enum LibraryQuery: Sendable, Hashable {
         case marked
         /// `yes` or `no`.
         case edited
+        /// `yes` or `no`: a version of its file's edit (LIB-48), as Lightroom Classic's Copy Status tells a virtual
+        /// copy from its master photo.
+        case version
         /// A keyword or a path (`keyword`); a parent matches its children.
         case keyword = "kw"
         /// A substring of the camera's name.

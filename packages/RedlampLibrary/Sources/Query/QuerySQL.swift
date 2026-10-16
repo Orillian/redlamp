@@ -110,6 +110,8 @@ struct QuerySQL: Sendable, Hashable {
                 return yes ? "(p.marked != 0)" : "(p.marked = 0)"
             case let (.edited, .bool(yes)):
                 return yes ? "(p.edited != 0)" : "(p.edited = 0)"
+            case let (.version, .bool(yes)):
+                return yes ? "(p.version != '')" : "(p.version = '')"
             case let (.missing, .bool(yes)), let (.offline, .bool(yes)), let (.unreadable, .bool(yes)):
                 let state: PhotoRecord.State = field == .missing ? .missing : field == .offline ? .offline : .unreadable
                 return "((\(ColumnEncoding.stateSQL) & \(state.rawValue)) \(yes ? "!=" : "=") 0)"

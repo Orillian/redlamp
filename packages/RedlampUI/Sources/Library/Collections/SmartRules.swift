@@ -255,6 +255,7 @@ public extension SmartRules {
         case .label: "Label"
         case .marked: "Marked"
         case .edited: "Edited"
+        case .version: "Version"
         case .keyword: "Keyword"
         case .camera: "Camera"
         case .lens: "Lens"
