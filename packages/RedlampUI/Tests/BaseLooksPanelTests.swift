@@ -131,7 +131,8 @@ struct BaseLooksPanelTests {
 
     // MARK: - The panel
 
-    @Test func `the panel names the photo's look with its Amount, and highlights it in its open folder`() async throws {
+    @Test func `the panel shows the photo's look by highlighting it in its open folder, and leaves its Amount to Basic`(
+    ) async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try await openEditor()
         let portra = try look("Portra 400", in: model)
@@ -147,11 +148,10 @@ struct BaseLooksPanelTests {
                 }
             }
         }
-        guard case let .lookAmount(shown) = rows(list.baseLooks).first else {
-            Issue.record("Base Looks doesn't start with the photo's look")
+        guard case .group = rows(list.baseLooks).first else {
+            Issue.record("Base Looks doesn't start with its folders")
             return
         }
-        #expect(shown.id == portra.look.id)
         #expect(list.expandedLookFolders.contains(FilmLookCatalog.group), "the photo's look's folder opens")
         #expect(current() == ["Portra 400"])
 
@@ -159,16 +159,13 @@ struct BaseLooksPanelTests {
         try await eventually { current() == ["Redlamp Vivid"] }
         #expect(current() == ["Redlamp Vivid"], "the panel follows a look chosen elsewhere")
 
+        let shown = list.baseLooks.view(atColumn: 0, row: 0, makeIfNecessary: false)
         model.setBaseLookAmount(150)
-        let cell = try #require(list.baseLooks.view(atColumn: 0, row: 0, makeIfNecessary: false) as? SidebarCellView)
-        let slider = try #require(cell.subviews.compactMap { $0 as? NSSlider }.first)
-        try await eventually { slider.doubleValue == 150 }
-        #expect(slider.doubleValue == 150, "Basic's Amount moves the panel's")
-        slider.doubleValue = 80
-        slider.sendAction(slider.action, to: slider.target)
-        model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText)
-        #expect(model.baseLook.amount == 80)
-        #expect(model.history.last?.name.hasPrefix("Base Look Amount") == true)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(
+            list.baseLooks.view(atColumn: 0, row: 0, makeIfNecessary: false) === shown,
+            "Basic's Amount doesn't list the looks again",
+        )
     }
 
     @Test func `choosing a film stock keeps the vignette, and a look that isn't a film takes its grain away`(

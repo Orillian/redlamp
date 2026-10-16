@@ -144,18 +144,14 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
             createSnapshot.isEnabled = model.info != nil
             clearHistory.isEnabled = model.history.count > 1 || !model.earlierSessions.isEmpty
         }
-        // The photo's look is read without observing it, so Base Looks doesn't reload while another
-        // slider moves: this lists it again when it's another look, and moves the Amount row's slider
-        // when only its Amount changed.
+        // The photo's look is read without observing it, so Base Looks doesn't reload while a slider
+        // moves: this lists it again when it's another look, to highlight that look's row.
         lookTracker = Tracker { [weak self] in
             guard let self else { return }
             let look = model.baseLook
             guard let listed = listedLook, baseLooks.window != nil else { return }
             if !look.isSameLook(as: listed) || look.name != listed.name {
                 baseLooks.refresh()
-            } else if look.amount != listed.amount {
-                listedLook = look
-                (baseLooks.view(atColumn: 0, row: 0, makeIfNecessary: false) as? SidebarCellView)?.showLookAmount(look)
             }
         }
     }
@@ -172,7 +168,7 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
 
     // MARK: - Rows
 
-    /// The photo's look with its Amount, then the folders, or what a search found as one list.
+    /// The folders, the photo's look highlighted in its folder, or what a search found as one list.
     private func lookRows() -> [SidebarNode] {
         _ = model.recipes.revision
         _ = model.cameraProfileLooks
@@ -187,17 +183,15 @@ final class SidebarListView: PanelColumnScrollView, NSSearchFieldDelegate {
                 expandedLookFolders.formUnion(BaseLookFolders.path(to: look, in: folders))
             }
         }
-        var rows: [SidebarNode] = photo == nil ? [] : [SidebarNode(.lookAmount(look))]
         let trimmed = lookQuery.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            return rows + folders.map { lookNode($0, look: look) }
+            return folders.map { lookNode($0, look: look) }
         }
         let found = BaseLookFolders.search(trimmed, in: folders)
-        rows += found.map { SidebarNode(.look($0, current: $0.isLook(of: look), showsFolder: true)) }
-        if found.isEmpty {
-            rows.append(SidebarNode(.placeholder("No matching Base Looks")))
+        guard !found.isEmpty else {
+            return [SidebarNode(.placeholder("No matching Base Looks"))]
         }
-        return rows
+        return found.map { SidebarNode(.look($0, current: $0.isLook(of: look), showsFolder: true)) }
     }
 
     private func lookNode(_ folder: LookFolder, look: BaseLookReference) -> SidebarNode {

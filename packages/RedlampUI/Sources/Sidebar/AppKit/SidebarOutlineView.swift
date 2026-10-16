@@ -13,8 +13,6 @@ final class SidebarNode: NSObject {
         /// A look in the Base Looks panel, highlighted while it's the photo's; a search result shows
         /// its folder.
         case look(LookEntry, current: Bool, showsFolder: Bool)
-        /// The photo's Base Look and its Amount slider, at the top of the Base Looks panel.
-        case lookAmount(BaseLookReference)
         /// The last applied recipe's Amount slider.
         case recipeAmount(String, Double)
         case placeholder(String)

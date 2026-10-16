@@ -174,32 +174,6 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
             } else if entry.kinds.contains(.lut) {
                 trailing = SymbolImageView("cube", pointSize: 9, color: Palette.tertiaryLabel.nsColor)
             }
-        case let .lookAmount(look):
-            showLookAmount(look)
-            label.font = .systemFont(ofSize: 11)
-            label.textColor = Palette.secondaryLabel.nsColor
-            if let image = LookIconImage.image(for: look.id, points: Layout.lookIconSize) {
-                showLookIcon(image)
-            }
-            let slider = NSSlider(value: look.amount, minValue: 0, maxValue: 200, target: nil, action: nil)
-            slider.controlSize = .small
-            slider.isContinuous = true
-            slider.setAccessibilityLabel("Base Look Amount")
-            slider.setAccessibilityIdentifier("baseLooks.amount")
-            let model = model
-            let label = label
-            slider.onAction { slider in
-                if model.editStart == nil {
-                    model.beginEdit()
-                }
-                model.setBaseLookAmount(slider.doubleValue)
-                label.stringValue = Self.amountText(look.name, slider.doubleValue)
-                if NSApp.currentEvent?.type == .leftMouseUp {
-                    model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText)
-                }
-            }
-            amountSlider = slider
-            addSubview(slider)
         case let .recipeAmount(title, amount):
             label.stringValue = "Amount  \(Int(amount.rounded()))"
             label.font = .systemFont(ofSize: 11)
@@ -493,21 +467,6 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         var named = look
         named.name = model.recipes.package(for: look)?.name ?? look.name
         return named
-    }
-
-    /// The Base Looks panel's first row: the photo's look and its Amount, kept in step as Basic's
-    /// Amount changes it.
-    func showLookAmount(_ look: BaseLookReference) {
-        guard case .lookAmount = node.kind else { return }
-        label.stringValue = Self.amountText(look.name, look.amount)
-        toolTip = "Strength of “\(look.name)”, as Basic's Base Look Amount: 0 turns the look off, 200 doubles it."
-        if let amountSlider, amountSlider.doubleValue != look.amount {
-            amountSlider.doubleValue = look.amount
-        }
-    }
-
-    private static func amountText(_ name: String, _ amount: Double) -> String {
-        "\(name)  \(Int(amount.rounded()))"
     }
 
     func contextMenu() -> NSMenu? {
