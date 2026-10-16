@@ -33,15 +33,20 @@ struct LightroomCatalogReader {
     func read(url: URL) throws -> LightroomCatalog {
         var catalog = try files(url: url)
         var notes = catalog.notes
+        var images = catalog.photos + catalog.virtualCopies.map(\.photo)
         var places: [Int64: Int] = [:]
-        for (place, photo) in catalog.photos.enumerated() {
-            places[photo.id] = place
+        for (place, image) in images.enumerated() {
+            places[image.id] = place
         }
-        try readIPTC(into: &catalog.photos, places: places, notes: &notes)
-        try readXMP(into: &catalog.photos, places: places, notes: &notes)
-        try readGPS(into: &catalog.photos, places: places)
+        try readIPTC(into: &images, places: places, notes: &notes)
+        try readXMP(into: &images, places: places, notes: &notes)
+        try readGPS(into: &images, places: places)
         catalog.keywords = try keywords(notes: &notes)
-        try readKeywordLinks(into: &catalog.photos, places: places, keywords: catalog.keywords)
+        try readKeywordLinks(into: &images, places: places, keywords: catalog.keywords)
+        catalog.photos = Array(images.prefix(catalog.photos.count))
+        for place in catalog.virtualCopies.indices {
+            catalog.virtualCopies[place].photo = images[catalog.photos.count + place]
+        }
         catalog.collections = try collections(notes: &notes)
         catalog.stacks = try stackCount()
         catalog.edited = try editedCount()
@@ -102,7 +107,7 @@ struct LightroomCatalogReader {
         return folders
     }
 
-    /// Every photo with its file, and the virtual copies apart.
+    /// Every photo with its file, and the virtual copies apart, each with its own rating, pick and label.
     private func photos(notes: inout [String]) throws -> ([LightroomCatalog.Photo], [LightroomCatalog.VirtualCopy]) {
         let images = try columns("Adobe_images")
         let files = try columns("AgLibraryFile")
@@ -125,13 +130,7 @@ struct LightroomCatalogReader {
         var copies: [LightroomCatalog.VirtualCopy] = []
         try statement.forEachRow { row in
             let id = row.int64(at: 0)
-            if let master = row.optionalInt64(at: 7), master != id {
-                copies.append(LightroomCatalog.VirtualCopy(id: id, master: master, name: row.string(at: 8)))
-                return
-            }
             var photo = LightroomCatalog.Photo(id: id, folder: row.int64(at: 1), name: row.string(at: 2) ?? "")
-            photo.sidecarExtensions = (row.string(at: 3) ?? "").split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             photo.rating = min(max(Int(row.optionalDouble(at: 4)?.rounded() ?? 0), 0), 5)
             switch row.optionalDouble(at: 5).map({ Int($0.rounded()) }) {
             case 1: photo.flag = .pick
@@ -139,6 +138,14 @@ struct LightroomCatalogReader {
             default: break
             }
             photo.label = row.string(at: 6).flatMap(Self.text)
+            if let master = row.optionalInt64(at: 7), master != id {
+                copies.append(LightroomCatalog.VirtualCopy(
+                    id: id, master: master, name: row.string(at: 8), photo: photo,
+                ))
+                return
+            }
+            photo.sidecarExtensions = (row.string(at: 3) ?? "").split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             photos.append(photo)
         }
         return (photos, copies)

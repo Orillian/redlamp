@@ -6,7 +6,8 @@ import SQLite3
 /// (LIB-29, DEC-51), read from the catalog's own tables: its root folders and folders, its photos and
 /// their ratings, picks, labels, keywords, IPTC fields and collections, its keywords with their hierarchy,
 /// synonyms and export options, and its collections, sets and smart collections with their rules' text.
-/// Virtual copies, edits, stacks and the places Lightroom's map gave photos are counted for the report.
+/// Its virtual copies are read with their own fields and keywords, as its photos are (EDT-23). Edits, stacks and
+/// the places Lightroom's map gave photos are counted for the report.
 ///
 /// The catalog is opened read-only and immutable and never written. One Lightroom has open (its
 /// `.lrcat.lock` beside it) is refused; one with a write-ahead log beside it, which Lightroom leaves
@@ -57,6 +58,9 @@ public struct LightroomCatalog: Sendable {
         public var id: Int64
         public var master: Int64
         public var name: String?
+        /// The copy as an image of its own: its rating, pick, label, keywords and IPTC fields, which Lightroom keeps
+        /// apart from its photo's and which are read as a photo's are. Its folder and name are its photo's file's.
+        public var photo: Photo
     }
 
     public struct Keyword: Sendable, Hashable {

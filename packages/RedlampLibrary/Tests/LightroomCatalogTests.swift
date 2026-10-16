@@ -17,7 +17,9 @@ struct LightroomCatalogTests {
         let first = try maker.photo(june, "IMG_0001.CR3", rating: 5, pick: 1, label: "Red", sidecars: "JPG")
         let second = try maker.photo(june, "IMG_0002.CR3", rating: 2, pick: -1, label: "Approved")
         let third = try maker.photo(july, "IMG_0003.JPG", label: "Client")
-        try maker.photo(july, "IMG_0003.JPG", master: third, copyName: "Black and white")
+        let copy = try maker.photo(
+            july, "IMG_0003.JPG", rating: 4, pick: 1, label: "Green", master: third, copyName: "Black and white",
+        )
         let places = try maker.keyword("Places")
         let portugal = try maker.keyword("Portugal", parent: places)
         let lisbon = try maker.keyword("Lisbon", parent: portugal, synonyms: ["Lisboa"])
@@ -26,6 +28,7 @@ struct LightroomCatalogTests {
         try maker.tag(first, lisbon)
         try maker.tag(first, ana)
         try maker.tag(second, portugal)
+        try maker.tag(copy, ana)
         let clients = try maker.collection("Clients", kind: LightroomCatalogMaker.setKind)
         try maker.collection("Acme", parent: clients, photos: [first, second])
         try maker.collection("Quick Collection", system: true, photos: [third])
@@ -37,6 +40,8 @@ struct LightroomCatalogTests {
             country: "Portugal", city: "Lisbon", sublocation: "Alfama", countryCode: "PT",
         ))
         try maker.xmp(second, title: "Compressed", compressed: true)
+        try maker.iptc(copy, caption: "Tram in black and white")
+        try maker.xmp(copy, title: "Line 28, mono")
         try maker.gps(second)
         try maker.stack([first, second])
         try maker.edited(first)
@@ -57,7 +62,12 @@ struct LightroomCatalogTests {
         #expect(second.rating == 2 && second.flag == .reject && second.label == "Approved")
         #expect(third.rating == 0 && third.flag == nil && third.label == "Client")
         #expect(catalog.virtualCopies.map(\.name) == ["Black and white"])
-        #expect(catalog.virtualCopies.first?.master == third.id)
+        let copy = try #require(catalog.virtualCopies.first)
+        #expect(copy.master == third.id && copy.photo.id == copy.id && copy.photo.name == "IMG_0003.JPG")
+        #expect(copy.photo.rating == 4 && copy.photo.flag == .pick && copy.photo.label == "Green", "its own")
+        #expect(copy.photo.caption == "Tram in black and white" && copy.photo.title == "Line 28, mono")
+        #expect(copy.photo.keywords.map { catalog.keywords[$0]?.name } == ["Ana"])
+        #expect(third.caption == nil && third.title == nil && third.keywords.isEmpty, "the photo keeps its own")
 
         #expect(first.caption == "Trams at dusk" && first.copyright == "© Ana Sousa" && first.title == "Line 28")
         #expect(first.creator == "Ana Sousa; Rui")
