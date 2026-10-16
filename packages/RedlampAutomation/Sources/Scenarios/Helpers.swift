@@ -109,11 +109,20 @@
                 ]
                 let start = starts[before % starts.count], offset = CGVector(dx: 60, dy: -80)
                 try drag(.canvas, from: start, by: offset)
-                if (try? wait("the drag to end the drawing", timeout: 2) { !$0.isDrawingShape }) == nil {
+                /// A drag AppKit left holding, its release not taken, leaves the drawing open: the mouse's next release
+                /// ends it, or its next click.
+                func ended() -> Bool {
+                    (try? wait("the drag to end the drawing", timeout: 2) { !$0.isDrawingShape }) != nil
+                }
+                if !ended() {
                     let canvas = try frame(of: .canvas)
                     let end = CGPoint(x: start.x + offset.dx / canvas.width, y: start.y - offset.dy / canvas.height)
                     try releaseAgain(on: .canvas, at: end)
                     recorder.write("note", ["releaseSentAgain": "the \(kind) gradient's drag"])
+                    if !ended() {
+                        try click(.canvas, at: end)
+                        recorder.write("note", ["clickedAgain": "the \(kind) gradient's drag"])
+                    }
                 }
                 covered(.mask(kind), via: .mouse)
             } else {

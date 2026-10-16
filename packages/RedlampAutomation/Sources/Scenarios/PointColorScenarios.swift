@@ -41,6 +41,11 @@
             needsFocus: true,
         ) { app in
             try app.openWorking()
+            // The tool opened by its button, as masking.gradients does: under the driver, a gradient drawn with the
+            // tool
+            // its key has just opened from the Edit tool begins and never ends.
+            try app.click(.tool(.masking))
+            try app.wait("the Masking tool") { $0.activeTool == .masking }
             try app.drawGradient(.radial)
             try app.main { $0.pointColorEyedropperActive = true }
             if try app.focus() {
