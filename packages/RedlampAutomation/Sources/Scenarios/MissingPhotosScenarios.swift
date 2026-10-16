@@ -73,14 +73,18 @@
                 model.select(scratch.photo("C.jpg"))
                 EditorModel.answerLocate(with: found.appending(path: "C.jpg"), relinkingOthers: true)
             }
+            /// Missing Photos holds the photos of earlier scenarios' deleted folders too, so B, C and D are counted.
+            @MainActor func marked() -> [String] {
+                ["B.jpg", "C.jpg", "D.jpg"].filter { app.model.healthProposals.isMarked(scratch.photo($0)) }
+            }
             do {
                 try app.wait("Locate… offered for C, its finding read", timeout: 20) { model in
-                    model.canPerform(.locateMissingPhoto) && model.healthProposals.marked == 3
+                    model.canPerform(.locateMissingPhoto) && marked().count == 3
                 }
             } catch {
                 let state = try app.main { model in
-                    "Locate… \(model.canPerform(.locateMissingPhoto) ? "offered" : "not offered"), "
-                        + "\(model.healthProposals.marked) marked, reading \(model.healthProposals.isReading), "
+                    "Locate… \(model.canPerform(.locateMissingPhoto) ? "offered" : "not offered"), marked "
+                        + "\(marked()) of \(model.healthProposals.marked), reading \(model.healthProposals.isReading), "
                         + "selection \(model.selection?.lastPathComponent ?? "none"), shown \(shown())"
                 }
                 throw ScenarioFailure("\(error) (\(state))")

@@ -179,6 +179,11 @@ public final class HealthProposals {
         marks.count
     }
 
+    /// Whether the photo at `url` has a mark in the check shown.
+    @_spi(Harness) public func isMarked(_ url: URL) -> Bool {
+        mark(for: url) != nil
+    }
+
     private func read() {
         guard let model, let core = model.library.service?.core, case let .health(kind)? = shown else { return }
         guard !reading else {
