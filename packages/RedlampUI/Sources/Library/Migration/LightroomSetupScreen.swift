@@ -63,6 +63,7 @@ final class LightroomSetupScreen: NSObject {
     private(set) var presetsImport: PresetsImport?
     private var finding: Task<Void, Never>?
     private var findsAgain = false
+    private var lastLooked: ContinuousClock.Instant?
     private var sections: [Part: Section] = [:]
     /// The catalog's report and import, the window's other screen.
     private(set) var catalogScreen: NSView?
@@ -153,6 +154,7 @@ final class LightroomSetupScreen: NSObject {
             return
         }
         let locations = looksIn
+        lastLooked = .now
         finding = Task { [weak self] in
             let found = await Task.detached(priority: .userInitiated) { LightroomSetup.find(locations) }.value
             guard let self else { return }
@@ -166,6 +168,12 @@ final class LightroomSetupScreen: NSObject {
                 find()
             }
         }
+    }
+
+    /// Looks again unless it looked under a second ago, as when the window opens and then becomes key.
+    func findUnlessJustFound() {
+        guard finding == nil, lastLooked.map({ .now - $0 > .seconds(1) }) ?? true else { return }
+        find()
     }
 
     /// What the report's model says of the catalog shown here while it reads, imports or takes an import back.
@@ -535,7 +543,7 @@ public extension LightroomWindowController {
     /// or put lens profiles in the folder it opened.
     @objc func windowDidBecomeKey(_: Notification) {
         if setup.screen == .setup {
-            setup.find()
+            setup.findUnlessJustFound()
         }
     }
 }

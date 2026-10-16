@@ -1,13 +1,14 @@
 #if DEBUG || REDLAMP_PROFILING
     import AppKit
     import RedlampDocument
+    @_spi(Harness) import RedlampEngineAPI
     @_spi(Harness) import RedlampLibrary
     @_spi(Harness) import RedlampUI
 
     /// Lightroom Classic catalogs (LIB-29), from a catalog the run makes of photos of its own: never one Lightroom
     /// made, and never the run's working folder.
     enum LightroomScenarios {
-        static let all: [Scenario] = [importCatalog, importEdits, allowAccess]
+        static let all: [Scenario] = [importCatalog, importEdits, allowAccess, setup]
 
         static let importEdits = Scenario(
             "library.lightroom-edits",
@@ -274,6 +275,163 @@
                 }
             }
             return nil
+        }
+    }
+
+    /// The window's first screen (EDT-34), in a home the run makes of synthetic files only: Lightroom Classic's
+    /// startup preferences naming the run's catalog, two presets and a profile in Camera Raw's Settings folder, a
+    /// camera profile and a lens profile in the photographer's Camera Raw folder, and one of each in a Camera Raw
+    /// folder of the run's own in place of the one Lightroom installs.
+    extension LightroomScenarios {
+        static let setup = Scenario(
+            "library.lightroom-setup",
+            "File › Import from Lightroom Classic… opens on what it found of Lightroom Classic in a home of the run's "
+                + "own: the catalog Lightroom last used, the presets in Camera Raw's Settings folder and the camera and "
+                + "lens profiles, read where they are; Import brings the presets in as recipes with their report, and "
+                + "the catalog's Import… goes on to its report",
+            claims: [.action(.importFromLightroom)],
+        ) { app in
+            let scratch = try SourcesScratch(
+                app, photos: ["Shoot/LR_0001.jpg", "Shoot/LR_0002.jpg", "Shoot/LR_0003.jpg"],
+            )
+            let tag = String(scratch.folder.lastPathComponent.suffix(8))
+            let catalog = try LightroomScratchCatalog.make(of: scratch.folder, tag: tag)
+            let base = app.scratch.appending(path: "lightroom-home-\(tag)", directoryHint: .isDirectory)
+            let locations = LightroomSetup.Locations(
+                home: base.appending(path: "Home", directoryHint: .isDirectory),
+                cameraRaw: base.appending(
+                    path: "Library/Application Support/Adobe/CameraRaw",
+                    directoryHint: .isDirectory,
+                ),
+                lensProfiles: base.appending(path: "Lens Profiles", directoryHint: .isDirectory),
+            )
+            try makeHome(locations, catalog: catalog, tag: tag)
+            defer {
+                try? app.main { model in
+                    LightroomWindowController.current?.close()
+                    LightroomWindowController.setupLocations = nil
+                    for recipe in model.recipes.all where recipe.name.hasSuffix(tag) {
+                        model.recipes.delete(recipe)
+                    }
+                }
+                scratch.remove(app)
+                try? FileManager.default.removeItem(at: catalog.deletingLastPathComponent())
+                try? FileManager.default.removeItem(at: base)
+            }
+            try app.main { model in
+                LightroomWindowController.setupLocations = locations
+                model.showLibrary(.grid)
+            }
+            try app.choose(.importFromLightroom)
+            try app.wait("the Lightroom Classic window", timeout: 30) { _ in
+                LightroomWindowController.current?.window?.isVisible == true
+            }
+            try app.wait("what the first screen found", timeout: 30) { _ in
+                LightroomWindowController.current?.setupFound != nil
+            }
+            let parts = ["catalog", "presets", "camera-profiles", "lens-profiles"]
+            let shown = try app.inLightroomWindow { window in
+                (window.isShowingSetup, parts.map { window.setupLine("lightroom.setup.\($0).found")?.text ?? "" })
+            }
+            try app.expect(shown.0, "the window opens on what it found")
+            try app.expect(shown.1 == [
+                "Lightroom Catalog.lrcat, the catalog Lightroom Classic last used",
+                "2 presets in Camera Raw's Settings folder",
+                "4 camera profiles: 2 where Lightroom Classic and Camera Raw install them and 2 in your Camera Raw folder",
+                "2 lens profiles: 1 in Camera Raw's lens profiles and 1 in your Camera Raw lens profiles",
+            ], "what the first screen says it found: \(shown.1)")
+            let shots = app.runDirectory.appending(path: "shots", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: shots, withIntermediateDirectories: true)
+            try app.main { _ in
+                guard let window = LightroomWindowController.current?.window else { return }
+                Snapshot.capture(window, to: shots.appending(path: "lightroom-setup.png"))
+            }
+
+            try app.clickInLightroomWindow("lightroom.setup.presets.import")
+            try app.wait("the presets imported", timeout: 60) { _ in
+                LightroomWindowController.current?.presetsImported != nil
+            }
+            let names = try app.main { model in Set(model.recipes.all.filter { $0.group == "Lightroom" }.map(\.name)) }
+            try app.expect(
+                names.isSuperset(of: ["Warm \(tag)", "Cool \(tag)"]), "the presets as recipes: \(names.sorted())",
+            )
+            try app.wait("the presets' report over the window", timeout: 10) { _ in
+                LightroomWindowController.current?.window?.attachedSheet != nil
+            }
+            // Return is the report's OK.
+            try app.main { _ in
+                _ = try LightroomWindowController.current?.window?.attachedSheet?
+                    .performKeyEquivalent(with: Keyboard.event(KeyCombo(.character("\r"))))
+            }
+            try app.wait("the presets' report closed", timeout: 10) { _ in
+                LightroomWindowController.current?.window?.attachedSheet == nil
+            }
+
+            try app.clickInLightroomWindow("lightroom.setup.catalog.import")
+            try app.wait("the catalog's report", timeout: 60) { _ in
+                LightroomWindowController.current?.isReported == true
+            }
+            let photos = try app.inLightroomWindow { $0.report?.photos }
+            try app.expect(photos == 3, "the catalog's report: \(String(describing: photos)) photos")
+            try app.clickInLightroomWindow("lightroom.back")
+            try app.wait("the first screen again") { _ in LightroomWindowController.current?.isShowingSetup == true }
+            app.covered(.action(.importFromLightroom), via: .menu)
+        }
+
+        /// The home's synthetic files: Lightroom Classic's startup preferences naming `catalog`, then presets and
+        /// profiles, each named with `tag`.
+        private static func makeHome(_ locations: LightroomSetup.Locations, catalog: URL, tag: String) throws {
+            func write(_ data: Data, _ url: URL) throws {
+                try FileManager.default.createDirectory(
+                    at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                )
+                try data.write(to: url)
+            }
+            func lua(_ text: String) -> String {
+                text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            }
+            let table = "recentLibraries = {\n\t\"\(lua(catalog.path))\",\n}\n"
+            let preferences = "prefs = {\n\tlibraryToLoad20 = \"\(lua(catalog.path))\",\n\trecentLibraries20 = \""
+                + lua(table).replacingOccurrences(of: "\n", with: "\\\n") + "\",\n}\n"
+            try write(Data(preferences.utf8), locations.home.appending(
+                path: "Library/Application Support/Adobe/Lightroom/Preferences/"
+                    + "Lightroom Classic CC 7 Startup Preferences.agprefs",
+            ))
+            for name in ["Warm", "Cool"] {
+                try write(Data(preset("\(name) \(tag)").utf8), locations.settings.appending(path: "\(name) \(tag).xmp"))
+            }
+            let look = SyntheticCameraProfiles.xmpLook(name: "Look \(tag)")
+            let dcp = SyntheticCameraProfiles.dcp(
+                name: "Profile \(tag)", camera: "SONY ILCE-7M3",
+                colorMatrices: [[0.7, -0.1, -0.05, -0.4, 1.2, 0.2, -0.1, 0.2, 0.6]], illuminants: [21],
+            )
+            let lens = Data(LensProfileScenarios.profile(
+                lens: "Lens \(tag)",
+                prettyName: "Lens \(tag)",
+                focalLength: 50,
+            )
+            .utf8)
+            try write(look, locations.settings.appending(path: "Profiles/Look \(tag).xmp"))
+            try write(dcp, locations.userCameraRaw.appending(path: "CameraProfiles/Profile \(tag).dcp"))
+            try write(lens, locations.userCameraRaw.appending(path: "LensProfiles/Lens \(tag).lcp"))
+            try write(look, locations.cameraRaw.appending(path: "Settings/Adobe/Profiles/Adobe Raw/Look \(tag).xmp"))
+            try write(dcp, locations.cameraRaw.appending(path: "CameraProfiles/Adobe Standard/Profile \(tag).dcp"))
+            try write(lens, locations.cameraRaw.appending(path: "LensProfiles/1.0/Scenario/Lens \(tag).lcp"))
+        }
+
+        /// A develop preset as Lightroom Classic writes one, made up.
+        private static func preset(_ name: String) -> String {
+            """
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+             <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+              <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+               crs:PresetType="Normal" crs:UUID="\(UUID().uuidString)" crs:Version="15.0" crs:ProcessVersion="11.0"
+               crs:Exposure2012="+0.50" crs:Contrast2012="+10">
+               <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">\(name)</rdf:li></rdf:Alt></crs:Name>
+              </rdf:Description>
+             </rdf:RDF>
+            </x:xmpmeta>
+            """
         }
     }
 #endif
