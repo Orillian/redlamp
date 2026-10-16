@@ -214,8 +214,19 @@
         private func finish() {
             let menu = (try? MainThread.run { Menus.allTitles() }) ?? []
             recorder.writeCoverage(menuItems: menu)
-            let failing = (try? app.main { $0.photosFailingToSave.map(\.path) }) ?? []
-            recorder.write("launch-end", ["footprintMB": Memory.footprint(), "failingToSave": failing])
+            // Quitting asks about edits that can't be saved, which nobody answers in a run. Those of photos a scenario
+            // deleted with its scratch folder go with them, as Quit Anyway would leave them; any other stops the quit,
+            // which the supervisor reports with them.
+            try? app.wait("the saves asked for", timeout: 10) { !$0.isSaving }
+            let (gone, failing) = (try? app.main { model -> ([String], [String]) in
+                let photos = model.photosFailingToSave
+                let gone = photos.filter { !FileManager.default.fileExists(atPath: $0.path) }
+                model.forgetFailedSaves(of: gone)
+                return (gone.map(\.path), photos.filter { !gone.contains($0) }.map(\.path))
+            }) ?? ([], [])
+            recorder.write("launch-end", [
+                "footprintMB": Memory.footprint(), "failingToSave": failing, "goneWithTheirFolders": gone,
+            ])
             watchdog.stop()
             MainThread.post { NSApp.terminate(nil) }
         }

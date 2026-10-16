@@ -62,6 +62,29 @@ extension EditorModel {
         Set(failedSaves.keys).union(saves.failedPhotos).sorted { $0.path < $1.path }
     }
 
+    /// Whether a save has been asked for that hasn't finished.
+    @_spi(Harness) public var isSaving: Bool {
+        !saves.pending().isEmpty
+    }
+
+    /// Lets go of the failed saves of `photos`, which are gone: the regression suite deletes folders of its own, and
+    /// their photos' edits go with them, as Quit Anyway would leave them.
+    @_spi(Harness) public func forgetFailedSaves(of photos: [URL]) {
+        let gone = Set(photos)
+        guard !gone.isEmpty else { return }
+        for url in gone {
+            failedSaves[url] = nil
+        }
+        saves.forgetFailures(of: gone)
+        if let url = saveError?.url, gone.contains(url) {
+            saveError = failedSaves.values.first?.error
+        }
+        if failedSaves.isEmpty {
+            saveRetry.task?.cancel()
+            saveRetry = (nil, .seconds(1))
+        }
+    }
+
     /// The photos under `folder` with a save that hasn't finished or that failed.
     @_spi(Harness) public func unsavedPhotos(under folder: URL) -> [URL] {
         let prefix = folder.standardizedFileURL.path + "/"

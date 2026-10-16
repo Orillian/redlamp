@@ -103,6 +103,11 @@ final class SaveQueue: @unchecked Sendable {
         lock.withLock { failing }
     }
 
+    /// Stops counting `photos` among those whose last save failed.
+    func forgetFailures(of photos: Set<URL>) {
+        lock.withLock { failing.subtract(photos) }
+    }
+
     /// Whether a save asked for `url` hasn't finished.
     func isPending(_ url: URL) -> Bool {
         lock.withLock { unfinished[url] != nil }
