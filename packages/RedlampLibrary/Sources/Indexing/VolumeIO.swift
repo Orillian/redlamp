@@ -469,10 +469,11 @@ extension VolumeIO {
                 }
                 return pump()
             }
+            // Unreachable first, so a caller its timeout wakes finds the volume so.
+            markUnreachable()
             for job in expired {
                 job.fail(LibraryFileSystemError.timedOut(job.url))
             }
-            markUnreachable()
             pump()
         }
     }
