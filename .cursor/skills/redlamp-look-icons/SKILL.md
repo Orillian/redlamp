@@ -1,6 +1,6 @@
 ---
 name: redlamp-look-icons
-description: Designs and produces the small icons that identify Redlamp's looks beside their names, in the Recipes panel, the Base Look menu and browser, and the Film Looks window. Covers film stock icons (FilmIcon, a canister, slide mount, cinema reel or paper print in the stock's colours with its speed) and new kinds of icon that convey a look's mood where it isn't a film stock. Renders a review sheet at the sizes the app shows them, in the dark and light themes, and regenerates the icons the README and redlamp.app show. Use when adding or re-tuning a film stock, giving a recipe or look an icon, designing a new kind of look icon, or when the user mentions film icons, look icons, recipe icons or the icon sheet.
+description: Designs and produces the small icons that identify Redlamp's looks beside their names, in the Base Looks panel, on the rows of recipes that set a look, in the Base Look menu and browser, and in the Film Looks window. Covers film stock icons (FilmIcon, a canister, slide mount, cinema reel or paper print in the stock's colours with its speed) and new kinds of icon that convey a look's mood where it isn't a film stock. Renders a review sheet at the sizes the app shows them, in the dark and light themes, and regenerates the icons the README and redlamp.app show. Use when adding or re-tuning a film stock, giving a recipe or look an icon, designing a new kind of look icon, or when the user mentions film icons, look icons, recipe icons or the icon sheet.
 ---
 
 # Look icons
@@ -11,13 +11,14 @@ A look's icon sits beside its name so it can be found by eye in a long list. Eac
 
 | Where | Size | Code |
 | --- | --- | --- |
-| Recipes panel rows, and Base Looks in its search | 16 pt, the row's symbol slot | `SidebarCellView`, `Layout.lookIconSize` |
+| Base Looks panel rows, in its folders and its search | 16 pt, the row's symbol slot | `SidebarCellView`, `Layout.lookIconSize` |
+| Recipes panel rows of recipes that set a Base Look: the look's icon, or the Base Looks symbol for a look without one | 16 pt, the row's symbol slot | `SidebarCellView` and its `lookSet(by:model:)`, `Layout.lookIconSize` |
 | Base Look menu | 18 pt | `BaseLookMenu` in `BasicPanel.swift` |
 | Browse Base Looks… tiles, top left | 22 pt | `BaseLookBrowser` |
 | Film Looks window cards | 36 pt, and 96 pt with no photo open | `FilmCatalogView` |
 | README catalogue and redlamp.app/film | 256 px PNG | `docs/images/film/icon-<id>.png` |
 
-Every place asks `LookIcons` (`packages/RedlampRecipes/Sources/LookIcons.swift`) which icon a recipe or Base Look shows, and draws it through `LookIconImage`, which caches one image per icon and size. A recipe with no icon of its own shows its Base Look's: a mood, or a recipe of your own built on Portra 400, shows Portra's canister.
+Every place asks `LookIcons` (`packages/RedlampRecipes/Sources/LookIcons.swift`) which icon a recipe or Base Look shows, and draws it through `LookIconImage`, which caches one image per icon and size. A recipe with no icon of its own shows its Base Look's: a mood, or a recipe of your own built on Portra 400, shows Portra's canister. The film stocks themselves are looks, listed in Base Looks rather than with the recipes (DEC-104).
 
 ## The film icon
 
