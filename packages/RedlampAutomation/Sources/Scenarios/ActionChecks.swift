@@ -572,6 +572,7 @@
                         LightroomWindowController.current == nil
                     }
                 })
+            case .convertLightroomEdits: .sheet(action)
             case .sendFeedback: .sheet(action)
             case .testCamera:
                 ActionCheck(action: action, observe: { _ in windows() }, restore: { app in
