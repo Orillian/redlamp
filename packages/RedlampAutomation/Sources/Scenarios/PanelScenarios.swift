@@ -82,9 +82,7 @@
         }
 
         /// Clicks the AppKit control carrying `identifier` (a button, a checkbox, a text field) in the editor window,
-        /// or in the sheet in front of it, as the mouse does: the release waits in the queue, where a control that
-        /// tracks the press takes it from, and in a window that isn't key the press goes to the control under the
-        /// pointer, as the click after activation would.
+        /// or in the sheet in front of it, as the mouse does (`Views.press`).
         func clickControl(_ identifier: String, inSheet: Bool = false, across: CGFloat = 0.5) throws {
             @MainActor func window() -> NSWindow? {
                 inSheet ? NSApp.modalWindow ?? Views.editorWindow?.attachedSheet : Views.editorWindow
@@ -103,21 +101,7 @@
             }
             post { _ in
                 guard let window = window() else { return }
-                let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
-                    NSEvent.mouseEvent(
-                        with: type, location: location, modifierFlags: [],
-                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1,
-                    )
-                }
-                guard events.count == 2 else { return }
-                NSApp.postEvent(events[1], atStart: false)
-                let hit = window.contentView?.superview?.hitTest(location) ?? window.contentView?.hitTest(location)
-                if window.isKeyWindow || hit?.acceptsFirstMouse(for: events[0]) == true {
-                    window.sendEvent(events[0])
-                } else {
-                    hit?.mouseDown(with: events[0])
-                }
+                Views.press(at: location, in: window)
             }
             pause(0.2)
         }

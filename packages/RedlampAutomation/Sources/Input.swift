@@ -923,6 +923,29 @@
             }
         }
 
+        /// A click at `location` in `window` on the AppKit control under it, as the mouse makes one: the release
+        /// waits in the queue, where a control that tracks the press takes it from, and in a window that isn't key
+        /// the press goes to the control under the pointer, as the click after activation would, even one that
+        /// accepts first mouse: on macOS 27 a press sent through a window that isn't key, in an app in the
+        /// background, never reaches a button.
+        static func press(at location: NSPoint, in window: NSWindow) {
+            let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
+                NSEvent.mouseEvent(
+                    with: type, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1,
+                )
+            }
+            guard events.count == 2 else { return }
+            NSApp.postEvent(events[1], atStart: false)
+            let hit = window.contentView?.superview?.hitTest(location) ?? window.contentView?.hitTest(location)
+            if window.isKeyWindow {
+                window.sendEvent(events[0])
+            } else {
+                hit?.mouseDown(with: events[0])
+            }
+        }
+
         /// A drag of `scroller`'s knob from its middle to `fraction` (0 ... 1) of the way along its slot, in
         /// `steps` moves, as the mouse makes one. An overlay scroller that has faded out lets a press through to
         /// what's under it, and the pointer coming near it, which shows it again, can't be sent: two fingers rest

@@ -354,6 +354,42 @@ struct DriverTests {
         #expect(abs(clip.bounds.midX - 10000) < 40, "\(clip.bounds)")
     }
 
+    /// The panels' AppKit buttons take a click in a window that isn't key, as the run leaves the app in the
+    /// background: the Keywording panel's completions are buttons that accept first mouse (LIB-21).
+    @Test(.enabled(
+        if: Displays.whyClicksWontArrive == nil,
+        "No click arrives while the displays are asleep or the screen is locked",
+    ))
+    func `a click reaches an AppKit button that accepts first mouse, in a window that isn't key`() {
+        let window = NSWindow(
+            contentRect: CGRect(x: 200, y: 200, width: 320, height: 120), styleMask: [.titled], backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        let chosen = Chosen()
+        let button = FirstMouseButton(frame: CGRect(x: 20, y: 40, width: 280, height: 22))
+        button.title = "E2E Lisbon"
+        button.isBordered = false
+        button.setButtonType(.momentaryChange)
+        button.target = chosen
+        button.action = #selector(Chosen.choose(_:))
+        window.contentView?.addSubview(button)
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        let middle = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        #expect(!window.isKeyWindow && button.acceptsFirstMouse(for: nil))
+        #expect(Views.awaitQueuedEvents(at: middle, in: window) == nil)
+
+        Views.press(at: middle, in: window)
+        #expect(chosen.count == 1, "the button tracks the press and reads the queued release")
+    }
+
+    private final class FirstMouseButton: NSButton {
+        override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+            true
+        }
+    }
+
     /// The Masks panel's picker opens in a popover, which takes no clicks until it has finished
     /// opening, though its window is up: the driver finds it from then.
     @Test(.enabled(
