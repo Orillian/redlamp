@@ -255,7 +255,7 @@ public struct FilmCatalogView: View {
                 return
             }
             guard let choice = LookChoice(film: look) else { continue }
-            var request = StillRequest(recipe: model.anchored(choice.apply(to: model.recipe)))
+            var request = StillRequest(recipe: model.applying(choice, to: model.recipe))
             request.maxLongEdge = Self.previewEdge
             if let image = try? await model.engine.renderStill(request) {
                 previews[look.id] = image
@@ -264,14 +264,14 @@ public struct FilmCatalogView: View {
         }
     }
 
-    /// The photo before any film look: while its look is a film stock, on Redlamp Color without the
-    /// film's grain, halation and bloom; otherwise the edit as it is.
+    /// The photo before any film look: while its look is a film stock, on Redlamp Color, in colour,
+    /// without the film's grain, halation and bloom; otherwise the edit as it is.
     private func renderBefore() async {
         guard model.info != nil else { return }
         let edit = Self.film(of: model.baseLook) == nil
-            ? model.recipe
-            : LookChoice(BuiltInBaseLook.color.reference).apply(to: model.recipe)
-        var request = StillRequest(recipe: model.anchored(edit))
+            ? model.anchored(model.recipe)
+            : model.applying(LookChoice(BuiltInBaseLook.color.reference), to: model.recipe)
+        var request = StillRequest(recipe: edit)
         request.maxLongEdge = Self.previewEdge
         before = try? await model.engine.renderStill(request)
     }

@@ -1454,7 +1454,7 @@ public final class EditorModel {
         guard let info, opening == nil else { return }
         var displayed = isShowingOriginal
             ? beforeRecipe.withGeometry(of: recipe)
-            : (previewingEdit ?? previewingLook.map { anchored($0.apply(to: recipe)) }
+            : (previewingEdit ?? previewingLook.map { applying($0, to: recipe) }
                 ?? previewingRecipe.map { previewEdit(for: $0) } ?? recipe)
         // The crop tool shows the whole straightened frame, with the crop drawn over it.
         if activeTool == .crop {

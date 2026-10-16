@@ -44,16 +44,28 @@ public extension EditorModel {
         if choice.look.isFirmwareModel, let definition = try? recipes.package(for: choice.look)?.definition() {
             recipes.keepFirmwareLook(definition)
         }
-        commit(anchored(choice.apply(to: recipe)), .baseLook, "Base Look") { $0.baseLook.name }
+        commit(applying(choice, to: recipe), .baseLook, "Base Look") { $0.baseLook.name }
+    }
+
+    /// `edit` with `choice` applied, as choosing it applies it: a colour look chosen in place of a
+    /// monochrome one sets Color.
+    func applying(_ choice: LookChoice, to edit: EditRecipe) -> EditRecipe {
+        anchored(choice.apply(to: edit, replacingMonochrome: isMonochrome(edit.baseLook)))
     }
 
     /// Choosing `look`: Black & White for a monochrome look, and for a film stock its grain, halation
     /// and bloom unless `withFilmEffects` is false.
     func lookChoice(for look: BaseLookReference, withFilmEffects: Bool = true) -> LookChoice {
-        let monochrome = look.isSameLook(as: BuiltInBaseLook.monochrome.reference)
+        LookChoice(look, monochrome: isMonochrome(look), withFilmEffects: withFilmEffects)
+    }
+
+    /// Whether `look` renders in black and white: Redlamp Monochrome, a monochrome film stock, camera
+    /// profile or installed look.
+    func isMonochrome(_ look: BaseLookReference) -> Bool {
+        look.isSameLook(as: BuiltInBaseLook.monochrome.reference)
+            || FilmLookCatalog.look(forBaseLookID: look.id)?.isMonochrome == true
             || recipes.package(for: look)?.parameters.isMonochrome == true
             || cameraProfileLooks.contains { $0.isMonochrome && $0.reference.isSameLook(as: look) }
-        return LookChoice(look, monochrome: monochrome, withFilmEffects: withFilmEffects)
     }
 
     /// Hover preview of a look, rendered as choosing it would apply it; nil ends any hover preview.

@@ -59,6 +59,16 @@ struct LookChoiceTests {
         #expect(alone.apply(to: Self.edited)[.grainAmount] == 0)
     }
 
+    @Test func `a colour look in place of a monochrome one sets Color; Black & White chosen on a colour look stays`(
+    ) throws {
+        let trix = try Self.film("tri-x-400").apply(to: Self.edited)
+        #expect(try Self.film("portra-400").apply(to: trix, replacingMonochrome: true).treatment == .color)
+        #expect(try Self.film("hp5-plus").apply(to: trix, replacingMonochrome: true).treatment == .blackAndWhite)
+        var chosen = Self.look(.color).apply(to: Self.edited)
+        chosen.treatment = .blackAndWhite
+        #expect(Self.look(.vivid).apply(to: chosen).treatment == .blackAndWhite)
+    }
+
     @Test func `a look that isn't a film stock, chosen over one, returns the film's settings to their defaults`(
     ) throws {
         let portra = try Self.film("portra-400").apply(to: Self.edited)

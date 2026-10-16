@@ -7,8 +7,10 @@ import RedlampEngineAPI
 /// A film stock sets its look, its own grain, halation and bloom (each of the eight it doesn't list
 /// at its default) and Black & White when it's a monochrome stock. Any other look sets the look and
 /// the treatment it asks for, and, chosen while the edit's look is a film stock, returns the film's
-/// eight to their defaults. Nothing else in the edit changes. An edit's look counts as a film stock
-/// whether a choice or a recipe, such as a mood, set it.
+/// eight to their defaults. A colour look chosen in place of a monochrome one sets Color, as
+/// Lightroom's colour profiles do; Black & White chosen on a colour look stays. Nothing else in the
+/// edit changes. An edit's look counts as a film stock whether a choice or a recipe, such as a mood,
+/// set it.
 public struct LookChoice: Sendable, Hashable {
     public var look: BaseLookReference
     /// The treatment the look sets; nil leaves the edit's.
@@ -56,11 +58,15 @@ public struct LookChoice: Sendable, Hashable {
     }
 
     /// The edit with the look chosen. A look that's already the edit's keeps its Amount.
-    public func apply(to edit: EditRecipe) -> EditRecipe {
+    /// `replacingMonochrome` says whether the edit's look is a monochrome one, whose Black & White a
+    /// colour look takes away.
+    public func apply(to edit: EditRecipe, replacingMonochrome: Bool = false) -> EditRecipe {
         var result = edit
         result.baseLook = look.withAmount(edit.baseLook.isSameLook(as: look) ? edit.baseLook.amount : look.amount)
         if let treatment {
             result.treatment = treatment
+        } else if replacingMonochrome {
+            result.treatment = .color
         }
         if let film {
             for parameter in Self.filmParameters {

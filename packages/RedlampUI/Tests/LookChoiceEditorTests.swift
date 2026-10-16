@@ -76,6 +76,25 @@ struct LookChoiceEditorTests {
         #expect(model.treatment == .blackAndWhite && model.value(.grainAmount) == 0)
     }
 
+    @Test func `a colour look chosen after a monochrome one sets Color, and previews in colour`() async throws {
+        let (model, cleanUp) = try await openEditor()
+        defer { cleanUp() }
+        try model.chooseLook(Self.film("tri-x-400"))
+        #expect(model.treatment == .blackAndWhite)
+        let portra = try Self.film("portra-400")
+        model.previewLook(portra)
+        #expect(model.applying(portra, to: model.recipe).treatment == .color)
+        model.previewLook(nil)
+        model.chooseLook(portra)
+        #expect(model.treatment == .color)
+        model.setTreatment(.blackAndWhite)
+        model.setBaseLook(BuiltInBaseLook.vivid.reference)
+        #expect(model.treatment == .blackAndWhite, "Black & White chosen on a colour look stays")
+        model.setBaseLook(BuiltInBaseLook.monochrome.reference)
+        model.setBaseLook(BuiltInBaseLook.color.reference)
+        #expect(model.treatment == .color, "Basic's menu leaves a monochrome look as the panel does")
+    }
+
     @Test func `hovering a look previews it as choosing it would, and leaves the edit alone`() async throws {
         let (model, cleanUp) = try await openEditor()
         defer { cleanUp() }
