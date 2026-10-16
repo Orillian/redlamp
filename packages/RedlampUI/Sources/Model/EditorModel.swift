@@ -1402,9 +1402,16 @@ public final class EditorModel {
             held.recipe = converted
         }
         openSidecar = held
-        openVersion = openingVersion.flatMap { held.version($0)?.id }
+        // Each set only when it changes, as `leave(for:)` sets the photo's state.
+        let version = openingVersion.flatMap { held.version($0)?.id }
+        if openVersion != version {
+            openVersion = version
+        }
         openingVersion = nil
-        versions = Self.versions(of: held)
+        let listed = Self.versions(of: held)
+        if versions != listed {
+            versions = listed
+        }
         let edit = held[edit: openVersion] ?? SidecarEdit(recipe: EditRecipe())
         photoMetadata = edit.metadata ?? PhotoMetadata()
         let loaded = withPhotoAnchor(Self.asShot(edit.recipe, opened), of: opened, changed: converted != nil)
