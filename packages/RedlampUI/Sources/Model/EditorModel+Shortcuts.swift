@@ -196,6 +196,7 @@ public extension EditorModel {
             sendFeedback()
         case .importPhotos: ImportActions.open(model: self)
         case .importFromLightroom: return LightroomActions.open(model: self)
+        case .convertLightroomEdits: convertLightroomEdits()
         case .moveEditsAndMetadata: return moveEditsAndMetadata()
         // The app's, which a key reaches through the action's menu item when the item doesn't carry the key.
         case .openFolder, .export, .exportWithPrevious, .filmLooks: return MenuBarKeys.chooseItem(of: action)
@@ -261,6 +262,7 @@ public extension EditorModel {
             return true
         case .testCamera: return onTestCamera != nil
         case .importFromLightroom: return library.service?.isReady == true
+        case .convertLightroomEdits: return canConvertLightroomEdits
         case .sendFeedback: return onSendFeedback != nil
         case .moveEditsAndMetadata: return rootMovingEdits != nil
         case .cropTool, .healTool, .rotateLeft, .rotateRight: return photo

@@ -109,6 +109,9 @@ import UniformTypeIdentifiers
                 }
                 SaveErrorBanner(module: .develop)
                 IncidentBanner(module: .develop)
+                if model.lightsOut == 0, !model.isPresenting {
+                    ProvenanceBanner()
+                }
             }
             .padding(.top, 14)
             .padding(stagePadding)

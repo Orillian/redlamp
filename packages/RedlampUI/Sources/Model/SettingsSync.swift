@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampRecipes
 
 /// The editor, to Settings Sync: a photo open in it is changed there, as a step of its history,
 /// never by writing its sidecar behind it.
@@ -44,6 +45,9 @@ public final class SettingsSync {
         /// `source` (the open photo's edit at that step) pasted for what the run's steps carried
         /// to it, but for those undone (the open photo's steps after it).
         case follow(EditRecipe, Set<UUID>)
+        /// Each photo's Lightroom edit as Convert Lightroom Edits… converted it, written where the photo still
+        /// has no edit in Redlamp (EDT-12).
+        case convertLightroom([URL: LightroomPhotoImport])
     }
 
     /// What a batch asks of the photo open in the editor.
@@ -464,6 +468,7 @@ public final class SettingsSync {
         var failedMasks = 0
         var presetsNotMade = 0
         var presetsFull = 0
+        var editedInRedlamp = 0
         let inRun = job.session != nil && run?.session == job.session
         var batches = job.photos.batches(of: Self.batch)
         photos: while !Task.isCancelled, let batch = await batches.next() {
@@ -507,6 +512,10 @@ public final class SettingsSync {
                     continue
                 }
                 let original = existing?.recipe ?? EditRecipe()
+                if case .convertLightroom = job.change, !original.isPristine {
+                    editedInRedlamp += 1
+                    continue
+                }
                 // The run goes on for a photo it last left as it is; otherwise it starts over from here.
                 let member = inRun ? run?.photos[url].flatMap { $0.last == original ? $0 : nil } : nil
                 var change = job.change
@@ -586,6 +595,11 @@ public final class SettingsSync {
             skipped: skipped, editedSince: editedSince, changedMeanwhile: changedMeanwhile, failedMasks: failedMasks,
             preset: preset, cancelled: Task.isCancelled,
         )
+        if editedInRedlamp > 0 {
+            let photos = "\(editedInRedlamp) photo\(editedInRedlamp == 1 ? " was" : "s were")"
+            report = [report, "\(photos) left alone: edited in Redlamp since the report."].compactMap(\.self)
+                .joined(separator: " ")
+        }
         progress = nil
         if !queue.isEmpty {
             start(queue.removeFirst())
@@ -667,6 +681,10 @@ public final class SettingsSync {
             }
         case .follow:
             return nil
+        case let .convertLightroom(conversions):
+            guard let imported = conversions[url] else { return nil }
+            next = await anchored(imported.recipe, url)
+            masks = []
         }
         let needsMasks = next.masks.contains { layer in
             (masks?.contains(layer.id) ?? true) && layer.components.contains { $0.shape.isAIRaster }
@@ -761,6 +779,7 @@ private extension SettingsSync.Change {
         case .updateAIMasks: .mask(nil)
         case let .applyMaskPreset(preset): .mask(preset.components.first.flatMap(\.kind))
         case .healDust: .retouch
+        case .convertLightroom: .recipe
         }
     }
 }

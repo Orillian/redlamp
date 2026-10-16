@@ -67,6 +67,11 @@ struct EditorContentView: View {
                     .environment(model)
                     .environment(theme)
             }
+            .sheet(item: $model.lightroomConversion) { conversion in
+                LightroomConversionSheet(presented: conversion)
+                    .environment(model)
+                    .environment(theme)
+            }
             .onAppear(perform: updateStage)
             .onChange(of: toolbarHeight) { _, _ in updateStage() }
             .onChange(of: model.isPresenting) { _, _ in updateStage() }

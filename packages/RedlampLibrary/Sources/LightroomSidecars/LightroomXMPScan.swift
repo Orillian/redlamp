@@ -154,6 +154,9 @@ public extension LightroomPhotoXMP {
               case let .success(sidecar) = Result(catching: { try store.loadThrowing(for: photo) })
         else { return .unreadable }
         guard let recipe = sidecar?.recipe else { return .none }
+        if recipe.provenance != nil {
+            return .converted
+        }
         return recipe.isPristine ? .none : .edited
     }
 }

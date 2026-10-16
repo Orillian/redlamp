@@ -23,6 +23,7 @@
             + ImportRollbackScenarios.all
             + FolderAccessScenarios.all
             + LightroomScenarios.all
+            + LightroomSidecarScenarios.all
             + LibraryPanelScenarios.all
             + HealthScenarios.all
             + MissingPhotosScenarios.all

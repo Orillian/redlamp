@@ -26,17 +26,23 @@ struct LightroomXMPScanTests {
         let rated = try photo("IMG_0004.jpg", xmp: LightroomXMPFixture.packet(rawFileName: nil, masks: false))
         try store.save(Sidecar(recipe: EditRecipe(), metadata: PhotoMetadata(rating: 4)), for: rated)
         let plain = try photo("IMG_0005.jpg", xmp: nil)
+        let once = try photo("IMG_0010.jpg", xmp: LightroomXMPFixture.packet(rawFileName: nil, exposure: "+2.00"))
+        let first = try LightroomPhoto.convert(
+            #require(LightroomPhotoXMP.edit(for: full)?.settings),
+            photo: LightroomPhotoContext(size: PixelSize(width: 8, height: 6), isRaw: false), source: .embedded(once),
+        )
+        try store.save(Sidecar(recipe: first.recipe), for: once)
         let raw = folder.url.appending(path: "IMG_0006.CR3")
         try Data("not an image".utf8).write(to: raw)
         try Data(LightroomXMPFixture.packet(rawFileName: nil, masks: false).utf8)
             .write(to: folder.url.appending(path: "IMG_0006.xmp"))
 
         let date = Date(timeIntervalSince1970: 1_800_000_000)
-        let scan = LightroomXMPScan.scan([full, masked, edited, rated, plain, raw], date: date) { url in
+        let scan = LightroomXMPScan.scan([full, masked, edited, rated, plain, raw, once], date: date) { url in
             LightroomPhotoXMP.redlampEdit(of: url, in: store)
         }
         #expect(scan.conversions.map(\.photo) == [full, masked, rated])
-        #expect(scan.edited == [edited] && scan.unsized == [raw] && scan.found == 5)
+        #expect(scan.edited == [edited] && scan.unsized == [raw] && scan.converted == [once] && scan.found == 6)
         #expect(scan.photos(.full) == [full, rated] && scan.photos(.leftOut) == [masked])
         #expect(scan.reasons.map(\.reason) == [.notYetChecked] && scan.reasons.first?.photos == [masked])
         let converted = try #require(scan.conversions.first)

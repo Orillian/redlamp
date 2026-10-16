@@ -791,6 +791,8 @@ public final class EditorModel {
     @ObservationIgnored public var makeWorkerEngine: (() -> (any EditingEngine)?)?
     /// The Copy Settings checklist, while it is open.
     public var settingsChooser: SettingsChooser?
+    /// Convert Lightroom Edits…, while its sheet is open (EDT-12).
+    public internal(set) var lightroomConversion: LightroomConversion?
     /// What the checklist ticked last time (the first time, `SettingsSelection.default`).
     public internal(set) var copySelection = SettingsSelection.saved() {
         didSet { copySelection.save() }
@@ -1206,6 +1208,9 @@ public final class EditorModel {
         /// It couldn't be read, so it is read again (`protection` is `.unreadable`).
         var failed = false
         var hasUnmergedConflicts = false
+        /// The Lightroom edit in the photo's XMP, read when it has no edit in Redlamp, which opening converts
+        /// (EDT-12), with what ImageIO reads of the photo for the conversion.
+        var lightroom: (edit: LightroomXMPEdit, photo: LightroomPhotoContext?)?
 
         /// Read without an answer: never taken for a photo with no edit.
         static let notRead = OpenedSidecar(protection: .unreadable, failed: true)
@@ -1226,6 +1231,10 @@ public final class EditorModel {
             let read = sidecars.readForEditing(for: url)
             self.init(sidecar: read.sidecar, base: read.base, protection: read.protection, failed: read.failed)
             hasUnmergedConflicts = sidecars.hasUnmergedConflicts(for: url)
+            if read.protection == nil, !read.failed, read.sidecar?.recipe.isPristine ?? true,
+               let edit = LightroomPhotoXMP.edit(for: url, rawBeside: { LightroomPhotoXMP.rawBeside(url) }) {
+                lightroom = (edit, LightroomPhotoXMP.context(of: url))
+            }
         }
     }
 
@@ -1329,10 +1338,21 @@ public final class EditorModel {
             metadataChangesWhileOpening = []
         }
         photoMetadata = metadata
-        let loaded = withPhotoAnchor(Self.asShot(sidecar?.recipe ?? EditRecipe(), opened), of: opened, changed: false)
+        let converted = read.protection == nil && sidecar?.recipe.isPristine ?? true
+            ? read.lightroom.map { Self.converting($0.edit, photo: $0.photo, opened) } : nil
+        let loaded = withPhotoAnchor(
+            Self.asShot(converted ?? sidecar?.recipe ?? EditRecipe(), opened), of: opened, changed: converted != nil,
+        )
         recipe = loaded
         snapshots = sidecar?.snapshots ?? []
-        startSession(opening: opened.url, recipe: loaded, hasSidecar: sidecar != nil)
+        startSession(
+            opening: opened.url, recipe: loaded, hasSidecar: sidecar != nil,
+            title: converted.map { _ in Self.convertedStepTitle },
+        )
+        if converted != nil {
+            activity.record(.edit, "\(activity.alias(for: opened.url)): its Lightroom edit converted on opening")
+            scheduleSave()
+        }
         isLoading = false
         cropIntent = loaded.crop
         uprightGuides = []
@@ -1873,6 +1893,12 @@ public final class EditorModel {
         scheduleSave()
     }
 
+    /// Keeps `edit` as a snapshot named `name`, as Convert Again keeps the edit it replaces.
+    func keepSnapshot(of edit: EditRecipe, named name: String) {
+        snapshots.append(Snapshot(name: name, recipe: edit))
+        scheduleSave()
+    }
+
     public func applySnapshot(_ snapshot: Snapshot) {
         commit(snapshot.recipe, .snapshot, "Snapshot") { _ in snapshot.name }
     }
@@ -1903,8 +1929,8 @@ public final class EditorModel {
     }
 
     /// A new session for the photo just opened; its earlier ones load in the background.
-    private func startSession(opening url: URL, recipe: EditRecipe, hasSidecar: Bool) {
-        history = [HistoryStep(action: .open, title: hasSidecar ? "Opened" : "Import", recipe: recipe)]
+    private func startSession(opening url: URL, recipe: EditRecipe, hasSidecar: Bool, title: String? = nil) {
+        history = [HistoryStep(action: .open, title: title ?? (hasSidecar ? "Opened" : "Import"), recipe: recipe)]
         historyIndex = 0
         session = (UUID(), Date())
         clearsSavedHistory = false

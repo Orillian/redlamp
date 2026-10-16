@@ -83,6 +83,16 @@ extension ShortcutAction {
         .renamePhotos: [
             "rename", "file name", "filename", "template", "naming", "batch rename", "sequence", "f2", "library",
         ],
+        .convertLightroomEdits: [
+            "lightroom",
+            "xmp",
+            "sidecar",
+            "camera raw",
+            "convert",
+            "edits",
+            "develop settings",
+            "library",
+        ],
         .moveToFolder: ["move", "folder", "organise", "organize", "file", "relocate", "library"],
         .copyToFolder: ["copy", "duplicate", "folder", "file", "library"],
         .keywordPainter: ["painter", "paint", "spray", "brush", "keywords", "tag", "keyword set", "library"],
@@ -263,6 +273,7 @@ extension ShortcutAction {
         case .exportKeywords: "square.and.arrow.up.on.square"
         case .editCaptureTime: "clock.arrow.2.circlepath"
         case .renamePhotos: "character.cursor.ibeam"
+        case .convertLightroomEdits: "arrow.triangle.2.circlepath"
         case .moveToFolder: "folder.badge.plus"
         case .copyToFolder: "plus.square.on.square"
         case .keywordPainter: "paintbrush.pointed"
