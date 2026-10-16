@@ -152,6 +152,7 @@ The owner chose 2 (2026-10-13). EDT-24's fits need Lightroom's renders of the sy
 3. **Process 2003 and 2010:** converted as Lightroom's Update to Current Process does (B above), EDT-31.
 4. **Photos already edited in Redlamp:** keep their edit; Lightroom's is added as a version named "Lightroom Classic".
 5. **The test catalog:** recorded for later, as the owner has no help for Lightroom work yet. What needs it waits, as [Until the test catalog exists](#one-converter-for-three-sources) describes.
+6. **What ships first** (16 October): 0.3.3 brings a catalog's photo edits and XMP sidecars (EDT-12). Until versions exist, the report lists virtual copies as left behind, and a photo already edited in Redlamp keeps its edit, with Lightroom's reported rather than added as a version. Versions (EDT-09, LIB-48) and virtual copies follow in 0.3.4, and with them the version named "Lightroom Classic" of decision 4.
 
 Rows: EDT-31 (Process 2003 and 2010 tone conversion) and LIB-48 (versions in the library), accepted with these decisions; EDT-24 accepted as the way to measured sliders; EDT-32 (importing a catalog or sidecars again: photos changed in Lightroom since their import updated where Redlamp's edit is as imported, otherwise added as a version) proposed. Comparing imported photos with Lightroom's previews belonged to the third target and has no row.
 
