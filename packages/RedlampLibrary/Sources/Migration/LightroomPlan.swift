@@ -1,5 +1,7 @@
 import Foundation
 import RedlampDocument
+import RedlampEngineAPI
+import RedlampRecipes
 
 /// What a photo gets from a Lightroom Classic catalog (LIB-29): Lightroom's value of each field it has
 /// one for, its keywords and its collections.
@@ -79,6 +81,8 @@ public struct LightroomPlan: Sendable {
     let keywords: [KeywordPath: KeywordOptions]
     /// The sets, smart collections and collections without photos found that the definitions keep.
     let collections: [CollectionPath: CollectionOptions]
+    /// Each photo's edit from Lightroom, converted, by its ID in the index: those Redlamp hasn't edited.
+    let edits: [Int64: LightroomEdit]
     /// The root folders on this Mac the library doesn't have: importing adds them first.
     public let foldersToAdd: [URL]
 
@@ -88,9 +92,11 @@ public struct LightroomPlan: Sendable {
     }
 
     /// The plan for `catalog` against the library whose index is `index`, the roots `moved` names (by the
-    /// catalog's paths) looked for where they went.
+    /// catalog's paths) looked for where they went; `slotLooks` are the looks that fill film slots on this Mac
+    /// (`RecipeLibrary.filledSlots`), which Fujifilm's simulations take first.
     public static func make(
         _ catalog: LightroomCatalog, index: LibraryIndex, paths: LibraryPaths? = nil, moved: [String: URL] = [:],
+        slotLooks: [FilmSlot: BaseLookReference] = [:],
     ) async throws -> LightroomPlan {
         var planner = LightroomPlanner(catalog: catalog, moved: moved)
         let library = try await index.read { reader in
@@ -108,6 +114,12 @@ public struct LightroomPlan: Sendable {
             try LightroomPlanner.shown(found, in: reader)
         }
         planner.count(shown)
+        let reading = try LightroomEditReading.read(catalog.url, targets: planner.targets, slotLooks: slotLooks)
+        let listed = reading.reasonPhotos.map { $0.prefix(LightroomReport.listed) } + [
+            reading.keptPhotos.prefix(LightroomReport.listed),
+        ]
+        let found = try await index.read { reader in try reader.photoPaths(listed.flatMap(\.self)) }
+        planner.add(reading, paths: listed.map { $0.compactMap { found[$0] } })
         return planner.plan()
     }
 }
@@ -124,6 +136,9 @@ struct LightroomPlanner {
     var foldersToAdd: [URL] = []
     /// What each photo found gets, by its ID in the index.
     var found: [Int64: LightroomValues] = [:]
+    /// The photos found whose edits are read, by their images' IDs in the catalog: raws, not their JPEGs.
+    var targets: [Int64: LightroomEditReading.Target] = [:]
+    var edits: [Int64: LightroomEdit] = [:]
     /// The row each photo found had, by its ID in the index.
     var rows: [Int64: PhotoRecord] = [:]
     var keywordDefinitions: [KeywordPath: KeywordOptions] = [:]
@@ -316,6 +331,7 @@ struct LightroomPlanner {
             if let folder = catalog.folders[photo.folder] {
                 rootsFound[folder.root, default: 0] += 1
             }
+            targets[photo.id] = LightroomEditReading.Target(row: match.row, pairs: match.pairs.count)
             var values = LightroomValues(
                 rating: photo.rating, flag: photo.flag, label: photo.label, mark: marked.contains(photo.id),
                 title: photo.title, caption: photo.caption, creator: photo.creator, copyright: photo.copyright,
@@ -539,13 +555,8 @@ struct LightroomPlanner {
         if !catalog.virtualCopies.isEmpty {
             report.left.append(LightroomReport.Left(
                 what: "virtual copies", count: catalog.virtualCopies.count,
-                why: "a virtual copy is another edit of its photo in Lightroom, and Lightroom's edits stay there",
-            ))
-        }
-        if catalog.edited > 0 {
-            report.left.append(LightroomReport.Left(
-                what: "photos edited in Lightroom", count: catalog.edited,
-                why: "Lightroom's Develop settings stay in Lightroom: Redlamp shows the photos as they were shot",
+                why: "a virtual copy is another edit of its photo, which comes across as a version once Redlamp has "
+                    + "them (0.3.4); until then its edit stays in Lightroom",
             ))
         }
         if catalog.stacks > 0 {
@@ -555,12 +566,23 @@ struct LightroomPlanner {
         }
     }
 
+    /// The edits read, in the report with the paths listed of each reason's photos and of those kept, in order.
+    mutating func add(_ reading: LightroomEditReading, paths: [[String]]) {
+        edits = reading.edits
+        report.edits = reading.report
+        for place in report.edits.reasons.indices where place < paths.count {
+            report.edits.reasons[place].paths = paths[place]
+        }
+        report.edits.keptPaths = paths.last ?? []
+        report.left += report.edits.left
+    }
+
     func plan() -> LightroomPlan {
         let name = (catalog.url.lastPathComponent as NSString).deletingPathExtension
         return LightroomPlan(
             report: report, name: name,
             photos: found.sorted { $0.key < $1.key }.map { (id: $0.key, values: $0.value) },
-            keywords: keywordDefinitions, collections: collectionDefinitions, foldersToAdd: foldersToAdd,
+            keywords: keywordDefinitions, collections: collectionDefinitions, edits: edits, foldersToAdd: foldersToAdd,
         )
     }
 }

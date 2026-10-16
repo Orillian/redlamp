@@ -23,6 +23,9 @@ public extension LightroomCatalog {
         /// The settings row's own `processVersion` and `digest`, as text.
         public var processVersion: String?
         public var digest: String?
+        /// Whether Lightroom marks the settings as changed from its defaults (`hasDevelopAdjustmentsEx`, or
+        /// `hasDevelopAdjustments` in older catalogs); nil when the catalog has neither.
+        public var adjusted: Bool?
         public var snapshots: [Snapshot] = []
         /// The steps of its history in Develop (`Adobe_libraryImageDevelopHistoryStep`).
         public var historySteps = 0
@@ -102,6 +105,7 @@ extension LightroomCatalogReader {
                     develop.text = fetchSettings.string(at: 0).flatMap(Self.settingsText)
                     develop.processVersion = fetchSettings.string(at: 1).flatMap(Self.text)
                     develop.digest = fetchSettings.string(at: 2).flatMap(Self.text)
+                    develop.adjusted = fetchSettings.isNull(at: 3) ? nil : fetchSettings.double(at: 3) > 0
                 }
                 fetchSettings.reset()
             }
@@ -205,8 +209,10 @@ extension LightroomCatalogReader {
         guard columns.isSuperset(of: ["id_local", "image", "text"]) else { return nil }
         let processVersion = columns.contains("processversion") ? "processVersion" : "NULL"
         let digest = columns.contains("digest") ? "digest" : "NULL"
+        let adjusted = columns.contains("hasdevelopadjustmentsex") ? "hasDevelopAdjustmentsEx"
+            : columns.contains("hasdevelopadjustments") ? "hasDevelopAdjustments" : "NULL"
         return try database.prepare(
-            "SELECT text, \(processVersion), \(digest) FROM Adobe_imageDevelopSettings WHERE id_local = ?",
+            "SELECT text, \(processVersion), \(digest), \(adjusted) FROM Adobe_imageDevelopSettings WHERE id_local = ?",
         )
     }
 

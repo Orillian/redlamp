@@ -111,6 +111,7 @@ public struct LightroomReport: Sendable, Hashable, Codable {
     /// Collections renamed because the library has another kind of thing at their place, before and after.
     public var renamed: [String: String] = [:]
     public var left: [Left] = []
+    public var edits = Edits()
     /// What the catalog lacked or how it was read, in words.
     public var notes: [String] = []
 
@@ -128,7 +129,7 @@ public struct LightroomReport: Sendable, Hashable, Codable {
 
     /// Whether importing would change nothing: no photo found, no keyword and no collection to bring.
     public var isEmpty: Bool {
-        changing == 0 && keywords == 0 && collections == 0 && sets == 0 && smartMapped.isEmpty
+        changing == 0 && keywords == 0 && collections == 0 && sets == 0 && smartMapped.isEmpty && edits.photos == 0
     }
 
     public func json() throws -> Data {
@@ -200,6 +201,7 @@ public extension LightroomReport {
         for (from, to) in renamed.sorted(by: { $0.key < $1.key }) {
             lines.append("      \(from) is “\(to)”: the library has something else at its place")
         }
+        lines += edits.lines
         if !smartLeft.isEmpty || !left.isEmpty || notFound > 0 {
             lines.append("  not coming across:")
         }

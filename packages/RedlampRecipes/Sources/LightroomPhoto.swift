@@ -35,6 +35,17 @@ public enum LightroomPhoto {
         return LightroomPhotoImport(report: report, provenance: provenance, edit: edit)
     }
 
+    /// The Lightroom process a photo's `crs:ProcessVersion` names: Process 2003, Process 2010, or Process 2012
+    /// for 2012 and every version since.
+    public static func processName(_ version: String?) -> String {
+        Process(version).name
+    }
+
+    /// Whether `version` is Process 2003's or 2010's, whose tone waits on EDT-31.
+    public static func isEarlierProcess(_ version: String?) -> Bool {
+        Process(version).isEarlier
+    }
+
     /// Whether `settings` hold a photo's edit: develop settings that aren't a preset's, and which Lightroom
     /// doesn't mark as unset (`crs:HasSettings`), as a photo's XMP can hold only its metadata.
     public static func holdsEdit(_ settings: CameraRawSettings) -> Bool {
