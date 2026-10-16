@@ -241,11 +241,11 @@ public extension LightroomPhotoXMP {
     }
 
     /// Whether `photo` has had an edit in Redlamp, as its sidecar, `sidecar` as read through `store`, records it:
-    /// one converted from Lightroom, one that isn't the defaults, snapshots, or the history a photo reset to the
-    /// defaults keeps. Only a photo that has had none converts its Lightroom edit (EDT-12).
+    /// one converted from Lightroom, one that isn't the defaults, snapshots, versions (EDT-09), or the history a photo
+    /// reset to the defaults keeps. Only a photo that has had none converts its Lightroom edit (EDT-12).
     static func hasRedlampEdit(_ sidecar: Sidecar?, of photo: URL, in store: SidecarStore) -> Bool {
         guard let sidecar else { return false }
         return sidecar.recipe.provenance != nil || !sidecar.recipe.isPristine || !sidecar.snapshots.isEmpty
-            || store.hasHistory(for: photo)
+            || !sidecar.versions.isEmpty || store.hasHistory(for: photo)
     }
 }

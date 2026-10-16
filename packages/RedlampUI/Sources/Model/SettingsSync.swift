@@ -520,7 +520,7 @@ public final class SettingsSync {
                     continue
                 }
                 let original = existing?.recipe ?? EditRecipe()
-                if case .convertLightroom = job.change, !original.isPristine {
+                if case .convertLightroom = job.change, !original.isPristine || existing?.versions.isEmpty == false {
                     editedInRedlamp += 1
                     continue
                 }

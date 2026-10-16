@@ -195,6 +195,23 @@ struct LightroomXMPScanTests {
         #expect(scan.edited == [photo] && scan.conversions.isEmpty)
     }
 
+    @Test func `a photo with versions keeps its edits, though its own edit is the defaults`() throws {
+        let folder = try TemporaryFolder()
+        let store = SidecarStore()
+        let photo = folder.url.appending(path: "IMG_0015.jpg")
+        try LightroomXMPFixture.image(photo, type: .jpeg, xmp: LightroomXMPFixture.packet(rawFileName: nil))
+        var sidecar = Sidecar(recipe: EditRecipe())
+        var edit = EditRecipe()
+        edit[.exposure] = 0.5
+        sidecar.versions = [PhotoVersion(name: "Copy 1", recipe: edit)]
+        try store.save(sidecar, for: photo)
+        #expect(store.load(for: photo)?.recipe.isPristine == true && !store.hasHistory(for: photo))
+
+        #expect(LightroomPhotoXMP.redlampEdit(of: photo, in: store) == .edited)
+        let scan = LightroomXMPScan.scan([photo]) { LightroomPhotoXMP.redlampEdit(of: $0, in: store) }
+        #expect(scan.edited == [photo] && scan.conversions.isEmpty)
+    }
+
     @Test func `a photo whose sidecar can't be read is left alone`() throws {
         let folder = try TemporaryFolder()
         let photo = folder.url.appending(path: "IMG_0007.jpg")

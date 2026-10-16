@@ -104,6 +104,25 @@ struct EditorVersionTests {
         #expect(model.earlierSessions.allSatisfy { $0.versionID == version })
     }
 
+    @Test func `Clear History in a version clears the version's sessions and leaves the photo's own`() async throws {
+        let (editor, cleanup) = try await openEditor()
+        defer { cleanup() }
+        let model = editor.model
+        model.setValue(.exposure, 0.5)
+        model.createVersion()
+        let version = try #require(model.openVersion)
+        model.setValue(.contrast, 20)
+        model.saveNow()
+        try await eventually { !SidecarStore().loadHistory(for: editor.photo, version: version).isEmpty }
+        #expect(SidecarStore().loadHistory(for: editor.photo, version: nil).count == 1)
+
+        model.clearHistory()
+        try await eventually { SidecarStore().loadHistory(for: editor.photo, version: version).isEmpty }
+        #expect(SidecarStore().loadHistory(for: editor.photo, version: version).isEmpty)
+        #expect(SidecarStore().loadHistory(for: editor.photo, version: nil).count == 1)
+        #expect(editor.saved?.versions.first?.recipe[.contrast] == 20)
+    }
+
     @Test func `a version survives leaving the photo and opening it again`() async throws {
         let (editor, cleanup) = try await openEditor()
         defer { cleanup() }

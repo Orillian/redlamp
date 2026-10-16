@@ -192,6 +192,79 @@ struct LightroomEditsTests {
         #expect(model.history.map(\.title) == ["Opened"])
     }
 
+    @Test func `a photo with versions doesn't convert its Lightroom edit as it opens`() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let photo = folder.appending(path: "J.jpg")
+        try Self.jpeg(photo, exposure: "+0.40")
+        let version = PhotoVersion(name: "Copy 1", recipe: EditRecipe())
+        try SidecarStore().save(Sidecar(recipe: EditRecipe(), versions: [version]), for: photo)
+        let model = EditorModel(engine: StubEngine())
+        model.library.insert(LibraryItem(url: photo))
+        model.select(photo)
+        try await eventually { model.info?.url == photo }
+        #expect(model.recipe.provenance == nil && model.recipe[.exposure] == 0)
+        #expect(model.history.map(\.title) == ["Opened"] && model.versions.map(\.id) == [version.id])
+    }
+
+    @Test func `a version of a converted edit says where it came from, and only the photo's own edit converts again`(
+    ) async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let photo = folder.appending(path: "K.jpg")
+        try Self.jpeg(photo, exposure: "+0.40")
+        let model = EditorModel(engine: StubEngine())
+        model.library.insert(LibraryItem(url: photo))
+        model.select(photo)
+        try await eventually { model.info?.url == photo }
+        #expect(model.provenanceNotice?.canConvertAgain == true)
+
+        model.createVersion()
+        #expect(model.openVersion != nil && model.recipe.provenance?.source == .embeddedXMP)
+        #expect(model.provenanceNotice?.title == "From Lightroom’s XMP in the photo: every setting converted")
+        #expect(model.provenanceNotice?.canConvertAgain == false)
+        model.setValue(.contrast, 40)
+        model.convertLightroomEditAgain()
+        #expect(model.recipe[.contrast] == 40 && model.history.last?.title != "Convert Again")
+
+        model.showVersion(nil)
+        #expect(model.openVersion == nil && model.provenanceNotice?.canConvertAgain == true)
+    }
+
+    @Test func `Undo of Convert Lightroom Edits leaves a photo as it is while one of its versions is open`(
+    ) async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (photo, other) = (folder.appending(path: "M.jpg"), folder.appending(path: "N.jpg"))
+        try Self.jpeg(photo, exposure: "+0.40")
+        try Self.jpeg(other, exposure: nil)
+        let store = SidecarStore()
+        let model = EditorModel(engine: StubEngine())
+        [photo, other].forEach { model.library.insert(LibraryItem(url: $0)) }
+        model.select(other)
+        try await eventually { model.info?.url == other }
+        model.selectAllPhotos()
+        model.perform(.convertLightroomEdits)
+        try await eventually { model.lightroomConversion?.scan != nil }
+        model.confirmLightroomConversion()
+        try await eventually { model.libraryUndoKind == .lightroomConversion }
+        model.closeLightroomConversion()
+
+        model.select(photo)
+        try await eventually { model.info?.url == photo }
+        model.createVersion()
+        #expect(model.openVersion != nil && model.recipe[.exposure] == 0.4)
+        model.undoLightroomConversion()
+        await model.settingsSync.idle()
+        #expect(model.openVersion != nil && model.recipe[.exposure] == 0.4, "the batch converted the photo's own edit")
+        model.saveNow()
+        try await eventually { store.load(for: photo)?.versions.count == 1 }
+        #expect(store.load(for: photo)?.recipe[.exposure] == 0.4)
+    }
+
     @Test func `a photo opens with its Lightroom edit converted once, and Convert Again keeps the edit it replaces`(
     ) async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

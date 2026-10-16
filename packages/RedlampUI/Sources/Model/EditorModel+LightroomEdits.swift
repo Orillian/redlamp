@@ -74,9 +74,13 @@ public struct ProvenanceNotice: Equatable {
 }
 
 public extension EditorModel {
-    /// The open photo's provenance notice, for an edit converted from Lightroom.
+    /// The open photo's provenance notice, for an edit converted from Lightroom. A version's doesn't offer Convert
+    /// Again: the file's XMP holds the photo's own edit (EDT-09).
     var provenanceNotice: ProvenanceNotice? {
-        info == nil ? nil : recipe.provenance.map(ProvenanceNotice.init)
+        guard info != nil, let provenance = recipe.provenance else { return nil }
+        var notice = ProvenanceNotice(provenance)
+        notice.canConvertAgain = notice.canConvertAgain && openVersion == nil
+        return notice
     }
 
     var canConvertLightroomEdits: Bool {

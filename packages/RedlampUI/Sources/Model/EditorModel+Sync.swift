@@ -116,7 +116,8 @@ extension EditorModel: SyncEditor {
         let before = recipe
         switch change {
         case let .edit(next, over):
-            guard recipe == over else { return .left }
+            // A batch writes a photo that isn't open in its own edit, never in a version.
+            guard openVersion == nil, recipe == over else { return .left }
             commit(next, .paste, title)
         case let .change(.paste(source, selection)):
             paste(source, selection, name: title)
@@ -131,8 +132,9 @@ extension EditorModel: SyncEditor {
         case .change(.follow):
             return .left
         case let .change(.convertLightroom(conversions)):
-            // A photo edited in Redlamp keeps its edit.
-            guard let imported = conversions[url], recipe.isPristine, let info else { return .applied(nil) }
+            // A photo edited in Redlamp keeps its edit, and so does one with versions.
+            guard let imported = conversions[url], recipe.isPristine, openSidecar.versions.isEmpty, let info
+            else { return .applied(nil) }
             commit(withPhotoAnchor(Self.asShot(imported.recipe, info), of: info, changed: true), .recipe, title)
         }
         return .applied(recipe == before ? nil : recipe)
