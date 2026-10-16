@@ -994,7 +994,9 @@ import RedlampLibrary
                     lines.append(ResultLine(marks.joined(separator: ", "), .cameAcross))
                 }
                 let lists = [
-                    fields.keywords > 0 ? "\(ProgressText.count(fields.keywords)) photos' keywords" : nil,
+                    fields.keywords > 0
+                        ? "\(ProgressText.count(fields.keywords)) \(fields.keywords == 1 ? "photo's" : "photos'") keywords"
+                        : nil,
                     fields.collections > 0 ? "\(ProgressText.count(fields.collections)) in collections" : nil,
                 ].compactMap(\.self)
                 if !lists.isEmpty {

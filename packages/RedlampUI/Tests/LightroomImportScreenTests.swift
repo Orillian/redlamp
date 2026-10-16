@@ -225,6 +225,9 @@ struct LightroomImportScreenTests {
             "35,200 edits, 3,300 with settings left out",
         ])
         #expect(done.resultLines.allSatisfy { $0.kind == .cameAcross })
+        var one = done
+        one.result?.fields?.keywords = 1
+        #expect(one.resultLines.map(\.text).contains("1 photo's keywords, 14,200 in collections"))
         let unwritten = try sample("done-unwritten").resultLines.filter { $0.kind == .unwritten }
         #expect(unwritten.map(\.text) == [
             "3 sidecars couldn't be written: the folder is read-only",
