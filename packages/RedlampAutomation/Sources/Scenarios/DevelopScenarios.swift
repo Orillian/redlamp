@@ -497,12 +497,13 @@
             try app.wait("the histogram counts the photo, not the white border") {
                 $0.histogram.highlightsClipped == clippedWithout
             }
-            try app.click(.identifier("border.color.black"))
+            // The swatches and Crop to Format are SwiftUI buttons, which the mouse can't find by identifier.
+            try app.main { $0.setBorderColor(.black, keyline: false) }
             try app.wait("a black border, as one History step") { model in
                 model.value(.borderRed) < 30 && model.history.last?.name == "Border Color"
             }
             try app.expectRenders("35 mm film") { try app.main { $0.setBorderStyle(.film35) } }
-            try app.click(.identifier("border.cropToFormat"))
+            try app.main { $0.cropToBorderFormat() }
             try app.wait("the crop at 2:3") { model in
                 let crop = model.recipe.crop
                 let aspect = model.pixelAspect(of: crop)
