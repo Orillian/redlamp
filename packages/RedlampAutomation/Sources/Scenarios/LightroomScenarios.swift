@@ -54,7 +54,7 @@
                 Views.editorWindow?.makeKeyAndOrderFront(nil)
                 model.select(photo)
             }
-            try app.choose(.develop)
+            try app.choose(.developModule)
             try app.wait("the photo in Develop with Lightroom's edit", timeout: 60) { model in
                 model.selection == photo && model.info != nil && model.recipe[.exposure] == 0.75
             }
