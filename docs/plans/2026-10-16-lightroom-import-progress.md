@@ -64,7 +64,7 @@ So an import of 100,000 photos into new folders on such a disk waits about 2.6 h
 
 ### The indexing fixes
 
-`LightroomDiskBenchTests`' index bench (LIGHTROOM-DISK-INDEX-BENCH), 600 clones of the CC0 raws in folders of 200, its operations replayed through `usb-2.5` and projected to 100,000 photos. *Until the import could start* is the replay up to the indexing's last operation, thumbnails left out; *as run* is every operation in the order they ran. The indexer reads through a volume that answers at once (*external*) or through the 2.5-inch disk simulated in real time (*usb-2.5*), on the build Mac but where it says. Since `spinning` and `usb-2.5` now say their disks spin, anything that reads through either has one reader, where it had two or more.
+`LightroomDiskBenchTests`' index bench (LIGHTROOM-DISK-INDEX-BENCH), 600 clones of the CC0 raws in folders of 200, its operations replayed through `usb-2.5` and projected to 100,000 photos. *Until the import could start* is the replay up to the indexing's last operation, thumbnails left out; *as run* is every operation in the order they ran. The indexer reads through a volume that answers at once (*external*) or through the 2.5-inch disk simulated in real time (*usb-2.5*), on the build Mac but where it says. Since `spinning` and `usb-2.5` now say their disks spin, anything that reads through either has one reader, where it had two or more; so has an external disk that doesn't say.
 
 | | Until the import could start | Thumbnails | As run | Readers at the end |
 |---|---|---|---|---|
@@ -80,7 +80,32 @@ So an import of 100,000 photos into new folders on such a disk waits about 2.6 h
 - The indexing's own operations stay at 1.5 a photo and 0.4 to 0.5 h throughout; the import waits for them alone once thumbnails wait behind them.
 - Thumbnails cost more than before because the bench now counts what they read. Before, it charged each one a single read of its preview; now it counts the reads made through the volume: the head again (the decode reads it too, which the bench didn't count before), the preview's first bytes and the preview, 2.7 reads a photo. Read side by side by several readers, each one's reads were apart, each paying a seek (1.0 h); one reader on a disk that spins keeps them together (0.7 h).
 - In Low Power Mode the import's folders weren't indexed at all before, the background lane running nothing (`LibraryIndexerTests`: nothing in a second); read first, they're indexed as fast as otherwise.
-- On the simulated disk in real time, which counts the Mac's own delays as well, the times swing with the Mac's load: the photos' folders indexed in 21.0 s before (0.97 h), 20.6 s with seven readers, 65.9 s with one at utility priority on a busy build Mac, and 23.7 s with one at user-initiated priority (the root read first). With one reader, each operation waits for the thread that runs the next one to wake, which a second reader hides; worth measuring on a real disk before relying on one reader.
+- On the simulated disk in real time, which counts the Mac's own delays as well, the times swung with the Mac's load: the photos' folders indexed in 21.0 s before (0.97 h), 20.6 s with seven readers, 65.9 s with one at utility priority on a busy build Mac, and 23.7 s with one at user-initiated priority (the root read first). The delay was the simulation's: it waited out each operation with `nanosleep` on the reader's own thread, which macOS lets wake late on a thread at utility priority, as the readers' operations run, to coalesce its timers. A disk's answer wakes a real read, not a timer, so the simulation's waits are now woken by a strict timer at the highest priority (a2d8753ab). On the build Mac a 10 ms wait on a utility thread took 65.9 ms in `nanosleep` and 14.1 ms on the new clock.
+
+The same bench on the build Mac at dfbcf53e9 and at 440285ea5 (the waits woken when due, and an external disk that doesn't say read as one that spins, 1c6a81f04), the 2.5-inch disk saying it spins, not saying, as some USB bridges don't, and saying it's solid state, so it's read by an SSD's readers, which may widen:
+
+| | Until the import could start | Thumbnails | As run | Readers at the end |
+|---|---|---|---|---|
+| Saying it spins, dfbcf53e9 | 0.44 h | 0.7 h | 1.1 h | 1 |
+| Not saying, dfbcf53e9: read as an external disk | 0.45 h | 1.0 h | 1.5 h | 9 |
+| Not saying, 440285ea5: read as a disk that spins | 0.44 h | 0.7 h | 1.1 h | 1 |
+| Saying it's solid state, 440285ea5 | 0.44 h | 1.0 h | 1.4 h | 2 |
+
+And on the simulated disk itself, in real time, projected to 100,000 raws:
+
+| | The photos' folders indexed | Thumbnails made by |
+|---|---|---|
+| `nanosleep` (dfbcf53e9): saying it spins, one reader | 114.5 s (5.30 h) | 231.5 s (10.72 h) |
+| `nanosleep`: not saying, nine readers | 24.1 s (1.12 h) | 65.1 s (3.01 h) |
+| `nanosleep`: one reader, the root read first in Low Power Mode | 28.0 s (1.30 h) | 144.2 s (6.68 h) |
+| Woken when due (440285ea5): saying it spins, one reader | 24.2 s (1.12 h) | 47.4 s (2.19 h) |
+| Woken when due: not saying, one reader | 20.5 s (0.95 h) | 44.5 s (2.06 h) |
+| Woken when due: saying it's solid state, two readers | 20.3 s (0.94 h) | 59.6 s (2.76 h) |
+| Woken when due: one reader, the root read first in Low Power Mode | 20.4 s (0.94 h) | 43.9 s (2.03 h) |
+
+- One reader indexes the folders as fast as an SSD's readers once the simulation's waits end when they're due, and makes the thumbnails sooner, its reads of each photo kept together. A real spinning disk would still confirm it.
+- An external disk whose device doesn't say whether it spins is now read as one that does, by one reader that never widens, and recorded as `unknown` (1c6a81f04): on the 2.5-inch disk behind such a bridge, thumbnails take 0.7 h rather than 1.0 h at 100,000 raws, the wait before the import the same. An external SSD that doesn't say pays for it with one read in flight, where it had two or more; not measured, as the bench has no USB SSD.
+- The external row moves from run to run, 0.44 h until the import could start in one run and 1.00 h in another at the same code: a volume that answers at once leaves the readers free whenever the indexer's own work holds it up, and thumbnails take those turns. It stands for an SSD's order of operations, replayed on the 2.5-inch disk.
 
 ## Reply to the report
 
