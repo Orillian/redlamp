@@ -11,7 +11,8 @@ import RedlampEngineAPI
 /// - `Recipes/favorites.json`: the ids of favorite recipes, and of favorite looks no recipe stands for;
 /// - `Recipes/slots.json`: film slots that keep Redlamp's look though an imported LUT fills them;
 /// - `Recipes/hidden-folders.json`: the built-in folders hidden from each panel;
-/// - `Recipes/unlisted-looks.json`: looks whose recipes went to the Trash, kept for their edits;
+/// - `Recipes/unlisted-looks.json`: looks whose recipes went to the Trash, or removed from Base Looks,
+///   kept for their edits;
 /// - `Looks/`: every Base Look ever installed, by content (see `LookStore`).
 public final class RecipeLibrary {
     public struct Locations: Sendable {
@@ -53,7 +54,7 @@ public final class RecipeLibrary {
     public private(set) var storedLooks: [BaseLookPackage] = []
     /// The built-in folders hidden from each panel (UX-55).
     var hiddenByPanel: [RecipePanel: Set<String>] = [:]
-    /// The keys (`key(_:)`) of the looks whose recipes went to the Trash.
+    /// The keys (`key(_:)`) of the looks whose recipes went to the Trash, or removed from Base Looks.
     public internal(set) var unlistedLooks: Set<String> = []
     /// The file each recipe made here or installed was read from.
     var files: [RecipeVersion: URL] = [:]

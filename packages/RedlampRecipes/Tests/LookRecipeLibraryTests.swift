@@ -3,7 +3,8 @@ import RedlampEngineAPI
 import Testing
 @testable import RedlampRecipes
 
-/// Which recipes are looks and which presets (DEC-104), hidden folders, and Move to Trash (UX-55).
+/// Which recipes are looks and which presets (DEC-104), hidden folders, Move to Trash and Remove from Base
+/// Looks (UX-55).
 struct LookRecipeLibraryTests {
     private let root = FileManager.default.temporaryDirectory.appending(path: "looks-\(UUID().uuidString)")
 
@@ -170,6 +171,25 @@ struct LookRecipeLibraryTests {
         try library.moveToTrash(preset)
         #expect(!library.isUnlisted(film))
         #expect(library.isUnlisted(package))
+    }
+
+    @Test func `Remove from Base Looks lists an installed look no recipe uses nowhere, and keeps its file`() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = library(bundled: false)
+        let lut = try library.install(RecipeImport(recipe: Self.lut("Teal"))).recipe
+        try library.delete(lut)
+        let look = try #require(lut.baseLook)
+        let package = try #require(library.package(for: look))
+        #expect(library.storedLooks.contains { $0.matches(look) } && !library.isUnlisted(package))
+        try library.setFavorite(id: look.id, true)
+
+        try library.unlist(look)
+        #expect(library.isUnlisted(package) && !library.isFavorite(id: look.id))
+        #expect(self.library(bundled: false).isUnlisted(package), "kept across launches")
+        #expect(library.storedLooks.contains { $0.matches(look) }, "its file stays in Looks/")
+        #expect(library.isAvailable(look) && library.definition(for: look) != nil, "its edits keep rendering")
+        try library.unlist(BuiltInBaseLook.vivid.reference)
+        #expect(library.unlistedLooks.count == 1, "Redlamp's own looks are never unlisted")
     }
 
     @Test func `an installed recipe goes to the Trash with every version of it`() throws {

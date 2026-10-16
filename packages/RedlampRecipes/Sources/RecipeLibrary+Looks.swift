@@ -119,8 +119,18 @@ public extension RecipeLibrary {
         return trashed
     }
 
-    /// Whether a look went to the Trash with its recipe: the edits that use it still render with it,
-    /// but no list shows it.
+    /// Lists an installed look no recipe uses nowhere (Remove from Base Looks): its file stays in `Looks/`,
+    /// named by its content, so the edits that use it keep rendering. Redlamp's own looks are never unlisted.
+    func unlist(_ look: BaseLookReference) throws {
+        guard BuiltInBaseLooks.package(id: look.id, version: look.version) == nil else { return }
+        try saveUnlistedLooks(unlistedLooks.union([Self.key(look)]))
+        if favorites.contains(look.id) {
+            try setFavorite(id: look.id, false)
+        }
+    }
+
+    /// Whether a look went to the Trash with its recipe, or was removed from Base Looks: the edits that
+    /// use it still render with it, but no list shows it.
     func isUnlisted(_ package: BaseLookPackage) -> Bool {
         unlistedLooks.contains(Self.key(package.reference))
     }
@@ -133,6 +143,7 @@ public extension RecipeLibrary {
     private func saveUnlistedLooks(_ looks: Set<String>) throws {
         try FileManager.default.createDirectory(at: locations.recipes, withIntermediateDirectories: true)
         try JSONEncoder().encode(looks.sorted()).write(to: locations.unlistedLooks, options: .atomic)
+        unlistedLooks = looks
     }
 
     /// Moves a file to the Trash, returning where it went.
