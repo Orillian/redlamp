@@ -110,6 +110,9 @@ public final class LightroomImport: Sendable {
     /// Hears of the photos each batch changed, as the app's other apps' metadata follows them.
     private let changed: (@Sendable ([Int64]) -> Void)?
     private let editor: LightroomEditor?
+    /// Where it asks which disk the photos are on: sidecars on a disk that spins, or may, are written folder by
+    /// folder (LIB-53).
+    private let fileSystem: any LibraryFileSystem
     private static let recordLock = Mutex(())
 
     public init(
@@ -117,6 +120,7 @@ public final class LightroomImport: Sendable {
         partSize: Int = LightroomImport.standardPartSize,
         turn: (@Sendable (@escaping @Sendable () async -> Void) async -> Void)? = nil,
         changed: (@Sendable ([Int64]) -> Void)? = nil, editor: LightroomEditor? = nil,
+        fileSystem: any LibraryFileSystem = LocalFileSystem(),
     ) {
         self.index = index
         self.paths = paths ?? LibraryPaths(root: index.url.deletingLastPathComponent())
@@ -125,6 +129,7 @@ public final class LightroomImport: Sendable {
         self.turn = turn
         self.changed = changed
         self.editor = editor
+        self.fileSystem = fileSystem
     }
 
     private var keywords: LibraryKeywords {
@@ -132,7 +137,7 @@ public final class LightroomImport: Sendable {
     }
 
     private var metadata: LibraryMetadata {
-        LibraryMetadata(index: index, paths: paths, live: live)
+        LibraryMetadata(index: index, paths: paths, live: live, fileSystem: fileSystem)
     }
 
     /// How far an import or its Undo has got: photos done of the photos it takes, and its parts.

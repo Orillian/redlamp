@@ -53,7 +53,8 @@ public extension SidecarStore {
     static let batchGroup = 64
 
     /// Changes the sidecars of `images`, `make` deciding each one's change from the sidecar as it is
-    /// then (nil: there's none), `width` groups at a time. A sidecar that's there but can't be read, or
+    /// then (nil: there's none), `width` groups at a time: with a width of 1, one sidecar at a time in
+    /// the order of `images`, as a disk with one head wants them. A sidecar that's there but can't be read, or
     /// doesn't decode, fails without `make` hearing of it: taken for none, its change could be written
     /// over it, or found to change nothing. `done` hears of each as it's done, from any thread; once
     /// `stopped` says so, no more are started, and the batch returns when those under way are done. A

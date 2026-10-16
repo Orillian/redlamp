@@ -80,7 +80,10 @@ struct LightroomDiskBenchTests {
         }
         let catalog = try LightroomCatalog.read(library.catalog)
         let plan = try await LightroomPlan.make(catalog, index: library.index, paths: library.paths)
-        let importer = LightroomImport(index: library.index, paths: library.paths)
+        let importer = LightroomImport(
+            index: library.index, paths: library.paths,
+            fileSystem: SimulatedFileSystem(base: LocalFileSystem(), profile: .usb25),
+        )
         var outcome: LightroomImport.Outcome?
         let operations = try await Self.traced(under: library.photos.url) {
             outcome = try await importer.run(plan)
@@ -95,6 +98,45 @@ struct LightroomDiskBenchTests {
             + "(usb-2.5): "
             + "as run, \(Self.describe(asRun, photos: count)); one folder at a time, "
             + "\(Self.describe(ordered, photos: count))")
+    }
+
+    /// Disks that spin, or may: the 2.5-inch disk saying it spins, and behind a USB bridge that doesn't say.
+    static let spinning = ["saying it spins", "not saying"]
+
+    @Test(arguments: spinning)
+    func `on a disk that spins or may, the import writes its sidecars one folder at a time, in order`(
+        disk: String,
+    ) async throws {
+        let library = try await LightroomBenchTests.library(photos: 600, perFolder: 200)
+        defer { library.index.closeAndWait() }
+        let plan = try await LightroomPlan.make(
+            LightroomCatalog.read(library.catalog), index: library.index, paths: library.paths,
+        )
+        var profile = VolumeProfile.usb25
+        if disk == Self.spinning[1] {
+            profile.isRotational = nil
+        }
+        let importer = LightroomImport(
+            index: library.index, paths: library.paths,
+            fileSystem: SimulatedFileSystem(base: LocalFileSystem(), profile: profile),
+        )
+        let operations = try await Self.traced(under: library.photos.url) { _ = try await importer.run(plan) }
+        let folders = operations.filter { $0.kind == .rename }.map { DiskReplay.folder(of: $0) }
+        let runs = folders.reduce(into: [String]()) { runs, folder in
+            if runs.last != folder {
+                runs.append(folder)
+            }
+        }
+        #expect(folders.count == 600)
+        #expect(runs == runs.sorted() && Set(runs).count == 3, "\(runs)")
+    }
+
+    @Test func `a batch written in order takes its photos folder by folder, each folder's by name`() {
+        var batch = MetadataBatch(kind: .metadata, title: "In order")
+        batch.photos = ["/a/2/C.CR3", "/a/1/B.CR3", "/a/1/sub/A.CR3", "/a/1/A.CR3", "/a/1 copy/A.CR3"].enumerated()
+            .map { MetadataBatch.Photo(id: Int64($0.offset), path: $0.element, index: [:]) }
+        let order = LibraryMetadata.folderByFolder(Array(batch.photos.indices), of: batch).map { batch.photos[$0].path }
+        #expect(order == ["/a/1/A.CR3", "/a/1/B.CR3", "/a/1 copy/A.CR3", "/a/1/sub/A.CR3", "/a/2/C.CR3"])
     }
 
     /// The size of the embedded preview the app's thumbnail reads of `raw`: the smallest reaching 384 pixels.

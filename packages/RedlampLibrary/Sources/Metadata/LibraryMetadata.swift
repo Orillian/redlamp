@@ -23,6 +23,10 @@ public final class LibraryMetadata: Sendable {
     public let paths: LibraryPaths
     public let live: LibraryLive?
     public let journal: MetadataJournal
+    /// Where a batch asks which disk its photos are on: the sidecars of photos on a disk that spins, or may
+    /// (`VolumeIO.maySpin`), are written one at a time, folder by folder, as its one head wants them (LIB-53).
+    /// Without it, every batch writes `SidecarStore.batchWidth` at a time, as an SSD wants them.
+    public let fileSystem: (any LibraryFileSystem)?
     /// Photos a transaction of the index changes.
     static let photosPerWrite = 1000
     private let serial = Mutex<Task<Void, Never>?>(nil)
@@ -30,10 +34,14 @@ public final class LibraryMetadata: Sendable {
     let interruption = Mutex<Int?>(nil)
 
     /// `paths` defaults to the library whose index is `index`, at `LibraryPaths.index` in its folder.
-    public init(index: LibraryIndex, paths: LibraryPaths? = nil, live: LibraryLive? = nil) {
+    public init(
+        index: LibraryIndex, paths: LibraryPaths? = nil, live: LibraryLive? = nil,
+        fileSystem: (any LibraryFileSystem)? = nil,
+    ) {
         self.index = index
         self.paths = paths ?? LibraryPaths(root: index.url.deletingLastPathComponent())
         self.live = live
+        self.fileSystem = fileSystem
         journal = MetadataJournal(paths: self.paths)
     }
 
@@ -197,12 +205,17 @@ public final class LibraryMetadata: Sendable {
         let done = SidecarCounter()
         var written = 0
         var skipped: [String: String] = [:]
+        let inOrder = try await writesInOrder(pending.map { batch.photos[$0].path })
+        let pending = inOrder ? Self.folderByFolder(pending, of: batch) : pending
+        let width = inOrder ? 1 : SidecarStore.batchWidth
         for start in stride(from: 0, to: pending.count, by: Self.photosPerWrite) {
             let places = Array(pending[start ..< min(start + Self.photosPerWrite, pending.count)])
             let ids = places.map { batch.photos[$0].id }
             let found = try await index.read { try $0.photoPaths(ids) }
             let results = try await LibraryIndex.offCaller {
-                try Self.write(places, of: batch, store: store, paths: found, log: log, stop: stop, done: done) {
+                try Self.write(
+                    places, of: batch, store: store, width: width, paths: found, log: log, stop: stop, done: done,
+                ) {
                     report?($0, pending.count)
                 }
             }
@@ -246,6 +259,29 @@ public final class LibraryMetadata: Sendable {
         return (written, skipped)
     }
 
+    /// Whether the sidecars of the photos at `paths` are written one at a time, folder by folder: some of them are
+    /// in a root folder on a disk that spins, or may, which `fileSystem` is asked once for each root.
+    private func writesInOrder(_ paths: [String]) async throws -> Bool {
+        guard let fileSystem, !paths.isEmpty else { return false }
+        let roots = try await index.read { try $0.roots() }.map(\.path).filter { root in
+            let below = root == "/" ? root : root + "/"
+            return paths.contains { $0.hasPrefix(below) }
+        }
+        return roots.contains { root in
+            (try? fileSystem.volume(of: URL(fileURLWithPath: root, isDirectory: true))).map(VolumeIO.maySpin) ?? false
+        }
+    }
+
+    /// `places` in `batch` folder by folder, each folder's photos by name.
+    static func folderByFolder(_ places: [Int], of batch: MetadataBatch) -> [Int] {
+        let keys = places.map { place -> (folder: String, name: String) in
+            let path = batch.photos[place].path
+            let slash = path.lastIndex(of: "/") ?? path.startIndex
+            return (String(path[..<slash]), String(path[slash...]))
+        }
+        return places.indices.sorted { keys[$0] < keys[$1] }.map { places[$0] }
+    }
+
     struct SidecarResult: Sendable {
         enum Outcome: Sendable {
             /// Written, the sidecar's date, and whether the photo is edited now when the batch changed its edit.
@@ -264,18 +300,18 @@ public final class LibraryMetadata: Sendable {
         let outcome: Outcome
     }
 
-    /// Writes the sidecars of `places` as a batch (`SidecarStore.change`), each logged once it's
-    /// written; a sidecar this build can't write is left as it is. Throws only when the log can't be
+    /// Writes the sidecars of `places` as a batch (`SidecarStore.change`), `width` at a time, each logged once
+    /// it's written; a sidecar this build can't write is left as it is. Throws only when the log can't be
     /// written, once the sidecars under way are done.
     private static func write(
-        _ places: [Int], of batch: MetadataBatch, store: SidecarStore, paths: [Int64: String],
+        _ places: [Int], of batch: MetadataBatch, store: SidecarStore, width: Int, paths: [Int64: String],
         log: MetadataJournal.Log, stop: Int?, done: SidecarCounter, report: @Sendable (Int) -> Void,
     ) throws -> [SidecarResult] {
         let gone = places.filter { paths[batch.photos[$0].id] == nil }
         let results = Mutex(gone.map { SidecarResult(photo: batch.photos[$0].id, outcome: .gone) })
         let failure = Mutex<(any Error)?>(nil)
         let present = places.compactMap { place in paths[batch.photos[place].id].map { (place: place, path: $0) } }
-        store.change(present.map { URL(fileURLWithPath: $0.path) }, until: {
+        store.change(present.map { URL(fileURLWithPath: $0.path) }, width: width, until: {
             failure.withLock { $0 != nil } || stop.map { done.value >= $0 } ?? false
         }) { number, sidecar in
             let photo = batch.photos[present[number].place]
