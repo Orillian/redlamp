@@ -641,6 +641,10 @@
             let lab = try app.main { $0.showsLabReadout }
             _ = try app.rightClick(.identifier("histogram"), choosing: ShortcutAction.labReadout.title)
             try app.wait("the readout to switch") { $0.showsLabReadout != lab }
+            // The readout went as the pointer left the photo for the histogram's menu: as the menu closes, the canvas
+            // hears where the Mac's own pointer is, which the driver doesn't move. Back over the photo, it shows again.
+            try app.hover(.canvas, at: CGPoint(x: 0.45, y: 0.5))
+            try app.wait("the readout under the pointer, back over the photo") { $0.pixelReadout != nil }
             let readout = try app.main { $0.pixelReadout }
             try app.expect(
                 readout.map { (0 ... 100).contains($0.lab.x) && $0.rgb.min() >= 0 && $0.rgb.max() <= 100 } == true,
