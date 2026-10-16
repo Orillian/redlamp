@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import Testing
 @testable import RedlampLibrary
 
@@ -38,6 +39,34 @@ struct SidecarCountTests {
         defer { sandbox.remove() }
         let root = sandbox.root
         #expect(try await sandbox.index.read { try $0.photoCount(withSidecarsInRoot: root) } == 3)
+    }
+
+    @Test func `a version shares its file's sidecar and isn't counted, and the count still reads only indexes`(
+    ) async throws {
+        let sandbox = try await Self.library()
+        defer { sandbox.remove() }
+        let root = sandbox.root
+        let folder = try #require(try await sandbox.addFolders(["Shoot"])["Shoot"])
+        try await sandbox.index.write { writer in
+            let file = try #require(try writer.photo(folder: folder, name: "A0.JPG"))
+            let versions = (1 ... 2).map { VersionSummary(
+                id: UUID(),
+                name: "Copy \($0)",
+                created: Date(),
+                hasEdits: true,
+            ) }
+            try writer.setVersions(versions, ofPhoto: file.id)
+        }
+        let (count, plan) = try await sandbox.index.read { reader in
+            try (
+                reader.photoCount(withSidecarsInRoot: root),
+                reader.database.prepare("EXPLAIN QUERY PLAN " + LibrarySidecars.sidecarCount)
+                    .map { $0.string(at: 3) ?? "" },
+            )
+        }
+        #expect(count == 3)
+        #expect(plan.contains { $0.contains("photos_sidecars") } && plan.contains { $0.contains("photos_versions") })
+        #expect(!plan.contains { $0.contains("SCAN photos") }, "\(plan)")
     }
 
     @Test func `the count reads the index of photos with sidecars, not every photo of the root`() async throws {

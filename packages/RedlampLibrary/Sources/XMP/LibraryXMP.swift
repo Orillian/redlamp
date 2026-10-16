@@ -40,7 +40,9 @@ public struct LibraryXMP: Sendable {
     /// takes only what changed since and doesn't take Redlamp's own `.xmp` for another app's, and brings
     /// the index's rows up to date: the organising fields and `.redlamp` dates of photos whose `.redlamp`
     /// changed, those fields its own now, and the `.xmp` date of those whose `.xmp` Redlamp wrote, so the
-    /// indexer reads neither again. Photos of roots marked removed have left the library, and are left alone.
+    /// indexer reads neither again. Photos of roots marked removed have left the library, and are left alone. A
+    /// version of a photo's edit stands for its file (LIB-48): what's merged and written is the file's own metadata,
+    /// never a version's.
     public func sync(
         _ ids: [Int64], writing: Bool? = nil, dryRun: Bool = false, filling: Bool = true,
     ) async throws -> XMPReport {
@@ -49,8 +51,8 @@ public struct LibraryXMP: Sendable {
         let settings = try await settings()
         let writes = writing ?? settings.writes
         let locator = try await LibrarySidecars(index: index, paths: paths).locator()
-        let selected = Set(ids)
-        let folders = try await index.read { reader -> [(path: String, rows: [PhotoRecord])] in
+        let (selected, folders) = try await index.read { reader in
+            let selected = try Set(reader.fileRows(of: ids))
             var folderIDs = Set<Int64>()
             let leftOut = try reader.removedFolders()
             for id in selected {
@@ -58,9 +60,9 @@ public struct LibraryXMP: Sendable {
                     folderIDs.insert(photo.folder)
                 }
             }
-            return try folderIDs.sorted().compactMap { id in
+            return try (selected, folderIDs.sorted().compactMap { id -> (path: String, rows: [PhotoRecord])? in
                 try reader.folder(id: id).map { try ($0.path, reader.photos(inFolder: id)) }
-            }
+            })
         }
         let involved = folders.flatMap(\.rows).map(\.id)
         let records = try await index.read { try XMPMergeRecord.records(involved, in: $0) }

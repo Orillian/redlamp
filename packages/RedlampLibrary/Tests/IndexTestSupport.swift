@@ -185,7 +185,7 @@ extension LibraryIndex {
             let result = try await body(index)
             try await index.write { writer in
                 if added.contains("version") {
-                    try writer.database.execute("DROP INDEX photos_place")
+                    try writer.database.execute("DROP INDEX photos_place; DROP INDEX photos_versions")
                 }
                 for column in added {
                     try writer.database.execute("ALTER TABLE photos DROP COLUMN \(column)")

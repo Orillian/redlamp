@@ -285,8 +285,9 @@ struct IndexVersionsTests {
         #expect(after.rows == before.rows && after.rows.count == 2)
         #expect(after.text == before.text && after.text == [[7], [12], [7, 12]], "\(before.text)")
         #expect(after.organised == before.organised)
-        #expect(after.indexes == (before.indexes.filter { !$0.hasPrefix("sqlite_autoindex") } + ["photos_place"])
-            .sorted())
+        #expect(after.indexes == (before.indexes.filter { !$0.hasPrefix("sqlite_autoindex") } + [
+            "photos_place", "photos_versions",
+        ]).sorted())
         let checked = try await migrated.read { reader in
             try (
                 reader.database.prepare("PRAGMA integrity_check").first { $0.string(at: 0) },

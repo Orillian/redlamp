@@ -133,7 +133,10 @@ extension HealthChecker {
     /// The store's photos marked unreadable, by ID, but those missing, which only the Missing check lists.
     private static func unreadable(in store: ColumnStore) -> [Int64] {
         var ids: [Int64] = []
-        let marked = store.rows(matching: .leaf(.state(UInt8(PhotoRecord.State.unreadable.rawValue))), sets: [:])
+        let plan = QueryPlan.and([
+            .leaf(.state(UInt8(PhotoRecord.State.unreadable.rawValue))), .not(.leaf(.bit(Packed.version))),
+        ])
+        let marked = store.rows(matching: plan, sets: [:])
         store.listed(marked, unreadable: true).forEach {
             ids.append(store.ids[$0])
             return true

@@ -96,8 +96,9 @@ extension LibraryIndex {
 
     /// SQLite can't drop a table's own `UNIQUE`, so `photos` is made again, every column as the table has it and every
     /// row under its ID, which the text index, keywords, collections and the other tables name; its indexes and the
-    /// views, which name it, are made again from their SQL. An index set back to an earlier version with the column
-    /// only gains the unique index it lacks.
+    /// views, which name it, are made again from their SQL. The index of versions is made before the rows are copied,
+    /// none of them a version, and the unique one after. An index set back to an earlier version with the column only
+    /// gains the indexes it lacks.
     static func migrateToVersion15(_ database: SQLiteDatabase) throws {
         let columns = try database.prepare("""
         SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_info('photos') ORDER BY cid
@@ -128,6 +129,7 @@ extension LibraryIndex {
         let names = columns.map { "\"\($0.name)\"" }.joined(separator: ", ")
         try database.execute("""
         CREATE TABLE photos_15 (\(columns.map(\.definition).joined(separator: ", ")), version TEXT NOT NULL DEFAULT '');
+        CREATE INDEX photos_versions ON photos_15 (folder) WHERE version != '';
         INSERT INTO photos_15 (\(names)) SELECT \(names) FROM photos;
         DROP TABLE photos;
         ALTER TABLE photos_15 RENAME TO photos;
@@ -390,8 +392,10 @@ extension LibraryIndex {
     /// row of its own beside its file's, with the file's folder and name and the version's UUID in `version`, empty for
     /// the file's own row; a photo's place is unique by the three, in an index rather than the table's `UNIQUE`, so a
     /// later change to it needs no table made again. Empty rather than NULL, which a unique index takes as distinct.
+    /// The versions' rows by folder, for counting a root's files without them.
     static let schemaVersion15Index = """
     CREATE UNIQUE INDEX IF NOT EXISTS photos_place ON photos (folder, name, version);
+    CREATE INDEX IF NOT EXISTS photos_versions ON photos (folder) WHERE version != '';
     """
 }
 

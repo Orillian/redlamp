@@ -241,7 +241,7 @@ struct HealthPairs: Sendable {
 
 extension IndexQueries {
     /// Photos `ids` that can be in a pair as the index has them now, or every such photo when nil, but those of
-    /// roots marked removed.
+    /// roots marked removed: files' own rows, a version standing for its file (LIB-48).
     func pairPhotos(of ids: [Int64]?) throws -> [HealthPairs.Photo] {
         var photos: [HealthPairs.Photo] = []
         let leftOut = try removedFolders()
@@ -252,13 +252,13 @@ extension IndexQueries {
                 kind: UInt8(clamping: row.int(at: 3)),
             ))
         }
-        let columns = "SELECT id, folder, name, kind FROM photos WHERE kind BETWEEN 1 AND 3"
+        let columns = "SELECT id, folder, name, kind FROM photos WHERE kind BETWEEN 1 AND 3 AND version = ''"
         guard let ids else {
             try database.cached(columns).forEachRow(add)
             return photos
         }
         let statement = try database.cached(columns + " AND id = ?")
-        for id in Set(ids) {
+        for id in try Set(fileRows(of: ids)) {
             try statement.bind(id, at: 1)
             try statement.forEachRow(add)
         }

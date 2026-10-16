@@ -117,11 +117,12 @@ public extension LibraryHealth {
 }
 
 extension IndexQueries {
-    /// The photos of `folder` missing from it (DEC-59), by name, as `photos_missing` finds them.
+    /// The files of `folder` missing from it (DEC-59), by name, as `photos_missing` finds them; their versions go
+    /// with them (LIB-48).
     func missingPhotos(inFolder folder: Int64) throws -> [PhotoRecord] {
         let statement = try database.cached("""
         SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? AND state & \(PhotoRecord.State.missing.rawValue) != 0
-        ORDER BY name
+          AND version = '' ORDER BY name
         """)
         try statement.bind(folder, at: 1)
         return try statement.map(PhotoRecord.init)

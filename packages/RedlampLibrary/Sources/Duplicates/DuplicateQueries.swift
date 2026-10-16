@@ -18,11 +18,12 @@ struct DuplicateRow: Sendable, Hashable {
 
 extension IndexQueries {
     /// Every photo of the library with a content key, grouped by it and its size in one pass over the photos;
-    /// those of roots marked removed have left it.
+    /// those of roots marked removed have left it. A version of a photo's edit shares its file's key and is no copy
+    /// of it (LIB-48): only files' own rows are grouped.
     func groupContentKeys() throws -> DuplicateGrouper {
         var grouper = try DuplicateGrouper(capacity: photoCount())
         try database.cached("""
-        SELECT id, size, content_key FROM photos WHERE content_key IS NOT NULL AND \(inLibrary())
+        SELECT id, size, content_key FROM photos WHERE content_key IS NOT NULL AND version = '' AND \(inLibrary())
         """)
         .forEachRow { row in
             guard let (high, low) = row.contentKeyHalves(at: 2) else { return }
@@ -53,9 +54,9 @@ extension IndexQueries {
         return rows
     }
 
-    /// The names of the photos in `folder`.
+    /// The names of the files in `folder`.
     func photoNames(inFolder folder: Int64) throws -> [String] {
-        let statement = try database.cached("SELECT name FROM photos WHERE folder = ?")
+        let statement = try database.cached("SELECT name FROM photos WHERE folder = ? AND version = ''")
         try statement.bind(folder, at: 1)
         return try statement.map { $0.string(at: 0) ?? "" }
     }

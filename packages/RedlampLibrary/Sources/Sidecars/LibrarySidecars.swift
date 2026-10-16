@@ -348,8 +348,9 @@ public extension IndexQueries {
         return try statement.first { $0.int(at: 0) } ?? 0
     }
 
-    /// How many photos in `root`'s folders have a `.redlamp` sidecar, as the index last read them: from the index of
-    /// those photos by folder, without reading a photo's row.
+    /// How many photos in `root`'s folders have a `.redlamp` sidecar, as the index last read them: from the indexes of
+    /// those photos and of versions by folder, without reading a photo's row. A version shares its file's sidecar
+    /// (LIB-48), and isn't counted.
     func photoCount(withSidecarsInRoot root: Int64) throws -> Int {
         let statement = try database.cached(LibrarySidecars.sidecarCount)
         try statement.bind(root, at: 1)
@@ -358,8 +359,11 @@ public extension IndexQueries {
 }
 
 extension LibrarySidecars {
-    /// `photoCount(withSidecarsInRoot:)`'s query, which `photos_sidecars` answers.
+    /// `photoCount(withSidecarsInRoot:)`'s query, which `photos_sidecars` and `photos_versions` answer.
     static let sidecarCount = """
-    SELECT count(*) FROM photos WHERE sidecar_modified IS NOT NULL AND folder IN (SELECT id FROM folders WHERE root = ?)
+    SELECT (SELECT count(*) FROM photos WHERE sidecar_modified IS NOT NULL
+        AND folder IN (SELECT id FROM folders WHERE root = ?1))
+      - (SELECT count(*) FROM photos INDEXED BY photos_versions
+        WHERE version != '' AND folder IN (SELECT id FROM folders WHERE root = ?1))
     """
 }
