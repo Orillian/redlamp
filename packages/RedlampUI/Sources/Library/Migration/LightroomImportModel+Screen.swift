@@ -25,8 +25,8 @@ struct LightroomRootDisk: Sendable, Hashable {
     var name: String
     var isLocal: Bool
     var isInternal: Bool
-    /// Whether it spins (true) or is solid state (false), which names its kind and puts up the spinning disk's
-    /// notice: nil, not known, until LIB-53's `VolumeInfo.isRotational` is on main to fill it.
+    /// Whether it spins (true) or is solid state (false), as its device says (`VolumeInfo.isRotational`), which names
+    /// its kind and puts up the spinning disk's notice; nil when the device doesn't say.
     var spins: Bool?
 
     var screenDisk: LightroomImportScreen.Disk {
@@ -50,7 +50,9 @@ struct LightroomRootDisk: Sendable, Hashable {
         guard let volume = try? LocalFileSystem().volume(of: URL(fileURLWithPath: path, isDirectory: true))
         else { return nil }
         let name = volume.name ?? URL(fileURLWithPath: path).pathComponents.dropFirst(2).first ?? path
-        return LightroomRootDisk(name: name, isLocal: volume.isLocal, isInternal: volume.isInternal)
+        return LightroomRootDisk(
+            name: name, isLocal: volume.isLocal, isInternal: volume.isInternal, spins: volume.isRotational,
+        )
     }
 }
 
