@@ -30,6 +30,7 @@ public final class KernelLibrary: @unchecked Sendable {
     public let xtransAverage: any MTLComputePipelineState
     public let develop: any MTLComputePipelineState
     public let histogram: any MTLComputePipelineState
+    public let border: any MTLComputePipelineState
     public let denoisePrepare: any MTLComputePipelineState
     public let denoiseRows: any MTLComputePipelineState
     public let denoiseColumns: any MTLComputePipelineState
@@ -110,6 +111,7 @@ public final class KernelLibrary: @unchecked Sendable {
         xtransAverage = try pipeline("rl_xtrans_average")
         develop = try pipeline("rl_develop")
         histogram = try pipeline("rl_histogram")
+        border = try pipeline("rl_border")
         denoisePrepare = try pipeline("rl_denoise_prepare")
         denoiseRows = try pipeline("rl_denoise_rows")
         denoiseColumns = try pipeline("rl_denoise_columns")

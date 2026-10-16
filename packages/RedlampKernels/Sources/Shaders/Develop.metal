@@ -545,6 +545,188 @@ static inline float3 frameBorder(float3 encoded, float2 q, float aspect, int sty
     return encoded;
 }
 
+// MARK: - Border around the photo
+
+// Edge print's dot-matrix face: 5 × 7 dots per glyph, a row per entry, the leftmost dot in bit 4.
+// Glyphs by BorderGlyphs' codes: space, 0 to 9, A to Z, an arrow, a dash and a full stop.
+constant uchar kBorderGlyphs[40][7] = {
+    {0, 0, 0, 0, 0, 0, 0},
+    {0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110},
+    {0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110},
+    {0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111},
+    {0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110},
+    {0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010},
+    {0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110},
+    {0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110},
+    {0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000},
+    {0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110},
+    {0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100},
+    {0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001},
+    {0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110},
+    {0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110},
+    {0b11100, 0b10010, 0b10001, 0b10001, 0b10001, 0b10010, 0b11100},
+    {0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111},
+    {0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000},
+    {0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111},
+    {0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001},
+    {0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110},
+    {0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100},
+    {0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001},
+    {0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111},
+    {0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001},
+    {0b10001, 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001},
+    {0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110},
+    {0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000},
+    {0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101},
+    {0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001},
+    {0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110},
+    {0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100},
+    {0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110},
+    {0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100},
+    {0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010},
+    {0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001},
+    {0b10001, 0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100},
+    {0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111},
+    {0b01000, 0b01100, 0b01110, 0b01111, 0b01110, 0b01100, 0b01000},
+    {0, 0, 0, 0b11111, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0b01100, 0b01100},
+};
+
+static inline int borderGlyph(constant BorderParams &b, int index) {
+    float4 groups[8] = {b.text0, b.text1, b.text2, b.text3, b.text4, b.text5, b.text6, b.text7};
+    return int(groups[index / 4][index % 4] + 0.5f);
+}
+
+// Coverage of the edge print at `s` along the film and `t` across it, from the text's foot: round
+// dots of a 5 × 7 face, `dot` apart, each glyph six dots wide.
+static inline float edgePrint(constant BorderParams &b, float s, float t, float dot, float pixel) {
+    int count = int(b.canvas.z + 0.5f);
+    if (s < 0.0f || t < 0.0f || t >= 7.0f * dot) return 0.0f;
+    int cell = int(floor(s / (6.0f * dot)));
+    if (cell >= count) return 0.0f;
+    float local = s - float(cell) * 6.0f * dot;
+    int column = int(floor(local / dot));
+    if (column > 4) return 0.0f;
+    int row = 6 - int(floor(t / dot));
+    int glyph = clamp(borderGlyph(b, cell), 0, 39);
+    if (((kBorderGlyphs[glyph][row] >> (4 - column)) & 1) == 0) return 0.0f;
+    float2 centre = float2((float(column) + 0.5f) * dot, (float(6 - row) + 0.5f) * dot);
+    float distance = length(float2(local, t) - centre);
+    return 1.0f - smoothstep(0.4f * dot - pixel, 0.4f * dot + pixel, distance);
+}
+
+// A rounded rectangle's signed distance (negative inside).
+static inline float roundedBox(float2 q, float2 centre, float2 halfSize, float radius) {
+    float2 outside = abs(q - centre) - halfSize + radius;
+    return length(max(outside, 0.0f)) + min(max(outside.x, outside.y), 0.0f) - radius;
+}
+
+// The border's colour at canvas point `q` (canvas heights), sRGB-encoded. `d` is the distance out
+// from the photo's edge (the largest of the four), `pixel` an output pixel.
+static inline float3 borderColor(constant BorderParams &b, float2 q, float pixel) {
+    float aspect = b.canvas.x;
+    int style = int(b.canvas.y + 0.5f);
+    float2 p0 = b.photo.xy, p1 = b.photo.xy + b.photo.zw;
+    float shortSide = min(b.photo.z, b.photo.w), longSide = max(b.photo.z, b.photo.w);
+    bool landscape = b.photo.z >= b.photo.w;
+    float2 out2 = max(p0 - q, q - p1);
+    float d = max(out2.x, out2.y);
+    float3 color = b.color.rgb;
+
+    if (style == 2 || style == 3) {
+        // Film: its base, black in a positive, around the frame. The rebate runs along the long
+        // sides; `s` is along the film, `t` across it from its outer edge.
+        float3 base = float3(0.015f, 0.012f, 0.01f);
+        float s = landscape ? q.x : q.y;
+        float edgeNear = landscape ? q.y : q.x;
+        float edgeFar = landscape ? 1.0f - q.y : aspect - q.x;
+        float t = min(edgeNear, edgeFar);
+        bool printSide = edgeFar <= edgeNear;
+        float along0 = landscape ? p0.x : p0.y;
+        float centre = landscape ? 0.5f * (p0.x + p1.x) : 0.5f * (p0.y + p1.y);
+        color = base;
+        float frame = shortSide / (style == 2 ? 24.0f : 56.0f);
+        if (style == 2) {
+            // KS perforations, 2.79 × 1.98 mm at a 4.75 mm pitch, 2 mm from the edge.
+            float pitch = 4.75f * frame;
+            float along = fmod(s - centre + 100.0f * pitch + 0.5f * pitch, pitch) - 0.5f * pitch;
+            float hole = roundedBox(float2(along, t), float2(0.0f, 3.0f * frame), float2(1.395f, 0.99f) * frame, 0.5f * frame);
+            float lit = 1.0f - smoothstep(-pixel, pixel, hole);
+            color = mix(color, float3(0.98f, 0.93f, 0.84f), lit);
+        }
+        if (b.canvas.z > 0.5f && printSide) {
+            float height = style == 2 ? 1.1f * frame : 1.4f * frame;
+            float foot = style == 2 ? 0.45f * frame : 0.55f * frame;
+            float ink = edgePrint(b, s - (along0 + 0.04f * longSide), t - foot, height / 7.0f, pixel);
+            color = mix(color, float3(0.98f, 0.66f, 0.25f), ink);
+        }
+        return color;
+    }
+    if (style >= 4 && style <= 6) {
+        // An instant card, a shade darker where it meets the picture's recess.
+        float recess = 1.0f - smoothstep(0.0f, 0.004f * shortSide + pixel, d);
+        return color * (1.0f - 0.12f * recess);
+    }
+    if (style == 7) {
+        // A card mount, bevelled down to the window.
+        float bevel = smoothstep(0.0f, 0.03f * shortSide, d);
+        return mix(color * 0.86f, color, bevel);
+    }
+    if (style == 8) {
+        // A plastic mount with a moulded rim around the window and at its outer edge.
+        float rim = smoothstep(0.035f * shortSide - pixel, 0.035f * shortSide + pixel, d)
+            * (1.0f - smoothstep(0.05f * shortSide - pixel, 0.05f * shortSide + pixel, d));
+        float edgeDistance = min(min(q.x, aspect - q.x), min(q.y, 1.0f - q.y));
+        float outer = 1.0f - smoothstep(0.02f * shortSide - pixel, 0.02f * shortSide + pixel, edgeDistance);
+        return color * (1.0f + 0.18f * max(rim, outer));
+    }
+    if (style == 9) {
+        // A filed-out negative carrier prints a black edge, rough where the file left it, on paper.
+        bool across = out2.x >= out2.y;
+        float along = across ? q.y : q.x;
+        float rough = valueNoise(float2(along / (0.006f * shortSide), across ? 1.0f : 7.0f), 211u) * 0.6f
+            + valueNoise(float2(along / (0.0015f * shortSide), across ? 3.0f : 9.0f), 223u) * 0.4f;
+        float edge = 0.035f * shortSide * (0.55f + 0.9f * rough);
+        float black = 1.0f - smoothstep(edge - pixel, edge + pixel, d);
+        return mix(color, float3(0.02f), black);
+    }
+    // Plain, with its keyline.
+    float width = b.keyline.x, gap = b.keyline.y;
+    if (width > 0.0f) {
+        float line = clamp((d - gap) / pixel + 0.5f, 0.0f, 1.0f) * clamp((gap + width - d) / pixel + 0.5f, 0.0f, 1.0f);
+        color = mix(color, b.keylineColor.rgb, line);
+    }
+    return color;
+}
+
+// Fills the border around the photo, which rl_develop has already drawn into its rect, in the same
+// output encoding.
+kernel void rl_border(
+    texture2d<float, access::write> out [[texture(0)]],
+    constant DevelopParams &p [[buffer(0)]],
+    constant BorderParams &b [[buffer(1)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    uint width = out.get_width(), height = out.get_height();
+    if (gid.x >= width || gid.y >= height) return;
+    if (float(gid.x) >= b.photoPixels.x && float(gid.x) < b.photoPixels.z && float(gid.y) >= b.photoPixels.y
+        && float(gid.y) < b.photoPixels.w) return;
+    float2 uv = b.region.xy + (float2(gid) + 0.5f) / float2(width, height) * b.region.zw;
+    float2 q = float2(uv.x * b.canvas.x, uv.y);
+    float pixel = b.region.w / float(height);
+    float3 encoded = clamp(borderColor(b, q, pixel), 0.0f, 1.0f);
+    // sRGB to linear Rec. 2020, then into the output gamut as rl_develop puts the photo there.
+    float3 linear = srgbDecode3(encoded);
+    float3 rec2020 = float3(dot(float3(0.6274040f, 0.3292820f, 0.0433136f), linear),
+                            dot(float3(0.0690970f, 0.9195400f, 0.0113612f), linear),
+                            dot(float3(0.0163916f, 0.0880132f, 0.8955950f), linear));
+    encoded = srgbEncode3(gamutMap(rec2020, p));
+    int encoding = int(p.geometry.z);
+    float3 result = encoding == 4 ? rec2020ToOKLab(rec2020)
+        : encoding == 0 || encoding == 3 || encoding == 6 ? srgbDecode3(encoded) : encoded;
+    out.write(float4(result, 1.0f), gid);
+}
+
 // MARK: - Glow
 
 // A wide, smooth blur with a long tail, as a point spread falls off: six half-octave levels
@@ -1248,7 +1430,7 @@ kernel void rl_develop(
     if (outsideImage) encoded = float3(1.0f);
     float3 result = encoding == 4 ? rec2020ToOKLab(srgbDecode3(encoded))
         : encoding == 0 || encoding == 3 || encoding == 6 ? srgbDecode3(encoded) : encoded;
-    out.write(float4(result, encoding == 6 ? luma : 1.0f), gid);
+    out.write(float4(result, encoding == 6 ? luma : 1.0f), gid + uint2(p.outputOrigin.xy));
 }
 
 // MARK: - Histogram
@@ -1258,6 +1440,8 @@ struct HistogramParams {
     uint height;
     uint step;
     uint linearInput;   // 1 when the texture holds linear values that need encoding
+    uint originX;       // where the counted area starts: the photo inside its border
+    uint originY;
 };
 
 kernel void rl_histogram(
@@ -1277,7 +1461,7 @@ kernel void rl_histogram(
 
     uint2 pixel = gid * p.step;
     if (pixel.x < p.width && pixel.y < p.height) {
-        float3 c = image.read(pixel).rgb;
+        float3 c = image.read(pixel + uint2(p.originX, p.originY)).rgb;
         if (p.linearInput == 1) c = srgbEncode3(clamp(c, 0.0f, 1.0f));
         c = clamp(c, 0.0f, 1.0f);
         float luma = dot(c, float3(0.2126f, 0.7152f, 0.0722f));

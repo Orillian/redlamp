@@ -27,5 +27,5 @@ kernel void rl_raw_clipping(
     if (clip.w > 0.5f) limit *= noiseGain.sample(linearSampler, sourceUV).rgb;
     bool3 clipped = camera >= limit;
     if (!any(clipped)) return;
-    out.write(float4(all(clipped) ? float3(0.0f) : float3(clipped), 1.0f), gid);
+    out.write(float4(all(clipped) ? float3(0.0f) : float3(clipped), 1.0f), gid + uint2(p.outputOrigin.xy));
 }

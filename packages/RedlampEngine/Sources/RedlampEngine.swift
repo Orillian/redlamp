@@ -404,7 +404,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         let started = clock.now
 
         let region = request.region ?? .full
-        let developed = request.recipe.developedSize(imageSize: session.orientedSize)
+        let developed = request.recipe.borderedSize(imageSize: session.orientedSize)
         let size = request.region == nil ? developed.fitted(within: request.targetSize) : request.targetSize
         guard size.width > 0, size.height > 0 else { throw EngineError.renderFailed("empty target") }
         let target = try surfaces.next(size: size)
@@ -416,17 +416,19 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         var reused: CachedOverview?
         var overviewSize = PixelSize.zero
         let compared = try encoding(commands) {
-            try encodeDevelop(
+            let area = try encodeDevelop(
                 request.recipe, session: session, into: target.texture, size: size, region: region,
                 encoding: .linear, showClipping: request.showClipping, maskOverlay: request.maskOverlay,
                 maskOverlayColor: request.maskOverlayColor, maskOverlayStyle: request.maskOverlayStyle,
                 maskOverlayOpacity: request.maskOverlayOpacity,
                 commands: commands, visualizeSpots: request.visualizeSpots,
-                visualizePointColor: request.visualizePointColor, retouchMaps: .refreshLater,
+                visualizePointColor: request.visualizePointColor, retouchMaps: .refreshLater, bordered: true,
             )
             // Visualize Spots and Visualize Range replace the photo in the frame, not in the histogram.
             if request.region == nil, request.visualizeSpots == nil, request.visualizePointColor == nil {
-                try encodeHistogram(texture: target.texture, size: size, linear: true, commands: commands)
+                if let area {
+                    try encodeHistogram(texture: target.texture, area: area, linear: true, commands: commands)
+                }
             } else {
                 overviewSize = developed.fitted(within: PixelSize(width: 1024, height: 1024))
                 let key = OverviewKey(
@@ -440,14 +442,16 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
                     reused = lastOverview
                 } else {
                     let whole = try overviews.next(size: overviewSize)
-                    try encodeDevelop(
+                    let area = try encodeDevelop(
                         request.recipe, session: session, into: whole.texture, size: overviewSize,
                         encoding: .linear, showClipping: request.showClipping, maskOverlay: request.maskOverlay,
                         maskOverlayColor: request.maskOverlayColor, maskOverlayStyle: request.maskOverlayStyle,
                         maskOverlayOpacity: request.maskOverlayOpacity,
-                        commands: commands, retouchMaps: .refreshLater,
+                        commands: commands, retouchMaps: .refreshLater, bordered: true,
                     )
-                    try encodeHistogram(texture: whole.texture, size: overviewSize, linear: true, commands: commands)
+                    if let area {
+                        try encodeHistogram(texture: whole.texture, area: area, linear: true, commands: commands)
+                    }
                     overview = (key, whole)
                 }
             }
@@ -514,7 +518,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         )
     }
 
-    func encodeDevelop(
+    func encodePhoto(
         _ recipe: EditRecipe,
         session: ImageSession,
         into texture: any MTLTexture,
@@ -533,6 +537,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         visualizePointColor: UUID? = nil,
         pointColorCoverage: Int? = nil,
         retouchMaps: RetouchStage.Maps = .current,
+        origin: (x: Int, y: Int) = (0, 0),
     ) throws {
         let photo = try revisions.session(for: recipe, base: session)
         let session = try retouched(recipe, session: photo, commands: commands, maps: retouchMaps)
@@ -556,6 +561,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         )
         try commands.withComputeEncoder { encoder in
             inputs.params.denoised = processed?.area ?? .zero
+            inputs.params.outputOrigin = SIMD4(Float(origin.x), Float(origin.y), 0, 0)
             if let visualizeSpots {
                 let sensitivity = Float(min(max(visualizeSpots, 0), 100) / 100)
                 inputs.params.spots = SIMD4(1, 0.002 + 0.1 * (1 - sensitivity) * (1 - sensitivity), 0, 0)
@@ -607,12 +613,19 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         commands: any MTLCommandBuffer,
     ) throws {
         let session = try revisions.session(for: recipe, base: session)
+        var size = size, region = region, origin = (x: 0, y: 0)
+        let layout = recipe.borderLayout(imageSize: session.orientedSize)
+        if layout.hasBorder {
+            guard let pixels = layout.photoPixels(in: region, size: size) else { return }
+            (size, region, origin) = (pixels.size, pixels.photoRegion, pixels.origin)
+        }
         guard let encoder = commands.makeComputeCommandEncoder() else { throw EngineError.gpuUnavailable }
         var inputs = DevelopParameters.make(
             recipe: recipe, session: session, baseLook: resolveBaseLook(recipe.baseLook, session: session),
             outputSize: size, region: region, encoding: .linear, showClipping: false, maskOverlay: nil,
             maskOverlayColor: .red,
         )
+        inputs.params.outputOrigin = SIMD4(Float(origin.x), Float(origin.y), 0, 0)
         // Mosaics clip where highlight reconstruction says they did; linear raws were clamped at 1.
         // Both just below, so values rounded to half floats still count.
         let mosaic = session.sensor == .bayer || session.sensor == .xTrans
@@ -634,17 +647,20 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
 
     private func encodeHistogram(
         texture: any MTLTexture,
-        size: PixelSize,
+        area: PhotoArea,
         linear: Bool,
         commands: any MTLCommandBuffer,
     ) throws {
         guard let encoder = commands.makeComputeCommandEncoder() else { throw EngineError.gpuUnavailable }
+        let size = area.size
         let step = max(1, Int((Double(size.width * size.height) / 400_000).squareRoot().rounded(.up)))
         var params = HistogramParams(
             width: UInt32(size.width),
             height: UInt32(size.height),
             step: UInt32(step),
             linearInput: linear,
+            originX: UInt32(area.x),
+            originY: UInt32(area.y),
         )
         encoder.setComputePipelineState(kernels.histogram)
         encoder.setTexture(texture, index: 0)
@@ -706,7 +722,7 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
                 }
             }
         }
-        let developed = request.recipe.developedSize(imageSize: session.orientedSize)
+        let developed = request.recipe.borderedSize(imageSize: session.orientedSize)
         var size = developed
         if let limit = request.maxLongEdge, limit < size.longEdge {
             size = size.fitted(within: PixelSize(width: limit, height: limit))
@@ -923,12 +939,12 @@ extension RedlampEngine {
             )
         } else {
             guard let commands = queue.makeCommandBuffer() else { throw EngineError.gpuUnavailable }
-            try self.encoding(commands) {
+            _ = try self.encoding(commands) {
                 try encodeDevelop(
                     recipe, session: session, into: texture, size: size,
                     encoding: encoding, showClipping: false, maskOverlay: maskOverlay,
                     maskOverlayStyle: maskOverlayStyle, commands: commands, cacheDetail: cacheDetail,
-                    retouchMaps: .fresh,
+                    retouchMaps: .fresh, bordered: true,
                 )
             }
             try finish(commands)
@@ -944,7 +960,7 @@ extension RedlampEngine {
         size: PixelSize,
         cacheDetail: Bool,
     ) throws {
-        let full = request.recipe.developedSize(imageSize: session.orientedSize)
+        let full = request.recipe.borderedSize(imageSize: session.orientedSize)
         func linearTexture(_ size: PixelSize) throws -> any MTLTexture {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba16Float, width: size.width, height: size.height, mipmapped: false,
@@ -1007,6 +1023,7 @@ extension RedlampEngine {
                         recipe, session: session, into: scratch, size: tileSize, region: region,
                         encoding: encoding, showClipping: false, maskOverlay: maskOverlay,
                         maskOverlayStyle: maskOverlayStyle, commands: commands, cacheDetail: false, retouchMaps: .fresh,
+                        bordered: true,
                     )
                     guard let blit = commands.makeBlitCommandEncoder() else { throw EngineError.gpuUnavailable }
                     blit.copy(
@@ -1130,6 +1147,7 @@ extension RedlampEngine {
         try encodeDevelop(
             recipe, session: session, into: target.texture, size: size, region: region,
             encoding: .linear, showClipping: request.showClipping, commands: commands, retouchMaps: .fresh,
+            bordered: true,
         )
         var overview: IOSurfaceRef?
         if request.region != nil {
@@ -1137,6 +1155,7 @@ extension RedlampEngine {
             try encodeDevelop(
                 recipe, session: session, into: whole.texture, size: overviewSize,
                 encoding: .linear, showClipping: request.showClipping, commands: commands, retouchMaps: .fresh,
+                bordered: true,
             )
             overview = whole.surface
         }

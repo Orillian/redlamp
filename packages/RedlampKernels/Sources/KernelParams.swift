@@ -175,12 +175,77 @@ public struct HistogramParams {
     public var height: UInt32
     public var step: UInt32
     public var linearInput: UInt32
+    public var originX: UInt32
+    public var originY: UInt32
 
-    public init(width: UInt32, height: UInt32, step: UInt32, linearInput: Bool) {
+    public init(
+        width: UInt32,
+        height: UInt32,
+        step: UInt32,
+        linearInput: Bool,
+        originX: UInt32 = 0,
+        originY: UInt32 = 0,
+    ) {
         self.width = width
         self.height = height
         self.step = step
         self.linearInput = linearInput ? 1 : 0
+        self.originX = originX
+        self.originY = originY
+    }
+}
+
+/// The border around the photo, as `rl_border` reads it (`BorderParams` in RedlampShaderTypes.h).
+public struct BorderParams {
+    public var photoPixels = SIMD4<Float>(0, 0, 0, 0)
+    public var region = SIMD4<Float>(0, 0, 1, 1)
+    public var canvas = SIMD4<Float>(1, 0, 0, 0)
+    public var photo = SIMD4<Float>(0, 0, 1, 1)
+    public var color = SIMD4<Float>(1, 1, 1, 1)
+    public var keyline = SIMD4<Float>(0, 0, 0, 0)
+    public var keylineColor = SIMD4<Float>(0, 0, 0, 1)
+    public var text0 = SIMD4<Float>(0, 0, 0, 0)
+    public var text1 = SIMD4<Float>(0, 0, 0, 0)
+    public var text2 = SIMD4<Float>(0, 0, 0, 0)
+    public var text3 = SIMD4<Float>(0, 0, 0, 0)
+    public var text4 = SIMD4<Float>(0, 0, 0, 0)
+    public var text5 = SIMD4<Float>(0, 0, 0, 0)
+    public var text6 = SIMD4<Float>(0, 0, 0, 0)
+    public var text7 = SIMD4<Float>(0, 0, 0, 0)
+
+    public init() {}
+
+    /// The edge print's glyphs (`BorderGlyphs`), at most 32.
+    public mutating func setText(_ glyphs: [Int]) {
+        var values = glyphs.prefix(32).map(Float.init)
+        values += Array(repeating: 0, count: 32 - values.count)
+        func group(_ index: Int) -> SIMD4<Float> {
+            SIMD4(values[index * 4], values[index * 4 + 1], values[index * 4 + 2], values[index * 4 + 3])
+        }
+        (text0, text1, text2, text3) = (group(0), group(1), group(2), group(3))
+        (text4, text5, text6, text7) = (group(4), group(5), group(6), group(7))
+        canvas.z = Float(min(glyphs.count, 32))
+    }
+}
+
+/// Edge print's dot-matrix face, as `rl_border` draws it: space, 0 to 9, A to Z, an arrow, a dash
+/// and a full stop. Anything else is a space.
+public enum BorderGlyphs {
+    public static func codes(_ text: String) -> [Int] {
+        text.uppercased().map { character in
+            if let digit = character.wholeNumberValue, character.isASCII {
+                return 1 + digit
+            }
+            if let ascii = character.asciiValue, ascii >= 65, ascii <= 90 {
+                return 11 + Int(ascii - 65)
+            }
+            switch character {
+            case ">": return 37
+            case "-": return 38
+            case ".": return 39
+            default: return 0
+            }
+        }
     }
 }
 
@@ -241,6 +306,7 @@ public struct DevelopParams {
     public var vignette2 = SIMD4<Float>(0, 0, 0, 0)
     public var spots = SIMD4<Float>(0, 0, 0, 0)
     public var pointColor = SIMD4<Float>(0, 0, 0, 0)
+    public var outputOrigin = SIMD4<Float>(0, 0, 0, 0)
 
     public init() {}
 

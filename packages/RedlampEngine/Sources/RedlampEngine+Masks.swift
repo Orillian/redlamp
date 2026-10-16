@@ -184,7 +184,7 @@ extension RedlampEngine {
         masks.use(session, commands: commands)
         let size = masks.guideSize
         let render = { [self] (guideRecipe: EditRecipe, texture: any MTLTexture) in
-            try encodeDevelop(
+            try encodePhoto(
                 guideRecipe, session: session, into: texture, size: size, encoding: .okLab, showClipping: false,
                 commands: commands, cacheDetail: false, detail: false, retouchMaps: retouchMaps,
             )

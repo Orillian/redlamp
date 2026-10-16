@@ -49,7 +49,7 @@ extension RedlampEngine {
               let buffer = device.makeBuffer(length: bytes, options: .storageModeShared)
         else { throw EngineError.gpuUnavailable }
         commands.label = "Readout"
-        try encoding(commands) {
+        _ = try encoding(commands) {
             try encodeDevelop(
                 recipe, session: session, into: texture, size: PixelSize(width: side, height: side), region: region,
                 encoding: output, showClipping: false, commands: commands, cacheDetail: false,

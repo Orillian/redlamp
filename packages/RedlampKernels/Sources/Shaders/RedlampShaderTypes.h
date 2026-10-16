@@ -82,6 +82,26 @@ struct DevelopParams {
     float4 spots;             // x 1 = Visualize Spots, y its threshold (log luminance)
     float4 pointColor;        // x Point Color's swatch count; y the swatch Visualize Range shows, plus one (0 none);
                               // z with output encoding 5, the mask layer whose coverage goes in alpha, plus one
+    float4 outputOrigin;      // xy the output texture pixel the rendered area starts at (the photo inside its border)
+};
+
+// The border around the photo (rl_border, BorderLayout). Lengths are in canvas heights.
+struct BorderParams {
+    float4 photoPixels;       // the photo's pixels in the output texture, which are left alone: x0, y0, x1, y1
+    float4 region;            // the part of the canvas the texture shows: xy origin, zw size (normalized)
+    float4 canvas;            // x canvas aspect (width / height), y style (BorderStyle), z edge print glyph count
+    float4 photo;             // the photo's rect: xy origin, zw size
+    float4 color;             // the border's colour, sRGB-encoded
+    float4 keyline;           // x width, y gap
+    float4 keylineColor;      // sRGB-encoded
+    float4 text0;             // edge print glyphs (BorderGlyphs), one per component
+    float4 text1;
+    float4 text2;
+    float4 text3;
+    float4 text4;
+    float4 text5;
+    float4 text6;
+    float4 text7;
 };
 
 // One Point Color swatch (TON-29): its colour, the range of colours around it that it selects, and
