@@ -254,6 +254,23 @@ struct EditorVersionTests {
         #expect(model.openVersion == nil && model.value(.exposure) == 1, "the version open before the photo's own")
     }
 
+    @Test func `an import from Lightroom Classic leaves the photo open as it is while one of its versions is open`(
+    ) async throws {
+        let (editor, cleanup) = try await openEditor()
+        defer { cleanup() }
+        let model = editor.model
+        var imported = EditRecipe()
+        imported[.exposure] = 0.7
+        let path = editor.photo.standardizedFileURL.path
+        model.createVersion()
+        #expect(await model.lightroomEditor.change(path, imported, nil, [], []) == .left)
+        #expect(model.value(.exposure) == 0)
+
+        model.showVersion(nil)
+        #expect(await model.lightroomEditor.change(path, imported, nil, [], []) != .left)
+        #expect(model.value(.exposure) == 0.7)
+    }
+
     @Test func `another writer's removal of the version open opens the photo's own edit`() async throws {
         let (editor, cleanup) = try await openEditor()
         defer { cleanup() }

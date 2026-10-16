@@ -51,7 +51,8 @@ extension EditorModel {
     }
 
     /// The photo at `path` given `recipe` as a step titled as Undo Import's or the import's, while its edit is
-    /// `over` (nil: while it's unedited), and its snapshots changed.
+    /// `over` (nil: while it's unedited), and its snapshots changed. The import gives the photo's own edit, so a
+    /// version open leaves it as it is (EDT-09).
     private func changeFromLightroom(
         _ path: String, _ next: EditRecipe, over: EditRecipe?, adding: [Snapshot], removing: Set<UUID>,
     ) async -> LightroomEditor.Outcome {
@@ -60,7 +61,7 @@ extension EditorModel {
         guard let visit = currentVisit, visit.url.standardizedFileURL == url.standardizedFileURL else {
             return isOpen(url) ? .left : .notOpen
         }
-        guard !isReadOnly, over.map({ recipe == $0 }) ?? recipe.isPristine else { return .left }
+        guard !isReadOnly, openVersion == nil, over.map({ recipe == $0 }) ?? recipe.isPristine else { return .left }
         let (before, had) = (recipe, snapshots)
         commit(next, .paste, over == nil ? "Import from Lightroom Classic" : "Undo Import from Lightroom Classic")
         changeSnapshots(adding: adding, removing: removing)
