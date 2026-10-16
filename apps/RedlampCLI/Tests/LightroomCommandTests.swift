@@ -223,6 +223,46 @@ struct LightroomCommandTests {
         #expect(!standInLook.baseLook.isAdobeProfile && standInLook[.exposure] == 0.5)
     }
 
+    @Test func `an import brings a virtual copy across as a version of its photo, and --undo takes it back`(
+    ) async throws {
+        let scratch = FileManager.default.temporaryDirectory.appending(path: "redlamp-copies-\(UUID().uuidString)")
+        let photos = scratch.appending(path: "Shoot")
+        let index = scratch.appending(path: "Library/Index.sqlite")
+        for folder in [photos, index.deletingLastPathComponent()] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let photo = photos.appending(path: "Shoot_0001.jpg")
+        try Self.jpeg(at: photo, orientation: 1)
+        let catalog = scratch.appending(path: "Lightroom/Lightroom Catalog.lrcat")
+        try Self.catalog(at: catalog, root: photos.standardizedFileURL.path + "/", photos: [
+            ("Shoot_0001.jpg", "AB", #"s = { ProcessVersion = "11.0", Exposure2012 = 0.5 }"#),
+        ])
+        var database: OpaquePointer?
+        try #require(sqlite3_open(catalog.path, &database) == SQLITE_OK)
+        let copied = sqlite3_exec(database, """
+        INSERT INTO Adobe_images VALUES (100, 'copy', '', 'Black and white', 6000, 4000, 11, 'AB', 0, 4, 10);
+        INSERT INTO Adobe_imageDevelopSettings VALUES (101, 'digest', 1, 100, '11.0',
+          's = { ProcessVersion = "11.0", Exposure2012 = -0.5 }');
+        """, nil, nil, nil)
+        sqlite3_close(database)
+        try #require(copied == SQLITE_OK)
+
+        let applied = try await Self.run(["lightroom", catalog.path, "--index", index.path, "--apply"], in: scratch)
+        #expect(applied.status == 0, "\(applied.errors)")
+        #expect(applied.output.contains("virtual copies: 1, which come across as versions of their photos"))
+        #expect(!applied.output.contains("    virtual copies (1)"), "not among what stays behind")
+        let sidecar = try #require(SidecarStore().load(for: photo))
+        #expect(sidecar.recipe[.exposure] == 0.5)
+        let version = try #require(sidecar.versions.first)
+        #expect(version.name == "Black and white" && version.recipe[.exposure] == -0.5)
+        #expect(version.metadata?.rating == 4 && version.recipe.provenance?.photo == 100)
+
+        let undone = try await Self.run(["lightroom", "--undo", "--index", index.path], in: scratch)
+        #expect(undone.status == 0, "\(undone.errors)")
+        #expect(SidecarStore().load(for: photo) == nil, "the edit and the version are taken back")
+    }
+
     @Test func `the census takes no --apply or --undo, and an --index that isn't there is refused`() async throws {
         let scratch = FileManager.default.temporaryDirectory.appending(path: "redlamp-census-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
