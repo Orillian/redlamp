@@ -1,6 +1,7 @@
 import AppKit
 import RedlampDesign
 import RedlampDocument
+import RedlampEngineAPI
 import RedlampRecipes
 
 /// One row of a sidebar list. Its chevron, icon and title line up with the panel header's
@@ -121,16 +122,29 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         addSubview(label)
         var symbol: String?
         switch node.kind {
-        case let .group(name):
+        case let .group(name, count):
             label.stringValue = name
             label.textColor = Palette.secondaryLabel.nsColor
             showChevron()
             symbol = "folder"
+            if let count {
+                trailing = FolderCountView("\(count)")
+            }
         case let .recipe(recipe):
             label.stringValue = recipe.name
             label.textColor = Palette.label.nsColor
-            toolTip = [recipe.summary, "Hover to preview, click to apply"].compactMap(\.self).joined(separator: "\n")
-            if let image = LookIconImage.image(for: recipe, points: Layout.lookIconSize) {
+            // A recipe that sets a Base Look shows it, its look's icon or the Base Looks symbol (DEC-104).
+            let look = Self.lookSet(by: recipe, model: model)
+            toolTip = [
+                look.map { "Also sets the Base Look: \($0.name)" }, recipe.summary, "Hover to preview, click to apply",
+            ].compactMap(\.self).joined(separator: "\n")
+            if let look {
+                if let image = LookIconImage.image(for: look.id, points: Layout.lookIconSize) {
+                    showLookIcon(image)
+                } else {
+                    symbol = SidebarSection.baseLooks.symbol
+                }
+            } else if let image = LookIconImage.image(for: recipe, points: Layout.lookIconSize) {
                 showLookIcon(image)
             }
             if model.recipes.isFavorite(recipe) {
@@ -138,14 +152,54 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
             } else if recipe.usesLookTable {
                 trailing = SymbolImageView("cube", pointSize: 9, color: Palette.tertiaryLabel.nsColor)
             }
-        case let .baseLook(look):
-            label.stringValue = look.name
+        case let .look(entry, _, showsFolder):
+            label.stringValue = entry.name
             label.textColor = Palette.label.nsColor
-            toolTip = [look.summary, "Hover to preview the look alone, click to set it as the Base Look"]
-                .compactMap(\.self).joined(separator: "\n")
+            setAccessibilityIdentifier("baseLooks.look.\(entry.look.id)")
+            let action = entry.film == nil
+                ? "Hover to preview, click to apply"
+                : "Hover to preview, click to apply with its grain, halation and bloom"
+            toolTip = [entry.summary, action].compactMap(\.self).joined(separator: "\n")
+            if let image = entry.recipe.flatMap({ LookIconImage.image(for: $0, points: Layout.lookIconSize) })
+                ?? LookIconImage.image(for: entry.look.id, points: Layout.lookIconSize) {
+                showLookIcon(image)
+            }
+            if showsFolder {
+                let folder = NSTextField(labelWithString: entry.folder)
+                folder.font = Typography.caption.nsFont
+                folder.textColor = Palette.tertiaryLabel.nsColor
+                trailing = folder
+            } else if model.recipes.isFavorite(id: entry.favoriteID) {
+                trailing = SymbolImageView("star.fill", pointSize: 9, color: Palette.secondaryLabel.nsColor)
+            } else if entry.kinds.contains(.lut) {
+                trailing = SymbolImageView("cube", pointSize: 9, color: Palette.tertiaryLabel.nsColor)
+            }
+        case let .lookAmount(look):
+            showLookAmount(look)
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = Palette.secondaryLabel.nsColor
             if let image = LookIconImage.image(for: look.id, points: Layout.lookIconSize) {
                 showLookIcon(image)
             }
+            let slider = NSSlider(value: look.amount, minValue: 0, maxValue: 200, target: nil, action: nil)
+            slider.controlSize = .small
+            slider.isContinuous = true
+            slider.setAccessibilityLabel("Base Look Amount")
+            slider.setAccessibilityIdentifier("baseLooks.amount")
+            let model = model
+            let label = label
+            slider.onAction { slider in
+                if model.editStart == nil {
+                    model.beginEdit()
+                }
+                model.setBaseLookAmount(slider.doubleValue)
+                label.stringValue = Self.amountText(look.name, slider.doubleValue)
+                if NSApp.currentEvent?.type == .leftMouseUp {
+                    model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText)
+                }
+            }
+            amountSlider = slider
+            addSubview(slider)
         case let .recipeAmount(title, amount):
             label.stringValue = "Amount  \(Int(amount.rounded()))"
             label.font = .systemFont(ofSize: 11)
@@ -432,6 +486,30 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         fatalError("init(coder:) is not supported")
     }
 
+    /// The Base Look a recipe sets with the rest of its settings, as its library names it; nil for a
+    /// recipe that leaves the photo's look.
+    static func lookSet(by recipe: Recipe, model: EditorModel) -> BaseLookReference? {
+        guard let look = recipe.baseLook, recipe.includes.contains(.baseLook) else { return nil }
+        var named = look
+        named.name = model.recipes.package(for: look)?.name ?? look.name
+        return named
+    }
+
+    /// The Base Looks panel's first row: the photo's look and its Amount, kept in step as Basic's
+    /// Amount changes it.
+    func showLookAmount(_ look: BaseLookReference) {
+        guard case .lookAmount = node.kind else { return }
+        label.stringValue = Self.amountText(look.name, look.amount)
+        toolTip = "Strength of “\(look.name)”, as Basic's Base Look Amount: 0 turns the look off, 200 doubles it."
+        if let amountSlider, amountSlider.doubleValue != look.amount {
+            amountSlider.doubleValue = look.amount
+        }
+    }
+
+    private static func amountText(_ name: String, _ amount: Double) -> String {
+        "\(name)  \(Int(amount.rounded()))"
+    }
+
     func contextMenu() -> NSMenu? {
         let menu = NSMenu()
         switch node.kind {
@@ -461,7 +539,17 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 menu.addItem(.separator())
                 menu.addItem(NSMenuItem(title: "Delete Recipe") { [model] in model.recipes.delete(recipe) })
             }
-        case let .group(name) where name == FilmLookCatalog.group:
+        case let .look(entry, _, _):
+            let favorite = model.recipes.isFavorite(id: entry.favoriteID)
+            menu.addItem(NSMenuItem(title: favorite ? "Remove from Favorites" : "Add to Favorites") { [model] in
+                model.recipes.setFavorite(id: entry.favoriteID, !favorite)
+            })
+            if let item = Self.withoutFilmEffectsItem(entry, model: model) {
+                menu.autoenablesItems = false
+                menu.addItem(item)
+                menu.delegate = self
+            }
+        case let .group(name, _) where name == FilmLookCatalog.group:
             return Self.filmStocksMenu(model: model)
         case let .folder(row):
             return Self.folderMenu(row, model: model, anchor: self)
@@ -500,9 +588,27 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         return item
     }
 
+    /// Apply Without Grain, Halation and Bloom, for a film stock in Base Looks: its look alone, as a
+    /// look that isn't a film stock applies. Its represented object is the choice it previews while
+    /// it's highlighted.
+    static func withoutFilmEffectsItem(_ entry: LookEntry, model: EditorModel) -> NSMenuItem? {
+        guard entry.film != nil else { return nil }
+        let choice = entry.choice(in: model, withFilmEffects: false)
+        let item = NSMenuItem(title: "Apply Without Grain, Halation and Bloom") { [model] in
+            model.chooseLook(choice)
+        }
+        item.isEnabled = model.info != nil
+        item.representedObject = choice
+        return item
+    }
+
     func menu(_: NSMenu, willHighlight item: NSMenuItem?) {
         guard model.info != nil else { return }
-        model.previewRecipe(item?.representedObject as? Recipe)
+        if let choice = item?.representedObject as? LookChoice {
+            model.previewLook(choice)
+        } else {
+            model.previewRecipe(item?.representedObject as? Recipe)
+        }
     }
 
     func menuDidClose(_: NSMenu) {
@@ -517,7 +623,7 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         if let hoverArea {
             removeTrackingArea(hoverArea)
         }
-        guard Self.preview(of: node.kind) != nil else { return }
+        guard Self.previews(node.kind) else { return }
         let area = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
@@ -527,19 +633,22 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         hoverArea = area
     }
 
-    /// What hovering a row previews: a recipe as it applies, a Base Look alone.
-    static func preview(of kind: SidebarNode.Kind) -> Recipe? {
+    /// Whether hovering the row previews it: a recipe as it applies, a look as choosing it applies.
+    static func previews(_ kind: SidebarNode.Kind) -> Bool {
         switch kind {
-        case let .recipe(recipe): recipe
-        case let .baseLook(look): BaseLookBrowser.previewRecipe(for: look)
-        default: nil
+        case .recipe, .look: true
+        default: false
         }
     }
 
     override func mouseEntered(with _: NSEvent) {
         label.textColor = Palette.labelHover.nsColor
-        guard model.info != nil, let recipe = Self.preview(of: node.kind) else { return }
-        model.previewRecipe(recipe)
+        guard model.info != nil else { return }
+        switch node.kind {
+        case let .recipe(recipe): model.previewRecipe(recipe)
+        case let .look(entry, _, _): model.previewLook(entry.choice(in: model))
+        default: break
+        }
     }
 
     override func mouseExited(with _: NSEvent) {

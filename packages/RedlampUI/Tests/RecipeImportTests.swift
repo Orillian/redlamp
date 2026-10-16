@@ -59,11 +59,11 @@ struct RecipeImportTests {
     </x:xmpmeta>
     """
 
-    @Test func `the import panel offers Lightroom presets beside recipes and look tables`() {
+    @Test func `Recipes imports recipes and Lightroom presets, and leaves look tables to Base Looks`() {
         #expect(RecipeActions.presetType.preferredFilenameExtension == "xmp")
-        #expect(RecipeActions.importTypes.contains(RecipeActions.presetType))
-        #expect(RecipeActions.importTypes.contains(RecipeActions.recipeType))
-        #expect(RecipeActions.lookTableTypes.allSatisfy(RecipeActions.importTypes.contains))
+        #expect(RecipeActions.recipeImportTypes.contains(RecipeActions.presetType))
+        #expect(RecipeActions.recipeImportTypes.contains(RecipeActions.recipeType))
+        #expect(!RecipeActions.lookTableTypes.contains(where: RecipeActions.recipeImportTypes.contains))
     }
 
     @Test func `files and folders install in one pass, and what didn't come in is listed`() throws {

@@ -118,8 +118,8 @@ struct BaseLookMenu: View {
         .controlSize(.small)
         .accessibilityIdentifier("baseLook.menu")
         .help(
-            "The look under every slider (Lightroom: Profile). Film looks and LUTs are recipes in the Recipes "
-                + "panel: right-click one there to use only its look.",
+            "The look under every slider (Lightroom: Profile). Every look, film stock and LUT is in the Base Looks "
+                + "panel, with search.",
         )
         .popover(isPresented: $browsing, arrowEdge: .leading) {
             BaseLookBrowser()

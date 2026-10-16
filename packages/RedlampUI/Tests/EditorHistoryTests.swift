@@ -316,15 +316,12 @@ struct EditorHistoryTests {
         defer { cleanup() }
         let (list, window) = showLists(editor.model)
         defer { window.contentView = nil }
-        func descendants(_ view: NSView) -> [NSView] {
-            view.subviews + view.subviews.flatMap(descendants)
-        }
-        let field = try #require(descendants(list).compactMap { $0 as? NSSearchField }.first)
+        let field = list.searchField
         #expect(window.makeFirstResponder(field))
 
         field.stringValue = "zzzz"
         list.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
-        #expect(list.recipes.numberOfRows == 1, "only “No matching recipes”")
+        #expect(list.recipes.numberOfRows == 2, "only “No matching recipes” and where looks are")
         #expect((window.firstResponder as? NSText)?.delegate === field)
     }
 

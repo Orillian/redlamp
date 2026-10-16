@@ -5,7 +5,7 @@ import RedlampRecipes
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The file panels and sheets behind the Recipes panel's commands.
+/// The file panels and sheets behind the Recipes and Base Looks panels' commands.
 @MainActor
 public enum RecipeActions {
     public static let recipeType = UTType(filenameExtension: Recipe.fileExtension, conformingTo: .json) ?? .json
@@ -20,12 +20,13 @@ public enum RecipeActions {
         UTType(filenameExtension: "xmp") ?? .xml
     }
 
-    static var importTypes: [UTType] {
-        [recipeType, presetType] + lookTableTypes
+    /// What the Recipes panel imports; LUTs import from Base Looks.
+    static var recipeImportTypes: [UTType] {
+        [recipeType, presetType]
     }
 
-    /// The files of a drop on the Recipes panel it imports: folders (not packages), and files
-    /// with one of the import's extensions. None means the panel refuses the drop.
+    /// The files of a drop on the Base Looks or Recipes panel it imports: folders (not packages), and
+    /// files with one of the imports' extensions. None means the panel refuses the drop.
     static func droppableFiles(_ urls: [URL]) -> [URL] {
         let extensions: Set = [Recipe.fileExtension, "xmp", "cube", "3dl", "png", "tif", "tiff"]
         return urls.filter { url in
@@ -59,22 +60,34 @@ public enum RecipeActions {
         window.beginSheet(sheetWindow)
     }
 
-    /// Installs `.redrecipe` files, Lightroom presets (several, or folders of them) and
-    /// `.cube`, `.3dl` and HaldCLUT files, reading look tables in the space the panel's
-    /// accessory chooses, then tells what came in.
+    /// Installs `.redrecipe` files and Lightroom presets (several, or folders of them), the Recipes
+    /// panel's import, then tells what came in.
     public static func importRecipes(model: EditorModel) {
         guard let chosen = chooseImports(
-            importTypes,
-            message: "Choose recipes, Lightroom presets or folders of them, .cube or .3dl look tables, or graded HaldCLUT images",
+            recipeImportTypes,
+            message: "Choose recipes, Lightroom presets, or folders of them",
+            multiple: true,
+            folders: true,
+            tableSpace: false,
+        ) else { return }
+        importFiles(chosen.urls, model: model)
+    }
+
+    /// Installs `.cube`, `.3dl` and HaldCLUT files, or a folder of Fujifilm's LUTs, the Base Looks
+    /// panel's import, reading them in the space the panel's accessory chooses, then tells what came in.
+    public static func importLooks(model: EditorModel) {
+        guard let chosen = chooseImports(
+            lookTableTypes,
+            message: "Choose .cube or .3dl look tables, graded HaldCLUT images, or the folder of Fujifilm's LUTs",
             multiple: true,
             folders: true,
         ) else { return }
         importFiles(chosen.urls, tableSpace: chosen.tableSpace, model: model)
     }
 
-    /// Installs files, and the Lightroom presets in folders, as the Recipes panel's import
-    /// does (files dropped on the panel too), then tells what came in: presets' reports in a
-    /// sheet, or the files that didn't come in when no preset did.
+    /// Installs files, and the Lightroom presets in folders, as the panels' imports do (files
+    /// dropped on them too), each into the panel it belongs in, then tells what came in: presets'
+    /// reports in a sheet, or the files that didn't come in when no preset did.
     @discardableResult
     public static func importFiles(
         _ urls: [URL],
@@ -157,12 +170,14 @@ public enum RecipeActions {
     }
 
     /// Asks for files of `types`, and folders when `folders` is set, on an open panel whose
-    /// accessory chooses what the look tables among them were made for. Nil when cancelled.
+    /// accessory chooses what the look tables among them were made for, unless `tableSpace` is false.
+    /// Nil when cancelled.
     @_spi(Harness) public static func chooseImports(
         _ types: [UTType],
         message: String,
         multiple: Bool = false,
         folders: Bool = false,
+        tableSpace: Bool = true,
     ) -> (urls: [URL], tableSpace: ImportedTableSpace)? {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = multiple
@@ -170,10 +185,12 @@ public enum RecipeActions {
         panel.allowedContentTypes = folders ? types + [.folder] : types
         panel.message = message
         let choice = LookTableSpaceChoice()
-        let accessory = NSHostingView(rootView: LookTableSpaceAccessory(choice: choice).focusEffectDisabled())
-        accessory.frame.size = accessory.fittingSize
-        panel.accessoryView = accessory
-        panel.isAccessoryViewDisclosed = true
+        if tableSpace {
+            let accessory = NSHostingView(rootView: LookTableSpaceAccessory(choice: choice).focusEffectDisabled())
+            accessory.frame.size = accessory.fittingSize
+            panel.accessoryView = accessory
+            panel.isAccessoryViewDisclosed = true
+        }
         guard panel.runModal() == .OK else { return nil }
         return (panel.urls, choice.space)
     }

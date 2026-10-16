@@ -262,12 +262,14 @@ enum PaletteCatalog {
             }
         }
         if page == .baseLook {
-            let profiles = editor.cameraProfileSections.map { section in
-                PaletteSection(title: section.name, items: section.looks.map { baseLookItem($0.package) })
+            // The Base Looks panel's folders; a favourite is listed once, under Favorites.
+            var listed: Set<String> = []
+            func sections(_ folder: LookFolder) -> [PaletteSection] {
+                let items = folder.entries.filter { listed.insert($0.look.id).inserted }.map(baseLookItem)
+                return (items.isEmpty ? [] : [PaletteSection(title: folder.name, items: items)])
+                    + folder.subfolders.flatMap(sections)
             }
-            return profiles + BaseLookGroups.shown(in: editor.recipes, photoLook: editor.baseLook).map { section in
-                PaletteSection(title: section.name, items: section.looks.map(baseLookItem))
-            }
+            return BaseLookFolders.folders(editor).flatMap(sections)
         }
         return [PaletteSection(title: nil, items: choiceItems(page, editor: editor))]
     }
@@ -296,9 +298,10 @@ enum PaletteCatalog {
                 )
             }
         case .baseLook:
-            return editor.recipes.currentBaseLooks.map(baseLookItem)
+            return BaseLookFolders.folders(editor).filter { $0.name != BaseLookFolders.favorites }
+                .flatMap(\.allEntries).map(baseLookItem)
         case .recipes:
-            return editor.recipes.all.map(recipeItem)
+            return editor.recipes.presets.map(recipeItem)
         case .compare:
             let layouts = CompareLayout.allCases.map { layout in
                 PaletteItem(
@@ -335,10 +338,10 @@ enum PaletteCatalog {
         }
     }
 
-    private static func baseLookItem(_ look: BaseLookPackage) -> PaletteItem {
+    private static func baseLookItem(_ entry: LookEntry) -> PaletteItem {
         PaletteItem(
-            kind: .baseLook(look.id), title: look.name, context: "Base Look", symbol: "camera.filters",
-            keywords: ["base look", "profile"],
+            kind: .baseLook(entry.look.id), title: entry.name, context: "Base Look", symbol: "camera.filters",
+            keywords: ["base look", "profile", entry.folder.lowercased()],
         )
     }
 

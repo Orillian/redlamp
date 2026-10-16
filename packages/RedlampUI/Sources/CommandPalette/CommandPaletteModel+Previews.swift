@@ -30,9 +30,9 @@ extension CommandPaletteModel {
     func preview(_ kind: PaletteItemKind) async {
         switch kind {
         case let .baseLook(id):
-            guard let look = editor.recipes.currentBaseLooks.first(where: { $0.id == id }) else { return }
+            guard let entry = BaseLookFolders.entry(id: id, in: editor) else { return }
             editor.preview(nil)
-            editor.previewRecipe(BaseLookBrowser.previewRecipe(for: look))
+            editor.previewLook(entry.choice(in: editor))
         case let .recipe(id):
             guard let recipe = editor.recipes.recipe(id: id) else { return }
             editor.preview(nil)
@@ -78,8 +78,8 @@ extension CommandPaletteModel {
         case let .treatment(treatment):
             editor.setTreatment(treatment)
         case let .baseLook(id):
-            if let look = editor.recipes.currentBaseLooks.first(where: { $0.id == id }) {
-                editor.setBaseLook(look.reference)
+            if let entry = BaseLookFolders.entry(id: id, in: editor) {
+                editor.chooseLook(entry.choice(in: editor))
             }
         case let .recipe(id):
             if let recipe = editor.recipes.recipe(id: id) {

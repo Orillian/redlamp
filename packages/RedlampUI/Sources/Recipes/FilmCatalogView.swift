@@ -5,9 +5,9 @@ import RedlampRecipes
 import SwiftUI
 
 /// The Film Looks window: every film stock look as a card showing the current photo in it.
-/// Hover previews a look in the editor; click applies it, with its grain, halation and bloom.
-/// Holding Option over a card shows the photo before the look. Previews render one after
-/// another at low priority, so the editor stays responsive.
+/// Hover previews a look in the editor; click chooses it as the Base Looks panel does, with its
+/// grain, halation and bloom and nothing else (DEC-104). Holding Option over a card shows the photo
+/// before the look. Previews render one after another at low priority, so the editor stays responsive.
 public struct FilmCatalogView: View {
     public static let windowID = "film-looks"
 
@@ -79,7 +79,7 @@ public struct FilmCatalogView: View {
         .task(id: model.info?.url) {
             previews = [:]
             before = nil
-            await renderPreviews(entries.map(\.1))
+            await renderPreviews(entries.map(\.0))
         }
         .onModifierKeysChanged(mask: .option) { _, keys in
             comparing = keys.contains(.option)
@@ -100,23 +100,25 @@ public struct FilmCatalogView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
-            if let amount = model.recipeAmount, let title = model.recipeAmountTitle,
-               FilmLookCatalog.looks.contains(where: { $0.name == title }) {
+            if let film = Self.film(of: model.baseLook) {
+                let amount = model.baseLook.amount
                 HStack(spacing: 8) {
-                    Text(title).font(.callout)
+                    Text(film.name).font(.callout)
                     Slider(
-                        value: Binding(get: { amount }, set: { model.setRecipeAmount($0) }), in: 0 ... 200,
+                        value: Binding(get: { amount }, set: { model.setBaseLookAmount($0) }),
+                        in: BaseLookReference.amountRange,
                         onEditingChanged: { editing in
                             if editing {
                                 model.beginEdit()
                             } else {
-                                model.endEdit(.recipe, "Recipe Amount", value: EditorModel.recipeAmountText)
+                                model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText)
                             }
                         },
                     )
                     .frame(width: 160)
-                    Text("\(Int(amount))").monospacedDigit().frame(width: 32, alignment: .trailing)
+                    Text("\(Int(amount.rounded()))").monospacedDigit().frame(width: 32, alignment: .trailing)
                 }
+                .help("The Base Look's Amount, as in Basic and the Base Looks panel")
             }
             Picker("Show", selection: $filter) {
                 ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
@@ -129,14 +131,19 @@ public struct FilmCatalogView: View {
         .padding(.vertical, 12)
     }
 
+    /// The film stock whose look the edit's `look` is.
+    static func film(of look: BaseLookReference) -> FilmLookDefinition? {
+        FilmLookCatalog.look(forBaseLookID: look.id)
+    }
+
     private func card(_ look: FilmLookDefinition, _ recipe: Recipe) -> some View {
-        let applied = model.appliedRecipe?.id == recipe.id
+        let applied = Self.film(of: model.baseLook)?.id == look.id
         let favourite = model.recipes.isFavorite(recipe)
         let showsBefore = comparing && hovered == look.id
         return VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.3))
-                if let image = showsBefore ? before : previews[recipe.id] {
+                if let image = showsBefore ? before : previews[look.id] {
                     Image(decorative: image, scale: 2).resizable().aspectRatio(contentMode: .fill)
                 } else if model.info != nil {
                     ProgressView().controlSize(.small)
@@ -200,11 +207,11 @@ public struct FilmCatalogView: View {
         .onHover { inside in
             hovered = inside ? look.id : (hovered == look.id ? nil : hovered)
             guard model.info != nil else { return }
-            model.previewRecipe(inside && !applied ? recipe : nil)
+            model.previewLook(inside && !applied ? LookChoice(film: look) : nil)
         }
         .onTapGesture {
-            guard model.info != nil, !applied else { return }
-            model.applyRecipe(recipe)
+            guard model.info != nil, !applied, let choice = LookChoice(film: look) else { return }
+            model.chooseLook(choice)
         }
         .help(model.info == nil ? look.summary : applied ? look.summary : "Click to apply \(look.name)")
     }
@@ -240,28 +247,31 @@ public struct FilmCatalogView: View {
         }.joined(separator: " · ")
     }
 
-    private func renderPreviews(_ recipes: [Recipe]) async {
+    /// Each film over the photo's edit, as choosing it would apply it.
+    private func renderPreviews(_ looks: [FilmLookDefinition]) async {
         guard model.info != nil else { return }
-        for recipe in recipes where previews[recipe.id] == nil {
+        for look in looks where previews[look.id] == nil {
             if Task.isCancelled {
                 return
             }
-            model.recipes.prepare(recipe)
-            var request = StillRequest(recipe: model.previewEdit(for: recipe))
+            guard let choice = LookChoice(film: look) else { continue }
+            var request = StillRequest(recipe: model.anchored(choice.apply(to: model.recipe)))
             request.maxLongEdge = Self.previewEdge
             if let image = try? await model.engine.renderStill(request) {
-                previews[recipe.id] = image
+                previews[look.id] = image
             }
             await Task.yield()
         }
     }
 
-    /// The photo before any film look: the edit a film recipe was applied over, or the edit.
+    /// The photo before any film look: while its look is a film stock, on Redlamp Color without the
+    /// film's grain, halation and bloom; otherwise the edit as it is.
     private func renderBefore() async {
         guard model.info != nil else { return }
-        let applied = model.recipeApplication
-            .flatMap { FilmLookCatalog.look(forBundledID: $0.recipe.id) != nil ? $0 : nil }
-        var request = StillRequest(recipe: applied?.base ?? model.recipe)
+        let edit = Self.film(of: model.baseLook) == nil
+            ? model.recipe
+            : LookChoice(BuiltInBaseLook.color.reference).apply(to: model.recipe)
+        var request = StillRequest(recipe: model.anchored(edit))
         request.maxLongEdge = Self.previewEdge
         before = try? await model.engine.renderStill(request)
     }

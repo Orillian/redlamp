@@ -492,7 +492,7 @@ struct SymbolButtonPixelsTests {
                 $0.symbol,
                 model.expandedPanels.contains($0),
             ) }
-                + [SidebarSection.folders, .recipes, .snapshots, .history].map {
+                + [SidebarSection.folders, .baseLooks, .recipes, .snapshots, .history].map {
                     ($0.symbol, model.expandedSidebarSections.contains($0))
                 }
             try #require(headers.count == expected.count, "\(headers.count) panel headers")

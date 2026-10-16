@@ -113,6 +113,21 @@ struct LookRecipeLibraryTests {
         #expect(reopened.presets.contains { $0.isBundled && $0.group == "Portrait" })
     }
 
+    @Test func `a look no recipe stands for is a favourite by its id, kept with the recipes' favourites`() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = library()
+        let vivid = BuiltInBaseLook.vivid.rawValue
+        let portra = try #require(library.bundled.first { $0.isLook })
+        try library.setFavorite(id: vivid, true)
+        try library.setFavorite(portra, true)
+
+        let reopened = self.library()
+        #expect(reopened.isFavorite(id: vivid) && reopened.isFavorite(id: portra.id) && reopened.isFavorite(portra))
+        #expect(!reopened.sections.contains { $0.name == "Favorites" }, "the Recipes panel's favourites are presets")
+        try reopened.setFavorite(id: vivid, false)
+        #expect(!self.library().isFavorite(id: vivid) && self.library().isFavorite(portra))
+    }
+
     @Test func `Move to Trash moves the file, and leaves its look renderable but listed nowhere`() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let library = library(bundled: false)

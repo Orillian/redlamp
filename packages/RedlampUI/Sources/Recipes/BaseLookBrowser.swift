@@ -5,9 +5,15 @@ import RedlampRecipes
 import SwiftUI
 
 /// Base Looks sorted into the browser's and menu's sections: only the looks that aren't recipes
-/// of their own (DEC-74). Film stocks and imported LUTs are listed in the Recipes panel.
+/// of their own (DEC-74). The Base Looks panel lists the film stocks and imported LUTs beside them.
 struct BaseLookGroups {
     var sections: [(name: String, looks: [BaseLookPackage])]
+
+    static let redlamp = "Redlamp"
+    static let filmStyles = "Film Styles"
+    /// Installed looks no recipe uses.
+    static let installed = "Installed"
+    static let reproduction = "Reproduction"
 
     /// `recipeLooks`: the ids of the looks recipes stand for, left out.
     init(_ looks: [BaseLookPackage], leavingOut recipeLooks: Set<String> = []) {
@@ -20,8 +26,14 @@ struct BaseLookGroups {
         }
         let installed = looks.filter { !$0.id.hasPrefix(RecipeNamespace.bundled + "/") && !recipeLooks.contains($0.id) }
         sections = [
-            ("Redlamp", builtIn), ("Film Styles", film), ("Installed", installed), ("Reproduction", reproduction),
+            (Self.redlamp, builtIn), (Self.filmStyles, film), (Self.installed, installed),
+            (Self.reproduction, reproduction),
         ].filter { !$0.1.isEmpty }
+    }
+
+    /// The looks of the section called `name`; none when it has none.
+    func looks(in name: String) -> [BaseLookPackage] {
+        sections.first { $0.name == name }?.looks ?? []
     }
 
     /// The catalogue's current looks, sorted once for each change to it rather than for each
@@ -89,7 +101,7 @@ struct BaseLookBrowser: View {
                 slotSwitches
                 Divider()
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Fujifilm's own film-simulation LUTs import from the Recipes panel and work on any photo.")
+                    Text("Fujifilm's own film-simulation LUTs import from the Base Looks panel and work on any photo.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -210,8 +222,24 @@ struct BaseLookBrowser: View {
         SidebarCellView.baseLookOnlyItem(recipe, model: model)
     }
 
-    /// The Film Stocks folder's right-click menu in the Recipes panel.
+    /// The Film Stocks folder's right-click menu in the Base Looks panel.
     @MainActor public static func filmStocksMenu(_ model: EditorModel) -> NSMenu? {
         SidebarCellView.filmStocksMenu(model: model)
+    }
+
+    /// The Base Looks panel's folders for the open photo: each name with its looks' ids.
+    @MainActor public static func panelFolders(_ model: EditorModel) -> [(name: String, ids: [String])] {
+        BaseLookFolders.folders(model).map { ($0.name, $0.allEntries.map(\.look.id)) }
+    }
+
+    /// What the Base Looks panel's search finds for `query`: each look's id, name and folder.
+    @MainActor public static func search(_ query: String, model: EditorModel)
+        -> [(id: String, name: String, folder: String)] {
+        BaseLookFolders.search(query, in: BaseLookFolders.folders(model)).map { ($0.look.id, $0.name, $0.folder) }
+    }
+
+    /// What choosing the look Base Looks lists with the id `id` applies, as hovering its row previews.
+    @MainActor public static func choice(id: String, model: EditorModel) -> LookChoice? {
+        BaseLookFolders.entry(id: id, in: model)?.choice(in: model)
     }
 }

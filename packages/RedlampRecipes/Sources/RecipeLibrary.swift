@@ -8,7 +8,7 @@ import RedlampEngineAPI
 /// On disk, under Application Support/Redlamp:
 /// - `Recipes/*.redrecipe`: recipes made here (the `local/` namespace);
 /// - `Recipes/Installed/*.redrecipe`: recipes installed from files;
-/// - `Recipes/favorites.json`: favorite recipe ids;
+/// - `Recipes/favorites.json`: the ids of favorite recipes, and of favorite looks no recipe stands for;
 /// - `Recipes/slots.json`: film slots that keep Redlamp's look though an imported LUT fills them;
 /// - `Recipes/hidden-folders.json`: the built-in folders hidden from each panel;
 /// - `Recipes/unlisted-looks.json`: looks whose recipes went to the Trash, kept for their edits;
@@ -143,14 +143,24 @@ public final class RecipeLibrary {
     }
 
     public func isFavorite(_ recipe: Recipe) -> Bool {
-        favorites.contains(recipe.id)
+        isFavorite(id: recipe.id)
+    }
+
+    /// Whether a recipe, or a look no recipe stands for, is a favourite, by its id.
+    public func isFavorite(id: String) -> Bool {
+        favorites.contains(id)
     }
 
     public func setFavorite(_ recipe: Recipe, _ favorite: Bool) throws {
+        try setFavorite(id: recipe.id, favorite)
+    }
+
+    /// Marks a recipe, or a look no recipe stands for, as a favourite by its id, or unmarks it.
+    public func setFavorite(id: String, _ favorite: Bool) throws {
         if favorite {
-            favorites.insert(recipe.id)
+            favorites.insert(id)
         } else {
-            favorites.remove(recipe.id)
+            favorites.remove(id)
         }
         try FileManager.default.createDirectory(at: locations.recipes, withIntermediateDirectories: true)
         try JSONEncoder().encode(favorites.sorted()).write(to: locations.favorites, options: .atomic)

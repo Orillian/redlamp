@@ -80,16 +80,6 @@ struct RecipeCatalogTests {
         #expect(BaseLookGroups.shown(in: catalog, photoLook: BuiltInBaseLook.vivid.reference).first?.name == "Redlamp")
     }
 
-    @Test func `the Base Look search finds the looks the menu lists, and Lightroom's word finds them all`() throws {
-        defer { try? FileManager.default.removeItem(at: root) }
-        let catalog = try catalog(StubEngine())
-        #expect(catalog.searchBaseLooks("vivid").map(\.id).contains(BuiltInBaseLook.vivid.rawValue))
-        #expect(catalog.searchBaseLooks("ektar").isEmpty)
-        #expect(catalog.searchBaseLooks("").isEmpty)
-        let listed = BaseLookGroups.current(in: catalog).sections.flatMap(\.looks)
-        #expect(catalog.searchBaseLooks("profile").map(\.id) == listed.map(\.id))
-    }
-
     @Test func `toggling a favourite registers nothing`() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let engine = StubEngine()

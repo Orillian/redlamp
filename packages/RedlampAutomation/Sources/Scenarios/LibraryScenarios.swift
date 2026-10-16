@@ -835,23 +835,40 @@
             app.covered(.feature("recipes.applying"), via: .model)
         }
 
+        /// UX-54: a film stock found in the Base Looks panel's search brings its grain and leaves the vignette.
         static let searchBaseLooks = Scenario(
-            "recipes.search-base-looks",
-            "The recipe search lists Base Looks after the recipes; one previews alone and sets only the Base Look",
-            claims: [.feature("recipes.favorites")],
+            "develop.base-looks",
+            "Base Looks' search finds a film stock, which previews, and a click applies it with its grain, keeping "
+                + "the vignette",
+            claims: [.feature("recipes.favorites"), .feature("recipes.applying")],
         ) { app in
             try app.openWorking()
-            let looks = try app.main { $0.recipes.searchBaseLooks("vivid") }
-            guard let look = looks.first else { throw ScenarioFailure("Searching \"vivid\" finds no Base Look") }
-            try app.expect(try app.main { $0.recipes.searchBaseLooks("ektar") }.isEmpty, "A film stock is a Base Look")
-            try app.expectRenders("previewing \(look.name)") {
-                try app.main { $0.previewRecipe(BaseLookPreviews.recipe(for: look)) }
+            try app.main { $0.expandedSidebarSections.insert(.baseLooks) }
+            try app.set(.vignetteAmount, -30)
+            let found = try app.main { BaseLookPreviews.search("ektar", model: $0) }
+            guard let ektar = found.first, found.count == 1 else {
+                throw ScenarioFailure("Searching Base Looks for \"ektar\" finds \(found.map(\.name))")
             }
-            try app.main { $0.previewRecipe(nil) }
-            try app.main { $0.setBaseLook(look.reference) }
-            try app.wait("\(look.name) set") { $0.baseLook.id == look.id }
+            try app.expect(
+                try app.main { $0.recipes.searchPresets("t-max") }.isEmpty,
+                "The Recipes panel's search finds a film stock",
+            )
+            try app.click(.identifier("baseLooks.search"))
+            try app.type("ektar")
+            try app.expectRenders("previewing \(ektar.name), as hovering its row does") {
+                try app
+                    .main { model in BaseLookPreviews.choice(id: ektar.id, model: model).map { model.previewLook($0) } }
+            }
+            try app.main { $0.previewLook(nil) }
+            try app.click(.identifier("baseLooks.look.\(ektar.id)"))
+            try app.wait("\(ektar.name) chosen") { $0.baseLook.id == ektar.id }
+            try app.expect(
+                try app.main { $0.value(.vignetteAmount) } == -30,
+                "Choosing a film stock reset the vignette",
+            )
+            try app.expect(try app.main { $0.value(.grainAmount) } > 0, "\(ektar.name) came without its grain")
             try app.choose(.resetAll)
-            app.covered(.feature("recipes.favorites"), via: .model)
+            app.covered([.feature("recipes.favorites"), .feature("recipes.applying")], via: .mouse)
         }
 
         static let baseLookMenu = Scenario(
@@ -1010,11 +1027,13 @@
                 return NSApplication.shared.sendAction(action, to: item.target, from: item)
             }
             try app.expect(opened, "The Film Stocks folder has no Open Film Looks")
-            let recipe = try portra(app)
-            try app.expectRenders("previewing Portra 400, as hovering its card does") {
-                try app.main { $0.previewRecipe(recipe) }
+            guard let portra = FilmLookCatalog.look("portra-400"), let choice = LookChoice(film: portra) else {
+                throw ScenarioFailure("No Portra 400 look")
             }
-            try app.main { $0.previewRecipe(nil) }
+            try app.expectRenders("previewing Portra 400, as hovering its card does") {
+                try app.main { $0.previewLook(choice) }
+            }
+            try app.main { $0.previewLook(nil) }
             try app
                 .wait("the Film Looks window, from the Film Stocks folder", timeout: 10) { _ in
                     NSApp.windows.contains { $0.isVisible && $0.title == "Film Looks" }

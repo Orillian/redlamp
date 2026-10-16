@@ -5,7 +5,7 @@ import RedlampRecipes
 import Testing
 @_spi(Harness) @testable import RedlampUI
 
-/// Hovering a look in the Recipes panel previews it, wherever it's listed (UX-45, DEC-74).
+/// Hovering a look previews it, wherever it's listed (UX-45, UX-54).
 @MainActor
 struct LookPreviewTests {
     private func openEditor() async throws -> (EditorModel, () -> Void) {
@@ -50,16 +50,38 @@ struct LookPreviewTests {
         #expect(LookIconImage.image(for: essentials, points: SidebarCellView.Layout.lookIconSize) == nil)
     }
 
-    @Test func `hovering a Base Look found by search previews the look alone`() async throws {
+    @Test func `hovering a look in Base Looks previews it as choosing it applies it, and leaving clears it`(
+    ) async throws {
         let (model, cleanup) = try await openEditor()
         defer { cleanup() }
-        let look = try #require(model.recipes.searchBaseLooks("vivid").first)
-        let cell = SidebarCellView(node: SidebarNode(.baseLook(look)), model: model)
+        let entry = try #require(BaseLookFolders.search("ektar", in: BaseLookFolders.folders(model)).first)
+        let cell = SidebarCellView(node: SidebarNode(.look(entry, current: false, showsFolder: true)), model: model)
         cell.mouseEntered(with: Self.event)
-        #expect(model.previewingRecipe?.baseLook?.id == look.id)
-        #expect(model.previewingRecipe?.includes == [.baseLook])
-        cell.mouseExited(with: Self.event)
+        #expect(model.previewingLook == entry.choice(in: model))
+        #expect(model.previewingLook?.film?.id == "ektar-100", "a film stock previews with its grain")
         #expect(model.previewingRecipe == nil)
+        cell.mouseExited(with: Self.event)
+        #expect(model.previewingLook == nil)
+    }
+
+    @Test func `Apply Without Grain, Halation and Bloom previews a film's look alone while highlighted`() async throws {
+        let (model, cleanup) = try await openEditor()
+        defer { cleanup() }
+        model.setValue(.grainAmount, 30)
+        let entry = try #require(BaseLookFolders.search("ektar", in: BaseLookFolders.folders(model)).first)
+        let cell = SidebarCellView(node: SidebarNode(.look(entry, current: false, showsFolder: false)), model: model)
+        let menu = try #require(cell.contextMenu())
+        let item = try #require(menu.items.first { $0.title == "Apply Without Grain, Halation and Bloom" })
+        #expect(menu.delegate === cell)
+        cell.menu(menu, willHighlight: item)
+        #expect(model.previewingLook?.look.id == entry.look.id)
+        #expect(model.previewingLook?.film == nil)
+        cell.menuDidClose(menu)
+        #expect(model.previewingLook == nil)
+        let action = try #require(item.action)
+        NSApplication.shared.sendAction(action, to: item.target, from: item)
+        #expect(model.baseLook.id == entry.look.id)
+        #expect(model.value(.grainAmount) == 30, "the grain you added stays")
     }
 
     @Test func `Apply Base Look Only previews the look alone while highlighted, and sets only the look`() async throws {

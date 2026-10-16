@@ -105,7 +105,7 @@ public final class RecipeCatalog {
     }
 
     /// The looks recipes stand for, by id: the film stocks' and the installed looks a recipe uses as
-    /// its Base Look, such as an imported LUT's. The Base Look menu leaves them to the Recipes panel.
+    /// its Base Look, such as an imported LUT's. The Base Look menu lists one only while it's in use.
     public var recipeLookIDs: Set<String> {
         _ = revision
         let installed = library.all.compactMap(\.baseLook?.id).filter { !$0.hasPrefix(RecipeNamespace.bundled + "/") }
@@ -151,22 +151,15 @@ public final class RecipeCatalog {
         library.file(of: recipe)
     }
 
-    /// The Base Looks the menu lists that match `query` by name or summary, for the Recipes panel's
-    /// search to list after the recipes. Lightroom's "profile", and "base" and "look", find them all.
-    public func searchBaseLooks(_ query: String) -> [BaseLookPackage] {
-        let terms = query.lowercased().split(separator: " ").map(String.init)
-        guard !terms.isEmpty else { return [] }
-        return BaseLookGroups.current(in: self).sections.flatMap(\.looks).filter { look in
-            terms.allSatisfy { term in
-                ["profile", "profiles", "base", "look", "looks"].contains(term)
-                    || [look.name, look.summary ?? ""].contains { $0.lowercased().contains(term) }
-            }
-        }
-    }
-
     public func isFavorite(_ recipe: Recipe) -> Bool {
         _ = revision
         return library.isFavorite(recipe)
+    }
+
+    /// Whether a look the Base Looks panel lists is a favourite, by the id its favourite is kept by.
+    public func isFavorite(id: String) -> Bool {
+        _ = revision
+        return library.isFavorite(id: id)
     }
 
     public func package(for reference: BaseLookReference) -> BaseLookPackage? {
@@ -238,6 +231,12 @@ public final class RecipeCatalog {
 
     public func setFavorite(_ recipe: Recipe, _ favorite: Bool) {
         perform { try library.setFavorite(recipe, favorite) }
+    }
+
+    /// Marks a look the Base Looks panel lists as a favourite, or unmarks it, by the id its favourite
+    /// is kept by.
+    public func setFavorite(id: String, _ favorite: Bool) {
+        perform { try library.setFavorite(id: id, favorite) }
     }
 
     public func export(_ recipe: Recipe, to url: URL) {

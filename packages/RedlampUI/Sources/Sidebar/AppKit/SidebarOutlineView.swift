@@ -1,15 +1,20 @@
 import AppKit
 import RedlampDesign
 import RedlampDocument
+import RedlampEngineAPI
 import RedlampRecipes
 
 /// A row of a sidebar list: a recipe group, a recipe or one of the other rows.
 final class SidebarNode: NSObject {
     enum Kind {
-        case group(String)
+        /// A folder of recipes or looks, with how many it holds.
+        case group(String, count: Int? = nil)
         case recipe(Recipe)
-        /// A Base Look the recipe search found; choosing it sets only the Base Look.
-        case baseLook(BaseLookPackage)
+        /// A look in the Base Looks panel, highlighted while it's the photo's; a search result shows
+        /// its folder.
+        case look(LookEntry, current: Bool, showsFolder: Bool)
+        /// The photo's Base Look and its Amount slider, at the top of the Base Looks panel.
+        case lookAmount(BaseLookReference)
         /// The last applied recipe's Amount slider.
         case recipeAmount(String, Double)
         case placeholder(String)
@@ -457,10 +462,11 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
         return row
     }
 
-    /// The current history step, and the open folder, Recently Trashed or the source shown.
+    /// The current history step, the photo's look, and the open folder, Recently Trashed or the source shown.
     static func isHighlighted(_ node: SidebarNode?) -> Bool {
         switch node?.kind {
         case let .history(_, _, current, _): current
+        case let .look(_, current, _): current
         case let .folder(folder): folder.isOpen
         case let .recentlyTrashed(trash): trash.isOpen
         case let .source(source): source.isShown
@@ -518,10 +524,9 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
         case let .recipe(recipe):
             guard model.info != nil else { return }
             model.applyRecipe(recipe)
-        case let .baseLook(look):
+        case let .look(entry, _, _):
             guard model.info != nil else { return }
-            model.previewRecipe(nil)
-            model.setBaseLook(look.reference)
+            model.chooseLook(entry.choice(in: model))
         case let .snapshot(snapshot):
             model.applySnapshot(snapshot)
         case let .history(_, index, _, _):
