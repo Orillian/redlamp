@@ -19,6 +19,7 @@ Today Redlamp lists every film stock, the firmware model's simulations and impor
 5. **Show in Finder and Move to Trash** for the photographer's own and installed recipes and imported looks, and **hiding whole built-in groups** in either panel.
 6. **Leaving a film stock for a look that isn't one takes the film's grain, halation and bloom away** (answered later the same day). Going from Portra 400 to Redlamp Color leaves no film grain behind.
 7. **A colour look chosen in place of a monochrome one sets Color** (answered with the wireframes' questions, the same day), as Lightroom's colour profiles do: Portra 400 after Tri-X 400 renders in colour. Black & White the photographer chose on a colour look stays.
+8. **After trying the panel** (the same day): Base Looks has no Amount row at the top, whose system slider cut the look's name short; the panel shows the photo's look by highlighting its row, and the Base Look's Amount stays in Basic, under Base Look. Recipes' Amount is drawn as the Develop panels' slider rows are. A folder's rows nest no deeper than the Folders panel's subfolders, where they started well to the right of their folder's name; History's earlier sessions, whose rows are the same, line their steps up the same way. The left column's panels are to share the right column's card style, with its thin border, later (UX-56).
 
 ## The left column
 
@@ -30,8 +31,7 @@ From the top:
 
 1. **The header's + menu:** Import LUT (`.cube`, `.3dl` or HaldCLUT)…, with the input space accessory the Recipes panel uses today; Choose Camera Profiles…, the chooser Basic's menu has (TON-51); and Get Fujifilm's LUTs…, the link the browser has.
 2. **Search,** "Search Base Looks": names, summaries, makers and kinds ("kodak", "slide", "negative", "cinema", "black and white"). The words profile, film, simulation and LUT list a whole kind, as Lightroom's words do in recipe search. Results are one list, as in Recipes; nothing found shows "No matching Base Looks". Each result shows its folder at the end of its row.
-3. **The photo's look, with its Amount** (0 to 200), as the Recipes panel shows the applied recipe's Amount. It sets the same value as Basic's Base Look Amount.
-4. **The looks, in folders,** in this order, each shown only when it has looks:
+3. **The looks, in folders,** in this order, each shown only when it has looks:
    - **Favorites**
    - **In This Photo:** the camera profile look a DNG embeds.
    - **The photo's camera profiles** (TON-51, TON-52): Adobe Raw, Camera Matching, the photographer's own and the creative groups inside one Creative folder, as Basic's menu lists them, where those profiles are on this Mac.
@@ -42,7 +42,9 @@ From the top:
    - **Fujifilm LUTs,** then **Imported:** the LUTs the photographer imported, and installed looks no recipe uses.
    - **Reproduction:** Redlamp Reproduction.
 
-Hovering a look previews it as a click applies it; a click applies it as one History step. Favorites, previews and icons come from what exists: film stocks keep the favourites the Film Looks window gave them. Favorites, Redlamp and the folder holding the photo's look start open, that folder opening again for each photo, and the photo's look is highlighted in it, as History highlights the current step.
+Hovering a look previews it as a click applies it; a click applies it as one History step. Favorites, previews and icons come from what exists: film stocks keep the favourites the Film Looks window gave them. Favorites, Redlamp and the folder holding the photo's look start open, that folder opening again for each photo, and the photo's look is highlighted in it, as History highlights the current step. That highlight is how the panel shows the photo's look: it has no Amount row, and the Base Look's Amount is Basic's, under Base Look (decision 8).
+
+A folder's looks line up under its icon and name, where a search's results sit too: a look never has a chevron, so its row keeps no place for one, and it nests no deeper than a subfolder in the Folders panel. Creative's groups, which are folders, nest one level in, as subfolders do.
 
 **Right-click a look:** Add to Favorites or Remove from Favorites. A film stock also has Apply Without Grain, Halation and Bloom (today's Apply Base Look Only, previewing while highlighted). An imported look also has Show in Finder and Move to Trash (UX-55). **Right-click a folder:** Hide (built-in folders, UX-55); Film Stocks also has Open Film Looks.
 
@@ -61,6 +63,8 @@ One choice in RedlampRecipes does this wherever a look is chosen: the Base Looks
 - **Presets only:** Favorites, My Recipes and the photographer's lists, Essentials, Portrait, Landscape, Street, Film-inspired, Camera Recipes, Black & White, Night, Mood and Installed. Film Stocks, Firmware Model, Imported and Fujifilm LUTs move to Base Looks.
 - **Which recipes are looks** is decided in one place: the bundled film stocks (`FilmLookCatalog`), the firmware model's recipes, and imported LUTs, which are recipes tagged `lut` that set only a Base Look. An imported LUT the photographer has made into a fuller recipe stays in Recipes.
 - **A recipe that sets a Base Look is marked** (decision 2): its row shows its look's icon where the look has one, as the moods show their film's today, and the Base Looks symbol otherwise; the tooltip names the look ("Also sets the Base Look: Chrome").
+- **The applied recipe's Amount,** 0 to 200, at the top of the panel while the edit is what the recipe made, drawn as the Develop panels' slider rows are (decision 8): Amount, the panels' slider and their value field, which scrubs or takes a typed value; a double-click returns it to 100. A drag is one History step, Recipe Amount; its tooltip names the recipe; the list doesn't reload while it moves.
+- **A folder's recipes line up under its icon and name,** as Base Looks' looks do.
 - **The + menu:** Create Recipe from Current Edit… (⇧⌘N) and Import Recipe or Lightroom Preset…. LUTs import from Base Looks. A drop on either panel imports each file into the panel it belongs in and opens the folders it went to, as EDT-11's drop does.
 - **Search** finds recipes only; Base Looks are no longer listed after them (UX-45). Lightroom's words keep working. When nothing matches, the placeholder says that looks and film stocks are searched in Base Looks.
 - **Right-click a recipe:** Add to Favorites, Apply Base Look Only (for a recipe with a look), Export…, Duplicate to My Recipes; for the photographer's own and installed recipes, Show in Finder and Move to Trash (UX-55), which replaces Delete Recipe.
@@ -69,7 +73,7 @@ One choice in RedlampRecipes does this wherever a look is chosen: the Base Looks
 
 - **Show in Finder** selects the file Redlamp keeps: the recipe in `Application Support/Redlamp/Recipes` (or `Recipes/Installed`), which for an imported look is the recipe that holds it, and for a Lightroom preset the recipe made from it.
 - **Move to Trash** moves that file to the Trash, recoverable from there; today's Delete Recipe removes it at once, without asking. The look stays in `Looks/`, so edits that use it keep rendering, but it's listed nowhere afterwards: today a deleted LUT's look comes back under Installed in Basic's menu, and that must stop. An installed look no recipe uses (one today's Delete Recipe left, listed under Imported) has Remove from Base Looks instead: it's listed nowhere afterwards and its file stays for its edits, with no Show in Finder, since its file is named by its content.
-- **Hiding a built-in folder** removes it and its items from its panel, its search and ⌘K; the photo keeps rendering with a hidden look, and the panel's Amount row still names it. Each panel's header menu lists the hidden folders to show again. Hidden folders are one preference, as Lightroom Classic's Manage Presets hides preset groups. The photographer's own lists aren't hidden; their recipes can be moved to the Trash. Adobe Raw, Camera Matching and Creative are built-in folders here, and the photographer's own profiles aren't.
+- **Hiding a built-in folder** removes it and its items from its panel, its search and ⌘K; the photo keeps rendering with a hidden look, and Basic's Base Look still names it. Each panel's header menu lists the hidden folders to show again. Hidden folders are one preference, as Lightroom Classic's Manage Presets hides preset groups. The photographer's own lists aren't hidden; their recipes can be moved to the Trash. Adobe Raw, Camera Matching and Creative are built-in folders here, and the photographer's own profiles aren't.
 
 ## Elsewhere in Develop
 
@@ -84,7 +88,7 @@ One visual browser for every look, the Film Looks window grown to cover them all
 ## Tests, scenarios and docs
 
 - **RedlampRecipes:** which recipes are looks; a film stock's choice keeps vignette, light leak, dust and frame, sets its eight parameters, sets Black & White for a monochrome stock and takes bloom away when the next stock has none; a look that isn't a film stock, chosen over one, returns the eight to their defaults, and chosen over a look that isn't one, keeps the photographer's own grain; hidden folders are saved and read; Move to Trash leaves the look renderable and unlisted.
-- **RedlampUI:** the column's order; Base Looks' folders, search, favourites and Amount row; recipe rows' marks; which menus show Show in Finder, Move to Trash and Hide; Recipes search without Base Looks; ⌘K's two pages.
+- **RedlampUI:** the column's order; Base Looks' folders, search and favourites, and where a folder's rows start; Recipes' Amount row; recipe rows' marks; which menus show Show in Finder, Move to Trash and Hide; Recipes search without Base Looks; ⌘K's two pages.
 - **Regression scenarios** (`RedlampAutomation`), each through the user's own input: search Base Looks and apply a film stock over an edit with a vignette, which stays; Show in Finder and Move to Trash on an imported recipe; hide and show a built-in folder. The scenarios that used Recipes › Film Stocks or Base Looks in recipe search move to the panel. A Report a Bug feature for Base Looks.
 - **Docs:** the README's first goal, its Develop and Recipes bullets, and Film simulations; the Lightroom comparison's Profiles, Presets and Each look in one place rows; the manual's Recipes and Base Look pages; the site's features; the redlamp-look-icons skill, which places icons in the Recipes panel.
 
