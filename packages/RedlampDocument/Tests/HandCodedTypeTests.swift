@@ -41,11 +41,19 @@ struct HandCodedTypeTests {
 
     @Test func `the sidecar and its edit`() throws {
         try check(everything, notWritten: ["session", "clearsHistory", "unsavedSessions"])
+        let provenance = EditProvenance(
+            source: .lightroomCatalog, path: "/Users/ana/Pictures/Lightroom/Catalog.lrcat", photo: 4211,
+            digest: "8c1f", date: Date(timeIntervalSince1970: 1_791_000_000), approximated: ["Clarity2012"],
+            leftOut: ["UprightVersion"],
+        )
+        try check(provenance)
+        var recipe = everything.recipe
+        recipe.provenance = provenance
         try check(
-            everything.recipe, renamed: ["whiteBalanceMode": "whiteBalance"],
+            recipe, renamed: ["whiteBalanceMode": "whiteBalance"],
             notWritten: ["pointColor", "panelsOff", "unknownPanelsOff", "channelCurves", "lensProfileChoice"],
         )
-        var colored = everything.recipe
+        var colored = recipe
         colored.pointColor = [Self.pickedSwatch]
         for (index, channel) in CurveChannel.colors.enumerated() {
             colored[curve: channel] = [CurvePoint(x: 0, y: 0.05 + 0.1 * Double(index)), CurvePoint(x: 1, y: 1)]
