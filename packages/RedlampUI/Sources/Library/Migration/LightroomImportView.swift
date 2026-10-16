@@ -1,3 +1,4 @@
+import AppKit
 import RedlampDesign
 import SwiftUI
 
@@ -8,13 +9,13 @@ import SwiftUI
     public var root: @MainActor (Int64, LightroomImportScreen.Root.Action) -> Void
     /// Copy, with the text to put on the pasteboard.
     public var copy: @MainActor (String) -> Void
-    /// Show beside the sidecars that couldn't be written.
-    public var showUnwritten: @MainActor () -> Void
+    /// Show beside the sidecars that couldn't be written, with their reason: the Finder shows their photos.
+    public var showUnwritten: @MainActor (String) -> Void
 
     public init(
         root: @escaping @MainActor (Int64, LightroomImportScreen.Root.Action) -> Void = { _, _ in },
         copy: @escaping @MainActor (String) -> Void = { _ in },
-        showUnwritten: @escaping @MainActor () -> Void = {},
+        showUnwritten: @escaping @MainActor (String) -> Void = { _ in },
     ) {
         self.root = root
         self.copy = copy
@@ -77,17 +78,71 @@ struct LightroomImportReadingView: View {
 
     var body: some View {
         StageRail(stages: screen.stages)
-        LightroomSection("Reading") {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Reading “\(screen.catalog)”: its photos, folders, keywords and collections.")
+        if let problem = screen.problem {
+            LightroomSection("Couldn't read it") {
+                Text("“\(screen.catalog)” couldn't be read: \(problem)")
                     .font(Typography.label.font)
                     .foregroundStyle(Theme.value)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("lightroom.problem")
+                Text("Choose… reads another catalog, or a copy of this one.")
+                    .font(Typography.caption.font)
+                    .foregroundStyle(Theme.secondaryLabel)
             }
-            Text("It's read from a copy and never changed. Nothing is written until you import.")
-                .font(Typography.caption.font)
-                .foregroundStyle(Theme.secondaryLabel)
+        } else {
+            LightroomSection("Reading") {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Reading “\(screen.catalog)”: its photos, folders, keywords and collections.")
+                        .font(Typography.label.font)
+                        .foregroundStyle(Theme.value)
+                }
+                Text("It's read from a copy and never changed. Nothing is written until you import.")
+                    .font(Typography.caption.font)
+                    .foregroundStyle(Theme.secondaryLabel)
+            }
+        }
+    }
+}
+
+/// A small AppKit button in the screens, carrying an identifier: the window's tests and the regression suite find it
+/// and click it through the window's views, as they do the bottom bar's buttons, which SwiftUI's own don't let them.
+struct LightroomButton: NSViewRepresentable {
+    let title: String
+    let identifier: String
+    var help: String?
+    let action: @MainActor () -> Void
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: title, target: context.coordinator, action: #selector(Coordinator.press))
+        button.controlSize = .small
+        button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        button.title = title
+        button.toolTip = help
+        button.setAccessibilityIdentifier(identifier)
+        context.coordinator.action = action
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    final class Coordinator: NSObject {
+        var action: @MainActor () -> Void
+
+        init(action: @escaping @MainActor () -> Void) {
+            self.action = action
+        }
+
+        @MainActor @objc func press() {
+            action()
         }
     }
 }

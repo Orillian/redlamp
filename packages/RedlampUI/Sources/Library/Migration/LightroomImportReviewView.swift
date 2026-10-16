@@ -32,13 +32,15 @@ struct LightroomImportReviewView: View {
                 .frame(width: 220)
             }
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("lightroom.report")
         }
     }
 
     private func roots(_ review: LightroomImportScreen.Review) -> some View {
         LightroomSection("Root folders") {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                ForEach(review.roots) { root in
+                ForEach(Array(review.roots.enumerated()), id: \.element.id) { place, root in
                     GridRow {
                         Text(root.place)
                             .font(Typography.label.font)
@@ -53,16 +55,19 @@ struct LightroomImportReviewView: View {
                             .lineLimit(1)
                             .help(root.stateText)
                         if let action = root.action {
-                            Button(action.title) { actions.root(root.id, action) }
-                                .controlSize(.small)
-                                .gridColumnAlignment(.trailing)
+                            LightroomButton(title: action.title, identifier: "lightroom.locate.\(place)") {
+                                actions.root(root.id, action)
+                            }
+                            .fixedSize()
+                            .gridColumnAlignment(.trailing)
                         } else {
                             Color.clear.frame(width: 1, height: 1)
                         }
                     }
-                    .accessibilityElement(children: .combine)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("lightroom.roots")
             if let disks = review.disks {
                 Text(disks)
                     .font(Typography.caption.font)

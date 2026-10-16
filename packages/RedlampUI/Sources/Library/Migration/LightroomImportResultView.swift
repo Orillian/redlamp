@@ -41,9 +41,13 @@ struct LightroomImportResultView: View {
                             .font(Typography.label.font)
                             .foregroundStyle(Theme.label)
                             .fixedSize(horizontal: false, vertical: true)
-                        if line.kind == .unwritten {
-                            Button("Show") { actions.showUnwritten() }
-                                .controlSize(.small)
+                        if line.kind == .unwritten, let reason = line.reason {
+                            let place = screen.resultLines.filter { $0.kind == .unwritten }.firstIndex(of: line) ?? 0
+                            LightroomButton(
+                                title: "Show", identifier: "lightroom.show.\(place)",
+                                help: "Shows these photos in the Finder",
+                            ) { actions.showUnwritten(reason) }
+                                .fixedSize()
                         }
                     }
                 }

@@ -63,7 +63,10 @@ struct LightroomWindowTests {
         let report = try #require(window.report)
         #expect(report.roots.map(\.state) == [.inLibrary, .notInLibrary])
         #expect(report.found == 1 && report.waiting == 1)
+        #expect(window.screen.phase == .review && window.screen.review?.reachable == 2)
+        #expect(window.button("lightroom.import")?.title == "Import 2 Photos")
         #expect(window.button("lightroom.import")?.enabled == true)
+        #expect(window.button("lightroom.stop")?.shown == false && window.button("lightroom.done")?.shown == false)
         #expect(SidecarStore().load(for: sandbox.photo("A.jpg")) == nil, "the report writes nothing")
 
         window.model.startImport()
@@ -78,8 +81,31 @@ struct LightroomWindowTests {
         #expect(second?.rating == 3 && second?.label == .blue && second?.collections == ["Window picks"])
         try await sandbox.eventually { window.button("lightroom.undo")?.enabled == true }
 
-        window.model.undo()
+        let screen = window.screen
+        #expect(screen.phase == .done && screen.result?.written == 2 && screen.result?.unwritten == [])
+        #expect(screen.resultTitle.hasPrefix("Imported 2 photos from “Lightroom Catalog” in "))
+        #expect(screen.run?.folders == 1 && screen.run?.indexed?.done == 1)
+        let log = screen.log.map(\.text)
+        #expect(log.first?.hasPrefix("Read “Lightroom Catalog”: 2 photos in 2 root folders, in ") == true, "\(log)")
+        #expect(log.contains { $0.hasPrefix("Added 1 folder to Folders: ") && $0.hasSuffix("Other") }, "\(log)")
+        #expect(log.contains { $0.hasPrefix("Indexed 1 photo in ") }, "\(log)")
+        #expect(log.last?.hasPrefix("Imported 2 photos in ") == true, "\(log)")
+        #expect(window.button("lightroom.done")?.shown == true && window.button("lightroom.done")?.enabled == true)
+        #expect(window.button("lightroom.import")?.shown == false)
+
+        try #require(button("lightroom.done", in: window)).performClick(nil)
+        #expect(window.isShowingSetup, "Done goes back to what was found")
+        let done = try #require(window.setupLine("lightroom.setup.done.catalog"))
+        #expect(done.shown && done.text.hasPrefix("Catalog: 2 photos imported from “Lightroom Catalog”, "), "\(done)")
+        window.choose(catalog: catalog)
+        try await sandbox.eventually { window.isReported && window.screen.phase == .review }
+        #expect(window.screen.buttons.map(\.kind) == [.undo, .importPhotos], "Review takes the import back too")
+
+        try #require(button("lightroom.undo", in: window)).performClick(nil)
         try await sandbox.eventually(seconds: 60) { window.isUndone }
+        #expect(window.screen.log.last?.text == "Took back the import: 2 photos as they were")
+        try #require(button("lightroom.back", in: window)).performClick(nil)
+        try await sandbox.eventually { window.setupLine("lightroom.setup.done.catalog")?.shown == false }
         #expect(window.problem == nil, "\(window.problem ?? "")")
         #expect(SidecarStore().load(for: sandbox.photo("A.jpg"))?.metadata?.isEmpty ?? true)
         #expect(SidecarStore().load(for: other.appending(path: "Day/B.jpg"))?.metadata?.isEmpty ?? true)
@@ -183,8 +209,11 @@ struct LightroomWindowTests {
         window.choose(catalog: catalog)
         try await sandbox.eventually { window.isReported }
         #expect(window.report?.roots.map(\.state) == [.inLibrary, .needsAccess])
-        #expect(window.button("lightroom.locate.1")?.title == "Allow Access…")
-        #expect(window.button("lightroom.locate.0")?.title == "Locate…")
+        try await sandbox.eventually { window.button("lightroom.locate.1") != nil }
+        let allow = try #require(window.button("lightroom.locate.1"))
+        #expect(allow.title == "Allow Access…" && allow.shown && allow.enabled)
+        #expect(window.button("lightroom.locate.0") == nil, "a folder in the library needs neither")
+        #expect(window.screen.review?.roots.map(\.action) == [nil, .allowAccess])
 
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: other.path)
         window.locate(other.standardizedFileURL.path + "/", at: other)
@@ -221,5 +250,30 @@ struct LightroomWindowTests {
         try await sandbox.eventually { model2.phase == .reported && model2.report?.found == 1 }
         #expect(model2.report?.roots.first?.moved == true && model2.report?.roots.first?.state == .inLibrary)
         #expect(model2.status.contains("Importing changes 1 photo"))
+    }
+
+    @Test func `the window opens within CI's screen, no smaller than 600 by 480, on what was found`() async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let model = try await sandbox.open()
+        LightroomWindowController.show(editor: model)
+        let controller = try #require(LightroomWindowController.current)
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        #expect(window.minSize == NSSize(width: 600, height: 480))
+        #expect(window.frame.width <= 760 && window.frame.height <= 640, "\(window.frame.size)")
+        #expect(controller.isShowingSetup)
+        #expect(controller.setupLine("lightroom.setup.done.catalog")?.shown == false, "nothing imported yet")
+    }
+
+    private func button(_ identifier: String, in window: LightroomWindowController) -> NSButton? {
+        func find(_ view: NSView) -> NSButton? {
+            if view.accessibilityIdentifier() == identifier {
+                return view as? NSButton
+            }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        return window.window?.contentView.flatMap(find)
     }
 }

@@ -1,53 +1,57 @@
 import AppKit
+import Observation
 import RedlampDesign
 import RedlampLibrary
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// File › Import from Lightroom Classic… (LIB-29): a window of its own that opens on what was found of Lightroom
-/// Classic on this Mac (`LightroomSetupScreen`, EDT-34), then, for the catalog, chooses it, lists its root
-/// folders with where each is now and Locate… for one that moved, shows the report of what would come across and
-/// what wouldn't, and imports with progress and Stop, then offers Undo Import (`LightroomImportModel`). There's
-/// one at a time: asking again brings it forward. Closing it while it imports lets the import carry on.
+/// Classic on this Mac (`LightroomSetupScreen`, EDT-34), then, for the catalog, shows the screens LIB-52 drew from the
+/// model (`LightroomImportView`, from `LightroomImportModel.screen`): Review, with each root folder and Locate… for one
+/// that moved, the import's progress with Stop, and how it ended, with Undo Import. Import, Stop, Undo Import, Import
+/// Again and Done stay AppKit buttons in the window's bottom bar. There's one at a time: asking again brings it
+/// forward. Closing it while it imports lets the import carry on.
 @MainActor
 public final class LightroomWindowController: NSWindowController, NSWindowDelegate {
     public nonisolated static let title = "Import from Lightroom Classic"
     /// The window open now.
     @_spi(Harness) public private(set) static var current: LightroomWindowController?
+    /// The window's content as it opens, 628 points high with the title bar, and the window at its smallest: within
+    /// the 700 points of height CI's screen leaves.
+    static let openingSize = NSSize(width: 760, height: 600)
+    static let minimumSize = NSSize(width: 600, height: 480)
 
     let model: LightroomImportModel
     let setup: LightroomSetupScreen
     private let catalogLabel = NSTextField(labelWithString: "No catalog chosen")
     private let chooseButton = NSButton(title: "Choose…", target: nil, action: nil)
-    private let roots = NSStackView()
-    private let reportView = NSTextView()
+    private let shown: LightroomImportScreenBox
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let progress = NSProgressIndicator()
-    private let undoButton = NSButton(title: "Undo Import", target: nil, action: nil)
-    private let stopButton = NSButton(title: "Stop", target: nil, action: nil)
-    private let importButton = NSButton(title: "Import", target: nil, action: nil)
-    /// The root folders' rows, by the paths the catalog gives them, for Locate….
-    private var rootPaths: [Int: String] = [:]
+    /// The bottom bar's buttons by what they do, left to right as every screen lists them.
+    private var buttons: [(kind: LightroomImportScreen.Button.Kind, button: NSButton)] = []
     /// Closed while it imported, which carries on: the window goes once it's done.
     private var closedWhileBusy = false
-    /// The report the roots and the text show, and whether the roots' Locate… buttons were enabled.
-    private var shown: (report: LightroomReport?, locating: Bool)?
 
     init(model: LightroomImportModel, editor: EditorModel? = nil) {
         self.model = model
         setup = LightroomSetupScreen(editor: editor)
+        shown = LightroomImportScreenBox(screen: model.screen)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 600),
+            contentRect: NSRect(origin: .zero, size: Self.openingSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false,
         )
         window.title = Self.title
-        window.minSize = NSSize(width: 560, height: 420)
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         super.init(window: window)
+        window.minSize = Self.minimumSize
         window.delegate = self
         setup.install(in: self, catalog: makeContent())
         window.center()
         window.setFrameAutosaveName("LightroomImportWindow")
+        if window.frame.width < Self.minimumSize.width || window.frame.height < Self.minimumSize.height {
+            window.setFrame(NSRect(origin: window.frame.origin, size: Self.minimumSize), display: false)
+        }
         model.onChange = { [weak self] in self?.changed() }
     }
 
@@ -67,83 +71,66 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         chooseButton.setAccessibilityIdentifier("lightroom.choose")
         let header = Self.row([setup.backButton, heading, catalogLabel, chooseButton], spacing: 8)
 
-        let rootsHeading = NSTextField(labelWithString: "Root Folders")
-        rootsHeading.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-        roots.orientation = .vertical
-        roots.alignment = .leading
-        roots.spacing = 6
-        roots.setClippingResistancePriority(.defaultLow, for: .horizontal)
-        roots.setAccessibilityIdentifier("lightroom.roots")
-        roots.translatesAutoresizingMaskIntoConstraints = false
-        let rootsContainer = FlippedView()
-        rootsContainer.translatesAutoresizingMaskIntoConstraints = false
-        rootsContainer.addSubview(roots)
-        let rootsScroll = OverlayScrollView()
-        rootsScroll.documentView = rootsContainer
-        rootsScroll.drawsBackground = false
-        NSLayoutConstraint.activate([
-            roots.topAnchor.constraint(equalTo: rootsContainer.topAnchor),
-            roots.leadingAnchor.constraint(equalTo: rootsContainer.leadingAnchor),
-            roots.trailingAnchor.constraint(equalTo: rootsContainer.trailingAnchor),
-            roots.bottomAnchor.constraint(equalTo: rootsContainer.bottomAnchor),
-            rootsContainer.widthAnchor.constraint(equalTo: rootsScroll.contentView.widthAnchor),
-            rootsScroll.heightAnchor.constraint(lessThanOrEqualToConstant: 150),
-            rootsScroll.heightAnchor.constraint(greaterThanOrEqualTo: rootsContainer.heightAnchor)
-                .with(priority: .defaultHigh),
-            rootsScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 24),
-        ])
-
-        reportView.isEditable = false
-        reportView.isSelectable = true
-        reportView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        reportView.textContainerInset = NSSize(width: 6, height: 6)
-        reportView.setAccessibilityIdentifier("lightroom.report")
-        let scroll = OverlayScrollView()
-        scroll.documentView = reportView
-        scroll.borderType = .bezelBorder
-        reportView.autoresizingMask = [.width]
-        reportView.isVerticallyResizable = true
-        reportView.textContainer?.widthTracksTextView = true
-        scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+        let actions = LightroomImportActions(
+            root: { [weak self] id, action in self?.root(id, action) },
+            copy: { text in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            },
+            showUnwritten: { [weak self] reason in self?.showUnwritten(reason) },
+        )
+        let hosting = NSHostingView(rootView: LightroomImportHost(shown: shown, actions: actions).focusEffectDisabled())
+        hosting.sizingOptions = []
+        hosting.setAccessibilityIdentifier("lightroom.screen")
 
         status.font = .systemFont(ofSize: 12)
-        status.maximumNumberOfLines = 3
+        status.textColor = .secondaryLabelColor
+        status.maximumNumberOfLines = 2
+        status.cell?.truncatesLastVisibleLine = true
         status.setAccessibilityIdentifier("lightroom.status")
         status.setContentHuggingPriority(.init(1), for: .horizontal)
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        progress.isIndeterminate = false
-        progress.minValue = 0
-        progress.maxValue = 1
-        progress.controlSize = .small
-        progress.widthAnchor.constraint(equalToConstant: 140).isActive = true
-        for (button, action, identifier) in [
-            (undoButton, #selector(undoImport), "lightroom.undo"), (
-                stopButton,
-                #selector(stopImport),
-                "lightroom.stop",
-            ),
-            (importButton, #selector(startImport), "lightroom.import"),
-        ] {
-            button.target = self
-            button.action = action
+        let kinds: [(LightroomImportScreen.Button.Kind, Selector, String)] = [
+            (.undo, #selector(undoImport), "lightroom.undo"),
+            (.stop, #selector(stopImport), "lightroom.stop"),
+            (.importAgain, #selector(startImport), "lightroom.importAgain"),
+            (.done, #selector(finish), "lightroom.done"),
+            (.importPhotos, #selector(startImport), "lightroom.import"),
+        ]
+        buttons = kinds.map { kind, action, identifier in
+            let button = NSButton(title: "", target: self, action: action)
             button.setAccessibilityIdentifier(identifier)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            button.isHidden = true
+            return (kind, button)
         }
-        importButton.keyEquivalent = "\r"
-        let bar = Self.row([status, progress, undoButton, stopButton, importButton], spacing: 10)
+        buttons.first { $0.kind == .stop }?.button.toolTip = "Ends once the part being written is done"
+        buttons.first { $0.kind == .done }?.button.toolTip = "Back to what Redlamp found of Lightroom Classic"
+        let bar = Self.row([status] + buttons.map(\.button), spacing: 10)
 
         let line = NSBox()
         line.boxType = .separator
-        let content = NSStackView(views: [header, rootsHeading, rootsScroll, scroll, line, bar])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 10
-        content.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 12, right: 16)
-        for view in [header, rootsScroll, scroll, line, bar] {
+        let content = NSView()
+        for view in [header, hosting, line, bar] {
             view.translatesAutoresizingMaskIntoConstraints = false
-            view.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -32).isActive = true
+            content.addSubview(view)
         }
-        content.setCustomSpacing(6, after: rootsHeading)
-        content.setCustomSpacing(14, after: line)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+            header.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            header.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            hosting.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 2),
+            hosting.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            line.topAnchor.constraint(equalTo: hosting.bottomAnchor),
+            line.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: line.bottomAnchor, constant: 10),
+            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            bar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
+            bar.heightAnchor.constraint(greaterThanOrEqualToConstant: 30),
+        ])
         return content
     }
 
@@ -156,29 +143,6 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         row.alignment = .centerY
         row.spacing = spacing
         return row
-    }
-
-    /// The report's lines without the indent they share, those at it in bold and capitalised, as the headings of the
-    /// lines indented under them.
-    private static func report(_ lines: [String]) -> NSAttributedString {
-        let text = NSMutableAttributedString()
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 2
-        let indent = lines.map { $0.prefix { $0 == " " }.count }.min() ?? 0
-        for (place, whole) in lines.enumerated() {
-            var line = String(whole.dropFirst(indent))
-            let section = !line.hasPrefix(" ")
-            if section, let first = line.first {
-                line = first.uppercased() + line.dropFirst()
-            }
-            text.append(NSAttributedString(string: (place == 0 ? "" : "\n") + line, attributes: [
-                .font: section ? NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize)
-                    : NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: paragraph,
-            ]))
-        }
-        return text
     }
 
     // MARK: - Showing
@@ -211,85 +175,33 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
 
     private func changed() {
         catalogLabel.stringValue = model.catalogURL?.path ?? "No catalog chosen"
-        if shown.map({ $0.report != model.report || $0.locating == model.isBusy }) ?? true {
-            shown = (model.report, !model.isBusy)
-            showRoots(model.report?.roots ?? [])
-            reportView.textStorage?.setAttributedString(Self.report(model.report.map {
-                Array($0.lines(roots: false).dropFirst())
-            } ?? []))
-        }
-        status.stringValue = model.status
         chooseButton.isEnabled = !model.isBusy
-        importButton.isEnabled = model.canImport
-        importButton.title = model.phase == .imported ? "Import Again" : "Import"
-        stopButton.isHidden = !(model.phase == .adding || model.phase == .importing || model.phase == .stopping)
-        stopButton.isEnabled = model.phase != .stopping
-        undoButton.isHidden = !model.canUndo && model.phase != .undoing
-        undoButton.isEnabled = model.canUndo
-        if let done = model.progress.map({ Double($0.done) / Double(max($0.total, 1)) })
-            ?? model.indexed.map({ Double($0.done) / Double(max($0.total, 1)) }) {
-            progress.isHidden = false
-            progress.doubleValue = done
-        } else {
-            progress.isHidden = true
+        let screen = model.screen
+        if shown.screen != screen {
+            shown.screen = screen
+        }
+        status.stringValue = screen.barNote ?? ""
+        for (kind, button) in buttons {
+            guard let wanted = screen.buttons.first(where: { $0.kind == kind }) else {
+                button.isHidden = true
+                button.keyEquivalent = ""
+                continue
+            }
+            button.title = wanted.title
+            button.isEnabled = wanted.isEnabled
+            button.keyEquivalent = wanted.isDefault ? "\r" : ""
+            button.isHidden = false
+        }
+        buttons.first { $0.kind == .undo }?.button.toolTip = model.lastImport.map { record in
+            "Takes back the import of \(LightroomImportModel.count(record.photos, "photo")) from "
+                + "“\(URL(fileURLWithPath: record.catalog).deletingPathExtension().lastPathComponent)”, "
+                + LightroomSetupScreen.day(record.date)
         }
         if closedWhileBusy, !model.isBusy, Self.current === self {
             Self.current = nil
         }
         if setup.screen == .setup {
             setup.refresh()
-        }
-    }
-
-    private func showRoots(_ list: [LightroomReport.Root]) {
-        for view in roots.arrangedSubviews {
-            roots.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-        rootPaths = [:]
-        guard !list.isEmpty else {
-            roots.addArrangedSubview(NSTextField(labelWithString: model.report == nil ? "—" : "None"))
-            return
-        }
-        var states: [NSTextField] = []
-        for (place, root) in list.enumerated() {
-            let location = root.path.map { root.moved ? "\(root.lightroomPath) → \($0)" : $0 } ?? root.lightroomPath
-            let label = NSTextField(labelWithString: location)
-            label.lineBreakMode = .byTruncatingMiddle
-            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            label.setContentHuggingPriority(.init(1), for: .horizontal)
-            let state = NSTextField(labelWithString: Self.describe(root))
-            state.textColor = [.missing, .offline, .needsAccess]
-                .contains(root.state) ? .systemRed : .secondaryLabelColor
-            state.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-            let locate = root.state == .needsAccess
-                ? NSButton(title: "Allow Access…", target: self, action: #selector(allowAccess(_:)))
-                : NSButton(title: "Locate…", target: self, action: #selector(locateRoot(_:)))
-            locate.tag = place
-            locate.controlSize = .small
-            locate.isEnabled = !model.isBusy
-            locate.setAccessibilityIdentifier("lightroom.locate.\(place)")
-            rootPaths[place] = root.lightroomPath
-            states.append(state)
-            let row = Self.row([label, state, locate], spacing: 10)
-            roots.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: roots.widthAnchor).isActive = true
-        }
-        // The states in a column of their own, as wide as the widest, the paths taking the room left.
-        let widest = states.map(\.intrinsicContentSize.width).max() ?? 0
-        for state in states {
-            state.widthAnchor.constraint(equalToConstant: widest).isActive = true
-        }
-    }
-
-    static func describe(_ root: LightroomReport.Root) -> String {
-        switch root.state {
-        case .inLibrary: "In the library: \(LightroomImportModel.number(root.found)) of "
-            + "\(LightroomImportModel.count(root.photos, "photo")) found"
-        case .notInLibrary: "Not in the library yet: Import adds it (\(LightroomImportModel.count(root.photos, "photo")))"
-        case .missing: "Not found: Locate… says where it is now"
-        case .needsAccess: "Redlamp can't read it yet: Allow Access… lets it"
-        case .offline: "On a disk that isn’t connected: connect it, then import"
         }
     }
 
@@ -310,8 +222,17 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    @objc private func locateRoot(_ sender: NSButton) {
-        guard let window, let path = rootPaths[sender.tag] else { return }
+    /// Locate… or Allow Access… on the root folder the report gives `id`.
+    private func root(_ id: Int64, _ action: LightroomImportScreen.Root.Action) {
+        guard let path = model.report?.roots.first(where: { $0.id == id })?.lightroomPath else { return }
+        switch action {
+        case .locate: locateRoot(path)
+        case .allowAccess: allowAccess(path)
+        }
+    }
+
+    private func locateRoot(_ path: String) {
+        guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -325,8 +246,8 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
 
     /// A root Redlamp can't read, as each the App Sandbox wasn't given: its panel opens on it, and choosing it gives
     /// access to it, one root at a time.
-    @objc private func allowAccess(_ sender: NSButton) {
-        guard let window, let path = rootPaths[sender.tag] else { return }
+    private func allowAccess(_ path: String) {
+        guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -337,6 +258,13 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
             guard response == .OK, let url = panel.url else { return }
             self?.model.locate(path, at: url)
         }
+    }
+
+    /// Show beside sidecars that couldn't be written: the Finder shows their photos, the first hundred of them.
+    private func showUnwritten(_ reason: String) {
+        let photos = model.unwrittenPhotos(reason)
+        guard !photos.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(Array(photos.prefix(100)))
     }
 
     @objc private func startImport() {
@@ -350,6 +278,32 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
     @objc private func undoImport() {
         model.undo()
     }
+
+    /// Done: back to what was found of Lightroom Classic, whose cards now say what came across.
+    @objc private func finish() {
+        model.dismissResult()
+        setup.show(.setup)
+    }
+}
+
+/// The screen the model last described, which the hosted view draws.
+@MainActor @Observable
+final class LightroomImportScreenBox {
+    var screen: LightroomImportScreen
+
+    init(screen: LightroomImportScreen) {
+        self.screen = screen
+    }
+}
+
+/// The catalog's screens in the window, redrawn as the model changes.
+struct LightroomImportHost: View {
+    let shown: LightroomImportScreenBox
+    let actions: LightroomImportActions
+
+    var body: some View {
+        LightroomImportView(screen: shown.screen, actions: actions)
+    }
 }
 
 /// The File menu's Import from Lightroom Classic….
@@ -361,19 +315,5 @@ enum LightroomActions {
         guard model.library.service?.isReady == true else { return false }
         LightroomWindowController.show(editor: model)
         return true
-    }
-}
-
-/// A document view laid out from the top, as a list scrolls.
-private final class FlippedView: NSView {
-    override var isFlipped: Bool {
-        true
-    }
-}
-
-private extension NSLayoutConstraint {
-    func with(priority: NSLayoutConstraint.Priority) -> NSLayoutConstraint {
-        self.priority = priority
-        return self
     }
 }

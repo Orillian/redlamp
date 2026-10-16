@@ -72,6 +72,11 @@ final class LightroomSetupScreen: NSObject {
     /// The catalog chosen on this screen, or the one the report reads, in place of the one found.
     private var chosenCatalog: LightroomSetup.Catalog?
     private(set) var presetsImport: PresetsImport?
+    /// When the presets were imported, in this window.
+    private var presetsImported: Date?
+    /// What came across of each part, under the cards, and its lines.
+    private var doneRow: NSView?
+    private var doneLines: [Part: NSTextField] = [:]
     /// What was read of a catalog, and that catalog as it was found when it was read.
     private var contents: (catalog: LightroomSetup.Catalog, contents: Contents)?
     private var finding: Task<Void, Never>?
@@ -270,6 +275,12 @@ final class LightroomSetupScreen: NSObject {
             presetsButton?.title = "Import Presets"
         }
         sections[.profiles]?.buttons["choose"]?.isEnabled = editor != nil
+        let done = Self.doneLines(lastImport: model.lastImport, presets: presetsImport, on: presetsImported)
+        for (part, label) in doneLines {
+            label.stringValue = done[part] ?? ""
+            label.isHidden = done[part] == nil
+        }
+        doneRow?.isHidden = done.isEmpty
     }
 
     // MARK: - Actions
@@ -316,6 +327,7 @@ final class LightroomSetupScreen: NSObject {
             let summary = editor.recipes.install(read)
             editor.activity.record(.action, "Import from Lightroom Classic: \(summary.headline)")
             presetsImport = .imported(summary)
+            presetsImported = Date()
             refresh()
             RecipeActions.tell(summary, over: controller?.window)
         }
@@ -489,6 +501,31 @@ final class LightroomSetupScreen: NSObject {
         return lines
     }
 
+    /// What came across of each part, for the row under the cards: the catalog's import the library keeps, newest
+    /// not taken back, and the presets imported in this window. The profiles are read where they are: nothing of
+    /// them comes across.
+    static func doneLines(
+        lastImport: LightroomImportRecord?,
+        presets: PresetsImport?,
+        on date: Date?,
+    ) -> [Part: String] {
+        var lines: [Part: String] = [:]
+        if let record = lastImport {
+            let name = URL(fileURLWithPath: record.catalog).deletingPathExtension().lastPathComponent
+            lines[.catalog] = "Catalog: "
+                + (record.photos > 0
+                    ? "\(LightroomImportModel.count(record.photos, "photo")) imported from “\(name)”"
+                    : "the keywords and collections of “\(name)” imported")
+                + (record.stopped ? ", stopped before the end" : "") + ", \(day(record.date))"
+        }
+        if case let .imported(summary) = presets, !summary.imported.isEmpty {
+            let places = summary.lists.map { "Recipes › \($0)" } + summary.lookFolders.map { "Base Looks › \($0)" }
+            lines[.presets] = "Presets: \(LightroomImportModel.number(summary.imported.count)) imported"
+                + (places.isEmpty ? "" : " into \(joined(places))") + (date.map { ", \(day($0))" } ?? "")
+        }
+        return lines
+    }
+
     /// "12 October", and the year when it isn't this one's.
     static func day(_ date: Date) -> String {
         let calendar = Calendar.current
@@ -520,16 +557,56 @@ final class LightroomSetupScreen: NSObject {
             card.heightAnchor.constraint(equalTo: cards.heightAnchor).isActive = true
         }
         let content = NSView()
-        cards.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(cards)
+        let done = makeDoneRow()
+        for view in [cards, done] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
+        }
         NSLayoutConstraint.activate([
             cards.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
             cards.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
             cards.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
-            cards.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -12),
+            done.topAnchor.constraint(equalTo: cards.bottomAnchor, constant: 10),
+            done.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
+            done.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+            done.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -12),
         ])
         content.setAccessibilityIdentifier("lightroom.setup")
         return content
+    }
+
+    /// The row under the cards, dashed as what's done rather than what's to do, with a line for each part done.
+    private func makeDoneRow() -> NSView {
+        let title = NSTextField(labelWithString: "Done")
+        title.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
+        title.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [title])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 3
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 9, right: 12)
+        for part in [Part.catalog, .presets] {
+            let line = Self.wrappingLabel(NSFont.smallSystemFontSize, .labelColor)
+            line.setAccessibilityIdentifier("lightroom.setup.done.\(part.rawValue)")
+            line.isHidden = true
+            stack.addArrangedSubview(line)
+            line.translatesAutoresizingMaskIntoConstraints = false
+            line.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor, constant: -24).isActive = true
+            doneLines[part] = line
+        }
+        let row = DashedBox()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: row.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+        ])
+        row.isHidden = true
+        row.setAccessibilityIdentifier("lightroom.setup.done")
+        doneRow = row
+        return row
     }
 
     /// A part's card: its title, how many, what and where, what it's doing, and its buttons at the foot.
@@ -648,6 +725,17 @@ final class LightroomSetupScreen: NSObject {
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
+    }
+}
+
+/// A box with a dashed border.
+private final class DashedBox: NSView {
+    override func draw(_: NSRect) {
+        let border = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        border.setLineDash([4, 3], count: 2, phase: 0)
+        border.lineWidth = 1
+        NSColor.separatorColor.setStroke()
+        border.stroke()
     }
 }
 

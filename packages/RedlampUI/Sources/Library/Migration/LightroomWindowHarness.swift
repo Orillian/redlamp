@@ -56,6 +56,11 @@ import RedlampLibrary
         model.status
     }
 
+    /// What the catalog's screens show now (LIB-52).
+    var screen: LightroomImportScreen {
+        model.screen
+    }
+
     /// The text of the button carrying `identifier`, on either screen, and whether it's shown and enabled.
     func button(_ identifier: String) -> (title: String, shown: Bool, enabled: Bool)? {
         let screens = [setup.view, setup.catalogScreen].compactMap(\.self)
