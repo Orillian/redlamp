@@ -29,6 +29,20 @@ public struct LightroomConversion: Identifiable {
     }
 }
 
+/// Convert Lightroom Edits… as Undo takes it back: by its batch, which Settings Sync's Undo takes back while it's the
+/// last batch run. ⇧⌘Z doesn't make it again; converting again does.
+@MainActor
+struct LightroomConversionStep {
+    var batch: UUID
+    var photos: Int
+    /// Its turn in Undo (`EditorModel+LibraryUndo`).
+    var turn: Int
+
+    var title: String {
+        "\(EditorModel.conversionTitle) of \(photos) photo\(photos == 1 ? "" : "s")"
+    }
+}
+
 /// Develop's notice on an edit converted from Lightroom (`EditRecipe.provenance`): where it came from and how
 /// fully it converted, with the settings approximated and left out by their Camera Raw names.
 public struct ProvenanceNotice: Equatable {
@@ -71,7 +85,9 @@ public extension EditorModel {
     }
 
     /// Library › Convert Lightroom Edits…: the selection's photos, or with one photo selected, the folder's or
-    /// source's, read off the main thread for the report, which nothing is written before.
+    /// source's, read off the main thread for the report, which nothing is written before. What the library's index
+    /// holds of each photo spares reading its file, and the Adobe profiles on this Mac are listed once for each
+    /// camera of the raws among them (EDT-33).
     func convertLightroomEdits() {
         guard canConvertLightroomEdits else { return }
         let photos: SelectedPhotos
@@ -89,10 +105,21 @@ public extension EditorModel {
         lightroomConversion = conversion
         activity.record(.action, "Convert Lightroom Edits…: reading \(subject)")
         let placement = library.sidecars
-        Task {
+        let index = library.service?.core?.index
+        Task { [engine] in
             let urls = await photos.all()
-            let scan = await Task.detached(priority: .userInitiated) {
-                LightroomXMPScan.scan(urls) { LightroomPhotoXMP.redlampEdit(of: $0, in: placement.store(for: $0)) }
+            var indexed: [URL: LightroomXMPScan.Indexed] = [:]
+            if let index {
+                indexed = await (try? LightroomXMPScan.indexed(urls, in: index)) ?? [:]
+            }
+            var profiles: [LightroomXMPScan.Camera: [CameraProfileLook]] = [:]
+            for camera in Set(indexed.values.filter(\.context.isRaw).compactMap(\.camera)) {
+                profiles[camera] = await engine.cameraProfileLooks(make: camera.make, model: camera.model)
+            }
+            let scan = await Task.detached(priority: .userInitiated) { [indexed, profiles] in
+                LightroomXMPScan.scan(urls, indexed: indexed, adobeProfiles: profiles) {
+                    LightroomPhotoXMP.redlampEdit(of: $0, in: placement.store(for: $0))
+                }
             }.value
             guard lightroomConversion?.id == conversion.id else { return }
             lightroomConversion?.stage = .report(scan)
@@ -100,29 +127,43 @@ public extension EditorModel {
     }
 
     /// The report's Convert: the photos it found with a Lightroom edit and none in Redlamp, as a batch whose Undo
-    /// puts them back. The photo open in Develop is converted there, as a step of its history.
+    /// puts them back. The photo open in Develop is converted there, as a step of its history. Once the batch is
+    /// done, it goes on Undo, newest, as an import from Lightroom Classic does (LIB-29).
     func confirmLightroomConversion() {
         guard let scan = lightroomConversion?.scan, !scan.conversions.isEmpty else { return }
         let conversions = Dictionary(scan.conversions.map { ($0.photo, $0.imported) }) { first, _ in first }
         lightroomConversion?.stage = .converting
         activity.record(.action, "Convert Lightroom Edits: \(scan.conversions.count) photos")
         saveNow()
-        settingsSync.run(
+        let batch = settingsSync.run(
             .convertLightroom(conversions), on: scan.conversions.map(\.photo), title: Self.conversionTitle,
             done: written,
         )
         let id = lightroomConversion?.id
         Task {
             await settingsSync.idle()
+            if settingsSync.canUndo, settingsSync.lastBatch == batch {
+                lightroomConversionStep = LightroomConversionStep(
+                    batch: batch, photos: scan.conversions.count, turn: nextLibraryTurn(),
+                )
+                endLibraryRedo()
+            }
             guard lightroomConversion?.id == id else { return }
             lightroomConversion?.stage = .done(converted: scan.conversions.count, report: settingsSync.report)
         }
     }
 
-    /// The sheet's Undo, once the batch is done: every photo it converted not edited since put back.
+    /// The sheet's Undo, once the batch is done, and ⌘Z: every photo it converted not edited since put back.
     func undoLightroomConversion() {
         undoSync()
         lightroomConversion = nil
+    }
+
+    /// The turn of the conversion ⌘Z takes back, while Settings Sync can still take its batch back.
+    var lightroomConversionTurn: Int? {
+        guard let step = lightroomConversionStep, settingsSync.canUndo, settingsSync.lastBatch == step.batch
+        else { return nil }
+        return step.turn
     }
 
     func closeLightroomConversion() {
@@ -141,7 +182,9 @@ public extension EditorModel {
             }.value
             guard currentVisit == visit, let info else { return }
             guard let (edit, photo) = read else { return }
-            let converted = Self.converting(edit, photo: photo, info)
+            let profiles = await adobeProfiles(of: info)
+            guard currentVisit == visit else { return }
+            let converted = Self.converting(edit, photo: photo, info, adobeProfiles: profiles)
             keepSnapshot(of: recipe, named: "Before Convert Again")
             commit(withPhotoAnchor(Self.asShot(converted, info), of: info, changed: true), .recipe, "Convert Again")
             activity.record(.edit, "\(activity.alias(for: url)): its Lightroom edit converted again")
@@ -155,13 +198,25 @@ extension EditorModel {
     static let convertedStepTitle = "Converted from Lightroom"
 
     /// `edit` converted for the photo `opened` describes: its size as stored and its camera's orientation as
-    /// ImageIO read them (`photo`), else as the engine decoded it, with what only the engine knows of the file.
-    static func converting(_ edit: LightroomXMPEdit, photo: LightroomPhotoContext?, _ opened: ImageInfo) -> EditRecipe {
+    /// ImageIO read them (`photo`), else as the engine decoded it, with what only the engine knows of the file. A
+    /// raw's names the photographer's Adobe profile where `adobeProfiles`, its camera's, has it (EDT-33).
+    static func converting(
+        _ edit: LightroomXMPEdit, photo: LightroomPhotoContext?, _ opened: ImageInfo,
+        adobeProfiles: [CameraProfileLook]? = nil,
+    ) -> EditRecipe {
         var context = photo ?? LightroomPhotoContext(size: opened.pixelSize)
         context.isRaw = opened.isRaw
         context.hasLensCorrection = opened.lensCorrection != nil
         context.embeddedLook = opened.embeddedBaseLook
+        context.adobeProfiles = opened.isRaw ? adobeProfiles : nil
         return LightroomPhoto.convert(edit.settings, photo: context, source: edit.source).recipe
+    }
+
+    /// The Adobe profiles on this Mac for the camera of the raw `opened` describes; nil for any other photo, or one
+    /// whose camera isn't known.
+    func adobeProfiles(of opened: ImageInfo) async -> [CameraProfileLook]? {
+        guard opened.isRaw, let make = opened.make, let model = opened.model else { return nil }
+        return await engine.cameraProfileLooks(make: make, model: model)
     }
 }
 
@@ -189,6 +244,20 @@ public extension LightroomXMPScan {
             "With settings left out: \(number(photos(.leftOut).count))",
         ]
         lines += reasons.map { "  \(Self.title(of: $0.reason)): \(number($0.photos.count))" }
+        let profiles = conversions.compactMap(\.imported.report.profile)
+        let standIns = profiles.count {
+            if case .standIn = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        if profiles.count > standIns {
+            lines.append("With the Adobe profile Lightroom used, from this Mac: \(number(profiles.count - standIns))")
+        }
+        if standIns > 0 {
+            lines.append("With Redlamp’s look for an Adobe profile not on this Mac: \(number(standIns))")
+        }
         if !edited.isEmpty {
             lines.append("Already edited in Redlamp, keeping their edit: \(number(edited.count))")
         }

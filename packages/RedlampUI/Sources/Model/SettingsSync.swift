@@ -127,6 +127,9 @@ public final class SettingsSync {
         !written.isEmpty && progress == nil
     }
 
+    /// The batch started last, which Undo takes back while it `canUndo` (`run` returns each batch's).
+    @ObservationIgnored private(set) var lastBatch: UUID?
+
     /// An engine for photos that aren't open; nil leaves AI masks and Auto white balance as pasted.
     @ObservationIgnored var makeEngine: () -> (any EditingEngine)?
     /// The exposure anchor a photo's edit gets under Redlamp Reproduction (nil when it isn't raw),
@@ -161,6 +164,7 @@ public final class SettingsSync {
     static let batch = 256
 
     private struct Job {
+        let id = UUID()
         var change: Change
         var photos: SelectedPhotos
         var title: String
@@ -228,18 +232,20 @@ public final class SettingsSync {
     /// the batch running; `done` is told of each photo changed. With `step` (a paste onto the
     /// selection) and Auto Sync on, the batch joins the run, so the open photo's Undo takes it
     /// back too.
+    @discardableResult
     func run(
         _ change: Change, on photos: [URL], title: String, step: RunStep? = nil,
         done: @escaping (URL, EditRecipe) -> Void,
-    ) {
+    ) -> UUID {
         run(change, on: SelectedPhotos(photos), title: title, step: step, done: done)
     }
 
     /// `run` on a selection's photos, which a large source's are read for a batch at a time as the batch reaches them.
+    @discardableResult
     func run(
         _ change: Change, on photos: SelectedPhotos, title: String, step: RunStep? = nil,
         done: @escaping (URL, EditRecipe) -> Void,
-    ) {
+    ) -> UUID {
         var job = Job(change: change, photos: photos, title: title, stepTitle: title, done: done)
         if let step, isAutoSyncing {
             record(step)
@@ -247,6 +253,7 @@ public final class SettingsSync {
             job.steps = [step.id]
         }
         enqueue(job)
+        return job.id
     }
 
     public func cancel() {
@@ -341,6 +348,7 @@ public final class SettingsSync {
     private func start(_ job: Job) {
         progress = Progress(title: job.title, done: 0, total: job.photos.count)
         title = job.title
+        lastBatch = job.id
         report = nil
         before = [:]
         written = [:]

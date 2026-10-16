@@ -1,8 +1,11 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import RedlampDocument
 import RedlampEngineAPI
 import RedlampRecipes
 import Testing
+import UniformTypeIdentifiers
 @testable import RedlampLibrary
 
 /// Convert Lightroom Edits…'s look at the photos before anything is written, and the XMP metadata sync (LIB-24)
@@ -48,6 +51,109 @@ struct LightroomXMPScanTests {
         let converted = try #require(scan.conversions.first)
         #expect(converted.imported.recipe[.exposure] == 0.4)
         #expect(converted.imported.provenance.source == .embedded(full) && converted.imported.provenance.date == date)
+    }
+
+    @Test func `a raw's edit names the photographer's Adobe profile where its camera's list has it, else Redlamp's look`(
+    ) throws {
+        let folder = try TemporaryFolder()
+        let store = SidecarStore()
+        let settings = """
+           crs:Version="15.4"
+           crs:ProcessVersion="11.0"
+           crs:CameraProfile="Adobe Standard"
+           crs:Exposure2012="+0.40"
+           crs:HasSettings="True"
+        """
+        func raw(_ name: String) throws -> URL {
+            let url = folder.url.appending(path: "\(name).CR3")
+            try Data("not an image".utf8).write(to: url)
+            try Data(LightroomXMPFixture.packet(rawFileName: nil, settings: settings, masks: false).utf8)
+                .write(to: folder.url.appending(path: "\(name).xmp"))
+            return url
+        }
+        let (canon, nikon, unindexed) = try (raw("IMG_0001"), raw("IMG_0002"), raw("IMG_0003"))
+        let r5 = LightroomXMPScan.Camera(make: "Canon", model: "Canon EOS R5")
+        let z8 = LightroomXMPScan.Camera(make: "Nikon", model: "NIKON Z 8")
+        let size = PixelSize(width: 6000, height: 4000)
+        let standard = CameraProfileLook(
+            reference: BaseLookReference(
+                id: BaseLookReference.adobeIDPrefix + "0123456789abcdef",
+                name: "Adobe Standard",
+            ),
+            group: .adobeRaw, summary: "Adobe Standard, for the test",
+        )
+        let scan = LightroomXMPScan.scan(
+            [canon, nikon, unindexed],
+            indexed: [
+                canon: LightroomXMPScan.Indexed(context: LightroomPhotoContext(size: size, isRaw: true), camera: r5),
+                nikon: LightroomXMPScan.Indexed(context: LightroomPhotoContext(size: size, isRaw: true), camera: z8),
+            ],
+            adobeProfiles: [r5: [standard], z8: []],
+        ) { LightroomPhotoXMP.redlampEdit(of: $0, in: store) }
+
+        #expect(scan.conversions.map(\.photo) == [canon, nikon], "the index sizes them, as ImageIO can't")
+        #expect(scan.unsized == [unindexed])
+        let own = scan.conversions[0].imported
+        #expect(own.recipe.baseLook == standard.reference && own.report.profile == .onThisMac("Adobe Standard"))
+        let standIn = scan.conversions[1].imported
+        #expect(!standIn.recipe.baseLook.isAdobeProfile)
+        let look = AdobeProfileStandIn.look(forProfileNamed: "Adobe Standard")
+        #expect(standIn.report.profile == .standIn(profile: "Adobe Standard", look: look.name))
+    }
+
+    @Test func `the index's size and orientation of a photo are ImageIO's, its size turned back for the camera's turn`(
+    ) async throws {
+        let sandbox = try await XMPSandbox.make()
+        defer { sandbox.remove() }
+        func jpeg(_ name: String, orientation: Int) throws -> URL {
+            let url = sandbox.url(name)
+            let context = try #require(CGContext(
+                data: nil, width: 8, height: 6, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
+            ))
+            let image = try #require(context.makeImage())
+            let destination = try #require(
+                CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil),
+            )
+            let tiff: [CFString: Any] = [kCGImagePropertyTIFFMake: "Canon", kCGImagePropertyTIFFModel: "Canon EOS R5"]
+            CGImageDestinationAddImage(destination, image, [
+                kCGImagePropertyOrientation: orientation, kCGImagePropertyTIFFDictionary: tiff,
+            ] as CFDictionary)
+            #expect(CGImageDestinationFinalize(destination))
+            return url
+        }
+        let (turned, upright) = try (jpeg("IMG_0011.jpg", orientation: 6), jpeg("IMG_0012.jpg", orientation: 1))
+        try await sandbox.indexAll()
+        let unindexed = try jpeg("IMG_0013.jpg", orientation: 1)
+
+        let indexed = try await LightroomXMPScan.indexed([turned, upright, unindexed], in: sandbox.index)
+        #expect(indexed.count == 2)
+        #expect(indexed[turned]?.context == LightroomPhotoXMP.context(of: turned))
+        #expect(indexed[turned]?.context.size == PixelSize(width: 8, height: 6))
+        #expect(indexed[turned]?.context.cameraOrientation == ImageOrientation(quarterTurns: 1))
+        #expect(indexed[upright]?.context == LightroomPhotoXMP.context(of: upright))
+        #expect(indexed[turned]?.camera == LightroomXMPScan.Camera(make: "Canon", model: "Canon EOS R5"))
+    }
+
+    @Test func `a photo reset to the defaults in Redlamp keeps its edit, though its edit no longer says it was converted`(
+    ) throws {
+        let folder = try TemporaryFolder()
+        let store = SidecarStore()
+        let photo = folder.url.appending(path: "IMG_0014.jpg")
+        try LightroomXMPFixture.image(photo, type: .jpeg, xmp: LightroomXMPFixture.packet(rawFileName: nil))
+        let converted = try LightroomPhoto.convert(
+            #require(LightroomPhotoXMP.edit(for: photo)?.settings),
+            photo: LightroomPhotoContext(size: PixelSize(width: 8, height: 6), isRaw: false), source: .embedded(photo),
+        ).recipe
+        try store.save(Sidecar(recipe: EditRecipe(), session: HistorySession(steps: [
+            HistoryStep(action: .open, title: "Converted from Lightroom", recipe: converted),
+            HistoryStep(action: .reset, title: "Reset", recipe: EditRecipe()),
+        ])), for: photo)
+        #expect(store.load(for: photo)?.recipe.provenance == nil && store.hasHistory(for: photo))
+
+        #expect(LightroomPhotoXMP.redlampEdit(of: photo, in: store) == .edited)
+        let scan = LightroomXMPScan.scan([photo]) { LightroomPhotoXMP.redlampEdit(of: $0, in: store) }
+        #expect(scan.edited == [photo] && scan.conversions.isEmpty)
     }
 
     @Test func `a photo whose sidecar can't be read is left alone`() throws {

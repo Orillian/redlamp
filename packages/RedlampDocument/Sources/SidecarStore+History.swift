@@ -9,6 +9,12 @@ public extension SidecarStore {
         let sidecar = url(for: image)
         return (try? Self.reading(sidecar) { Self.decodeHistory(inSidecar: $0) }) ?? []
     }
+
+    /// Whether the photo's sidecar keeps a history session, as a photo edited in Redlamp keeps one when its edit is
+    /// back at the defaults. Lists the package as it is, without coordinating: read the sidecar first.
+    func hasHistory(for image: URL) -> Bool {
+        !Self.historyFiles(in: url(for: image)).isEmpty
+    }
 }
 
 extension SidecarStore {

@@ -6,9 +6,9 @@ import Foundation
 /// - **Library's changes** are culling's (`EditorModel+Culling`), the panels' (keywords, metadata, collections and
 ///   stacks, keywords dragged or painted onto photos, photos dropped on a collection; `LibraryPanels+Changes`), the
 ///   renames and moves (Move to Folder, photos dropped on a folder; `EditorModel+Files`), the Put Backs
-///   (`EditorModel+PutBackUndo`), Library Health's (`EditorModel+HealthUndo`) and the imports from Lightroom Classic
-///   (`EditorModel+LightroomUndo`), which Redo doesn't make again. Each kind keeps its own steps and makes and takes
-///   them back its own way, whichever module is shown.
+///   (`EditorModel+PutBackUndo`), Library Health's (`EditorModel+HealthUndo`), the imports from Lightroom Classic
+///   (`EditorModel+LightroomUndo`) and Convert Lightroom Edits… (`EditorModel+LightroomEdits`), which Redo doesn't
+///   make again. Each kind keeps its own steps and makes and takes them back its own way, whichever module is shown.
 /// - **Develop's changes** are the steps of the open photo's History (`EditorModel+History`). Undo reaches them
 ///   while Develop has the photo open, shown or behind Library, where a step taken back is saved and its thumbnail
 ///   follows. Once Develop lets the photo go (another photo opened there, or made active in Library), its steps
@@ -23,7 +23,7 @@ import Foundation
 extension EditorModel {
     /// The kinds of change Undo takes back, each with an Undo of its own.
     enum UndoKind {
-        case develop, culling, panels, files, putBack, health, lightroom
+        case develop, culling, panels, files, putBack, health, lightroom, lightroomConversion
 
         /// The module whose change it is.
         var module: AppModule {
@@ -44,6 +44,7 @@ extension EditorModel {
             (.putBack, putBackSteps.undo.last?.turn),
             (.health, healthSteps.undo.last?.turn),
             (.lightroom, lightroomSteps.undo.last?.turn),
+            (.lightroomConversion, lightroomConversionTurn),
         ])
     }
 
@@ -174,6 +175,9 @@ extension EditorModel {
             return undoHealth()
         case .lightroom:
             return undoLightroomImport()
+        case .lightroomConversion:
+            undoLightroomConversion()
+            return true
         }
     }
 
@@ -199,7 +203,7 @@ extension EditorModel {
             return redoPutBack()
         case .health:
             return redoHealth()
-        case .lightroom:
+        case .lightroom, .lightroomConversion:
             return false
         }
     }
@@ -214,6 +218,7 @@ extension EditorModel {
         case .putBack: putBackSteps.undo.last?.title
         case .health: healthSteps.undo.last?.title
         case .lightroom: lightroomSteps.undo.last?.title
+        case .lightroomConversion: lightroomConversionStep?.title
         }
     }
 
@@ -226,7 +231,7 @@ extension EditorModel {
         case .files: fileSteps.redo.last?.title
         case .putBack: putBackSteps.redo.last?.title
         case .health: healthSteps.redo.last?.title
-        case .lightroom: nil
+        case .lightroom, .lightroomConversion: nil
         }
     }
 
@@ -285,12 +290,14 @@ extension EditorModel {
     private func limitLibraryUndo() {
         let counts = cullingUndo.count + libraryPanels.undoSteps.count + fileSteps.undo.count
             + putBackSteps.undo.count + healthSteps.undo.count + lightroomSteps.undo.count
+            + (lightroomConversionStep == nil ? 0 : 1)
         var excess = counts - Self.libraryUndoLimit
         guard excess > 0 else { return }
         let turns: [(UndoKind, [Int])] = [
             (.culling, cullingUndo.map(\.turn)), (.panels, libraryPanels.undoSteps.map(\.turn)),
             (.files, fileSteps.undo.map(\.turn)), (.putBack, putBackSteps.undo.map(\.turn)),
             (.health, healthSteps.undo.map(\.turn)), (.lightroom, lightroomSteps.undo.map(\.turn)),
+            (.lightroomConversion, lightroomConversionStep.map { [$0.turn] } ?? []),
         ]
         var dropped: [UndoKind: Int] = [:]
         while excess > 0, let oldest = Self.earliest(turns.map { kind, list in
@@ -307,6 +314,7 @@ extension EditorModel {
             case .putBack: putBackSteps.undo.removeFirst(count)
             case .health: healthSteps.undo.removeFirst(count)
             case .lightroom: lightroomSteps.undo.removeFirst(count)
+            case .lightroomConversion: lightroomConversionStep = nil
             case .develop: break
             }
         }

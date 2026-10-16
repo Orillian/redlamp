@@ -793,6 +793,8 @@ public final class EditorModel {
     public var settingsChooser: SettingsChooser?
     /// Convert Lightroom Edits…, while its sheet is open (EDT-12).
     public internal(set) var lightroomConversion: LightroomConversion?
+    /// The last Convert Lightroom Edits…, on Undo once its batch is done.
+    var lightroomConversionStep: LightroomConversionStep?
     /// What the checklist ticked last time (the first time, `SettingsSelection.default`).
     public internal(set) var copySelection = SettingsSelection.saved() {
         didSet { copySelection.save() }
@@ -980,7 +982,7 @@ public final class EditorModel {
             opening = url
             openingKeepsSelection = keepingSelection
             openTask = Task {
-                let read = await readSidecar()
+                let read = await withAdobeProfiles(readSidecar(), of: opened)
                 guard !Task.isCancelled else { return }
                 if opening == url {
                     changeOver(to: url, ready: true)
@@ -1002,7 +1004,7 @@ public final class EditorModel {
             let loading = Task { await readSidecar() }
             do {
                 let opened = try await engine.open(url)
-                let read = await loading.value
+                let read = await withAdobeProfiles(loading.value, of: opened)
                 guard selection == url else { return }
                 didOpen(opened, read ?? .notRead)
             } catch is CancellationError {
@@ -1208,9 +1210,11 @@ public final class EditorModel {
         /// It couldn't be read, so it is read again (`protection` is `.unreadable`).
         var failed = false
         var hasUnmergedConflicts = false
-        /// The Lightroom edit in the photo's XMP, read when it has no edit in Redlamp, which opening converts
-        /// (EDT-12), with what ImageIO reads of the photo for the conversion.
+        /// The Lightroom edit in the photo's XMP, read when it has never had an edit in Redlamp, which opening
+        /// converts (EDT-12), with what ImageIO reads of the photo for the conversion.
         var lightroom: (edit: LightroomXMPEdit, photo: LightroomPhotoContext?)?
+        /// The Adobe profiles on this Mac for the camera of a raw whose Lightroom edit opening converts (EDT-33).
+        var adobeProfiles: [CameraProfileLook]?
 
         /// Read without an answer: never taken for a photo with no edit.
         static let notRead = OpenedSidecar(protection: .unreadable, failed: true)
@@ -1231,11 +1235,19 @@ public final class EditorModel {
             let read = sidecars.readForEditing(for: url)
             self.init(sidecar: read.sidecar, base: read.base, protection: read.protection, failed: read.failed)
             hasUnmergedConflicts = sidecars.hasUnmergedConflicts(for: url)
-            if read.protection == nil, !read.failed, read.sidecar?.recipe.isPristine ?? true,
+            if read.protection == nil, !read.failed,
+               !LightroomPhotoXMP.hasRedlampEdit(read.sidecar, of: url, in: sidecars),
                let edit = LightroomPhotoXMP.edit(for: url, rawBeside: { LightroomPhotoXMP.rawBeside(url) }) {
                 lightroom = (edit, LightroomPhotoXMP.context(of: url))
             }
         }
+    }
+
+    /// `read` with the Adobe profiles for `opened`'s camera, when opening converts its Lightroom edit.
+    private func withAdobeProfiles(_ read: OpenedSidecar?, of opened: ImageInfo) async -> OpenedSidecar? {
+        guard var read, read.lightroom != nil else { return read }
+        read.adobeProfiles = await adobeProfiles(of: opened)
+        return read
     }
 
     /// Reads again the sidecar of `url`, open read-only because its read failed, and opens it
@@ -1339,7 +1351,9 @@ public final class EditorModel {
         }
         photoMetadata = metadata
         let converted = read.protection == nil && sidecar?.recipe.isPristine ?? true
-            ? read.lightroom.map { Self.converting($0.edit, photo: $0.photo, opened) } : nil
+            ? read.lightroom.map {
+                Self.converting($0.edit, photo: $0.photo, opened, adobeProfiles: read.adobeProfiles)
+            } : nil
         let loaded = withPhotoAnchor(
             Self.asShot(converted ?? sidecar?.recipe ?? EditRecipe(), opened), of: opened, changed: converted != nil,
         )

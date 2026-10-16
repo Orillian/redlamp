@@ -22,7 +22,8 @@ public struct LightroomXMPScan: Sendable {
     public enum Edit: Sendable, Equatable {
         /// None yet: its Lightroom edit is converted.
         case none
-        /// Edited in Redlamp, which it keeps (the Lightroom edits design's decision 6).
+        /// Edited in Redlamp, which it keeps (the Lightroom edits design's decision 6), though it may be back at
+        /// the defaults since.
         case edited
         /// Converted from Lightroom before, as its provenance says, and not converted again however its XMP
         /// changed since.
@@ -67,10 +68,36 @@ public struct LightroomXMPScan: Sendable {
         return order.map { ($0, photos[$0] ?? []) }
     }
 
+    /// A camera, by the make and model the library's index has for its photos (`Canon`, `Canon EOS R5`).
+    public struct Camera: Sendable, Hashable {
+        public var make: String
+        public var model: String
+
+        public init(make: String, model: String) {
+            self.make = make
+            self.model = model
+        }
+    }
+
+    /// What the library's index holds of a photo that converting its Lightroom edit needs, so its file isn't read
+    /// for it: its size as stored and the camera's orientation, whether it's a raw, and its camera.
+    public struct Indexed: Sendable, Hashable {
+        public var context: LightroomPhotoContext
+        public var camera: Camera?
+
+        public init(context: LightroomPhotoContext, camera: Camera? = nil) {
+            self.context = context
+            self.camera = camera
+        }
+    }
+
     /// Reads each of `photos`' Lightroom edits on every core, and converts those `edit` says have none in Redlamp
-    /// yet, dated `date`. `edit` is asked only of photos with a Lightroom edit, from several threads at once.
+    /// yet, dated `date`. `edit` is asked only of photos with a Lightroom edit, from several threads at once. A photo
+    /// in `indexed` is converted for what the index holds of it, any other for what ImageIO reads; a raw whose
+    /// camera `adobeProfiles` lists names the photographer's Adobe profile where it's among them (EDT-33).
     public static func scan(
-        _ photos: [URL], date: Date = Date(), edit: @Sendable (URL) -> Edit,
+        _ photos: [URL], date: Date = Date(), indexed: [URL: Indexed] = [:],
+        adobeProfiles: [Camera: [CameraProfileLook]]? = nil, edit: @Sendable (URL) -> Edit,
     ) -> LightroomXMPScan {
         let rawsBeside = rawStems(beside: photos.filter { !LightroomPhotoXMP.isCameraRaw($0) })
         var found = [Found?](repeating: nil, count: photos.count)
@@ -83,7 +110,7 @@ public struct LightroomXMPScan: Sendable {
                     rawsBeside[photo.deletingLastPathComponent().path]?.contains(stem) == true
                 }) else { return }
                 slots.base?[index] = switch edit(photo) {
-                case .none: LightroomPhotoXMP.context(of: photo).map { context in
+                case .none: context(of: photo, indexed[photo], adobeProfiles: adobeProfiles).map { context in
                         .convert(LightroomPhoto.convert(read.settings, photo: context, source: read.source, date: date))
                     } ?? .unsized
                 case .edited: .edited
@@ -104,6 +131,53 @@ public struct LightroomXMPScan: Sendable {
             }
         }
         return scan
+    }
+
+    /// What converting `photo`'s settings needs of it: what the index holds of it (`indexed`), else what ImageIO
+    /// reads, with the Adobe profiles for a raw's camera where `adobeProfiles` lists them.
+    static func context(
+        of photo: URL, _ indexed: Indexed?, adobeProfiles: [Camera: [CameraProfileLook]]?,
+    ) -> LightroomPhotoContext? {
+        guard var context = indexed?.context ?? LightroomPhotoXMP.context(of: photo) else { return nil }
+        if context.isRaw, let camera = indexed?.camera, let profiles = adobeProfiles?[camera] {
+            context.adobeProfiles = profiles
+        }
+        return context
+    }
+
+    /// What `index` holds of each of `photos` its indexing has read, by photo. The index keeps a photo's size once
+    /// the camera's orientation is applied (`PhotoMetadataReader`), which an orientation of 5 to 8 turns back.
+    public static func indexed(_ photos: [URL], in index: LibraryIndex) async throws -> [URL: Indexed] {
+        let folders = Dictionary(grouping: photos) { LibraryIndexer.path($0.deletingLastPathComponent()) }
+        return try await index.read { reader in
+            var cameras: [Int64: Camera] = [:]
+            try reader.database.cached("SELECT id, make, model FROM cameras").forEachRow { row in
+                if let make = row.string(at: 1), let model = row.string(at: 2) {
+                    cameras[row.int64(at: 0)] = Camera(make: make, model: model)
+                }
+            }
+            var indexed: [URL: Indexed] = [:]
+            for (path, urls) in folders {
+                guard let folder = try reader.folder(path: path) else { continue }
+                let records = try Dictionary(reader.photos(inFolder: folder.id).map { ($0.name, $0) }) { first, _ in
+                    first
+                }
+                for url in urls {
+                    guard let record = records[url.lastPathComponent], let width = record.width,
+                          let height = record.height, width > 0, height > 0 else { continue }
+                    let exif = record.orientation ?? 1
+                    let size = (5 ... 8).contains(exif)
+                        ? PixelSize(width: height, height: width) : PixelSize(width: width, height: height)
+                    indexed[url] = Indexed(
+                        context: LightroomPhotoContext(
+                            size: size, cameraOrientation: ImageOrientation(exif: exif), isRaw: record.kind == .raw,
+                        ),
+                        camera: record.camera.flatMap { cameras[$0] },
+                    )
+                }
+            }
+            return indexed
+        }
     }
 
     private enum Found {
@@ -153,10 +227,18 @@ public extension LightroomPhotoXMP {
         guard store.protection(for: photo) == nil,
               case let .success(sidecar) = Result(catching: { try store.loadThrowing(for: photo) })
         else { return .unreadable }
-        guard let recipe = sidecar?.recipe else { return .none }
-        if recipe.provenance != nil {
+        if sidecar?.recipe.provenance != nil {
             return .converted
         }
-        return recipe.isPristine ? .none : .edited
+        return hasRedlampEdit(sidecar, of: photo, in: store) ? .edited : .none
+    }
+
+    /// Whether `photo` has had an edit in Redlamp, as its sidecar, `sidecar` as read through `store`, records it:
+    /// one converted from Lightroom, one that isn't the defaults, snapshots, or the history a photo reset to the
+    /// defaults keeps. Only a photo that has had none converts its Lightroom edit (EDT-12).
+    static func hasRedlampEdit(_ sidecar: Sidecar?, of photo: URL, in store: SidecarStore) -> Bool {
+        guard let sidecar else { return false }
+        return sidecar.recipe.provenance != nil || !sidecar.recipe.isPristine || !sidecar.snapshots.isEmpty
+            || store.hasHistory(for: photo)
     }
 }

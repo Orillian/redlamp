@@ -105,6 +105,14 @@ final class StubEngine: EditingEngine, @unchecked Sendable {
         cameraProfiles
     }
 
+    /// The cameras `cameraProfileLooks(make:model:)` was asked for, as "make model".
+    let profiledCameras = Mutex<[String]>([])
+
+    func cameraProfileLooks(make: String, model: String) async -> [CameraProfileLook] {
+        profiledCameras.withLock { $0.append("\(make) \(model)") }
+        return cameraProfiles
+    }
+
     func setChosenCameraProfiles(_ urls: [URL]) {
         chosenProfiles.withLock { $0 = urls }
     }

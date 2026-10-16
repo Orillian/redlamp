@@ -42,6 +42,7 @@ public extension EditorModel {
 
     /// Puts back the photos the last sync or paste changed, those not edited since.
     func undoSync() {
+        lightroomConversionStep = nil
         settingsSync.undo(done: written)
     }
 

@@ -9,11 +9,12 @@ import UniformTypeIdentifiers
 /// Convert Lightroom Edits… at a library's scale, with `REDLAMP_LIGHTROOM_XMP_BENCH=1` (which xcodebuild hands to
 /// the tests from `TEST_RUNNER_REDLAMP_LIGHTROOM_XMP_BENCH=1`): `REDLAMP_LIGHTROOM_XMP_BENCH_PHOTOS` photos (10,000),
 /// half JPEGs holding their develop settings in their own XMP and half raws, clones of a fixture raw on its own
-/// volume, with an `.xmp` beside each. It times the scan behind the report on every core, and the sidecars written
-/// one after another as the batch writes them.
+/// volume, with an `.xmp` beside each, indexed by the library first. It times the scan behind the report on every
+/// core, with each photo's size, orientation and camera from the index and then from ImageIO alone, and the sidecars
+/// written one after another as the batch writes them.
 struct LightroomXMPBenchTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_XMP_BENCH"] == "1"))
-    func `Convert Lightroom Edits on ten thousand photos`() throws {
+    func `Convert Lightroom Edits on ten thousand photos`() async throws {
         let count = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_XMP_BENCH_PHOTOS"]
             .flatMap { Int($0) } ?? 10000
         let raw = try #require(
@@ -46,11 +47,28 @@ struct LightroomXMPBenchTests {
             }
         }
 
+        let indexFolder = try TemporaryFolder()
+        let index = try await LibraryIndex.open(at: indexFolder.url.appending(path: "Index.sqlite"), readers: 2)
+        defer { index.closeAndWait() }
+        let indexing = await IndexerRun.collect(LibraryIndexer(index: index, configuration: .testing()).index([folder]))
+        #expect(indexing.failures.isEmpty)
+
         let store = SidecarStore()
+        let date = Date()
         let scanStart = ContinuousClock.now
-        let scan = LightroomXMPScan.scan(photos) { LightroomPhotoXMP.redlampEdit(of: $0, in: store) }
+        let indexed = try await LightroomXMPScan.indexed(photos, in: index)
+        let read = ContinuousClock.now - scanStart
+        let scan = LightroomXMPScan.scan(photos, date: date, indexed: indexed) {
+            LightroomPhotoXMP.redlampEdit(of: $0, in: store)
+        }
         let scanned = ContinuousClock.now - scanStart
-        #expect(scan.conversions.count == count && scan.found == count)
+        #expect(indexed.count == count && scan.conversions.count == count && scan.found == count)
+
+        let imageIOStart = ContinuousClock.now
+        let unindexed = LightroomXMPScan.scan(photos, date: date) { LightroomPhotoXMP.redlampEdit(of: $0, in: store) }
+        let imageIO = ContinuousClock.now - imageIOStart
+        #expect(unindexed.conversions.count == count)
+        #expect(zip(scan.conversions, unindexed.conversions).allSatisfy { $0.imported.recipe == $1.imported.recipe })
 
         let writeStart = ContinuousClock.now
         for conversion in scan.conversions {
@@ -76,7 +94,11 @@ struct LightroomXMPBenchTests {
         var load = [Double](repeating: 0, count: 3)
         getloadavg(&load, 3)
         print("LIGHTROOM-XMP-BENCH \(count) photos (\(count / 2) JPEGs, \(count / 2) \(raw.pathExtension) with .xmp)")
-        print("LIGHTROOM-XMP-BENCH report (read, convert, check each sidecar) on \(cores) cores: \(seconds(scanned))")
+        print(
+            "LIGHTROOM-XMP-BENCH report (read, convert, check each sidecar) on \(cores) cores, sized by the index: "
+                + "\(seconds(scanned)), of which the index's read \(seconds(read))",
+        )
+        print("LIGHTROOM-XMP-BENCH report, sized by ImageIO alone: \(seconds(imageIO))")
         print("LIGHTROOM-XMP-BENCH sidecars written one after another: \(seconds(wrote))")
         print("LIGHTROOM-XMP-BENCH load average \(String(format: "%.1f %.1f %.1f", load[0], load[1], load[2]))")
     }
