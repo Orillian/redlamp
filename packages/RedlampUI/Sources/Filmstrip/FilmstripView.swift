@@ -261,8 +261,7 @@ private struct FilmstripStackButton: View {
 }
 
 /// In Develop, the edit open of a photo with versions (EDT-09): its own, "Original", or a version's name. Its menu
-/// opens
-/// another, makes a version of the one open, and renames or removes the version open.
+/// opens another, makes a version of the one open, and renames or removes the version open.
 private struct FilmstripVersions: View {
     @Environment(EditorModel.self) private var model
 
