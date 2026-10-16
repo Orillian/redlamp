@@ -322,7 +322,9 @@
                         )
                     }
                     guard let view = pressed.view else {
-                        window.sendEvent(event)
+                        // Through the app, as the mouse's events come: what handles one may read it as the current
+                        // event.
+                        NSApp.sendEvent(event)
                         return
                     }
                     switch type {
@@ -332,6 +334,24 @@
                     }
                 }
                 pause(type == .leftMouseDragged ? 0.016 : 0.03)
+            }
+            pause(0.05)
+        }
+
+        /// Sends a release at `point` of `target` through the window, as the mouse's next release ends a gesture
+        /// AppKit left holding after a drag's own ("Stuck gesture recognizers detected"): SwiftUI's never ends it, and
+        /// the next drag ends it instead of beginning its own.
+        func releaseAgain(on target: Target, at point: CGPoint) throws {
+            let (window, location) = try place(point, on: target)
+            post { _ in
+                guard let window = NSApp.window(withWindowNumber: window),
+                      let release = NSEvent.mouseEvent(
+                          with: .leftMouseUp, location: location, modifierFlags: [],
+                          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                          context: nil, eventNumber: 0, clickCount: 1, pressure: 0,
+                      )
+                else { return }
+                NSApp.sendEvent(release)
             }
             pause(0.05)
         }

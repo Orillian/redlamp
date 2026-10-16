@@ -107,7 +107,14 @@
                         y: 0.25,
                     ),
                 ]
-                try drag(.canvas, from: starts[before % starts.count], by: CGVector(dx: 60, dy: -80))
+                let start = starts[before % starts.count], offset = CGVector(dx: 60, dy: -80)
+                try drag(.canvas, from: start, by: offset)
+                if (try? wait("the drag to end the drawing", timeout: 2) { !$0.isDrawingShape }) == nil {
+                    let canvas = try frame(of: .canvas)
+                    let end = CGPoint(x: start.x + offset.dx / canvas.width, y: start.y - offset.dy / canvas.height)
+                    try releaseAgain(on: .canvas, at: end)
+                    recorder.write("note", ["releaseSentAgain": "the \(kind) gradient's drag"])
+                }
                 covered(.mask(kind), via: .mouse)
             } else {
                 try main { model in
@@ -125,10 +132,14 @@
                 covered(.mask(kind), via: .model)
             }
             do {
-                try wait("the \(kind) gradient to be drawn") { $0.masks.flatMap(\.components).count > before }
+                // Drawn once the drag has ended: the shape is there from its start, and only its end makes it a step.
+                try wait("the \(kind) gradient to be drawn") { model in
+                    model.masks.flatMap(\.components).count > before && !model.isDrawingShape
+                }
             } catch {
                 let state = try main { model in
                     "tool \(model.activeTool), armed \(String(describing: model.drawingKind)), \(model.masks.count) masks, "
+                        + "drawing \(model.isDrawingShape), "
                         + "\(model.selection?.lastPathComponent ?? "no photo"), read-only \(model.isReadOnly), "
                         + "first responder \(Views.editorWindow?.firstResponder.map { String(describing: Swift.type(of: $0)) } ?? "none")"
                 }

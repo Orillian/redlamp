@@ -95,6 +95,11 @@ public extension EditorModel {
         pendingDrawingKind = nil
     }
 
+    /// Whether a drag is drawing a shape: from `beginDrawing` until `finishDrawing` makes it a step.
+    @_spi(Harness) var isDrawingShape: Bool {
+        pendingDrawingName != nil
+    }
+
     /// Draws `shape` as a new mask through the path a drag takes, for the harness's scenes in
     /// any configuration. AI masks are computed, not drawn, so they're left out.
     @_spi(Harness) func drawMask(_ shape: MaskShape) {
