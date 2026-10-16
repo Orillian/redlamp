@@ -93,6 +93,8 @@ struct AppCommands: Commands {
         item(.renamePhotos)
         toggle(.keywordPainter)
         Divider()
+        item(.convertLightroomEdits)
+        Divider()
         // For the folder added to Folders that holds the folder open (LIB-11).
         item(.moveEditsAndMetadata)
         Divider()
