@@ -95,8 +95,12 @@ struct LightroomDiskBenchTests {
 
     /// The volumes the index bench's indexer reads through: one that answers at once, whose order of operations
     /// is the SSD's, and the 2.5-inch disk itself in real time, whose one head makes what waits for it wait; the
-    /// last in Low Power Mode until the photos' folders are indexed, the import's root read first.
-    static let indexedVolumes = ["external", VolumeProfile.usb25.name, lowPower]
+    /// same disk behind a USB bridge that doesn't say whether it spins, and behind one that says it's solid state,
+    /// so it's read as an SSD is; the last in Low Power Mode until the photos' folders are indexed, the import's
+    /// root read first.
+    static let indexedVolumes = ["external", VolumeProfile.usb25.name, unsaid, solidState, lowPower]
+    static let unsaid = VolumeProfile.usb25.name + " not saying it spins"
+    static let solidState = VolumeProfile.usb25.name + " saying it's solid state"
     static let lowPower = VolumeProfile.usb25.name + " in Low Power Mode, read first"
 
     @Test(.measuresSpeed, arguments: indexedVolumes)
@@ -147,14 +151,22 @@ struct LightroomDiskBenchTests {
             return context?.makeImage()
         }
         let name = String(volume.prefix { $0 != " " })
-        let profile = try #require(name == "external"
+        var profile = try #require(name == "external"
             ? VolumeProfile(name: "external", isInternal: false) : VolumeProfile.named(name))
+        switch volume {
+        case Self.unsaid: profile.isRotational = nil
+        case Self.solidState: profile.isRotational = false
+        default: break
+        }
         let relaxed = Atomic(volume != Self.lowPower)
         let width = CoreCounts.performance
         let maker = StoreThumbnailMaker(store: store, image: image)
         let indexer = LibraryIndexer(
             index: index,
-            fileSystem: SimulatedFileSystem(profile: profile),
+            fileSystem: SimulatedFileSystem(
+                base: volume == Self.unsaid ? SpinningDiskTests.UnsaidFileSystem() : LocalFileSystem(),
+                profile: profile,
+            ),
             scheduler: WorkScheduler(
                 widths: WorkScheduler.Widths(onScreen: width, lookAhead: width, background: width),
                 canRunBackground: { relaxed.load(ordering: .relaxed) },
