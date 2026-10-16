@@ -648,7 +648,8 @@ extension LightroomImportModel {
             tracking.ticker = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(1))
-                    await self?.tick()
+                    guard let self else { return }
+                    await tick()
                 }
             }
         } else if !isBusy, let ticker = tracking.ticker {
