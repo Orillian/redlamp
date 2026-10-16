@@ -4,7 +4,7 @@ Versions are Lightroom Classic's virtual copies ([Lightroom edits](2026-10-13-li
 
 ## A row for each version
 
-Built in 66f1e2469. Each version is a row of `photos` beside its file's own:
+Built in a976b4984. Each version is a row of `photos` beside its file's own:
 
 - **Its place.** The file's `folder` and `name`, and `version`, the version's UUID, empty for the file's own row. A row is unique by the three (`photos_place`), in place of the table's `UNIQUE (folder, name)`. Empty rather than NULL, which a unique index takes as distinct.
 - **The file's fields** are the file's own row's: kind, size, dates, file identifier, content key, the capture time with the photo's shift and zone (a version's metadata doesn't hold them), camera, lens and exposure, pixel size and orientation, GPS, the sidecar's and the `.xmp`'s dates and the state (missing, offline, settling, unreadable). `carryFile(of:)` copies them onto the versions' rows whenever the indexer writes the file's.
@@ -97,20 +97,23 @@ What changes, type by type:
 
 Built, each with its tests:
 
-- **Copy Status** (76380f1d9): `version:yes` and `version:no` in the query language, as `edited:` and `marked:` are, from the column store's packed field's last free bit (bit 15) and from `p.version` in SQL; smart collections take it as any term, and their editor names the field Version.
-- **Duplicates (LIB-39)** (42e8d53d4): candidates are the files' own rows; a version shares its file's content key and is never a copy of it.
-- **The XMP metadata sync (LIB-24)** (42e8d53d4) takes a version's row for its file and writes the file's own metadata, never a version's.
-- **Library Health (LIB-40)** (42e8d53d4): its Missing and Damaged checks list each file once, by its own row, and its pairs are of files; a version given to them stands for its file.
-- **Move Edits and Metadata's count (LIB-11)** (42e8d53d4) counts files, from `photos_sidecars` less `photos_versions`, an index of versions' rows by folder that schema 15 makes before the rows are copied.
-- **File operations (LIB-26)** (075971c22): move, copy, rename, trash, Remove from Library and relink take a version's row for its file, each file once; the journal keeps each file's versions' rows (`IndexedPhoto.version`), so Undo, Put Back and undoing a relink bring them back under their IDs once their file is back; a copy gets rows of its own for its file's versions, which its copied sidecar holds; Recently Trashed lists files; the library hears of the versions whose rows went where their files did.
-- **Metadata and keyword batches and their Undo** (c76a824d5) write a version's fields in its own edit (`sidecar[edit: version]`), never the file's, one write a sidecar for a file and its versions; the keys that describe the file go to the file's own metadata, and a capture time changed through a version is its file's, which its versions' rows show. A batch holds the files' own rows of its versions while it runs, so the indexer doesn't write a version's row over it.
+- **Copy Status** (17df4d6da): `version:yes` and `version:no` in the query language, as `edited:` and `marked:` are, from the column store's packed field's last free bit (bit 15) and from `p.version` in SQL; smart collections take it as any term, and their editor names the field Version.
+- **Duplicates (LIB-39)** (92a4c34cb): candidates are the files' own rows; a version shares its file's content key and is never a copy of it.
+- **The XMP metadata sync (LIB-24)** (92a4c34cb) takes a version's row for its file and writes the file's own metadata, never a version's.
+- **Library Health (LIB-40)** (92a4c34cb): its Missing and Damaged checks list each file once, by its own row, and its pairs are of files; a version given to them stands for its file.
+- **Move Edits and Metadata's count (LIB-11)** (92a4c34cb) counts files, from `photos_sidecars` less `photos_versions`, an index of versions' rows by folder that schema 15 makes before the rows are copied.
+- **File operations (LIB-26)** (4d8ac0555): move, copy, rename, trash, Remove from Library and relink take a version's row for its file, each file once; the journal keeps each file's versions' rows (`IndexedPhoto.version`), so Undo, Put Back and undoing a relink bring them back under their IDs once their file is back; a copy gets rows of its own for its file's versions, which its copied sidecar holds; Recently Trashed lists files; the library hears of the versions whose rows went where their files did.
+- **Metadata and keyword batches and their Undo** (275821ac3) write a version's fields in its own edit (`sidecar[edit: version]`), never the file's, one write a sidecar for a file and its versions; the keys that describe the file go to the file's own metadata, and a capture time changed through a version is its file's, which its versions' rows show. A batch holds the files' own rows of its versions while it runs, so the indexer doesn't write a version's row over it.
+
+- **Stacks (LIB-28)** (32804741b): in a found pair each file is followed by its versions, the raw's own row on top, as Lightroom stacks a virtual copy with its master; a file with versions and no pair makes a pair's stack with them; versions are never frames of a burst or a focus suggestion; a stack made by hand that takes a file takes its versions.
+- **A version's name in the index** (3b017546c): `version_name`, written from the sidecar's summary with the version's row, for the grid's badge and tooltip and the Metadata panel, as Lightroom's Copy Name. A `copyname:` term isn't built.
+- **The UI's items and lookups** (3a64e1ebc): `LibraryItem` has its `version` and the version's name, and its `id` is its `PhotoAddress`; a source's rows read both, `PhotoPaths` keeps versions' rows in a table of their own, and `FolderLibrary.index(of: PhotoAddress)` and `address(ofPhoto:)` find them. The library's sources (its panel's entries, collections, smart collections, search) and folders large enough to be listed as they are (`LibraryFolderList.Large`) list versions. A smaller folder's own list (`LibraryFolderList.Mapping`), keyed by URL, leaves them out: `Mapping.item(_:)` returns nil for a version's row, as `photos(inFolder:)` does.
+- **The filter bar's Attribute row** (630c6afd8): Originals and Versions, two symbols after the kinds of file, as Lightroom's Kind has Master Photos and Virtual Copies, writing `version:no` and `version:yes`.
 
 Still to do, in this order:
 
-- **The filter bar's Attribute row:** Originals and Versions, as Lightroom's Kind has Master Photos and Virtual Copies, writing `version:no` and `version:yes` as Edited writes `edited:` (`FilterAttributes`, `toggleEdited` beside it).
-- **A version's name in the index:** `version_name`, a column added with no row rewritten, written from the sidecar's summary with the version's row, for the grid's badge and tooltip, the Metadata panel and a `copyname:` term, as Lightroom's Copy Name.
-- **The UI identity** above, opening a version in Develop through EDT-09's `EditorModel.select(PhotoAddress)`.
-- **Stacks (LIB-28):** a file's versions as a found stack with its own row on top, as Lightroom stacks a virtual copy with its master; a stack made by hand that holds the file's own row takes its versions too.
+- **Culling by address.** Culling a version in a source changes its file's metadata today: `EditorModel.cullingStep` lists the items' URLs (`CullingStep.photos`), and `LibraryService.cull` finds each URL's file row. Steps list addresses, `LibraryService.cull` and `redoCulling` take them, and a large source's unread rows (`LargeListRows.badges`) read `version` with their URLs. This comes first: until then a version shown in a source can be culled onto its file.
+- **The rest of the UI identity** above: `FolderLibrary.positions`, `update(_:)` and a folder's own list (`LibraryFolderList.Mapping`'s `ids`, `shown` and `Change.removed`) by address, so folders list versions too, after the guard in `Mapping.item(_:)` goes; `SelectedPhotos` handing addresses; `EditRenders` rendering an address's edit; a version's badge and name in the grid and the filmstrip; Develop opening a version through EDT-09's `EditorModel.select(PhotoAddress)`, and its culling updating the version's row (`cullActivePhoto` skips the row while a version is open).
 - **Naming (LIB-25):** a naming preview names each file once; `NamingJob` is EDT-09's to change for `{version}`, and `planRename` already takes a version's rename for its file's.
 - **The scenario** (`library.versions`): a photo with versions in the grid, rated and keyworded one by one through the grid's own keys and menus, filtered by Copy Status, moved to another folder and back with Undo, and opened in Develop by its version.
 
