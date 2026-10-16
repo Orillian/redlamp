@@ -85,6 +85,21 @@ struct RecipeLabImportTests {
         #expect(model.creatorMessage == "Imported a 17-point table")
     }
 
+    @Test func `a look table alone is saved to Base Looks, and a draft with settings to its list`() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try lab()
+        model.draft?.name = "Warm"
+        try await model.importTable(write(Self.warmCube, as: "warm.cube")).value
+        model.draftIncludes = [.baseLook]
+        #expect(model.saveDraft()?.lookFolder == RecipeLibrary.importedLooksFolder)
+        #expect(model.creatorMessage == "Saved “Warm” to Base Looks › Imported (version 1)")
+        model.newDraft()
+        model.draft?.name = "Warm Night"
+        model.draft?.group = "Night"
+        #expect(model.saveDraft()?.lookFolder == nil)
+        #expect(model.creatorMessage == "Saved “Warm Night” to Night (version 1)")
+    }
+
     @Test func `a file that isn't a readable look table leaves the draft and says why`() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try lab()

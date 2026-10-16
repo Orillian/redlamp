@@ -247,7 +247,7 @@ public final class RecipeLibrary {
 
     /// The list one of your recipes appears in: its group, or My Recipes when the group is
     /// empty or names one of the other sections.
-    static func list(for recipe: Recipe) -> String {
+    public static func list(for recipe: Recipe) -> String {
         let group = recipe.group.trimmingCharacters(in: .whitespacesAndNewlines)
         return group.isEmpty || ["Favorites", "Installed"].contains(group) ? myRecipes : group
     }

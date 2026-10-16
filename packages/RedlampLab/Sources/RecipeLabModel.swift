@@ -456,7 +456,8 @@ public final class RecipeLabModel {
             return nil
         }
         self.draft = saved
-        creatorMessage = "Saved “\(saved.name)” to My Recipes (version \(saved.version))"
+        let place = saved.lookFolder.map { "Base Looks › \($0)" } ?? RecipeLibrary.list(for: saved)
+        creatorMessage = "Saved “\(saved.name)” to \(place) (version \(saved.version))"
         refresh()
         return saved
     }
