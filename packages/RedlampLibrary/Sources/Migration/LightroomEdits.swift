@@ -83,7 +83,7 @@ struct LightroomCopy: Sendable {
     /// Nil when its settings can't be read: the version is the photo as it was shot, with `provenance`.
     var edit: LightroomEdit?
     var provenance: LightroomProvenance
-    /// As Lightroom named it; nil or empty takes the name Create Version would give.
+    /// As Lightroom named it; nil, or only spaces, takes the name Create Version would give.
     var name: String?
     var values = LightroomValues()
 
@@ -95,7 +95,8 @@ struct LightroomCopy: Sendable {
             recipe.provenance = provenance.recorded
         }
         return PhotoVersion(
-            id: id, name: name ?? "", created: date, recipe: recipe, metadata: values.metadata, snapshots: snapshots,
+            id: id, name: name.flatMap(LightroomCatalogReader.text) ?? "", created: date, recipe: recipe,
+            metadata: values.metadata, snapshots: snapshots,
         )
     }
 }
