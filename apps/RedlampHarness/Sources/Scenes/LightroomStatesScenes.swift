@@ -424,6 +424,7 @@ private final class LightroomPlayground {
         )
         if finished {
             screen.result = .init(written: Self.toWrite, total: Self.toWrite, elapsed: time)
+            screen.canUndo = true
         }
         return screen
     }

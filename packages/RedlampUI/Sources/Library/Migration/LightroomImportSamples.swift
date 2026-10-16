@@ -261,7 +261,7 @@ import RedlampLibrary
         return LightroomImportScreen(
             phase: phase, catalog: catalog, readTime: phase == .reading ? nil : 2.4,
             review: review ?? LightroomImportScreen.Review(report, disks: disks, edits: edits), run: run,
-            result: result, log: log, reportText: report.lines(),
+            result: result, log: log, reportText: report.lines(), canUndo: [.done, .stopped, .failed].contains(phase),
         )
     }
 
@@ -368,7 +368,10 @@ import RedlampLibrary
                     roots: roots(total),
                 ), result: .init(
                     written: total, total: total, elapsed: 2460, fields: fields, edits: edits,
-                    unwritten: .init(3, reason: "the folder is read-only"),
+                    unwritten: [
+                        .init(3, reason: "the folder is read-only"),
+                        .init(1, reason: "its sidecar was written by a newer Redlamp"),
+                    ],
                 ), log: fullLog + [.init(
                     at("10:43:20"), "3 sidecars couldn't be written: /Volumes/LaCie/Photos 2019/Locked is read-only",
                 )]),

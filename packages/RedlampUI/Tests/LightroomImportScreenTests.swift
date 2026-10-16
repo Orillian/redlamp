@@ -120,6 +120,26 @@ struct LightroomImportScreenTests {
         )
         #expect(empty.buttons.map(\.isEnabled) == [false])
         #expect(try sample("writing-ssd").barNote == "You can close this window: the import carries on.")
+        #expect(try sample("done").buttons.map(\.isEnabled) == [true, true])
+    }
+
+    @Test func `Review offers Undo Import for an import not taken back, and says when nothing would change`() throws {
+        var review = try sample("review")
+        review.canUndo = true
+        #expect(review.buttons.map(\.kind) == [.undo, .importPhotos])
+        review.canImport = false
+        #expect(review.buttons.map(\.isEnabled) == [true, false])
+        #expect(review.barNote == "Nothing in the catalog would change the library.")
+        var done = try sample("done")
+        done.canUndo = false
+        #expect(done.buttons.map(\.isEnabled) == [false, true], "nothing to take back yet")
+    }
+
+    @Test func `a catalog that can't be read says why, its stage stopped`() {
+        let screen = Screen(phase: .reading, catalog: "Notes", problem: "it isn't a Lightroom Classic catalog")
+        #expect(screen.barNote == "it isn't a Lightroom Classic catalog")
+        #expect(screen.stages.first?.state == .stopped && screen.stages.first?.detail == "Couldn't read it")
+        #expect(screen.buttons.map(\.isEnabled) == [false])
     }
 
     // MARK: - Importing
@@ -205,8 +225,12 @@ struct LightroomImportScreenTests {
             "35,200 edits, 3,300 with settings left out",
         ])
         #expect(done.resultLines.allSatisfy { $0.kind == .cameAcross })
-        let unwritten = try sample("done-unwritten").resultLines.last
-        #expect(unwritten == Screen.ResultLine("3 sidecars couldn't be written: the folder is read-only", .unwritten))
+        let unwritten = try sample("done-unwritten").resultLines.filter { $0.kind == .unwritten }
+        #expect(unwritten.map(\.text) == [
+            "3 sidecars couldn't be written: the folder is read-only",
+            "1 sidecar couldn't be written: its sidecar was written by a newer Redlamp",
+        ])
+        #expect(unwritten.map(\.reason) == ["the folder is read-only", "its sidecar was written by a newer Redlamp"])
     }
 
     @Test func `stopped, failed and taken back each say what the library now holds`() throws {

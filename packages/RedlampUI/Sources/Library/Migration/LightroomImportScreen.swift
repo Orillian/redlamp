@@ -28,10 +28,17 @@ import RedlampLibrary
     public var log: [LogEntry] = []
     /// The report's lines, as `redlamp library lightroom` prints them.
     public var reportText: [String] = []
+    /// Why the catalog couldn't be read, or the report worked out, in words.
+    public var problem: String?
+    /// There's an import not taken back, which Undo Import takes back from Review too.
+    public var canUndo = false
+    /// Importing would change something: false when nothing the catalog brings differs from the library.
+    public var canImport = true
 
     public init(
         phase: Phase, catalog: String, readTime: TimeInterval? = nil, review: Review? = nil, run: Run? = nil,
-        result: Result? = nil, log: [LogEntry] = [], reportText: [String] = [],
+        result: Result? = nil, log: [LogEntry] = [], reportText: [String] = [], problem: String? = nil,
+        canUndo: Bool = false, canImport: Bool = true,
     ) {
         self.phase = phase
         self.catalog = catalog
@@ -41,6 +48,9 @@ import RedlampLibrary
         self.result = result
         self.log = log
         self.reportText = reportText
+        self.problem = problem
+        self.canUndo = canUndo
+        self.canImport = canImport
     }
 
     /// `done` of `total`.
@@ -61,11 +71,13 @@ import RedlampLibrary
     /// The disk a root folder is on.
     public struct Disk: Sendable, Hashable {
         public enum Kind: String, Sendable, Hashable, CaseIterable {
-            case `internal`, externalSSD, spinning, network
+            /// `external` is an external disk that hasn't said whether it spins.
+            case `internal`, external, externalSSD, spinning, network
 
             public var name: String {
                 switch self {
                 case .internal: "internal"
+                case .external: "external"
                 case .externalSSD: "external SSD"
                 case .spinning: "external, spinning disk"
                 case .network: "network disk"
@@ -172,9 +184,14 @@ import RedlampLibrary
 
     /// What the bottom bar says beside its buttons, and its buttons, left to right.
     public var barNote: String? {
-        switch phase {
+        if let problem, phase == .reading || phase == .review {
+            return problem
+        }
+        return switch phase {
         case .reading: "The catalog is read from a copy and never changed."
-        case .review: "Lightroom's value replaces the library's where it has one. Undo Import takes it all back."
+        case .review: canImport
+            ? "Lightroom's value replaces the library's where it has one. Undo Import takes it all back."
+            : "Nothing in the catalog would change the library."
         case .adding, .writing, .stopping: "You can close this window: the import carries on."
         case .done, .stopped, .failed, .undone: nil
         case .undoing: "Taking the import back…"
@@ -184,26 +201,32 @@ import RedlampLibrary
     public var buttons: [Button] {
         let photos = review?.reachable ?? 0
         let importTitle = "Import \(ProgressText.count(photos, "Photo"))"
+        let undo = canUndo ? [Button(kind: .undo, title: "Undo Import")] : []
         switch phase {
         case .reading:
-            return [Button(kind: .importPhotos, title: "Import", isEnabled: false, isDefault: true)]
+            return undo + [Button(kind: .importPhotos, title: "Import", isEnabled: false, isDefault: true)]
         case .review:
-            return [Button(kind: .importPhotos, title: importTitle, isEnabled: photos > 0, isDefault: true)]
+            return undo + [Button(
+                kind: .importPhotos, title: importTitle, isEnabled: canImport && photos > 0, isDefault: true,
+            )]
         case .adding, .writing:
             return [Button(kind: .stop, title: "Stop")]
         case .stopping:
             return [Button(kind: .stop, title: "Stop", isEnabled: false)]
         case .done:
-            return [Button(kind: .undo, title: "Undo Import"), Button(kind: .done, title: "Done", isDefault: true)]
+            return [
+                Button(kind: .undo, title: "Undo Import", isEnabled: canUndo),
+                Button(kind: .done, title: "Done", isDefault: true),
+            ]
         case .stopped, .failed:
             return [
-                Button(kind: .undo, title: "Undo Import"),
-                Button(kind: .importAgain, title: "Import Again", isDefault: true),
+                Button(kind: .undo, title: "Undo Import", isEnabled: canUndo),
+                Button(kind: .importAgain, title: "Import Again", isEnabled: canImport, isDefault: true),
             ]
         case .undoing:
             return [Button(kind: .undo, title: "Undo Import", isEnabled: false)]
         case .undone:
-            return [Button(kind: .importPhotos, title: "Import", isDefault: true)]
+            return undo + [Button(kind: .importPhotos, title: "Import", isEnabled: canImport, isDefault: true)]
         }
     }
 
@@ -599,9 +622,11 @@ import RedlampLibrary
 
     /// The stages left to right: reading the catalog, adding its folders when there are any, writing, and done.
     var stages: [Stage] {
+        let unread = phase == .reading && problem != nil
         let read = Stage(
-            id: "read", title: "Read the catalog", detail: readTime.map(ProgressText.duration) ?? "Reading…",
-            state: phase == .reading ? .now : .done,
+            id: "read", title: "Read the catalog",
+            detail: unread ? "Couldn't read it" : readTime.map(ProgressText.duration) ?? "Reading…",
+            state: unread ? .stopped : phase == .reading ? .now : .done,
         )
         guard let run else {
             return [
@@ -851,7 +876,7 @@ import RedlampLibrary
         public var partSize: Int
         /// How long the import took.
         public var elapsed: TimeInterval?
-        /// Sidecars that couldn't be written, and why.
+        /// Sidecars that couldn't be written for one reason.
         public struct Unwritten: Sendable, Hashable {
             public var count: Int
             /// "the folder is read-only".
@@ -865,14 +890,15 @@ import RedlampLibrary
 
         public var fields: Fields?
         public var edits: Edits?
-        public var unwritten: Unwritten?
+        /// The sidecars that couldn't be written, by reason, most first.
+        public var unwritten: [Unwritten]
         public var failure: Failure?
         /// Photos taken back, while Undo Import runs.
         public var undoing: Count?
 
         public init(
             written: Int, total: Int, partSize: Int = LightroomImport.standardPartSize, elapsed: TimeInterval? = nil,
-            fields: Fields? = nil, edits: Edits? = nil, unwritten: Unwritten? = nil, failure: Failure? = nil,
+            fields: Fields? = nil, edits: Edits? = nil, unwritten: [Unwritten] = [], failure: Failure? = nil,
             undoing: Count? = nil,
         ) {
             self.written = written
@@ -941,10 +967,13 @@ import RedlampLibrary
 
         public var text: String
         public var kind: Kind
+        /// The unwritten sidecars' reason, which Show reveals the photos of.
+        public var reason: String?
 
-        init(_ text: String, _ kind: Kind = .note) {
+        init(_ text: String, _ kind: Kind = .note, reason: String? = nil) {
             self.text = text
             self.kind = kind
+            self.reason = reason
         }
     }
 
@@ -979,13 +1008,7 @@ import RedlampLibrary
                     .cameAcross,
                 ))
             }
-            if let unwritten = result.unwritten {
-                lines.append(ResultLine(
-                    "\(ProgressText.count(unwritten.count, "sidecar")) couldn't be written: \(unwritten.reason)",
-                    .unwritten,
-                ))
-            }
-            return lines
+            return lines + unwrittenLines(result)
         case .stopped:
             let rest = result.total - result.written
             return [
@@ -993,7 +1016,7 @@ import RedlampLibrary
                 ResultLine(
                     "Import Again brings them; Undo Import takes back the \(ProgressText.count(result.written)).",
                 ),
-            ]
+            ] + unwrittenLines(result)
         case .failed:
             let connect = if case let .disconnected(disk) = result.failure {
                 "Connect \(disk) and "
@@ -1004,10 +1027,22 @@ import RedlampLibrary
                 ResultLine("The \(ProgressText.count(result.written, "photo")) written before are kept."),
                 ResultLine("\(connect)Import Again, or Undo Import."),
             ]
-        case .undoing, .undone:
+        case .undoing:
             return [ResultLine("Edits made since in Redlamp are kept.")]
+        case .undone:
+            return [ResultLine("Edits made since in Redlamp are kept.")] + (problem.map { [ResultLine($0)] } ?? [])
         default:
             return []
+        }
+    }
+
+    /// A line for each reason sidecars couldn't be written, with Show.
+    private func unwrittenLines(_ result: Result) -> [ResultLine] {
+        result.unwritten.map { unwritten in
+            ResultLine(
+                "\(ProgressText.count(unwritten.count, "sidecar")) couldn't be written: \(unwritten.reason)",
+                .unwritten, reason: unwritten.reason,
+            )
         }
     }
 }

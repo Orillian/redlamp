@@ -36,6 +36,8 @@ final class LightroomImportModel {
     /// The newest import not taken back, which Undo Import takes back.
     private(set) var lastImport: LightroomImportRecord?
     var onChange: (@MainActor () -> Void)?
+    /// What the window shows beyond what's here (`LightroomImportModel+Screen`).
+    var tracking = LightroomImportTracking()
     private let stopping = LightroomStop()
     private var work: Task<Void, Never>?
     /// When the import running, or the last, was started.
@@ -50,7 +52,7 @@ final class LightroomImportModel {
         plan?.report
     }
 
-    private var core: LibraryCore? {
+    var core: LibraryCore? {
         editor?.library.service?.core
     }
 
@@ -80,6 +82,7 @@ final class LightroomImportModel {
     }
 
     private func changed() {
+        track()
         onChange?()
     }
 
@@ -348,13 +351,16 @@ final class LightroomImportModel {
         problem = nil
         changed()
         let importer = Self.importer(core, editor: editor)
+        let progressed: @Sendable (LightroomImport.Progress) -> Void = { progress in
+            Task { @MainActor [weak self] in self?.undoProgressed(progress) }
+        }
         work = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<
                 LightroomImportRecord,
                 any Error,
             > in
                 do {
-                    return try await .success(importer.undo(id))
+                    return try await .success(importer.undo(id, progress: progressed))
                 } catch {
                     return .failure(error)
                 }
@@ -373,6 +379,15 @@ final class LightroomImportModel {
                 replan(quietly: true)
             }
         }
+        changed()
+    }
+
+    /// Done, once an import has ended or been taken back: the report again, as the library has it now.
+    func dismissResult() {
+        guard phase == .imported || phase == .undone else { return }
+        phase = .reported
+        outcome = nil
+        problem = nil
         changed()
     }
 
