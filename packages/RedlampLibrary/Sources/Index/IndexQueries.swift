@@ -323,7 +323,7 @@ enum IndexColumns {
         "rating", "flag", "label", "marked", "edited", "sidecar_modified", "xmp_modified", "title", "caption", "state",
         "indexed", "custom_label", "creator", "copyright", "sublocation", "city", "province", "country", "country_code",
         "stack", "stack_top", "other_fields", "xmp_signature", "camera_captured", "camera_offset", "stack_position",
-        "missing_since", "widest_aperture", "focal35", "custom_label_color", "version",
+        "missing_since", "widest_aperture", "focal35", "custom_label_color", "version", "version_name",
     ]
 
     /// The columns a photo's row is unique by: its file's folder and name, and its version's UUID, empty for the
@@ -396,7 +396,7 @@ extension PhotoRecord {
             cameraCaptured: date(44), cameraOffset: row.optionalInt(at: 45), missingSince: date(47),
             widestAperture: row.optionalDouble(at: 48), focal35: row.optionalDouble(at: 49),
             customLabelColor: row.string(at: 50).map(LabelColor.init(rawValue:)),
-            version: Self.version(code: row.string(at: 51)),
+            version: Self.version(code: row.string(at: 51)), versionName: row.string(at: 52),
         )
     }
 

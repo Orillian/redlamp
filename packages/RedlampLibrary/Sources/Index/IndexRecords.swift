@@ -210,6 +210,9 @@ public struct PhotoRecord: Sendable, Hashable {
     /// organising fields and edit; nil for the file's own row. Every row of a file has the file's folder, name and
     /// file fields.
     public var version: UUID?
+    /// The version's name, "Copy 1" or the one the user gave it, as Lightroom Classic's Copy Name; nil for the file's
+    /// own row.
+    public var versionName: String?
 
     public init(
         id: Int64 = 0, folder: Int64, name: String, kind: Kind? = nil, size: Int64 = 0,
@@ -224,7 +227,7 @@ public struct PhotoRecord: Sendable, Hashable {
         location: PhotoLocation? = nil, stack: PhotoStack? = nil, otherFields: Set<XMPField> = [],
         xmpSignature: Int64? = nil, cameraCaptured: Date? = nil, cameraOffset: Int? = nil, missingSince: Date? = nil,
         widestAperture: Double? = nil, focal35: Double? = nil, customLabelColor: LabelColor? = nil,
-        version: UUID? = nil,
+        version: UUID? = nil, versionName: String? = nil,
     ) {
         self.id = id
         self.folder = folder
@@ -272,6 +275,7 @@ public struct PhotoRecord: Sendable, Hashable {
         self.focal35 = focal35
         self.customLabelColor = customLabelColor
         self.version = version
+        self.versionName = versionName
     }
 
     /// The `version` column: a version's UUID, empty for the file's own row, as a unique index wants.

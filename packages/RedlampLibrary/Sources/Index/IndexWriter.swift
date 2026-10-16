@@ -511,6 +511,7 @@ extension LibraryIndex.Writer {
         try statement.bind(photo.focal35, at: 49)
         try statement.bind(photo.customLabelColor?.rawValue, at: 50)
         try statement.bind(PhotoRecord.code(for: photo.version), at: 51)
+        try statement.bind(photo.versionName, at: 52)
     }
 
     /// The ID an `INSERT ... RETURNING id` returns. SQLite makes the change at the first step.

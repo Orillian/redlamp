@@ -106,6 +106,7 @@ extension PhotoRecord {
         self = file
         id = 0
         self.version = version.id
+        versionName = version.name
         let metadata = version.metadata
         let fields = XMPFields(metadata)
         rating = fields.rating ?? 0

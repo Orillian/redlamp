@@ -58,6 +58,7 @@ struct IndexVersionsTests {
         let rows = try await Self.versions(of: file, in: sandbox.index)
         #expect(file.version == nil && file.rating == 2 && !file.edited)
         #expect(rows.map(\.version) == [Self.copy, Self.lightroom])
+        #expect(rows.map(\.versionName) == ["Copy 1", "Lightroom Classic"] && file.versionName == nil)
         #expect(try await Set(run.inserted) == Set([file.id, sandbox.id("B.ARW")] + rows.map(\.id)))
         let (copy, lightroom) = (rows[0], rows[1])
         #expect(copy.rating == 5 && copy.flag == .pick && copy.label == .red && copy.marked && copy.edited)
@@ -102,6 +103,7 @@ struct IndexVersionsTests {
 
         let after = try await Self.versions(of: file, in: sandbox.index)
         #expect(after.map(\.version) == [Self.copy, added])
+        #expect(after.map(\.versionName) == ["Heron, warm", "Copy 2"], "a version renamed keeps its row")
         #expect(after[0].id == before[0].id && after[0].rating == 3 && after[1].flag == .reject)
         #expect(run.inserted == [after[1].id])
         #expect(run.removed == [before[1].id])
@@ -296,7 +298,7 @@ struct IndexVersionsTests {
                     .map { $0.string(at: 0) ?? "" },
             )
         }
-        #expect(checked.0 == "ok" && checked.1 == [""] && checked.2 == columns + ["version"])
+        #expect(checked.0 == "ok" && checked.1 == [""] && checked.2 == columns + ["version", "version_name"])
         await migrated.close()
 
         // Set back to 14 with the column, it only makes sure of the unique index.

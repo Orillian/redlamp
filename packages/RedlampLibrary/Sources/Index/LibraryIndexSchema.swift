@@ -128,7 +128,8 @@ extension LibraryIndex {
         }
         let names = columns.map { "\"\($0.name)\"" }.joined(separator: ", ")
         try database.execute("""
-        CREATE TABLE photos_15 (\(columns.map(\.definition).joined(separator: ", ")), version TEXT NOT NULL DEFAULT '');
+        CREATE TABLE photos_15 (\(columns.map(\.definition).joined(separator: ", ")), version TEXT NOT NULL DEFAULT '',
+          version_name TEXT);
         CREATE INDEX photos_versions ON photos_15 (folder) WHERE version != '';
         INSERT INTO photos_15 (\(names)) SELECT \(names) FROM photos;
         DROP TABLE photos;
@@ -392,7 +393,8 @@ extension LibraryIndex {
     /// row of its own beside its file's, with the file's folder and name and the version's UUID in `version`, empty for
     /// the file's own row; a photo's place is unique by the three, in an index rather than the table's `UNIQUE`, so a
     /// later change to it needs no table made again. Empty rather than NULL, which a unique index takes as distinct.
-    /// The versions' rows by folder, for counting a root's files without them.
+    /// `version_name` is the version's name, as the sidecar has it. The versions' rows by folder, for counting a root's
+    /// files without them.
     static let schemaVersion15Index = """
     CREATE UNIQUE INDEX IF NOT EXISTS photos_place ON photos (folder, name, version);
     CREATE INDEX IF NOT EXISTS photos_versions ON photos (folder) WHERE version != '';

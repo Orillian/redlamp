@@ -238,6 +238,7 @@ struct FileTrashTests {
             fileID: 77, contentKey: Data(repeating: 5, count: 16),
         ))
         row.version = UUID()
+        row.versionName = "Copy 1"
         let unset = PhotoRecord(folder: 0, name: "")
         let defaults = Dictionary(uniqueKeysWithValues: Mirror(reflecting: unset).children.map {
             ($0.label ?? "", String(describing: $0.value))
