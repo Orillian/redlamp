@@ -281,6 +281,42 @@ struct LightroomBenchTests {
         return took
     }
 
+    /// The report of a bench library's catalog of `count` photos with edits (EDT-23), their edits converted, timed.
+    static func editsReport(photos count: Int) async throws -> Duration {
+        let library = try await Self.library(photos: count, edits: true)
+        defer { library.index.closeAndWait() }
+        let clock = ContinuousClock()
+        let started = clock.now
+        let catalog = try LightroomCatalog.read(library.catalog)
+        let plan = try await LightroomPlan.make(catalog, index: library.index, paths: library.paths)
+        let took = clock.now - started
+        let edits = plan.report.edits
+        #expect(edits.photos == count && plan.edits.count == count && edits.unreadable == 0)
+        #expect(edits.virtualCopies == (count + 12) / 20 && edits.snapshots == 2 * ((count + 5) / 10))
+        #expect(edits.historySteps == 3 * count && edits.full + edits.approximated + edits.leftOut == count)
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        var load = [Double](repeating: 0, count: 3)
+        getloadavg(&load, 3)
+        print("LIGHTROOM-EDITS-BENCH \(count) photos: read and reported with their edits in \(took) on \(cores) "
+            + "cores at a load of \(String(format: "%.0f", load[0])); \(edits.full) in full, \(edits.approximated) approximated, "
+            + "\(edits.leftOut) with settings left out")
+        return took
+    }
+
+    @Test(.measuresSpeed)
+    func `a catalog of 5,000 photos is reported with their edits in under two seconds`() async throws {
+        let took = try await Self.editsReport(photos: 5000)
+        #expect(took < .seconds(2))
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_BENCH"] == "1"), .measuresSpeed)
+    func `a catalog of 100,000 photos is reported with their edits within twice LIB-29's time`() async throws {
+        let photos = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_BENCH_PHOTOS"].flatMap { Int($0) }
+            ?? 100_000
+        let took = try await Self.editsReport(photos: photos)
+        #expect(took < .milliseconds(4900 * photos / 100_000))
+    }
+
     @Test(.measuresSpeed)
     func `the census of a catalog of 5,000 photos' edits takes under a second`() async throws {
         let took = try await Self.census(photos: 5000)
