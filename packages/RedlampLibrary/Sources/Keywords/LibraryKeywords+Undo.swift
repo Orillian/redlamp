@@ -89,7 +89,7 @@ public extension LibraryKeywords {
     /// them since), the index of every one of its photos, and the definitions. Running it again after
     /// a forced quit changes nothing it already put back.
     internal func rollBack(_ batch: KeywordBatch, logged: KeywordJournal.Progress) async throws {
-        let writing = index.photoWrites.begin(batch.photos.map(\.id))
+        let writing = try await index.photoWrites.begin(index.withFileRows(batch.photos.map(\.id)))
         defer { writing.end() }
         let log = try journal.log(batch.id)
         try await LibraryIndex.offCaller { try log.state(.rollingBack) }
@@ -98,30 +98,37 @@ public extension LibraryKeywords {
         }
         let store = try await SidecarStore(locator: LibrarySidecars(index: index, paths: paths).locator())
         let ids = batch.photos.map(\.id)
-        let paths = try await index.read { try $0.photoPaths(ids) }
-        let places = logged.written.sorted { $0.key < $1.key }.compactMap { place, change in
-            change.before == change.after ? nil : paths[batch.photos[place].id].map { (place, change, path: $0) }
-        }
+        let (paths, versions) = try await index.read { try ($0.photoPaths(ids), $0.photoVersions(ids)) }
+        let sidecars = LibraryMetadata.bySidecar(logged.written.sorted { $0.key < $1.key }.compactMap { place, change in
+            change.before == change.after ? nil : paths[batch.photos[place].id].map { ((place, change), $0) }
+        })
         let restored = try await LibraryIndex.offCaller {
             let restored = Mutex<[Int64: [KeywordPath]]>([:])
-            store.change(places.map { URL(fileURLWithPath: $0.path) }) { number, sidecar in
+            store.change(sidecars.map { URL(fileURLWithPath: $0.path) }) { number, sidecar in
                 guard var sidecar else { return .keep }
-                let (place, change, _) = places[number]
-                var metadata = sidecar.metadata ?? PhotoMetadata()
-                let current = SidecarKeywords(keywords: metadata.keywords)
-                let target = Self.rolledBack(current, batch.photos[place], change)
-                guard target != current else { return .keep }
-                metadata.keywords = target.keywords
-                sidecar.metadata = metadata.isEmpty ? nil : metadata
+                var touched = false
+                for (place, change) in sidecars[number].places {
+                    let version = versions[batch.photos[place].id]
+                    guard let edit = sidecar[edit: version] else { continue }
+                    var metadata = edit.metadata ?? PhotoMetadata()
+                    let current = SidecarKeywords(keywords: metadata.keywords)
+                    let target = Self.rolledBack(current, batch.photos[place], change)
+                    guard target != current else { continue }
+                    metadata.keywords = target.keywords
+                    sidecar[edit: version]?.metadata = metadata.isEmpty ? nil : metadata
+                    touched = true
+                }
+                guard touched else { return .keep }
                 sidecar.modified = Date()
                 return .saveOrRemove(sidecar)
             } done: { result in
                 guard let sidecar = result.sidecar else { return }
-                let (place, change, _) = places[result.index]
-                let photo = batch.photos[place]
-                if let keywords = Self.rolledBack(SidecarKeywords(keywords: sidecar.metadata?.keywords), photo, change)
-                    .paths {
-                    restored.withLock { $0[photo.id] = keywords }
+                for (place, change) in sidecars[result.index].places {
+                    let photo = batch.photos[place]
+                    let keywords = sidecar[edit: versions[photo.id]]?.metadata?.keywords
+                    if let paths = Self.rolledBack(SidecarKeywords(keywords: keywords), photo, change).paths {
+                        restored.withLock { $0[photo.id] = paths }
+                    }
                 }
             }
             return restored.withLock { $0 }

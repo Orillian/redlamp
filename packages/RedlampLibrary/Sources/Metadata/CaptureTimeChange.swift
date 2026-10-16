@@ -92,8 +92,9 @@ public extension LibraryMetadata {
                     ?? "Give \(Self.count(count)) the zones their files record"
             }
         }
+        // The capture time is the file's, which its versions show (LIB-48): a version's row stands for its file.
         let dated = try await index.read { reader in
-            try Array(Set(ids)).filter { try reader.photo(id: $0)?.captured != nil }
+            try reader.fileRows(of: ids).filter { try reader.photo(id: $0)?.captured != nil }
         }
         var batch = MetadataBatch(kind: .captureTime, title: title(dated.count))
         batch.edit = edit

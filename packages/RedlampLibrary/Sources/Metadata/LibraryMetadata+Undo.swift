@@ -126,7 +126,7 @@ public extension LibraryMetadata {
     /// them since), the index of every one of its photos, and the definitions. Running it again after
     /// a forced quit changes nothing it already put back.
     internal func rollBack(_ batch: MetadataBatch, logged: MetadataJournal.Progress) async throws {
-        let writing = index.photoWrites.begin(batch.photos.map(\.id))
+        let writing = try await index.photoWrites.begin(index.withFileRows(batch.photos.map(\.id)))
         defer { writing.end() }
         let log = try journal.log(batch.id)
         try await LibraryIndex.offCaller { try log.state(.rollingBack) }
@@ -135,21 +135,27 @@ public extension LibraryMetadata {
         }
         let store = try await SidecarStore(locator: LibrarySidecars(index: index, paths: paths).locator())
         let ids = batch.photos.map(\.id)
-        let paths = try await index.read { try $0.photoPaths(ids) }
-        let places = logged.written.sorted { $0.key < $1.key }.compactMap { place, change in
-            change.before == change.after ? nil : paths[batch.photos[place].id].map { (place, change, path: $0) }
-        }
+        let (paths, versions) = try await index.read { try ($0.photoPaths(ids), $0.photoVersions(ids)) }
+        let sidecars = Self.bySidecar(logged.written.sorted { $0.key < $1.key }.compactMap { place, change in
+            change.before == change.after ? nil : paths[batch.photos[place].id].map { ((place, change), $0) }
+        })
         let edited = Mutex<[Int64: Bool]>([:])
         try await LibraryIndex.offCaller {
-            store.change(places.map { URL(fileURLWithPath: $0.path) }) { number, sidecar in
-                guard let sidecar else { return .keep }
-                let (place, change, _) = places[number]
-                let current = sidecar.values(change.after.keys)
-                let target = undone(current, before: change.before, after: change.after)
-                guard target != current, var restored = sidecar.setting(target) else { return .keep }
-                if target["recipe"] != current["recipe"] {
-                    edited.withLock { $0[batch.photos[place].id] = !restored.recipe.isPristine }
+            store.change(sidecars.map { URL(fileURLWithPath: $0.path) }) { number, sidecar in
+                guard var restored = sidecar else { return .keep }
+                var touched = false
+                for (place, change) in sidecars[number].places {
+                    let photo = batch.photos[place].id
+                    guard let current = restored.values(change.after.keys, of: versions[photo]) else { continue }
+                    let target = undone(current, before: change.before, after: change.after)
+                    guard target != current, let next = restored.setting(target, of: versions[photo]) else { continue }
+                    restored = next
+                    touched = true
+                    if target["recipe"] != current["recipe"] {
+                        edited.withLock { $0[photo] = !restored.isPristine(versions[photo]) }
+                    }
                 }
+                guard touched else { return .keep }
                 restored.modified = Date()
                 return .saveOrRemove(restored)
             } done: { _ in }

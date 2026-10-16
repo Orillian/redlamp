@@ -59,6 +59,14 @@ extension LibraryIndex.Writer {
     }
 }
 
+extension LibraryIndex {
+    /// `photos` with the files' own rows of the versions among them (LIB-48): what a batch writing their sidecars
+    /// registers as being written, since the indexer writes a version's row with its file's.
+    func withFileRows(_ photos: [Int64]) async throws -> [Int64] {
+        try await Array(Set(photos).union(read { try $0.fileRows(of: photos) })).sorted()
+    }
+}
+
 public extension IndexQueries {
     /// The file's own row of the file whose row is `photo`: `photo` itself unless it's a version (LIB-48). Nil when
     /// the index has no such row.
@@ -76,6 +84,17 @@ public extension IndexQueries {
     func fileRows(of photos: [Int64]) throws -> [Int64] {
         var seen = Set<Int64>()
         return try photos.compactMap { try fileRow(of: $0) }.filter { seen.insert($0).inserted }
+    }
+
+    /// The versions among `photos`, by row: each one's UUID (LIB-48). Files' own rows aren't in it.
+    func photoVersions(_ photos: [Int64]) throws -> [Int64: UUID] {
+        let statement = try database.cached("SELECT version FROM photos WHERE id = ? AND version != ''")
+        var versions: [Int64: UUID] = [:]
+        for photo in photos {
+            try statement.bind(photo, at: 1)
+            versions[photo] = try statement.first { PhotoRecord.version(code: $0.string(at: 0)) } ?? nil
+        }
+        return versions
     }
 }
 

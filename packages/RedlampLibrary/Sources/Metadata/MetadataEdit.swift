@@ -233,6 +233,42 @@ extension Sidecar {
         }
         return sidecar
     }
+
+    /// The keys that describe the file, which a version's metadata doesn't hold: its file's own apply to it (LIB-48).
+    static let fileKeys: Set = ["originalName", "captureShift", "captureOffset"]
+
+    /// What the edit `version` names holds of `keys`, as `values(_:)` reads the photo's own: a version's own fields,
+    /// edit and snapshots, and for the keys that describe the file, the file's. Nil for a version it doesn't have.
+    func values(_ keys: some Sequence<String>, of version: UUID?) -> MetadataValues? {
+        guard let version else { return values(keys) }
+        guard let edit = self[edit: version] else { return nil }
+        let keys = Set(keys)
+        let own = Sidecar(recipe: edit.recipe, snapshots: edit.snapshots, metadata: edit.metadata)
+            .values(keys.subtracting(Self.fileKeys))
+        return own.merging(values(keys.intersection(Self.fileKeys))) { own, _ in own }
+    }
+
+    /// The sidecar with `values` in the edit `version` names, as `setting(_:)` sets the photo's own, those that
+    /// describe the file in the file's own metadata. Nil when they aren't what it can hold, or for a version it doesn't
+    /// have.
+    func setting(_ values: MetadataValues, of version: UUID?) -> Sidecar? {
+        guard let version else { return setting(values) }
+        guard let edit = self[edit: version] else { return nil }
+        let file = values.filter { Self.fileKeys.contains($0.key) }
+        guard var sidecar = file.isEmpty ? self : setting(file),
+              let changed = Sidecar(recipe: edit.recipe, snapshots: edit.snapshots, metadata: edit.metadata)
+              .setting(values.filter { !Self.fileKeys.contains($0.key) })
+        else { return nil }
+        sidecar[edit: version] = SidecarEdit(
+            recipe: changed.recipe, snapshots: changed.snapshots, metadata: changed.metadata,
+        )
+        return sidecar
+    }
+
+    /// Whether the edit `version` names, the photo's own for nil, is unedited.
+    func isPristine(_ version: UUID?) -> Bool {
+        self[edit: version]?.recipe.isPristine ?? true
+    }
 }
 
 extension JSONValue {

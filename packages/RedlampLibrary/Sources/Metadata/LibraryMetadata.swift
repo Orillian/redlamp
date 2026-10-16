@@ -115,7 +115,7 @@ public final class LibraryMetadata: Sendable {
         if let change = batch.definitions {
             try await collections.updateDefinitions { change.applied(to: $0) }
         }
-        let writing = index.photoWrites.begin(batch.photos.map(\.id))
+        let writing = try await index.photoWrites.begin(index.withFileRows(batch.photos.map(\.id)))
         defer { writing.end() }
         let changed = try await writeIndex(batch)
         outcome.photos = changed.count
@@ -155,8 +155,12 @@ public final class LibraryMetadata: Sendable {
                     let now = shown.values.filter { batch.keys(of: photo).contains($0.key) }
                     let after = batch.indexAfter(photo, current: PhotoMetadata.canonical(now))
                     if after != PhotoMetadata.canonical(now) || !shown.others.isDisjoint(with: Self.fields(after)) {
-                        try writer.setMetadata(after, forPhoto: photo.id, others: batch.others(photo, after: after))
                         ids.append(photo.id)
+                        ids += try writer.setMetadata(
+                            after,
+                            forPhoto: photo.id,
+                            others: batch.others(photo, after: after),
+                        )
                     }
                 }
                 return ids
@@ -211,10 +215,11 @@ public final class LibraryMetadata: Sendable {
         for start in stride(from: 0, to: pending.count, by: Self.photosPerWrite) {
             let places = Array(pending[start ..< min(start + Self.photosPerWrite, pending.count)])
             let ids = places.map { batch.photos[$0].id }
-            let found = try await index.read { try $0.photoPaths(ids) }
+            let (found, versions) = try await index.read { try ($0.photoPaths(ids), $0.photoVersions(ids)) }
             let results = try await LibraryIndex.offCaller {
                 try Self.write(
-                    places, of: batch, store: store, width: width, paths: found, log: log, stop: stop, done: done,
+                    places, of: batch, store: store, width: width, paths: found, versions: versions, log: log,
+                    stop: stop, done: done,
                 ) {
                     report?($0, pending.count)
                 }
@@ -302,33 +307,46 @@ public final class LibraryMetadata: Sendable {
 
     /// Writes the sidecars of `places` as a batch (`SidecarStore.change`), `width` at a time, each logged once
     /// it's written; a sidecar this build can't write is left as it is. Throws only when the log can't be
-    /// written, once the sidecars under way are done.
+    /// written, once the sidecars under way are done. A sidecar is changed once for the photos whose edits it holds,
+    /// a file's own and its versions' (`versions`, LIB-48), each of them changing its own edit.
     private static func write(
         _ places: [Int], of batch: MetadataBatch, store: SidecarStore, width: Int, paths: [Int64: String],
-        log: MetadataJournal.Log, stop: Int?, done: SidecarCounter, report: @Sendable (Int) -> Void,
+        versions: [Int64: UUID], log: MetadataJournal.Log, stop: Int?, done: SidecarCounter,
+        report: @Sendable (Int) -> Void,
     ) throws -> [SidecarResult] {
         let gone = places.filter { paths[batch.photos[$0].id] == nil }
         let results = Mutex(gone.map { SidecarResult(photo: batch.photos[$0].id, outcome: .gone) })
         let failure = Mutex<(any Error)?>(nil)
-        let present = places.compactMap { place in paths[batch.photos[place].id].map { (place: place, path: $0) } }
-        store.change(present.map { URL(fileURLWithPath: $0.path) }, width: width, until: {
+        let sidecars = bySidecar(places.compactMap { place in paths[batch.photos[place].id].map { (place, $0) } })
+        store.change(sidecars.map { URL(fileURLWithPath: $0.path) }, width: width, until: {
             failure.withLock { $0 != nil } || stop.map { done.value >= $0 } ?? false
         }) { number, sidecar in
-            let photo = batch.photos[present[number].place]
-            let (before, after) = changes(photo, of: batch, from: sidecar)
-            guard after != before, var changed = (sidecar ?? Sidecar(recipe: EditRecipe())).setting(after)
-            else { return .keep }
+            var changed = sidecar ?? Sidecar(recipe: EditRecipe())
+            var touched = false
+            for place in sidecars[number].places {
+                let photo = batch.photos[place]
+                let version = versions[photo.id]
+                let (before, after) = changes(photo, of: batch, from: changed, version: version)
+                guard after != before, let next = changed.setting(after, of: version) else { continue }
+                changed = next
+                touched = true
+            }
+            guard touched else { return .keep }
             changed.modified = Date()
             return .saveOrRemove(changed)
         } done: { result in
-            let (place, path) = present[result.index]
-            let photo = batch.photos[place]
-            do {
-                let outcome = try logged(result, photo, place: place, of: batch, at: path, log: log)
-                results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
-                report(done.add())
-            } catch {
-                failure.withLock { $0 = $0 ?? error }
+            let (path, members) = sidecars[result.index]
+            for place in members {
+                let photo = batch.photos[place]
+                do {
+                    let outcome = try logged(
+                        result, photo, place: place, version: versions[photo.id], of: batch, at: path, log: log,
+                    )
+                    results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
+                    report(done.add())
+                } catch {
+                    failure.withLock { $0 = $0 ?? error }
+                }
             }
         }
         if let error = failure.withLock({ $0 }) {
@@ -337,24 +355,39 @@ public final class LibraryMetadata: Sendable {
         return results.withLock { $0 }
     }
 
-    /// What `photo`'s sidecar holds of the batch's keys, from `sidecar` (nil: there's none), and what it holds
-    /// once the batch is done.
+    /// What `photo`'s sidecar holds of the batch's keys in its edit, `version`'s or the file's own, from `sidecar`
+    /// (nil: there's none), and what it holds once the batch is done; nothing for a version the sidecar doesn't have.
     private static func changes(
-        _ photo: MetadataBatch.Photo, of batch: MetadataBatch, from sidecar: Sidecar?,
+        _ photo: MetadataBatch.Photo, of batch: MetadataBatch, from sidecar: Sidecar?, version: UUID?,
     ) -> (before: MetadataValues, after: MetadataValues) {
         let sidecar = sidecar ?? Sidecar(recipe: EditRecipe())
-        let before = sidecar.values(batch.keys(of: photo))
+        guard let before = sidecar.values(batch.keys(of: photo), of: version) else { return ([:], [:]) }
         let after = batch.sidecarAfter(photo, current: before, fallback: photo.index, sidecar: sidecar)
         return (before, after)
+    }
+
+    /// `places` by the sidecar each photo's edit is in, each sidecar once, in the order they first come.
+    static func bySidecar<Place>(_ places: [(Place, String)]) -> [(path: String, places: [Place])] {
+        var sidecars: [(path: String, places: [Place])] = []
+        var byPath: [String: Int] = [:]
+        for (place, path) in places {
+            if let number = byPath[path] {
+                sidecars[number].places.append(place)
+            } else {
+                byPath[path] = sidecars.count
+                sidecars.append((path, [place]))
+            }
+        }
+        return sidecars
     }
 
     /// Logs what the batch did with one photo's sidecar: written as the batch leaves it, keeping
     /// everything else in it, or left as it is.
     private static func logged(
-        _ result: SidecarBatchResult, _ photo: MetadataBatch.Photo, place: Int, of batch: MetadataBatch,
-        at path: String, log: MetadataJournal.Log,
+        _ result: SidecarBatchResult, _ photo: MetadataBatch.Photo, place: Int, version: UUID?,
+        of batch: MetadataBatch, at path: String, log: MetadataJournal.Log,
     ) throws -> SidecarResult.Outcome {
-        let (before, after) = changes(photo, of: batch, from: result.sidecar)
+        let (before, after) = changes(photo, of: batch, from: result.sidecar, version: version)
         switch result.outcome {
         case .kept:
             try log.written(place, before: before, after: after)

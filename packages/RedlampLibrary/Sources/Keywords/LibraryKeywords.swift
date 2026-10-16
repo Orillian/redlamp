@@ -263,7 +263,7 @@ extension LibraryKeywords {
         if let change = batch.definitions {
             try await updateDefinitions { change.applied(to: $0) }
         }
-        let writing = index.photoWrites.begin(batch.photos.map(\.id))
+        let writing = try await index.photoWrites.begin(index.withFileRows(batch.photos.map(\.id)))
         defer { writing.end() }
         let changed = try await writeIndex(batch)
         outcome.photos = changed.count
@@ -335,12 +335,13 @@ extension LibraryKeywords {
             let places = Array(pending[start ..< min(start + Self.photosPerWrite, pending.count)])
             let ids = places.map { batch.photos[$0].id }
             let found = try await index.read { reader in
-                try (reader.photoPaths(ids), reader.keywordPaths(ofPhotos: ids))
+                try (reader.photoPaths(ids), reader.keywordPaths(ofPhotos: ids), reader.photoVersions(ids))
             }
             let results = try await LibraryIndex.offCaller {
-                try Self.write(places, of: batch, store: store, paths: found.0, log: log, stop: stop, done: done) {
-                    report?($0, pending.count)
-                }
+                try Self.write(
+                    places, of: batch, store: store, paths: found.0, versions: found.2, log: log, stop: stop,
+                    done: done,
+                ) { report?($0, pending.count) }
             }
             var corrections: [Int64: [KeywordPath]] = [:]
             var dates: [(Int64, Date?)] = []
@@ -400,37 +401,52 @@ extension LibraryKeywords {
 
     /// Writes the sidecars of `places` as a batch (`SidecarStore.change`), each logged once it's
     /// written; a sidecar this build can't write is left as it is. Throws only when the log can't be
-    /// written, once the sidecars under way are done.
+    /// written, once the sidecars under way are done. A sidecar is changed once for the photos whose edits it holds,
+    /// a file's own and its versions' (`versions`, LIB-48), each of them changing its own edit's keywords.
     private static func write(
         _ places: [Int], of batch: KeywordBatch, store: SidecarStore, paths: [Int64: String],
-        log: KeywordJournal.Log, stop: Int?, done: SidecarCounter, report: @Sendable (Int) -> Void,
+        versions: [Int64: UUID], log: KeywordJournal.Log, stop: Int?, done: SidecarCounter,
+        report: @Sendable (Int) -> Void,
     ) throws -> [SidecarResult] {
         let gone = places.filter { paths[batch.photos[$0].id] == nil }
         let results = Mutex(gone.map { SidecarResult(photo: batch.photos[$0].id, outcome: .gone) })
         let failure = Mutex<(any Error)?>(nil)
-        let present = places.compactMap { place in paths[batch.photos[place].id].map { (place: place, path: $0) } }
-        store.change(present.map { URL(fileURLWithPath: $0.path) }, until: {
+        let sidecars = LibraryMetadata.bySidecar(places.compactMap { place in
+            paths[batch.photos[place].id].map { (place, $0) }
+        })
+        store.change(sidecars.map { URL(fileURLWithPath: $0.path) }, until: {
             failure.withLock { $0 != nil } || stop.map { done.value >= $0 } ?? false
         }) { number, sidecar in
-            let photo = batch.photos[present[number].place]
             var sidecar = sidecar ?? Sidecar(recipe: EditRecipe())
-            var metadata = sidecar.metadata ?? PhotoMetadata()
-            let before = SidecarKeywords(keywords: metadata.keywords)
-            let after = batch.sidecarAfter(photo, current: before, fallback: photo.index)
-            guard after != before else { return .keep }
-            metadata.keywords = after.keywords
-            sidecar.metadata = metadata.isEmpty ? nil : metadata
+            var touched = false
+            for place in sidecars[number].places {
+                let photo = batch.photos[place]
+                let version = versions[photo.id]
+                guard let edit = sidecar[edit: version] else { continue }
+                var metadata = edit.metadata ?? PhotoMetadata()
+                let before = SidecarKeywords(keywords: metadata.keywords)
+                let after = batch.sidecarAfter(photo, current: before, fallback: photo.index)
+                guard after != before else { continue }
+                metadata.keywords = after.keywords
+                sidecar[edit: version]?.metadata = metadata.isEmpty ? nil : metadata
+                touched = true
+            }
+            guard touched else { return .keep }
             sidecar.modified = Date()
             return .saveOrRemove(sidecar)
         } done: { result in
-            let (place, path) = present[result.index]
-            let photo = batch.photos[place]
-            do {
-                let outcome = try logged(result, photo, place: place, of: batch, at: path, log: log)
-                results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
-                report(done.add())
-            } catch {
-                failure.withLock { $0 = $0 ?? error }
+            let (path, members) = sidecars[result.index]
+            for place in members {
+                let photo = batch.photos[place]
+                do {
+                    let outcome = try logged(
+                        result, photo, place: place, version: versions[photo.id], of: batch, at: path, log: log,
+                    )
+                    results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
+                    report(done.add())
+                } catch {
+                    failure.withLock { $0 = $0 ?? error }
+                }
             }
         }
         if let error = failure.withLock({ $0 }) {
@@ -442,10 +458,10 @@ extension LibraryKeywords {
     /// Logs what the batch did with one photo's sidecar: written as the batch leaves it, keeping
     /// everything else in it, or left as it is.
     private static func logged(
-        _ result: SidecarBatchResult, _ photo: KeywordBatch.Photo, place: Int, of batch: KeywordBatch,
+        _ result: SidecarBatchResult, _ photo: KeywordBatch.Photo, place: Int, version: UUID?, of batch: KeywordBatch,
         at path: String, log: KeywordJournal.Log,
     ) throws -> SidecarResult.Outcome {
-        let before = SidecarKeywords(keywords: result.sidecar?.metadata?.keywords)
+        let before = SidecarKeywords(keywords: result.sidecar.flatMap { $0[edit: version]?.metadata?.keywords })
         let after = batch.sidecarAfter(photo, current: before, fallback: photo.index)
         switch result.outcome {
         case .kept:

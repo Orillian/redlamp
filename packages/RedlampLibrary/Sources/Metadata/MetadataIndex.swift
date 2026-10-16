@@ -138,9 +138,11 @@ extension PhotoMetadata {
 extension LibraryIndex.Writer {
     /// Shows `values` in `photo`'s row: each field's columns, its collections, its stack and its capture
     /// time, with its text indexed again; they're the `.redlamp`'s values now, but for the fields of
-    /// `others`, which are other apps'.
-    func setMetadata(_ values: MetadataValues, forPhoto photo: Int64, others: Set<XMPField> = []) throws {
-        guard let metadata = PhotoMetadata().setting(values), var row = try self.photo(id: photo) else { return }
+    /// `others`, which are other apps'. A file's capture time is its versions' too (LIB-48): returns the rows of
+    /// versions that took it.
+    @discardableResult
+    func setMetadata(_ values: MetadataValues, forPhoto photo: Int64, others: Set<XMPField> = []) throws -> [Int64] {
+        guard let metadata = PhotoMetadata().setting(values), var row = try self.photo(id: photo) else { return [] }
         for key in values.keys {
             switch key {
             case "rating": row.rating = metadata.rating
@@ -177,6 +179,8 @@ extension LibraryIndex.Writer {
         }
         row.showCapture(values)
         try upsertPhotos([row])
+        guard row.version == nil, !Sidecar.fileKeys.isDisjoint(with: values.keys) else { return [] }
+        return try carryFile(of: photo)
     }
 }
 
