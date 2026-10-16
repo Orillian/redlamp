@@ -97,7 +97,7 @@ A **version** is another edit of the same photo, as a virtual copy is in Lightro
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | UUID | **Required.** History files of the version's sessions name it as their `versionID`. |
-| `name` | string | **Required.** "Copy 1", "Copy 2" and so on as Redlamp makes them, or the name the user gave it. Names needn't be unique. |
+| `name` | string | **Required.** "Copy 1", "Copy 2" and so on as Redlamp makes them, or the name the user gave it. Names needn't be unique. Naming templates read it as `{version}`, which names a version's export. |
 | `created` | date | **Required.** When it was made. |
 | `recipe` | object | **Required.** The version's edit, in the same form as the photo's; see [The recipe](#the-recipe). |
 | `metadata` | object? | The version's own metadata, in the same form as the photo's: its rating, flag, label, mark, keywords, title, caption, creator, copyright, location, collections and stack. `originalName`, `captureShift` and `captureOffset` describe the file, so the photo's apply to its versions, and Redlamp doesn't write them here. Written only when one is set. |
@@ -181,7 +181,7 @@ A named profile that isn't on the Mac, or can't fit the photo, leaves the photo 
 
 ### Provenance
 
-An edit converted from Lightroom's develop settings, from a Lightroom Classic catalog or from XMP, records where it came from, once, when it's converted (EDT-23, EDT-12). Editing the photo afterwards keeps it; copying and pasting settings doesn't carry it to another photo. Rendering never reads it, and an edit without it is one made in Redlamp.
+An edit converted from Lightroom's develop settings, from a Lightroom Classic catalog or from XMP, records where it came from, once, when it's converted (EDT-23, EDT-12). Editing the photo afterwards keeps it, and so does a version made from the edit; copying and pasting settings doesn't carry it to another photo. Rendering never reads it, and an edit without it is one made in Redlamp.
 
 | Field | Type | Notes |
 | --- | --- | --- |
