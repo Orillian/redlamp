@@ -53,12 +53,34 @@ It compares one way of working with another; it doesn't stand for a real disk. A
 
 ## Measurements
 
+### Baselines
+
 On the simulated 2.5-inch disk, 16 October: file operations traced on the build Mac and replayed through `usb-2.5` (`FileTrace`, `DiskReplay`, `LightroomDiskBenchTests` on `lib-53/spinning-disks`, 531ff5fcb), projected to 100,000 photos.
 
 - **The import's writes** (2,000 bench photos in folders of 200): 1.7 h on main (16.5 operations a photo, 4.5 reaching the disk, 6,072 moves between folders); 1.0 h with step 9's one write per photo (10 operations, 3 reaching the disk, 3,660 moves); 0.3 h for step 9's writes regrouped one folder at a time (10 moves), which is what writing one folder at a time on a spinning disk would give.
 - **Indexing the catalog's new folders** (600 clones of the fixture raws, read as an external disk's two readers read them, each thumbnail's read charged at the raw's preview: ARW 1,150 KB, CR3 458 KB, DNG 186 KB, NEF 701 KB, RAF 2,667 KB): 0.9 h as run; 0.4 h of it the reads the import waits for, and 0.4 h thumbnails, which can follow the import.
 
 So an import of 100,000 photos into new folders on such a disk waits about 2.6 h on main, about 1.9 h with step 9, and about 0.7 h with step 9, thumbnails after the import's reads and writes one folder at a time. Low Power Mode or heat can still stop the indexing outright until the import's folders are read first.
+
+### The indexing fixes
+
+`LightroomDiskBenchTests`' index bench (LIGHTROOM-DISK-INDEX-BENCH), 600 clones of the CC0 raws in folders of 200, its operations replayed through `usb-2.5` and projected to 100,000 photos. *Until the import could start* is the replay up to the indexing's last operation, thumbnails left out; *as run* is every operation in the order they ran. The indexer reads through a volume that answers at once (*external*) or through the 2.5-inch disk simulated in real time (*usb-2.5*), on the build Mac but where it says. Since `spinning` and `usb-2.5` now say their disks spin, anything that reads through either has one reader, where it had two or more.
+
+| | Until the import could start | Thumbnails | As run | Readers at the end |
+|---|---|---|---|---|
+| Before (0e01f7ded), external | 0.75 h | 0.4 h | 0.9 h | 5 |
+| Before, usb-2.5 | 0.87 h | 0.4 h | 0.9 h | 5 |
+| Thumbnails behind the indexer's reads (faf49e9d1), external | 0.44 h | 0.9 h | 1.3 h | 4 |
+| The same, usb-2.5 | 0.45 h | 1.0 h | 1.4 h | 7 |
+| Spinning disks recognised (f441804c7, on this Mac at a load of 45), usb-2.5 | 0.45 h | 0.7 h | 1.2 h | 1 |
+| An import's folders first (2cc1441be), external | 0.47 h | 0.7 h | 1.2 h | 1 |
+| The same, usb-2.5 | 0.44 h | 0.7 h | 1.1 h | 1 |
+| The same, usb-2.5 in Low Power Mode until the folders are indexed, the root read first | 0.45 h | 0.7 h | 1.1 h | 1 |
+
+- The indexing's own operations stay at 1.5 a photo and 0.4 to 0.5 h throughout; the import waits for them alone once thumbnails wait behind them.
+- Thumbnails cost more than before because the bench now counts what they read. Before, it charged each one a single read of its preview; now it counts the reads made through the volume: the head again (the decode reads it too, which the bench didn't count before), the preview's first bytes and the preview, 2.7 reads a photo. Read side by side by several readers, each one's reads were apart, each paying a seek (1.0 h); one reader on a disk that spins keeps them together (0.7 h).
+- In Low Power Mode the import's folders weren't indexed at all before, the background lane running nothing (`LibraryIndexerTests`: nothing in a second); read first, they're indexed as fast as otherwise.
+- On the simulated disk in real time, which counts the Mac's own delays as well, the times swing with the Mac's load: the photos' folders indexed in 21.0 s before (0.97 h), 20.6 s with seven readers, 65.9 s with one at utility priority on a busy build Mac, and 23.7 s with one at user-initiated priority (the root read first). With one reader, each operation waits for the thread that runs the next one to wake, which a second reader hides; worth measuring on a real disk before relying on one reader.
 
 ## Reply to the report
 
