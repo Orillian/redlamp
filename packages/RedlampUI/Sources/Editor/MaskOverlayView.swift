@@ -13,7 +13,7 @@ struct MaskOverlayView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let frame = ImageFrame(rect: model.canvas.imageRect(in: geometry.size), geometry: model.canvasGeometry)
+            let frame = ImageFrame(rect: model.photoRect(in: geometry.size), geometry: model.canvasGeometry)
             ZStack {
                 if model.isBrushing || model.isRefiningEdges {
                     BrushCanvas(frame: frame)
@@ -357,12 +357,14 @@ private struct ObjectPicker: View {
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     switch phase {
-                    case let .active(location) where drag.isEmpty: model.hoverObject(at: frame.image(location))
+                    case let .active(location) where drag.isEmpty:
+                        model.hoverObject(at: frame.rect.contains(location) ? frame.image(location) : nil)
                     case .active: break
                     case .ended: model.hoverObject(at: nil)
                     }
                 }
                 .onTapGesture(coordinateSpace: .local) { location in
+                    guard frame.rect.contains(location) else { return }
                     let excluding = NSEvent.modifierFlags.contains(.option)
                     Task { await model.selectObject(at: frame.image(location), excluding: excluding) }
                 }

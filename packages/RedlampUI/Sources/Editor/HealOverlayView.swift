@@ -11,7 +11,7 @@ struct HealOverlayView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let frame = ImageFrame(rect: model.canvas.imageRect(in: geometry.size), geometry: model.canvasGeometry)
+            let frame = ImageFrame(rect: model.photoRect(in: geometry.size), geometry: model.canvasGeometry)
             ZStack {
                 Color.clear
                     .contentShape(Rectangle())

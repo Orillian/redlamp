@@ -181,16 +181,17 @@ extension EditorModel {
     /// A click on the photo with Calibrate from Target on: measures the patch there, over the
     /// readout's area, for the popover.
     func sampleCalibrationTarget(at point: CGPoint) {
-        guard let visit = currentVisit else { return }
+        guard let visit = currentVisit, let framePoint = framePoint(forCanvas: point) else { return }
         let edit = recipe
         let area = readoutArea
         Task {
-            let readout = await engine.readout(at: point, area: area, recipe: edit)
+            let readout = await engine.readout(at: framePoint, area: area, recipe: edit)
             guard currentVisit == visit else { return }
             calibrationTargetActive = false
             guard let readout, let stops = readout.stops else { return }
             calibrationTarget = CalibrationTarget(
-                point: point, luminance: PixelReadout.middleGrey * pow(2, stops), lstar: readout.lab.x, recipe: edit,
+                point: framePoint, luminance: PixelReadout.middleGrey * pow(2, stops), lstar: readout.lab.x,
+                recipe: edit,
             )
         }
     }

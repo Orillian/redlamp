@@ -100,8 +100,47 @@ public extension EditorModel {
         }
     }
 
-    /// The photo point (EXIF-oriented, 0...1) behind a canvas point (0...1 across the frame).
+    /// Whether the canvas shows the photo's border: not in the crop tool or the colour-assessment
+    /// view, which judge the photo alone.
+    var showsBorder: Bool {
+        activeTool != .crop && !colorAssessment
+    }
+
+    /// `edit` as the canvas shows it: without its border where the canvas leaves it out.
+    func bordered(_ edit: EditRecipe) -> EditRecipe {
+        showsBorder ? edit : edit.withoutBorder()
+    }
+
+    /// The border around the photo on the canvas.
+    var canvasBorder: BorderLayout? {
+        info.map { info in
+            let shown = bordered(recipe)
+            return BorderLayout(recipe: shown, photoSize: shown.developedSize(imageSize: info.pixelSize))
+        }
+    }
+
+    /// The photo's rect on screen, inside its border, in a view of `size`.
+    func photoRect(in size: CGSize) -> CGRect {
+        let canvasRect = canvas.imageRect(in: size)
+        guard let border = canvasBorder, border.hasBorder else { return canvasRect }
+        let photo = border.photoRect
+        return CGRect(
+            x: canvasRect.minX + photo.x * canvasRect.width, y: canvasRect.minY + photo.y * canvasRect.height,
+            width: photo.width * canvasRect.width, height: photo.height * canvasRect.height,
+        )
+    }
+
+    /// The developed photo's point (0...1 across it) at a canvas point (0...1 across the canvas),
+    /// or nil in the border.
+    func framePoint(forCanvas point: CGPoint) -> CGPoint? {
+        guard let border = canvasBorder, border.hasBorder else { return point }
+        return border.photoPoint(SIMD2(point.x, point.y)).map { CGPoint(x: $0.x, y: $0.y) }
+    }
+
+    /// The photo point (EXIF-oriented, 0...1) behind a canvas point (0...1 across the canvas), or
+    /// nil in the border.
     func imagePoint(forCanvas point: CGPoint) -> CGPoint? {
+        guard let point = framePoint(forCanvas: point) else { return nil }
         guard let geometry = canvasGeometry else { return point }
         return geometry.imagePoint(SIMD2(point.x, point.y)).map { CGPoint(x: $0.x, y: $0.y) }
     }

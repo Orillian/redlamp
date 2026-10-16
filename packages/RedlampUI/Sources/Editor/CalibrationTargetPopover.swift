@@ -9,7 +9,7 @@ struct CalibrationTargetAnchor: View {
     @Environment(EditorModel.self) private var model
 
     var body: some View {
-        let frame = model.canvas.imageRect(in: model.canvas.viewSize)
+        let frame = model.photoRect(in: model.canvas.viewSize)
         Color.clear
             .frame(width: 1, height: 1)
             .popover(

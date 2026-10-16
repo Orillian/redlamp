@@ -319,7 +319,19 @@ public final class EditorModel {
     }
 
     /// A middle-grey surround and white frame for judging colour (ISO 12646).
-    public var colorAssessment = false
+    public var colorAssessment = false {
+        // The view shows the photo without its border.
+        didSet {
+            if oldValue != colorAssessment, hasBorder {
+                requestRender()
+            }
+        }
+    }
+
+    /// Whether the edit draws a border around the photo.
+    public var hasBorder: Bool {
+        recipe.rendered[.borderStyle] > 0.5
+    }
 
     /// What the photo renders as under the pointer, for the histogram's line (UX-32); nil while
     /// the pointer isn't over the photo.
@@ -1378,7 +1390,7 @@ public final class EditorModel {
         generatedFills = [:]
         regionOutlines = [:]
         isPlacingGuides = false
-        let frameSize = loaded.developedSize(imageSize: opened.pixelSize)
+        let frameSize = bordered(loaded).borderedSize(imageSize: opened.pixelSize)
         if !hasFrame {
             showOnCanvas(frameSize)
         } else if !keepingView || frameSize != canvas.imageSize {
@@ -1497,8 +1509,9 @@ public final class EditorModel {
         if activeTool == .crop {
             displayed.crop = .full
         }
+        displayed = bordered(displayed)
         // A new frame size shows once a frame of that size arrives.
-        let frameSize = displayed.developedSize(imageSize: info.pixelSize)
+        let frameSize = displayed.borderedSize(imageSize: info.pixelSize)
         if pendingCanvas == nil, frameSize != canvas.imageSize, canvas.imageSize.width > 0 {
             pendingCanvas = (frameSize, generation &+ 1)
         }

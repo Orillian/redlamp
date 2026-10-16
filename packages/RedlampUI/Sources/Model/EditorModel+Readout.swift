@@ -7,8 +7,8 @@ public extension EditorModel {
     /// The pointer moved over the canvas: `point` is the photo point under it, as the canvas
     /// reports clicks, nil once it leaves the photo.
     func hoverReadout(at point: CGPoint?) {
-        readoutPoint = point
-        guard point != nil else {
+        readoutPoint = point.flatMap(framePoint(forCanvas:))
+        guard readoutPoint != nil else {
             pixelReadout = nil
             return
         }
@@ -69,7 +69,7 @@ extension EditorModel {
 
     /// `readoutPixels` square of the photo as displayed, in fractions of the frame.
     var readoutArea: CGSize {
-        let shown = canvas.imageRect(in: canvas.viewSize)
+        let shown = photoRect(in: canvas.viewSize)
         let scale = max(canvas.backingScale, 1)
         guard shown.width > 0, shown.height > 0 else { return CGSize(width: 0.004, height: 0.004) }
         return CGSize(
