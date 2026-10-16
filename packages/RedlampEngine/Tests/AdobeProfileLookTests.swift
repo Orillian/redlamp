@@ -433,7 +433,9 @@ struct AdobeProfileLookTests {
         #expect(color.look.reference.contentHash == nil && color.look.reference.staysOnThisMac)
         let monochrome = try #require(entries.first { $0.descriptor.reference.name == "Adobe Monochrome" })
         #expect(monochrome.descriptor.isMonochrome && monochrome.look.parameters.isMonochrome)
-        #expect(monochrome.descriptor.summary.contains("Clarity +8"))
+        #expect(monochrome.descriptor.summary.contains("Clarity +8") && monochrome.descriptor.leftOut == ["Clarity +8"])
+        #expect(entries.filter { !$0.descriptor.leftOut.isEmpty }
+            .map(\.descriptor.reference.name) == ["Adobe Monochrome"])
         #expect(looks.looks(make: "Canon", model: "EOS R6", refresh: true).found.isEmpty)
 
         // Files chosen through the library, by any engine sharing it, are found without a refresh.

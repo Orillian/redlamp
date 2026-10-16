@@ -52,16 +52,26 @@ public struct CameraProfileLook: Sendable, Hashable, Identifiable {
     /// Where it came from, and what of it Redlamp leaves out, for the menu's help.
     public var summary: String
     public var isMonochrome: Bool
+    /// The develop settings an XMP look carries besides its tables, which Redlamp leaves out
+    /// (`Clarity +8`).
+    public var leftOut: [String]
 
     public var id: String {
         reference.id
     }
 
-    public init(reference: BaseLookReference, group: Group, summary: String, isMonochrome: Bool = false) {
+    public init(
+        reference: BaseLookReference,
+        group: Group,
+        summary: String,
+        isMonochrome: Bool = false,
+        leftOut: [String] = [],
+    ) {
         self.reference = reference
         self.group = group
         self.summary = summary
         self.isMonochrome = isMonochrome
+        self.leftOut = leftOut
     }
 }
 

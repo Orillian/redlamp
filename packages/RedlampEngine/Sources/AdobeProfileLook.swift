@@ -374,6 +374,7 @@ final class CameraProfileLooks: @unchecked Sendable {
                 descriptor: CameraProfileLook(
                     reference: reference, group: Self.group(item.source, look: look),
                     summary: Self.summary(item, base: base.dcp), isMonochrome: look.convertsToGrayscale,
+                    leftOut: look.leftOut,
                 ),
             ))
         }
