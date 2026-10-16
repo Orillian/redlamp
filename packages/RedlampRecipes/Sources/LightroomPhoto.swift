@@ -25,7 +25,9 @@ public enum LightroomPhoto {
             pointCurve: converter.pointCurve ?? EditRecipe.linearPointCurve, channelCurves: converter.channelCurves,
             crop: converter.crop, orientation: photo.orientation ?? .identity,
         )
-        let report = LightroomImportReport(processVersion: settings.text("ProcessVersion"), entries: converter.entries)
+        let report = LightroomImportReport(
+            processVersion: settings.text("ProcessVersion"), entries: converter.entries, profile: converter.profile,
+        )
         let provenance = LightroomProvenance(
             source: source, date: date, approximated: report.entries(.approximated).map(\.setting),
             leftOut: report.entries(.ignored).map(\.setting),
@@ -68,6 +70,12 @@ public struct LightroomPhotoContext: Sendable, Hashable {
     /// The looks that fill film slots on this Mac in place of Redlamp's (`RecipeLibrary.filledSlots`), which
     /// Fujifilm's film simulations take first.
     public var slotLooks: [FilmSlot: BaseLookReference]
+    /// The photographer's Adobe camera profiles on this Mac that can render the photo (TON-51, TON-52), as
+    /// `EditingEngine.cameraProfileLooks(make:model:)` lists them for its camera. A raw's edit names the one
+    /// Lightroom used, and where it isn't among them, Redlamp's look of the same name stands in; the report
+    /// says which (EDT-33). Nil where the caller doesn't say, which takes Redlamp's looks without the report
+    /// saying whether the profiles are on this Mac.
+    public var adobeProfiles: [CameraProfileLook]?
 
     public init(
         size: PixelSize,
@@ -79,6 +87,7 @@ public struct LightroomPhotoContext: Sendable, Hashable {
         hasLensCorrection: Bool = false,
         embeddedLook: BaseLookReference? = nil,
         slotLooks: [FilmSlot: BaseLookReference] = [:],
+        adobeProfiles: [CameraProfileLook]? = nil,
     ) {
         self.size = size
         self.cameraOrientation = cameraOrientation
@@ -89,6 +98,7 @@ public struct LightroomPhotoContext: Sendable, Hashable {
         self.hasLensCorrection = hasLensCorrection
         self.embeddedLook = embeddedLook
         self.slotLooks = slotLooks
+        self.adobeProfiles = adobeProfiles
     }
 }
 

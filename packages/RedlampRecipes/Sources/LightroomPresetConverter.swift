@@ -68,6 +68,8 @@ struct LightroomConverter {
     /// A photo's Base Look, crop and its angle, which a recipe doesn't carry.
     var baseLook: BaseLookReference?
     var crop: (rect: CropRect, angle: Double)?
+    /// What renders a photo's profile, as its report says.
+    var profile: LightroomImportReport.Profile?
 
     init(_ settings: CameraRawSettings) {
         self.settings = settings

@@ -55,6 +55,15 @@ public struct LightroomImportReport: Sendable, Equatable {
         case leftOut
     }
 
+    /// What renders a photo's profile, decided from the Adobe profiles on this Mac when it's converted (EDT-33).
+    public enum Profile: Sendable, Hashable {
+        /// The photographer's own copy of the Adobe profile Lightroom used, by Lightroom's name for it.
+        case onThisMac(String)
+        /// `look` stands in for the profile Lightroom used, which isn't on this Mac: Redlamp's look of the same
+        /// name, or the camera profile the photo embeds.
+        case standIn(profile: String, look: String)
+    }
+
     public struct Entry: Sendable, Equatable {
         /// The Camera Raw setting's name without its namespace, for example `Exposure2012`.
         public var setting: String
@@ -74,10 +83,15 @@ public struct LightroomImportReport: Sendable, Equatable {
     /// The preset's or photo's `crs:ProcessVersion`, if it has one.
     public var processVersion: String?
     public var entries: [Entry]
+    /// What renders the photo's profile. Nil for a preset's, for a rendered photo's and one the photo embeds
+    /// (`Embedded`), which aren't looked for among the Adobe profiles, and where the caller didn't say which are
+    /// on this Mac.
+    public var profile: Profile?
 
-    public init(processVersion: String? = nil, entries: [Entry] = []) {
+    public init(processVersion: String? = nil, entries: [Entry] = [], profile: Profile? = nil) {
         self.processVersion = processVersion
         self.entries = entries
+        self.profile = profile
     }
 
     public func entries(_ outcome: Outcome) -> [Entry] {

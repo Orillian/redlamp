@@ -187,12 +187,23 @@ extension LightroomConverter {
         guard let name = lookName ?? settings.text("CameraProfile"), key == "CameraProfile" || lookName != nil else {
             return
         }
-        let profile = LightroomPhoto.profile(name, amount: (look?.number("Amount") ?? 1) * 100, photo: photo)
-        baseLook = profile.look
-        if key == "CameraProfile", let lookName {
-            report(key, profile.outcome, PhotoNote.underLook(lookName))
+        let amount = (look?.number("Amount") ?? 1) * 100
+        let converted = LightroomPhoto.profile(name, isLook: lookName != nil, amount: amount, photo: photo)
+        baseLook = converted.look
+        profile = converted.rendering
+        guard key == "CameraProfile", let lookName else {
+            return report(key, converted.outcome, converted.note)
+        }
+        guard case .onThisMac = converted.rendering else {
+            return report(key, converted.outcome, PhotoNote.underLook(lookName))
+        }
+        // The photographer's copy of a look goes over the profile it names, Adobe Standard where it names none.
+        let base = look?.structure("Parameters")?.text("CameraProfile").flatMap { $0.isEmpty ? nil : $0 }
+            ?? "Adobe Standard"
+        if settings.text("CameraProfile") == base {
+            report(key, .mapped, PhotoNote.underLookOnThisMac(lookName))
         } else {
-            report(key, profile.outcome, profile.note)
+            report(key, .approximated, PhotoNote.overOtherProfile(lookName, base: base))
         }
     }
 

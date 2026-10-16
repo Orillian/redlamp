@@ -104,11 +104,15 @@ extension LightroomPhoto {
 // MARK: - Profiles
 
 extension LightroomPhoto {
-    /// The Base Look standing in for Lightroom's profile, and how near it comes.
+    /// The Base Look for Lightroom's profile, how near it comes, and what the report says renders it.
     struct Profile {
         var look: BaseLookReference
         var outcome: LightroomImportReport.Outcome
         var note: String?
+        /// What stands in, as a note names it (`Redlamp Neutral`, `the copy the photo embeds`); nil where
+        /// Redlamp has no look like the profile.
+        var standIn: String?
+        var rendering: LightroomImportReport.Profile?
     }
 
     /// Words of camera makers' styles in Camera Matching profiles' names (`Camera Neutral`), each with the
@@ -119,11 +123,44 @@ extension LightroomPhoto {
         ("vibrant", .vivid), ("landscape", .landscape), ("portrait", .portrait), ("standard", .color),
     ]
 
-    /// Lightroom's profile `name` at `amount` percent as a Base Look, the camera's own profiles going to the
-    /// look the file embeds where it embeds one.
-    static func profile(_ name: String, amount: Double, photo: LightroomPhotoContext) -> Profile {
+    /// Lightroom's profile `name` at `amount` percent as a Base Look. A raw's is the photographer's own copy
+    /// where the caller says it's on this Mac, and otherwise what stands in for it, which the report says
+    /// (EDT-33). `isLook` says Lightroom applies it as a look over a camera profile (`Look`) rather than as one.
+    static func profile(_ name: String, isLook: Bool, amount: Double, photo: LightroomPhotoContext) -> Profile {
+        guard photo.isRaw, let profiles = photo.adobeProfiles, name != "Embedded" else {
+            return redlampProfile(name, amount: amount, photo: photo)
+        }
+        if let own = adobeProfile(named: name, isLook: isLook, in: profiles) {
+            return Profile(
+                look: own.reference.withAmount(amount), outcome: own.leftOut.isEmpty ? .mapped : .approximated,
+                note: Note.onThisMac(name, leavingOut: own.leftOut), rendering: .onThisMac(name),
+            )
+        }
+        var profile = redlampProfile(name, amount: amount, photo: photo)
+        profile.note = Note.notOnThisMac(name, standIn: profile.standIn)
+        profile.rendering = .standIn(profile: name, look: profile.look.name)
+        return profile
+    }
+
+    /// The photographer's copy of the profile Lightroom names `name`: of the kind Lightroom applies it as, an
+    /// XMP look over a camera profile or a camera profile, before the other kind; Adobe's before their own.
+    static func adobeProfile(named name: String, isLook: Bool, in profiles: [CameraProfileLook])
+        -> CameraProfileLook? {
+        func rank(_ profile: CameraProfileLook) -> Int {
+            let overProfile = profile.reference.id.dropFirst(BaseLookReference.adobeIDPrefix.count).contains("/")
+            let kind = overProfile == isLook ? 0 : 2
+            guard case .own = profile.group else { return kind }
+            return kind + 1
+        }
+        return profiles.filter { $0.reference.isAdobeProfile && $0.reference.name == name }
+            .min { rank($0) < rank($1) }
+    }
+
+    /// Lightroom's profile `name` at `amount` percent as Redlamp's look of the same name, the camera's own
+    /// profiles going to the look the file embeds where it embeds one.
+    static func redlampProfile(_ name: String, amount: Double, photo: LightroomPhotoContext) -> Profile {
         if let look = AdobeProfileStandIn.adobeRawLooks[name] {
-            return Profile(look: look.reference.withAmount(amount), outcome: .mapped)
+            return Profile(look: look.reference.withAmount(amount), outcome: .mapped, standIn: look.name)
         }
         let style = name.hasPrefix("Camera ") ? name.dropFirst("Camera ".count) : nil
         if let embedded = photo.embeddedLook, style != nil || ["Adobe Standard", "Embedded"].contains(name) {
@@ -131,6 +168,7 @@ extension LightroomPhoto {
             return Profile(
                 look: embedded.withAmount(amount), outcome: same ? .mapped : .approximated,
                 note: same ? nil : Note.embedded(embedded.name, for: name),
+                standIn: same ? Note.embeddedCopy : Note.embeddedProfile(embedded.name),
             )
         }
         if let style, let slot = filmSlot(style) {
@@ -139,6 +177,7 @@ extension LightroomPhoto {
                 look: look.withAmount(amount),
                 outcome: .approximated,
                 note: Note.standIn(look.name, for: name),
+                standIn: look.name,
             )
         }
         let words = style.map { $0.lowercased() } ?? (name == "Adobe Standard" ? "standard" : "")
@@ -148,6 +187,7 @@ extension LightroomPhoto {
         }
         return Profile(
             look: look.reference.withAmount(amount), outcome: .approximated, note: Note.standIn(look.name, for: name),
+            standIn: look.name,
         )
     }
 
@@ -270,6 +310,35 @@ extension LightroomPhoto {
 
         static func underLook(_ look: String) -> String {
             "Lightroom applies the profile “\(look)” over this one, and one Base Look stands in for both."
+        }
+
+        static let embeddedCopy = "the copy the photo embeds"
+
+        static func embeddedProfile(_ look: String) -> String {
+            "the camera profile the photo embeds, “\(look)”"
+        }
+
+        static func onThisMac(_ profile: String, leavingOut settings: [String]) -> String {
+            let note = "“\(profile)” is on this Mac, so it renders the photo"
+            guard !settings.isEmpty else { return note + "." }
+            return note + ", but Redlamp leaves out what it sets besides its tables: "
+                + "\(settings.joined(separator: ", "))."
+        }
+
+        static func notOnThisMac(_ profile: String, standIn: String?) -> String {
+            guard let standIn else {
+                return "“\(profile)” isn't on this Mac, and Redlamp has no look like it, so "
+                    + "\(BuiltInBaseLook.color.name) stands in."
+            }
+            return "“\(profile)” isn't on this Mac, so \(standIn) stands in."
+        }
+
+        static func underLookOnThisMac(_ look: String) -> String {
+            "Lightroom applies the profile “\(look)” over this one, and both are on this Mac."
+        }
+
+        static func overOtherProfile(_ look: String, base: String) -> String {
+            "Redlamp applies the profile “\(look)” over the copy of “\(base)” on this Mac, rather than over this one."
         }
 
         static func frame(_ lightroom: PixelSize, file: PixelSize, offset: Int) -> String {
