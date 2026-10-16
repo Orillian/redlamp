@@ -90,6 +90,8 @@ public final class ChangeTracker: Sendable {
         var events: AsyncStream<Event>.Continuation?
         var volumes: [String: Followed] = [:]
         var shown: Set<String> = []
+        /// Folders held from change detection, each with how many holds it has.
+        var held: [String: Int] = [:]
         var active = true
         var pending = PendingWork()
         var waiter: CheckedContinuation<Work?, Never>?
@@ -178,6 +180,41 @@ public final class ChangeTracker: Sendable {
             let below = paths.filter { path in volume.roots.contains { path == $0 || path.hasPrefix($0 + "/") } }
             guard !below.isEmpty else { continue }
             enqueue(Work(volume, .update(Dictionary(uniqueKeysWithValues: below.map { ($0, false) }), replayed: false)))
+        }
+    }
+
+    /// Holds `folders` from change detection while the library writes what they hold, as an import writes its
+    /// sidecars (LIB-53): what a volume's events name in them, or below them, waits rather than being listed again
+    /// after each of the library's writes, and the volume's history isn't recorded past it. Each hold ends with a
+    /// `release` of the same folders.
+    public func hold(_ folders: [URL]) {
+        let paths = Set(folders.map(LibraryIndexer.path))
+        state.withLock { state in
+            for path in paths {
+                state.held[path, default: 0] += 1
+            }
+        }
+    }
+
+    /// Ends a hold of `folders`: each whose last hold it was is listed again once, with what the events named
+    /// below it meanwhile, so a change made there by someone else is found.
+    public func release(_ folders: [URL]) {
+        let paths = Set(folders.map(LibraryIndexer.path))
+        let works = state.withLock { state -> [Work] in
+            var ended: [String] = []
+            for path in paths {
+                guard let holds = state.held[path] else { continue }
+                if holds > 1 {
+                    state.held[path] = holds - 1
+                } else {
+                    state.held[path] = nil
+                    ended.append(path)
+                }
+            }
+            return ended.isEmpty ? [] : state.volumes.values.compactMap { $0.release(ended) }
+        }
+        for work in works {
+            enqueue(work)
         }
     }
 

@@ -213,6 +213,60 @@ struct ChangeTrackerTests {
         #expect(Self.caughtUp(key, in: events.all).count == 1, "a live event doesn't catch it up again")
     }
 
+    @Test func `a folder held while the library writes it is listed once its hold ends, with what changed meanwhile`(
+    ) async throws {
+        let sandbox = try await IndexerSandbox.make(.init(photos: 300, seed: 42, shapes: [.clients]))
+        defer { sandbox.remove() }
+        _ = await IndexerRun
+            .collect(LibraryIndexer(index: sandbox.index, configuration: .testing()).index([sandbox.root]))
+        let key = try await Self.volumeKey(sandbox)
+        try await sandbox.index.write {
+            try $0.setEventHistory(VolumeEventHistory(eventDatabase: "SCRIPTED", lastEvent: 1000), ofVolume: key)
+        }
+        let source = ScriptedEvents()
+        let picked = try Self.folders(in: sandbox, count: 2)
+        let folders = picked.map(\.path)
+        let counting = CountingFileSystem()
+        let tracker = ChangeTracker(
+            indexer: LibraryIndexer(index: sandbox.index, fileSystem: counting, configuration: .testing()),
+            configuration: .testing, source: source,
+        )
+        let events = TrackerEvents(tracker.start([sandbox.root]))
+        defer { tracker.stop() }
+        #expect(await events.wait { $0.contains(.caughtUp(volume: key)) })
+        counting.reset()
+
+        // Held twice, as two batches writing the same folder would hold it.
+        let held = URL(fileURLWithPath: sandbox.path(folders[0]), isDirectory: true)
+        tracker.hold([held])
+        tracker.hold([held])
+        // Someone else adds a photo to the held folder while the library writes it, and removes one elsewhere.
+        try Self.add("Added.JPG", to: folders[0], in: sandbox)
+        source.send([(sandbox.path(folders[0]), [])])
+        source.send([(sandbox.path(folders[0]), [])])
+        try FileManager.default.removeItem(at: sandbox.url(sandbox.fixture.photos(in: picked[1])[0]))
+        source.send([(sandbox.path(folders[1]), [])])
+        let elsewhere = await events.summary(after: { $0 == .changed(volume: key, folders: 1) })
+        #expect(elsewhere?.photosMissing == 1)
+        #expect(Set(counting.counts.listings.keys) == [sandbox.path(folders[1])])
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(try await Self.history(of: key, in: sandbox) { _ in true }?.lastEvent == 1000, "not past what's held")
+
+        tracker.release([held])
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(counting.counts.listings[sandbox.path(folders[0])] == nil, "held until its last hold ends")
+        tracker.release([held])
+        let isChanged = { (event: ChangeTracker.Event) in event == .changed(volume: key, folders: 1) }
+        let released = { (all: [ChangeTracker.Event]) -> LibraryIndexerSummary? in
+            let changes = all.indices.filter { isChanged(all[$0]) }
+            return changes.count == 2 ? Array(all[changes[1]...]).summary(after: isChanged) : nil
+        }
+        #expect(await events.wait { released($0) != nil })
+        #expect(released(events.all)?.photosInserted == 1)
+        #expect(counting.counts.listings[sandbox.path(folders[0])] == 1)
+        #expect(try await Self.history(of: key, in: sandbox) { $0?.lastEvent == 1003 }?.lastEvent == 1003)
+    }
+
     @Test func `a history that names nothing catches its volume up at once, with nothing listed`() async throws {
         let sandbox = try await IndexerSandbox.make(.init(photos: 100, seed: 49, shapes: []))
         defer { sandbox.remove() }

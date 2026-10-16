@@ -100,6 +100,64 @@ struct LightroomDiskBenchTests {
             + "\(Self.describe(ordered, photos: count))")
     }
 
+    /// Change detection following the photos' root folder while the import writes, with the folders it writes held
+    /// from it until each batch is written, or not.
+    static let following = ["not held", "held"]
+
+    @Test(.measuresSpeed, arguments: following)
+    func `the import's writes with change detection following, the folders it writes held or not`(
+        folders: String,
+    ) async throws {
+        let count = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_DISK_PHOTOS"].flatMap { Int($0) } ?? 2000
+        let library = try await LightroomBenchTests.library(photos: count, perFolder: 200)
+        defer { library.index.closeAndWait() }
+        // On disk too, so that change detection's first pass, which compares every folder, finds them.
+        for number in 0 ..< count {
+            let folder = library.photos.url.appending(path: String(format: "Shoot %03d", number / 200))
+            FileManager.default.createFile(
+                atPath: folder.appending(path: String(format: "IMG_%06d.CR3", number)).path, contents: nil,
+            )
+        }
+        let tracker = ChangeTracker(indexer: LibraryIndexer(index: library.index))
+        let events = TrackerEvents(tracker.start([library.photos.url]))
+        defer { tracker.stop() }
+        #expect(await events.wait(timeout: .seconds(120)) { all in
+            all.contains {
+                if case .caughtUp = $0 {
+                    true
+                } else {
+                    false
+                }
+            }
+        })
+        let plan = try await LightroomPlan.make(
+            LightroomCatalog.read(library.catalog), index: library.index, paths: library.paths,
+        )
+        let importer = LightroomImport(
+            index: library.index, paths: library.paths,
+            fileSystem: SimulatedFileSystem(base: LocalFileSystem(), profile: .usb25),
+            changes: folders == Self.following[1] ? tracker : nil,
+        )
+        let operations = try await Self.traced(under: library.photos.url) {
+            _ = try await importer.run(plan)
+            // Until change detection has listed what the volume's events named, a second after the last.
+            var seen = events.all.count
+            var quiet = ContinuousClock.now
+            while ContinuousClock.now - quiet < .seconds(2) {
+                try await Task.sleep(for: .milliseconds(100))
+                if events.all.count != seen {
+                    seen = events.all.count
+                    quiet = ContinuousClock.now
+                }
+            }
+        }
+        let listings = operations.count { $0.kind == .list }
+        let disk = DiskReplay(profile: .usb25)
+        print("LIGHTROOM-DISK-CHANGES-BENCH \(count) photos with no sidecars in folders of 200 on a simulated 2.5-inch "
+            + "disk (usb-2.5), change detection following, the folders written \(folders): \(listings) listings; "
+            + "as run, \(Self.describe(disk.replay(operations), photos: count))")
+    }
+
     /// Disks that spin, or may: the 2.5-inch disk saying it spins, and behind a USB bridge that doesn't say.
     static let spinning = ["saying it spins", "not saying"]
 

@@ -99,7 +99,11 @@ extension ChangeTracker {
     /// folders to list again.
     private func received(_ events: [VolumeEvent], on volume: Followed, generation: Int) {
         let batch = Self.batch(events, roots: volume.roots(generation: generation))
-        if let work = volume.collect(batch, generation: generation) {
+        // Under the tracker's lock, so a hold can't end between what's held being read and kept.
+        let work = state.withLock { state in
+            volume.collect(batch, generation: generation, held: Set(state.held.keys))
+        }
+        if let work {
             enqueue(work)
         }
     }
@@ -304,6 +308,10 @@ extension ChangeTracker {
             var pollInterval: Duration?
             var tasks: [Task<Void, Never>] = []
             var caughtUp = false
+            /// What the events named in folders held (`ChangeTracker.hold`), until their hold ends, and the last
+            /// event seen since the first was kept: the history is recorded at it once nothing is kept.
+            var kept: [String: Bool] = [:]
+            var keptLast: UInt64?
         }
 
         /// The index's name for the volume.
@@ -371,9 +379,10 @@ extension ChangeTracker {
         }
 
         /// Adds a batch of the stream's events: held while the history replays and passed on, all
-        /// together, once it's done; passed on at once after that. Nil when there's nothing to pass
-        /// on, or the batch is from an earlier stream.
-        func collect(_ batch: Batch, generation: Int) -> Work? {
+        /// together, once it's done; passed on at once after that, but for what it names in or below
+        /// `held`, kept until `release`. Nil when there's nothing to pass on, or the batch is from an
+        /// earlier stream.
+        func collect(_ batch: Batch, generation: Int, held: Set<String> = []) -> Work? {
             state.withLock { state in
                 guard state.generation == generation else { return nil }
                 let database = state.eventDatabase
@@ -395,8 +404,51 @@ extension ChangeTracker {
                 if batch.lost {
                     return Work(self, .reconcile(.mustScan), record: record(batch.last))
                 }
-                guard !batch.changes.isEmpty || batch.last > 0 else { return nil }
-                return Work(self, .update(batch.changes, replayed: false), record: record(batch.last))
+                var changes = batch.changes
+                for (path, recursive) in batch.changes where Self.isBelow(path, any: held) {
+                    state.kept[path] = state.kept[path] == true || recursive
+                    changes[path] = nil
+                }
+                guard state.kept.isEmpty else {
+                    state.keptLast = max(state.keptLast ?? 0, batch.last)
+                    return changes.isEmpty ? nil : Work(self, .update(changes, replayed: false))
+                }
+                guard !changes.isEmpty || batch.last > 0 else { return nil }
+                return Work(self, .update(changes, replayed: false), record: record(batch.last))
+            }
+        }
+
+        /// The hold of `folders` has ended: those on the volume are listed again, with what the events named
+        /// below them meanwhile, and the history recorded once nothing more is kept. Nil when none is on it.
+        func release(_ folders: [String]) -> Work? {
+            let mine = folders.filter { Self.isBelow($0, any: Set(roots)) }
+            guard !mine.isEmpty else { return nil }
+            let released = Set(mine)
+            return state.withLock { state in
+                var changes = Dictionary(mine.map { ($0, false) }) { first, _ in first }
+                for (path, recursive) in state.kept where Self.isBelow(path, any: released) {
+                    changes[path] = changes[path] == true || recursive
+                    state.kept[path] = nil
+                }
+                var record: VolumeEventHistory?
+                if state.kept.isEmpty, let last = state.keptLast {
+                    state.keptLast = nil
+                    record = state.eventDatabase.map { VolumeEventHistory(eventDatabase: $0, lastEvent: last) }
+                }
+                return Work(self, .update(changes, replayed: false), record: record)
+            }
+        }
+
+        /// Whether `path` is one of `folders` or below one.
+        static func isBelow(_ path: String, any folders: Set<String>) -> Bool {
+            guard !folders.isEmpty else { return false }
+            var folder = path
+            while true {
+                if folders.contains(folder) {
+                    return true
+                }
+                guard let slash = folder.lastIndex(of: "/"), slash > folder.startIndex else { return false }
+                folder = String(folder[..<slash])
             }
         }
 

@@ -227,7 +227,7 @@ final class LightroomImportModel {
         LightroomImport(
             index: core.index, paths: core.paths, live: core.live,
             turn: { body in await core.change { await body() } },
-            changed: { ids in core.changed(ids) }, editor: editor?.lightroomEditor,
+            changed: { ids in core.changed(ids) }, editor: editor?.lightroomEditor, changes: core.tracker,
         )
     }
 
