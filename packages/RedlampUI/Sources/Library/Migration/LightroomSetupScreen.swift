@@ -541,6 +541,7 @@ final class LightroomSetupScreen: NSObject {
         let found = Self.wrappingLabel(NSFont.smallSystemFontSize, .secondaryLabelColor)
         let place = Self.wrappingLabel(NSFont.smallSystemFontSize, .tertiaryLabelColor)
         let state = Self.wrappingLabel(NSFont.smallSystemFontSize, .secondaryLabelColor)
+        place.maximumNumberOfLines = 3
         state.maximumNumberOfLines = 4
         for (label, line) in [(count, "count"), (found, "found"), (place, "place"), (state, "state")] {
             label.setAccessibilityIdentifier("lightroom.setup.\(part.rawValue).\(line)")
@@ -629,12 +630,13 @@ final class LightroomSetupScreen: NSObject {
         return box
     }
 
-    /// A label of up to two lines.
+    /// A label of up to two lines, the last ending in an ellipsis when there's more.
     private static func wrappingLabel(_ size: CGFloat, _ color: NSColor) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: "")
         label.font = .systemFont(ofSize: size)
         label.textColor = color
         label.maximumNumberOfLines = 2
+        label.cell?.truncatesLastVisibleLine = true
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
     }
