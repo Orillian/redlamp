@@ -231,9 +231,10 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
         }
     }
 
-    /// Rows start at the panel's padding, a level further in for each level down, with the
-    /// first part of each for a group's chevron. A source list's rows are where AppKit puts them, ending inside
-    /// the selection.
+    /// Rows start at the panel's padding, a level further in for each level of folders, with the
+    /// first part of each for a group's chevron. A folder's looks and recipes, and an earlier session's steps,
+    /// which never have a chevron, line up with its icon and name instead. A source list's rows are where AppKit
+    /// puts them, ending inside the selection.
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         let rowRect = rect(ofRow: row)
         guard look == .panel else {
@@ -241,10 +242,18 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
             frame.size.width = max(rowRect.maxX - Self.sourceListTrailingInset - frame.minX, 0)
             return frame
         }
-        let x = Metrics.panelPadding + CGFloat(level(forRow: row)) * indentationPerLevel
+        let level = level(forRow: row) - (Self.linesUpWithItsFolder(item(atRow: row) as? SidebarNode) ? 1 : 0)
+        let x = Metrics.panelPadding + CGFloat(max(level, 0)) * indentationPerLevel
         return CGRect(
             x: x, y: rowRect.minY, width: max(rowRect.width - x - Metrics.panelPadding, 0), height: rowRect.height,
         )
+    }
+
+    private static func linesUpWithItsFolder(_ node: SidebarNode?) -> Bool {
+        switch node?.kind {
+        case .look, .recipe, .earlierStep: true
+        default: false
+        }
     }
 
     /// A source list's disclosure chevrons are AppKit's; the panels draw their own.

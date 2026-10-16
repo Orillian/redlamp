@@ -169,6 +169,44 @@ struct BaseLooksPanelTests {
         )
     }
 
+    @Test func `a folder's looks line up with its icon and name, a search's results too`() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try await openEditor()
+        let (list, window) = showLists(model)
+        defer { window.contentView = nil }
+        let outline = list.baseLooks
+        func frame(where matches: (SidebarNode.Kind) -> Bool) throws -> CGRect {
+            let row = try #require((0 ..< outline.numberOfRows).first { row in
+                (outline.item(atRow: row) as? SidebarNode).map { matches($0.kind) } ?? false
+            })
+            return outline.frameOfCell(atColumn: 0, row: row)
+        }
+        let redlamp = try frame {
+            if case let .group(name, _) = $0 {
+                name == BaseLookGroups.redlamp
+            } else {
+                false
+            }
+        }
+        let color = try frame {
+            if case let .look(entry, _, _) = $0 {
+                entry.name == "Redlamp Color"
+            } else {
+                false
+            }
+        }
+        #expect(color.minX == redlamp.minX, "its looks start where the folder does, past its chevron's place")
+        search("ektar", in: list.lookSearchField, of: list)
+        let found = try frame {
+            if case .look = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        #expect(found.minX == redlamp.minX)
+    }
+
     @Test func `choosing a film stock keeps the vignette, and a look that isn't a film takes its grain away`(
     ) async throws {
         defer { try? FileManager.default.removeItem(at: root) }
