@@ -96,7 +96,7 @@ import Foundation
         }
         guard total > 0, now - start >= Self.settling,
               Double(last.done) >= Double(total) * Self.settlingShare else { return .measuring }
-        let base = samples.last { $0.time <= now - Self.window } ?? samples[0]
+        let base = sample(at: now - Self.window) ?? samples[0]
         let span = now - base.time
         guard span > 0 else { return .measuring }
         let rate = Double(last.done - base.done) / span
@@ -124,9 +124,12 @@ import Foundation
             guard to > start else { return ThroughputBin(perSecond: nil) }
             let begin = max(from, start)
             let rate = Double(done(at: to) - done(at: begin)) / max(to - begin, .ulpOfOne)
-            let paused = sample(at: begin)?.paused ?? samples
-                .first { $0.time > begin && $0.time < to && $0.paused != nil }?
-                .paused
+            var paused = sample(at: begin)?.paused
+            var next = index(after: begin)
+            while paused == nil, next < samples.count, samples[next].time < to {
+                paused = samples[next].paused
+                next += 1
+            }
             return ThroughputBin(perSecond: max(rate, 0), paused: paused)
         }
     }
@@ -137,7 +140,22 @@ import Foundation
     }
 
     private func sample(at time: TimeInterval) -> Sample? {
-        samples.last { $0.time <= time }
+        let index = index(after: time)
+        return index > 0 ? samples[index - 1] : nil
+    }
+
+    /// The place of the first sample after `time`, or the count when there's none: samples are in time order.
+    private func index(after time: TimeInterval) -> Int {
+        var low = 0, high = samples.count
+        while low < high {
+            let middle = (low + high) / 2
+            if samples[middle].time <= time {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        return low
     }
 }
 
