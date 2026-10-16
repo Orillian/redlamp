@@ -165,7 +165,7 @@ extension EditorModel {
     }
 }
 
-extension LightroomXMPScan {
+public extension LightroomXMPScan {
     /// What the report says of each reason settings are left out.
     static func title(of reason: LightroomImportReport.Reason) -> String {
         switch reason {
