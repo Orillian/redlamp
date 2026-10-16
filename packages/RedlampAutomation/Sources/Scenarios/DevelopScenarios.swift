@@ -479,7 +479,8 @@
         ) { app in
             try app.openWorking()
             try app.choose(.resetAll)
-            try app.main { $0.expandedPanels.insert(.border) }
+            // The last panel: alone, with the others collapsed above it, so its controls are on screen.
+            try app.main { $0.expandedPanels = [.border] }
             let photo = try app.main { $0.canvas.imageSize }
             let clippedWithout = try app.main { $0.histogram.highlightsClipped }
             try app.expectRenders("a white 4:5 border") {
