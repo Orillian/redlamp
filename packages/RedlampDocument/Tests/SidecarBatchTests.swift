@@ -391,7 +391,7 @@ extension SidecarBatchTests {
         defer { shoot.remove() }
         let store = SidecarStore()
         FileTrace.start()
-        let results = Self.batch(store, shoot.images, width: 1, Self.tagged)
+        let results = Self.batch(store, shoot.images, width: 1) { _, sidecar in Self.tagged(sidecar) }
         let operations = FileTrace.stop().filter { $0.path.hasPrefix(shoot.photos.path + "/") }
         #expect(!operations.contains { $0.kind == .list }, "\(operations.filter { $0.kind == .list })")
         let versions = operations.count { $0.kind == .versions }
