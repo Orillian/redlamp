@@ -28,6 +28,11 @@ public extension LightroomReport {
         /// Of them, those turned in Lightroom, whose turn stays behind: their rotation code differs from the one
         /// most of the photos found with the same EXIF orientation have.
         public var turned = 0
+        /// Of them, raws rendered in the photographer's own copy of the Adobe profile Lightroom used, and raws
+        /// whose Adobe profile isn't on this Mac, by the profile's name, Redlamp's look standing in (EDT-33).
+        /// Neither counts a raw whose camera's profiles weren't listed.
+        public var ownProfiles = 0
+        public var standIns: [String: Int] = [:]
         /// Their snapshots, which come across beside their edits, and the steps of their histories, which don't.
         public var snapshots = 0
         public var historySteps = 0
@@ -83,10 +88,13 @@ struct LightroomEditReading: Sendable {
         var kept: [Int64] = []
     }
 
-    /// The settings of `targets` (by their images' IDs in the catalog) in the catalog at `url`, converted.
+    /// The settings of `targets` (by their images' IDs in the catalog) in the catalog at `url`, converted. A raw
+    /// whose camera `adobeProfiles` lists, by its ID in the index, names the photographer's Adobe profile where
+    /// it's among them (EDT-33).
     static func read(
         _ url: URL, targets: [Int64: Target], slotLooks: [FilmSlot: BaseLookReference],
-        partSize: Int = LightroomCatalogReader.developPart, date: Date = Date(),
+        adobeProfiles: [Int64: [CameraProfileLook]]? = nil, partSize: Int = LightroomCatalogReader.developPart,
+        date: Date = Date(),
     ) throws(LightroomCatalogError) -> LightroomEditReading {
         guard !targets.isEmpty else { return LightroomEditReading() }
         let written = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
@@ -96,7 +104,7 @@ struct LightroomEditReading: Sendable {
             return try reader.develop(partSize: partSize, notes: &notes) { records in
                 convert(
                     records, targets: targets, unturned: unturned, catalog: url, written: written,
-                    slotLooks: slotLooks, date: date,
+                    slotLooks: slotLooks, adobeProfiles: adobeProfiles, date: date,
                 )
             }
         }
@@ -142,7 +150,8 @@ struct LightroomEditReading: Sendable {
 
     private static func convert(
         _ records: [LightroomCatalog.Develop], targets: [Int64: Target], unturned: [Int: String], catalog: URL,
-        written: Date?, slotLooks: [FilmSlot: BaseLookReference], date: Date,
+        written: Date?, slotLooks: [FilmSlot: BaseLookReference], adobeProfiles: [Int64: [CameraProfileLook]]?,
+        date: Date,
     ) -> Part {
         var part = Part()
         for develop in records {
@@ -161,10 +170,17 @@ struct LightroomEditReading: Sendable {
                 part.kept.append(target.row.id)
                 continue
             }
-            let photo = context(target.row, develop, slotLooks: slotLooks, unturned: unturned)
+            let photo = context(
+                target.row, develop, slotLooks: slotLooks, unturned: unturned, adobeProfiles: adobeProfiles,
+            )
             let source = LightroomProvenance.Source.catalog(catalog, photo: develop.image, digest: develop.digest)
             var converted = LightroomPhoto.convert(settings, photo: photo, source: source, date: date)
             let report = converted.report
+            switch report.profile {
+            case .onThisMac?: part.report.ownProfiles += 1
+            case let .standIn(profile, _)?: part.report.standIns[profile, default: 0] += 1
+            case nil: break
+            }
             converted.report = LightroomImportReport(processVersion: report.processVersion)
             var snapshots: [(name: String, edit: LightroomPhotoImport)] = []
             for snapshot in develop.snapshots {
@@ -207,10 +223,10 @@ struct LightroomEditReading: Sendable {
 
     /// What converting a photo's settings needs of it, from its row in the index and the catalog's record. Its
     /// rotation code is given only when it differs from `unturned`'s for its EXIF orientation, Lightroom having
-    /// turned it.
+    /// turned it; a raw's Adobe profiles are its camera's in `adobeProfiles`.
     static func context(
         _ row: PhotoRecord, _ develop: LightroomCatalog.Develop, slotLooks: [FilmSlot: BaseLookReference],
-        unturned: [Int: String] = [:],
+        unturned: [Int: String] = [:], adobeProfiles: [Int64: [CameraProfileLook]]? = nil,
     ) -> LightroomPhotoContext {
         let exif = row.orientation ?? 1
         let code = develop.orientation.flatMap { $0.isEmpty || $0 == unturned[exif] ? nil : $0 }
@@ -225,6 +241,7 @@ struct LightroomEditReading: Sendable {
         return LightroomPhotoContext(
             size: size, cameraOrientation: orientation(exif: exif), isRaw: row.kind == .raw,
             orientationCode: code, catalogSize: catalogSize, slotLooks: slotLooks,
+            adobeProfiles: row.kind == .raw ? row.camera.flatMap { adobeProfiles?[$0] } : nil,
         )
     }
 
@@ -251,6 +268,8 @@ extension LightroomReport.Edits {
         leftOut += other.leftOut
         processes.merge(other.processes, uniquingKeysWith: +)
         turned += other.turned
+        ownProfiles += other.ownProfiles
+        standIns.merge(other.standIns, uniquingKeysWith: +)
         snapshots += other.snapshots
         historySteps += other.historySteps
         kept += other.kept
@@ -297,6 +316,16 @@ extension LightroomReport.Edits {
                         + "photo counts as turned when its rotation in the catalog isn't the one most of the photos the "
                         + "camera held the same way have",
                 )
+            }
+            if ownProfiles > 0 {
+                lines.append("      raws in the Adobe profile Lightroom used, the photographer's own copy on this Mac: "
+                    + count(ownProfiles))
+            }
+            if !standIns.isEmpty {
+                let byProfile = standIns.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+                lines.append("      raws whose Adobe profile isn't on this Mac, Redlamp's look standing in: "
+                    + "\(count(standIns.values.reduce(0, +))) ("
+                    + byProfile.map { "\($0.key) \(count($0.value))" }.joined(separator: ", ") + ")")
             }
         }
         for reason in reasons {

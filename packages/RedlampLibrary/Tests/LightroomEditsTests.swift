@@ -266,4 +266,78 @@ struct LightroomEditsTests {
         #expect(plan.edits.values.filter { $0.photo.recipe.provenance?.leftOut.contains("orientation") == true }
             .count == 2)
     }
+
+    @Test func `a raw names the photographer's Adobe profile where its camera's list has it, each camera asked once`(
+    ) async throws {
+        let sandbox = try await KeywordSandbox.make()
+        defer { sandbox.remove() }
+        let names = ["IMG_0001.CR3", "IMG_0002.CR3", "DSC_0001.NEF", "IMG_0003.JPG"]
+        for name in names {
+            try sandbox.photo("Shoot/\(name)")
+        }
+        try await sandbox.indexAll()
+        var ids: [String: Int64] = [:]
+        for name in names {
+            ids[name] = try await sandbox.id("Shoot/\(name)")
+        }
+        try await sandbox.index.write { [ids] writer in
+            let r5 = try writer.cameraID(for: "Canon EOS R5", make: "Canon", model: "Canon EOS R5")
+            let z8 = try writer.cameraID(for: "Nikon Z 8", make: "Nikon", model: "NIKON Z 8")
+            let iphone = try writer.cameraID(for: "Apple iPhone 15 Pro", make: "Apple", model: "iPhone 15 Pro")
+            for (name, camera) in [
+                ("IMG_0001.CR3", r5), ("IMG_0002.CR3", r5), ("DSC_0001.NEF", z8), ("IMG_0003.JPG", iphone),
+            ] {
+                let update = try writer.database.cached("UPDATE photos SET camera = ? WHERE id = ?")
+                try update.bind(camera, at: 1)
+                try update.bind(ids[name], at: 2)
+                try update.run()
+            }
+        }
+        let folder = try TemporaryFolder()
+        let maker = try LightroomCatalogMaker(at: folder.url.appending(path: "Lightroom Catalog.lrcat"))
+        let shoot = try maker.folder(maker.root(sandbox.root.path + "/"), "Shoot/")
+        for name in names {
+            let image = try maker.photo(shoot, name, size: (width: 6000, height: 4000))
+            try maker.develop(image, LightroomSettingsText.text([
+                "CameraProfile": "\"Adobe Standard\"", "Look": "{}", "Exposure2012": "0.5",
+            ]))
+        }
+        maker.close()
+        let standard = CameraProfileLook(
+            reference: BaseLookReference(
+                id: BaseLookReference.adobeIDPrefix + "0123456789abcdef",
+                name: "Adobe Standard",
+            ),
+            group: .adobeRaw, summary: "Adobe Standard, for the test",
+        )
+        let asked = Mutex<[String]>([])
+        let plan = try await LightroomPlan.make(
+            LightroomCatalog.read(maker.url), index: sandbox.index, paths: sandbox.paths,
+            adobeProfiles: { make, model in
+                asked.withLock { $0.append("\(make) \(model)") }
+                return make == "Canon" ? [standard] : []
+            },
+        )
+
+        #expect(asked.withLock { $0 }.sorted() == ["Canon Canon EOS R5", "Nikon NIKON Z 8"], "a JPEG's isn't asked")
+        let edits = plan.report.edits
+        #expect(edits.photos == 4 && edits.ownProfiles == 2 && edits.standIns == ["Adobe Standard": 1])
+        let lines = plan.report.lines()
+        #expect(lines
+            .contains("      raws in the Adobe profile Lightroom used, the photographer's own copy on this Mac: 2"))
+        #expect(lines.contains(
+            "      raws whose Adobe profile isn't on this Mac, Redlamp's look standing in: 1 (Adobe Standard 1)",
+        ))
+        #expect(try JSONDecoder().decode(LightroomReport.self, from: plan.report.json()).edits == edits)
+
+        let outcome = try await LightroomImport(index: sandbox.index, paths: sandbox.paths).run(plan)
+        #expect(outcome.written == 4)
+        for name in ["IMG_0001.CR3", "IMG_0002.CR3"] {
+            #expect(sandbox.sidecar("Shoot/\(name)")?.recipe.baseLook == standard.reference, "\(name)")
+        }
+        let standIn = try #require(sandbox.sidecar("Shoot/DSC_0001.NEF")).recipe
+        #expect(standIn.baseLook.name == AdobeProfileStandIn.look(forProfileNamed: "Adobe Standard").name)
+        #expect(!standIn.baseLook.isAdobeProfile && standIn[.exposure] == 0.5)
+        #expect(sandbox.sidecar("Shoot/IMG_0003.JPG")?.recipe.baseLook.isAdobeProfile == false)
+    }
 }

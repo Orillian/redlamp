@@ -94,10 +94,14 @@ public struct LightroomPlan: Sendable {
 
     /// The plan for `catalog` against the library whose index is `index`, the roots `moved` names (by the
     /// catalog's paths) looked for where they went; `slotLooks` are the looks that fill film slots on this Mac
-    /// (`RecipeLibrary.filledSlots`), which Fujifilm's simulations take first.
+    /// (`RecipeLibrary.filledSlots`), which Fujifilm's simulations take first. `adobeProfiles` lists the Adobe
+    /// profiles on this Mac for a camera, by the make and model the index has for its photos, as
+    /// `EditingEngine.cameraProfileLooks(make:model:)` does: it's asked once for each camera of the raws found,
+    /// and their edits name the photographer's own copy of the profile Lightroom used where it lists it (EDT-33).
     public static func make(
         _ catalog: LightroomCatalog, index: LibraryIndex, paths: LibraryPaths? = nil, moved: [String: URL] = [:],
         slotLooks: [FilmSlot: BaseLookReference] = [:],
+        adobeProfiles: (@Sendable (_ make: String, _ model: String) async -> [CameraProfileLook])? = nil,
     ) async throws -> LightroomPlan {
         var planner = LightroomPlanner(catalog: catalog, moved: moved)
         let library = try await index.read { reader in
@@ -115,13 +119,47 @@ public struct LightroomPlan: Sendable {
             try LightroomPlanner.shown(found, in: reader)
         }
         planner.count(shown)
-        let reading = try LightroomEditReading.read(catalog.url, targets: planner.targets, slotLooks: slotLooks)
+        var profiles: [Int64: [CameraProfileLook]]?
+        if let adobeProfiles {
+            profiles = try await Self.adobeProfiles(of: planner.targets.values.map(\.row), in: index, adobeProfiles)
+        }
+        let reading = try LightroomEditReading.read(
+            catalog.url, targets: planner.targets, slotLooks: slotLooks, adobeProfiles: profiles,
+        )
         let listed = reading.reasonPhotos.map { $0.prefix(LightroomReport.listed) } + [
             reading.keptPhotos.prefix(LightroomReport.listed),
         ]
         let found = try await index.read { reader in try reader.photoPaths(listed.flatMap(\.self)) }
         planner.add(reading, paths: listed.map { $0.compactMap { found[$0] } })
         return planner.plan()
+    }
+
+    /// What `list` gives for the camera of each raw among `rows`, by the camera's ID in `index`: asked once for each
+    /// make and model.
+    static func adobeProfiles(
+        of rows: [PhotoRecord], in index: LibraryIndex,
+        _ list: @Sendable (_ make: String, _ model: String) async -> [CameraProfileLook],
+    ) async throws -> [Int64: [CameraProfileLook]] {
+        let ids = Set(rows.filter { $0.kind == .raw }.compactMap(\.camera))
+        guard !ids.isEmpty else { return [:] }
+        let cameras = try await index.read { reader in
+            var cameras: [Int64: LightroomXMPScan.Camera] = [:]
+            try reader.database.cached("SELECT id, make, model FROM cameras").forEachRow { row in
+                if ids.contains(row.int64(at: 0)), let make = row.string(at: 1), let model = row.string(at: 2) {
+                    cameras[row.int64(at: 0)] = LightroomXMPScan.Camera(make: make, model: model)
+                }
+            }
+            return cameras
+        }
+        var listed: [LightroomXMPScan.Camera: [CameraProfileLook]] = [:]
+        var profiles: [Int64: [CameraProfileLook]] = [:]
+        for (id, camera) in cameras.sorted(by: { $0.key < $1.key }) {
+            if listed[camera] == nil {
+                listed[camera] = await list(camera.make, camera.model)
+            }
+            profiles[id] = listed[camera]
+        }
+        return profiles
     }
 }
 
