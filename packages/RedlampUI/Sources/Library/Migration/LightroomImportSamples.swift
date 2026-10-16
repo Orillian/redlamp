@@ -34,6 +34,7 @@ import RedlampLibrary
     /// A report with nothing in it, to fill in: `LightroomReport` has no public initialiser, and decodes from JSON.
     public static func blankReport(catalog: String = catalog) -> LightroomReport {
         let fields = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(LightroomReport.Fields()))) ?? [:]
+        let edits = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(LightroomReport.Edits()))) ?? [:]
         let zeros = [
             "photos", "found", "waiting", "unlocated", "needingAccess", "offline", "notFound", "pairs", "changing",
             "keywords", "synonyms", "notExported", "people", "collections", "sets",
@@ -47,6 +48,7 @@ import RedlampLibrary
         object["renamed"] = [String: String]()
         object["fields"] = fields
         object["differing"] = fields
+        object["edits"] = edits
         return decoded(object)
     }
 
