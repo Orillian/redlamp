@@ -34,7 +34,9 @@ build/push-gate/passed, so a push of that commit, by the owner or an agent, goes
 The build Mac runs several jobs at once, each in a lane of its own: 6 short jobs (test with --only,
 and app) and 4 long ones (a gate, or test for a whole scheme), and a long job or a regression run
 starts only while its load is below 12, 20 s after the last one started, so the load shows it (the
-owner's choice, 14 October 2026). A lane is a worktree beside the clone whose DerivedData stays warm
+owner's choice, 14 October 2026), or once it has waited 10 minutes for that: short jobs start
+whenever a short lane is free, so a stream of them could otherwise hold it back for as long as the
+stream lasts (16 October 2026). A lane is a worktree beside the clone whose DerivedData stays warm
 between jobs, and a job takes the lane its checkout used last when it's free; a gate's lane is the
 push gate's worktree, so gates run side by side. The regression suite drives the screen, so it takes
 the screen alone: tests that put windows on it (RedlampUITests' and RedlampAutomationTests') wait
@@ -109,10 +111,11 @@ SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "-o", "ServerAli
        "-o", "ServerAliveCountMax=4"]
 # How many jobs of each size run there at once, each in a lane of its own, and the load below which a long job or
 # a regression run starts, LOAD_SPACING seconds after the last so the load has begun to show it (the owner's
-# choice, 14 October 2026).
+# choice, 14 October 2026), or once it has waited LOAD_PATIENCE seconds for that at the head of the queue.
 LANES = {"short": 6, "long": 4}
 LOAD_LIMIT = 12
 LOAD_SPACING = 20
+LOAD_PATIENCE = 600
 # The test targets whose tests put windows on screen, where the regression suite drives its app: they share the
 # screen, which it takes alone.
 WINDOWED = ("RedlampUITests", "RedlampAutomationTests")
@@ -1064,16 +1067,22 @@ def take_lane(job: str, size: str, source: str, log) -> tuple[str, object]:
 
 
 def admit(job: str, tell) -> None:
-    """Waits for room on the build Mac: a load below LOAD_LIMIT, LOAD_SPACING seconds after the last job let in."""
+    """Waits for room on the build Mac: a load below LOAD_LIMIT, LOAD_SPACING seconds after the last job let in, or
+    LOAD_PATIENCE seconds at the head of the queue, so jobs behind it still come in one at a time."""
     with lock_there("admission") as handle:
         if not locked(handle, fcntl.LOCK_EX):
             tell("Waiting for room on the build Mac, behind another long job")
             fcntl.flock(handle, fcntl.LOCK_EX)
         told = False
+        first = time.monotonic()
         while True:
             load = os.getloadavg()[0]
             since = between(noted("admission").get("used"), now())
-            if load < LOAD_LIMIT and (since is None or since >= LOAD_SPACING):
+            waited = time.monotonic() - first
+            if load < LOAD_LIMIT and (since is None or since >= LOAD_SPACING) or waited >= LOAD_PATIENCE:
+                if load >= LOAD_LIMIT:
+                    tell(f"Starting at a load of {load:.1f}, after {took(waited)} waiting for it to fall below "
+                         f"{LOAD_LIMIT}")
                 note("admission", job)
                 return
             if load >= LOAD_LIMIT and not told:
