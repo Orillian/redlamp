@@ -67,6 +67,10 @@
           "title" : "Effects"
         },
         {
+          "id" : "develop.border",
+          "title" : "Border"
+        },
+        {
           "id" : "develop.camera-recipe",
           "title" : "Camera Recipe"
         },

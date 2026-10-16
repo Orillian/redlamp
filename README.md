@@ -711,22 +711,24 @@ Provia cross-processed: contrasty, with cool green-cyan shadows.
 
 ### Mood looks
 
-One-tap looks in the spirit of Prequel's filters. Each starts from a film look, with its grain, halation and bloom, and adds the new Effects: **Light Leak** (Amount, Warmth and Variation), **Dust & Scratches**, and a **Frame**. Frames come as a keyline, a white print border, a 35 mm rebate with its sprocket holes, or a slide mount. They're in the sidebar under **Recipes ▸ Mood**, and the effects work on any photo.
+One-tap looks in the spirit of Prequel's filters. Each starts from a film look, with its grain, halation and bloom, and adds the Effects **Light Leak** (Amount, Warmth and Variation) and **Dust & Scratches**. They're in the sidebar under **Recipes ▸ Mood**, and the effects work on any photo. A mood never sets or takes away a border: borders are their own recipes, under [Borders](#borders).
 
 | Mood | Built on | Adds |
 | --- | --- | --- |
 | Golden Leak | Portra 400 · +2 | a warm light leak and soft bloom |
-| Lost Roll | Gold 200 | leaks, dust, scratches and the 35 mm rebate |
-| Summer '98 | UltraMax 400 | a warm leak and a white print border |
+| Lost Roll | Gold 200 | leaks, dust and scratches |
+| Summer '98 | UltraMax 400 | a warm leak |
 | Night Glow | CineStill 800T | strong halation, bloom and a little dust |
 | Blue Hour | Pro 400H | a cool leak and a soft mist |
 | Mist | Portra 160 | a diffusion filter's glow and gentler contrast |
-| Home Movie | Vision3 50D · 2383 | projector scratches, dust, a dark edge and a keyline |
-| Slide Show | Kodachrome 64 | a slide mount and a few specks of dust |
-| Contact Sheet | Tri-X · Hard Print | the 35 mm rebate and darkroom dust |
+| Home Movie | Vision3 50D · 2383 | projector scratches, dust and a dark edge |
+| Slide Show | Kodachrome 64 | a few specks of dust, as on projected slides |
+| Contact Sheet | Tri-X · Hard Print | darkroom dust |
 | Neon Rain | Provia 100F · Cross-Processed | halation and a cool leak |
 
 ![The ten mood looks on three photos, beside the original](docs/images/film/moods.jpg)
+
+Lost Roll, Summer '98, Home Movie, Slide Show and Contact Sheet used to carry a frame drawn over the photo's edges; their new versions leave it to [Borders](#borders), and edits made with the old versions keep their frames.
 
 Ten more are **tuned on the photographs shot on each film**. `redlamp recipe film --fit-moods` fits the style fingerprint of a film's 20 reference photographs with the recipe studio's fitter, adjusting tone, saturation, grading and grain on top of the film's own look. The fitted values are pinned in the source. Shared film scans are bright and open, and the moods carry that. The fit leaves out per-colour hue and saturation, which follow the photographs' subjects more than the film.
 
@@ -744,6 +746,20 @@ Ten more are **tuned on the photographs shot on each film**. `redlamp recipe fil
 | HP5 Documentary | HP5 Plus | bright midtones with deep blacks |
 
 ![The ten fitted moods on three photos, beside the original](docs/images/film/moods-fitted.jpg)
+
+### Borders
+
+A border goes **around** the photo: the canvas grows to hold it, so nothing of the photo is hidden, as borders made with Lightroom Classic's Print to JPEG or export plug-ins are. Lightroom has no border in Develop; here it's the **Border** panel, after Effects, and the **Recipes ▸ Borders** folder, apart from looks and moods, so a mood never sets or takes away a border and a border recipe never touches the look.
+
+- **Plain:** Even (the same margin all round), or a shape, 1:1, 4:5, 3:4, 2:3, 9:16, 5:7, 11:14, A paper or custom, turned with the photo or kept Portrait or Landscape, so a carousel of portrait and landscape photos shares one 4:5 canvas. **Size** is the margin on the narrowest sides, in percent of the photo's long side, so a border looks the same at 1080 pixels and at full size; **Vertical** raises the photo for the heavier bottom margin a framer's mat has. **Color** has White, Paper, Grey and Black, and a colour well whose magnifier picks a colour from the photo; a **Keyline** adds a line around the photo, with its width, gap and colour.
+- **Film and instant frames,** at their formats' published proportions, scaled to the photo: 35 mm film with its rebate, sprocket holes and dot-matrix edge print (the frame number, following the file's number so a set reads as one roll, and the film look's name when the Base Look is a film stock), medium format, instant square, mini and wide cards, card and plastic slide mounts, and a filed-out negative carrier's rough black edge. **Crop to Format** crops the photo to the frame's own shape.
+- **While editing,** the histogram and clipping warnings count the photo alone, so a white border never reads as clipped; masks, spots and samplers ignore the border; the crop tool and the colour-assessment view (`⇧L`) show the photo without it; the panel's switch takes it away to judge tone, since a white mat makes a photo look darker.
+- **Recipes ▸ Borders:** White 4:5, Black 4:5, White 3:4, White Square, Black Square, Story 9:16, Thin White, Thin Black, Gallery Mat, Gallery Mat with Keyline, Print 8×10, and the film and instant frames, each previewed on the photo as the pointer passes. Create Recipe leaves Border unticked unless asked, and Copy Settings leaves it unticked too, as it does the crop.
+- **Export:** a **Border** menu, As Edited, None (for a lab or a client), or a border recipe on every photo exported, saved with presets; sizes include the border, so Long Edge 1350 with White 4:5 writes 1080 × 1350. `redlamp export --border` does the same.
+
+TON-25's frames, drawn over the photo's edges, keep rendering in the edits that have them; the Effects panel shows them only there, with **Move to Border**.
+
+![The Borders recipes on one photo](docs/images/borders.jpg)
 
 ### Checked against photographs shot on the films
 
