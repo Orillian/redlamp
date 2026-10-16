@@ -3,7 +3,8 @@ import RedlampDesign
 import RedlampLibrary
 import UniformTypeIdentifiers
 
-/// File › Import from Lightroom Classic… (LIB-29): a window of its own that chooses a catalog, lists its root
+/// File › Import from Lightroom Classic… (LIB-29): a window of its own that opens on what was found of Lightroom
+/// Classic on this Mac (`LightroomSetupScreen`, EDT-34), then, for the catalog, chooses it, lists its root
 /// folders with where each is now and Locate… for one that moved, shows the report of what would come across and
 /// what wouldn't, and imports with progress and Stop, then offers Undo Import (`LightroomImportModel`). There's
 /// one at a time: asking again brings it forward. Closing it while it imports lets the import carry on.
@@ -14,6 +15,7 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
     @_spi(Harness) public private(set) static var current: LightroomWindowController?
 
     let model: LightroomImportModel
+    let setup: LightroomSetupScreen
     private let catalogLabel = NSTextField(labelWithString: "No catalog chosen")
     private let chooseButton = NSButton(title: "Choose…", target: nil, action: nil)
     private let roots = NSStackView()
@@ -30,8 +32,9 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
     /// The report the roots and the text show, and whether the roots' Locate… buttons were enabled.
     private var shown: (report: LightroomReport?, locating: Bool)?
 
-    init(model: LightroomImportModel) {
+    init(model: LightroomImportModel, editor: EditorModel? = nil) {
         self.model = model
+        setup = LightroomSetupScreen(editor: editor)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false,
@@ -42,7 +45,7 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         window.tabbingMode = .disallowed
         super.init(window: window)
         window.delegate = self
-        window.contentView = makeContent()
+        setup.install(in: self, catalog: makeContent())
         window.center()
         window.setFrameAutosaveName("LightroomImportWindow")
         model.onChange = { [weak self] in self?.changed() }
@@ -62,7 +65,7 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         chooseButton.target = self
         chooseButton.action = #selector(chooseCatalog)
         chooseButton.setAccessibilityIdentifier("lightroom.choose")
-        let header = Self.row([heading, catalogLabel, chooseButton], spacing: 8)
+        let header = Self.row([setup.backButton, heading, catalogLabel, chooseButton], spacing: 8)
 
         let rootsHeading = NSTextField(labelWithString: "Root Folders")
         rootsHeading.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
@@ -188,7 +191,7 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
             current.window?.makeKeyAndOrderFront(nil)
             return
         }
-        let controller = LightroomWindowController(model: LightroomImportModel(editor: editor))
+        let controller = LightroomWindowController(model: LightroomImportModel(editor: editor), editor: editor)
         current = controller
         controller.changed()
         controller.showWindow(nil)
@@ -232,6 +235,9 @@ public final class LightroomWindowController: NSWindowController, NSWindowDelega
         }
         if closedWhileBusy, !model.isBusy, Self.current === self {
             Self.current = nil
+        }
+        if setup.screen == .setup {
+            setup.refresh()
         }
     }
 

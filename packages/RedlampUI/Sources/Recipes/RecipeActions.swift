@@ -109,7 +109,8 @@ public enum RecipeActions {
         }.value
     }
 
-    private static func tell(_ summary: RecipeImportSummary) {
+    /// Tells what an import brought in over `window`, or over the editor's window.
+    static func tell(_ summary: RecipeImportSummary, over window: NSWindow? = nil) {
         switch message(for: summary) {
         case .none:
             break
@@ -117,9 +118,13 @@ public enum RecipeActions {
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = text
-            alert.runModal()
+            if let window {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
         case .sheet:
-            showSummary(summary)
+            showSummary(summary, over: window)
         }
     }
 
@@ -143,8 +148,8 @@ public enum RecipeActions {
         }
     }
 
-    private static func showSummary(_ summary: RecipeImportSummary) {
-        guard let window = EditorWindowController.frontWindow else {
+    private static func showSummary(_ summary: RecipeImportSummary, over window: NSWindow? = nil) {
+        guard let window = window ?? EditorWindowController.frontWindow else {
             let alert = NSAlert()
             alert.messageText = summary.headline
             alert.informativeText = ([summary.placement].compactMap(\.self) + summary.failures).joined(separator: "\n")

@@ -4,9 +4,9 @@ import RedlampLibrary
 /// What the regression suite reads and sets in the Lightroom Classic window: what a person sets through its open
 /// panels, which can't be driven, and what it shows.
 @_spi(Harness) public extension LightroomWindowController {
-    /// Choose…'s catalog.
+    /// Choose…'s catalog, on the catalog's screen.
     func choose(catalog url: URL) {
-        model.choose(url)
+        setup.goOn(with: url)
     }
 
     /// Locate…'s folder, or Allow Access…'s, for the root folder the catalog calls `path`.
@@ -56,12 +56,13 @@ import RedlampLibrary
         model.status
     }
 
-    /// The text of the button carrying `identifier`, and whether it's shown and enabled.
+    /// The text of the button carrying `identifier`, on either screen, and whether it's shown and enabled.
     func button(_ identifier: String) -> (title: String, shown: Bool, enabled: Bool)? {
-        guard let content = window?.contentView, let button = Self.view(identifier, in: content) as? NSButton else {
+        let screens = [setup.view, setup.catalogScreen].compactMap(\.self)
+        guard let button = screens.lazy.compactMap({ Self.view(identifier, in: $0) as? NSButton }).first else {
             return nil
         }
-        return (button.title, !button.isHiddenOrHasHiddenAncestor, button.isEnabled)
+        return (button.title, button.window != nil && !button.isHiddenOrHasHiddenAncestor, button.isEnabled)
     }
 
     private static func view(_ identifier: String, in view: NSView) -> NSView? {
