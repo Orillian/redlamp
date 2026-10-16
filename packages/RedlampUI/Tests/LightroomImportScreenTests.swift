@@ -93,6 +93,12 @@ struct LightroomImportScreenTests {
         ])
     }
 
+    @Test func `one thing that stays behind keeps the report's plural words, its count after them`() {
+        #expect(Screen.Left("virtual copies", 1, why: "", alwaysPlural: true).line == "virtual copies (1)")
+        #expect(Screen.Left("virtual copies", 2, why: "", alwaysPlural: true).line == "2 virtual copies")
+        #expect(Screen.Left("smart collection", 1, why: "").line == "1 smart collection")
+    }
+
     @Test func `the edits read fully, approximated and left out, with the commonest reasons`() {
         #expect(LightroomImportSamples.edits.summary
             == "22,100 fully · 9,800 approximated · 3,300 with settings left out (masks 2,900, Point Color 160, …)")

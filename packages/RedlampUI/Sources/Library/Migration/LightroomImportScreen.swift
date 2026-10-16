@@ -437,16 +437,19 @@ import RedlampLibrary
         public var what: String
         public var count: Int
         public var why: String
+        /// `what` is plural whatever the count, as the report's are, so a count of one goes after it.
+        public var alwaysPlural: Bool
 
-        public init(_ what: String, _ count: Int, why: String) {
+        public init(_ what: String, _ count: Int, why: String, alwaysPlural: Bool = false) {
             self.what = what
             self.count = count
             self.why = why
+            self.alwaysPlural = alwaysPlural
         }
 
-        /// "1,204 virtual copies".
+        /// "1,204 virtual copies", and "virtual copies (1)" when `what` is always plural.
         public var line: String {
-            "\(ProgressText.count(count)) \(what)"
+            alwaysPlural && count == 1 ? "\(what) (1)" : "\(ProgressText.count(count)) \(what)"
         }
     }
 }
@@ -497,7 +500,7 @@ import RedlampLibrary
         }
         self.lists = lists.isEmpty ? nil : lists.joined(separator: "; ")
         self.edits = edits
-        var left = report.left.map { Screen.Left($0.what, $0.count, why: $0.why) }
+        var left = report.left.map { Screen.Left($0.what, $0.count, why: $0.why, alwaysPlural: true) }
         if !report.smartLeft.isEmpty {
             left.append(Screen.Left(
                 report.smartLeft.count == 1 ? "smart collection" : "smart collections", report.smartLeft.count,
