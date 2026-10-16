@@ -245,11 +245,8 @@
             )
             try app.captureLightroomWindow(to: shots.appending(path: "lightroom-found-done.png"))
 
-            // Return is the catalog's Review…, which shows the report again, with Undo Import beside Import.
-            try app.main { _ in
-                _ = try LightroomWindowController.current?.window?
-                    .performKeyEquivalent(with: Keyboard.event(KeyCombo(.character("\r"))))
-            }
+            // The catalog's Review… shows the report again, with Undo Import beside Import.
+            try app.clickInLightroomWindow("lightroom.setup.catalog.review")
             try app.wait("the catalog's report again", timeout: 60) { _ in
                 guard let window = LightroomWindowController.current else { return false }
                 return window.isReported && window.button("lightroom.undo")?.shown == true
