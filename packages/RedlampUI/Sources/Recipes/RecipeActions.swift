@@ -246,6 +246,14 @@ struct CreateRecipeSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .overlayScrollers()
+            // A recipe of only a border belongs with the others in Borders.
+            .onChange(of: includes) { _, now in
+                if now == [.border], group == "My Recipes" {
+                    group = "Borders"
+                } else if now != [.border], group == "Borders" {
+                    group = "My Recipes"
+                }
+            }
             HStack {
                 Button("Check All") { includes = Set(RecipeSettingGroup.allCases) }
                 Button("Check None") { includes = [] }

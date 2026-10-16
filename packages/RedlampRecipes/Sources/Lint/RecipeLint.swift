@@ -70,7 +70,7 @@ public enum RecipeLint {
     /// measurements.
     public static func lintEdit(for recipe: Recipe) -> EditRecipe {
         var edit = recipe.edit()
-        let spatial = ["vignette", "grain", "leak", "dust", "scratches", "frame"].map { "effects.\($0)." }
+        let spatial = ["vignette", "grain", "leak", "dust", "scratches", "frame"].map { "effects.\($0)." } + ["border."]
         edit.reset(ParameterID.allCases.filter { parameter in spatial.contains { parameter.rawValue.hasPrefix($0) } })
         return edit
     }

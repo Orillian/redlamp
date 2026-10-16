@@ -310,6 +310,17 @@ public struct BorderLayout: Sendable, Equatable {
     }
 }
 
+public extension ParameterID {
+    /// Whether the parameter is a choice (a style, a shape, a switch) rather than an amount: never
+    /// blended between values.
+    var isChoice: Bool {
+        switch self {
+        case .frameStyle, .borderStyle, .borderShape, .borderOrientation, .borderEdgePrint, .borderFrameNumber: true
+        default: false
+        }
+    }
+}
+
 public extension EditRecipe {
     /// The parameters of the Border panel.
     static let borderParameters: [ParameterID] = ParameterID.allCases.filter { $0.rawValue.hasPrefix("border.") }

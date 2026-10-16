@@ -189,6 +189,7 @@ public enum RecipeSettingGroup: String, Codable, Sendable, Hashable, CaseIterabl
     case colorGrading
     case colorChrome
     case effects
+    case border
     case detail
 
     public var name: String {
@@ -203,13 +204,16 @@ public enum RecipeSettingGroup: String, Codable, Sendable, Hashable, CaseIterabl
         case .colorGrading: "Color Grading"
         case .colorChrome: "Color Chrome"
         case .effects: "Effects"
+        case .border: "Border"
         case .detail: "Detail"
         }
     }
 
     /// Groups a new recipe captures unless the user changes them. White balance and
-    /// detail depend on the photo, so they are left out, as in Lightroom.
-    public static let captureDefaults: Set<RecipeSettingGroup> = Set(allCases).subtracting([.whiteBalance, .detail])
+    /// detail depend on the photo, so they are left out, as in Lightroom; a border is chosen for
+    /// where the photo goes, so saving a look leaves it out too.
+    public static let captureDefaults: Set<RecipeSettingGroup> = Set(allCases)
+        .subtracting([.whiteBalance, .detail, .border])
 
     /// The scalar parameters in the group. Lens, transform and calibration settings are
     /// specific to a photo and never belong to a recipe.
@@ -235,6 +239,8 @@ public enum RecipeSettingGroup: String, Codable, Sendable, Hashable, CaseIterabl
                 self = .effects
             } else if key.hasPrefix("detail.") {
                 self = .detail
+            } else if key.hasPrefix("border.") {
+                self = .border
             } else {
                 return nil
             }

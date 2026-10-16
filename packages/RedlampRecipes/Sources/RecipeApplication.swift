@@ -14,6 +14,10 @@ public extension Recipe {
     /// White balance modes that depend on the photo (As Shot, Auto) are resolved through
     /// `whiteBalance`; when it returns nil the edit keeps its temperature and tint.
     ///
+    /// A setting that is a choice (a style, a shape) takes the recipe's at 50% and above rather
+    /// than blending into another choice. A border is never blended: it is the recipe's at any
+    /// amount, and a recipe that holds only a border leaves the look's provenance alone.
+    ///
     /// A switched-off panel (UX-30) comes back on when the recipe changes one of its settings, as
     /// any change does, or sets one to a value that does something, so the recipe's look shows.
     func apply(
@@ -27,7 +31,9 @@ public extension Recipe {
 
         func blend(_ parameter: ParameterID, to target: Double) {
             let current = edit[parameter]
-            if parameter == .temperature {
+            if parameter.isChoice {
+                result[parameter] = t >= 0.5 ? target : current
+            } else if parameter == .temperature {
                 let from = 1e6 / max(current, 1)
                 let to = 1e6 / max(target, 1)
                 result[parameter] = 1e6 / max(from + (to - from) * t, 1)
@@ -68,6 +74,10 @@ public extension Recipe {
                     blend(.tint, to: target.tint)
                     result.whiteBalanceMode = abs(t - 1) < 0.001 ? mode : .custom
                 }
+            case .border:
+                for parameter in group.parameters {
+                    result[parameter] = settings[parameter]
+                }
             case .toneCurve:
                 for parameter in group.parameters {
                     blend(parameter, to: settings[parameter])
@@ -90,8 +100,15 @@ public extension Recipe {
                 result.setPanel(panel, on: true)
             }
         }
-        result.appliedRecipe = AppliedRecipe(id: id, version: version, name: name, amount: t * 100)
+        if !isBorderOnly {
+            result.appliedRecipe = AppliedRecipe(id: id, version: version, name: name, amount: t * 100)
+        }
         return result
+    }
+
+    /// A recipe that holds only a border: it leaves the look alone, and has no Amount.
+    var isBorderOnly: Bool {
+        includes == [.border]
     }
 
     /// Blends two point curves by sampling both at their combined x positions.

@@ -45,7 +45,9 @@ This page is the published schema (format version 1). A machine-readable [JSON S
 
 ### Setting groups
 
-`treatment`, `baseLook`, `whiteBalance`, `tone`, `presence`, `toneCurve`, `colorMixer`, `colorGrading`, `colorChrome`, `effects`, `detail`.
+`treatment`, `baseLook`, `whiteBalance`, `tone`, `presence`, `toneCurve`, `colorMixer`, `colorGrading`, `colorChrome`, `effects`, `border`, `detail`.
+
+`border` holds the `border.…` settings, a border around the photo. A recipe that doesn't include it leaves the photo's border alone, so a look or mood never sets or resets a border; a recipe that includes only it (Redlamp's Borders) leaves the look alone. `effects` still holds `effects.frame.…`, the frame drawn over the photo's edges, so recipes written before borders behave as they did.
 
 Parameters of an included group that the recipe doesn't list take their **default**, so a recipe renders the same whatever the photo had before. Lens, transform, calibration and mask settings are specific to a photo and can never be part of a recipe.
 
@@ -80,7 +82,7 @@ A package, inside `embeddedBaseLooks`:
 
 ## Applying and Amount
 
-A recipe's Amount (0…200) moves every included value from the photo's current value towards the recipe's: 0 changes nothing, 100 is the recipe exactly, 200 goes twice as far, clamped to each slider's range. Temperature interpolates in mireds. The Base Look's amount scales with it. The edit records `appliedRecipe: {id, version, name, amount}` for provenance only; rendering never reads it.
+A recipe's Amount (0…200) moves every included value from the photo's current value towards the recipe's: 0 changes nothing, 100 is the recipe exactly, 200 goes twice as far, clamped to each slider's range. A setting that is a choice (`effects.frame.style`, `border.style`, `border.shape`, `border.orientation`, `border.edgePrint`, `border.frameNumber`) takes the recipe's value from 50 up and keeps the photo's below. The `border` group isn't blended: it is the recipe's at any Amount, and a recipe that includes only it records no `appliedRecipe`. Temperature interpolates in mireds. The Base Look's amount scales with it. The edit records `appliedRecipe: {id, version, name, amount}` for provenance only; rendering never reads it.
 
 Recipes have no panel switches (UX-30). A recipe captured from an edit with a panel switched off holds that panel's settings as they render, at the values that leave the photo alone: a Detail panel that's off is captured as no sharpening and no noise reduction. Applying a recipe turns a switched-off panel back on when it changes one of the panel's settings, as any change does, or sets one to a value that does something, so the recipe looks the same on every photo. Importing a Lightroom preset (EDT-11) reads no panel switches.
 

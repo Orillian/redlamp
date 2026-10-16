@@ -23,7 +23,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "description": "treatment, baseLook, whiteBalance, tone, presence, toneCurve, colorMixer, colorGrading, colorChrome, effects, detail; others are kept for newer Redlamps"
+        "description": "treatment, baseLook, whiteBalance, tone, presence, toneCurve, colorMixer, colorGrading, colorChrome, effects, border, detail; others are kept for newer Redlamps"
       }
     },
     "settings": {

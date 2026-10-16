@@ -2,7 +2,8 @@ import Foundation
 import RedlampEngineAPI
 
 /// One-tap mood looks in the spirit of Prequel's filters: a film look, its grain, halation and
-/// bloom, plus light leaks, dust and scratches, frames and a few adjustments.
+/// bloom, plus light leaks, dust and scratches and a few adjustments. Borders are their own
+/// recipes (`BorderRecipes`), which a mood leaves alone.
 public enum MoodLooks {
     struct Mood {
         var slug: String
@@ -29,17 +30,17 @@ public enum MoodLooks {
             film: "gold-200",
             values: [
                 .leakAmount: 55, .leakWarmth: 70, .leakVariation: 37, .dustAmount: 40, .scratchAmount: 18,
-                .frameStyle: Double(FrameStyle.filmRebate.rawValue), .vignetteAmount: -18,
+                .vignetteAmount: -18,
             ],
+            // 2: without the film's rebate, which is a border now.
+            version: 2,
         ),
         Mood(
-            slug: "summer-98", name: "Summer '98", summary: "Warm consumer film, a light leak and a white print border",
+            slug: "summer-98", name: "Summer '98", summary: "Warm consumer film and a light leak",
             film: "ultramax-400",
-            values: [
-                .leakAmount: 32, .leakWarmth: 95, .leakVariation: 64,
-                .frameStyle: Double(FrameStyle.printBorder.rawValue),
-                .vibrance: 10,
-            ],
+            values: [.leakAmount: 32, .leakWarmth: 95, .leakVariation: 64, .vibrance: 10],
+            // 2: without the print border, which is a border now.
+            version: 2,
         ),
         Mood(
             slug: "night-glow", name: "Night Glow",
@@ -62,23 +63,24 @@ public enum MoodLooks {
             slug: "home-movie", name: "Home Movie",
             summary: "Daylight cinema film with projector scratches, dust and a dark edge",
             film: "vision3-50d-2383",
-            values: [
-                .scratchAmount: 45, .dustAmount: 30, .vignetteAmount: -30, .grainAmount: 22, .grainSize: 40,
-                .frameStyle: Double(FrameStyle.keyline.rawValue),
-            ],
-        ),
-        Mood(
-            slug: "slide-show", name: "Slide Show", summary: "Kodachrome in a slide mount, with a few specks of dust",
-            film: "kodachrome-64",
-            values: [.dustAmount: 18, .frameStyle: Double(FrameStyle.slideMount.rawValue)],
-            // 2: Kodachrome 64's look moved to version 2.
+            values: [.scratchAmount: 45, .dustAmount: 30, .vignetteAmount: -30, .grainAmount: 22, .grainSize: 40],
+            // 2: without the keyline, which is a border now.
             version: 2,
         ),
         Mood(
+            slug: "slide-show", name: "Slide Show", summary: "Projected Kodachrome, with a few specks of dust",
+            film: "kodachrome-64",
+            values: [.dustAmount: 18],
+            // 2: Kodachrome 64's look moved to version 2. 3: without the slide mount, which is a border now.
+            version: 3,
+        ),
+        Mood(
             slug: "contact-sheet", name: "Contact Sheet",
-            summary: "A hard Tri-X print with the film's rebate and darkroom dust",
+            summary: "A hard Tri-X print with darkroom dust",
             film: "tri-x-multigrade-hard",
-            values: [.dustAmount: 30, .frameStyle: Double(FrameStyle.filmRebate.rawValue)],
+            values: [.dustAmount: 30],
+            // 2: without the film's rebate, which is a border now.
+            version: 2,
         ),
         Mood(
             slug: "neon-rain", name: "Neon Rain",

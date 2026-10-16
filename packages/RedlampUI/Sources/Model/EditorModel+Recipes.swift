@@ -3,10 +3,15 @@ import RedlampEngineAPI
 import RedlampRecipes
 
 public extension EditorModel {
-    /// Applies a recipe. Its Amount stays adjustable until the edit changes some other way.
+    /// Applies a recipe. Its Amount stays adjustable until the edit changes some other way; a
+    /// recipe that holds only a border has none, and leaves the look's alone.
     func applyRecipe(_ recipe: Recipe, amount: Double = 100) {
         let recipe = recipes.resolved(recipe)
         previewingRecipe = nil
+        if recipe.isBorderOnly {
+            commit(recipe.apply(to: self.recipe), .recipe, "Recipe") { _ in recipe.name }
+            return
+        }
         recipes.prepare(recipe)
         keepFirmwareLook(of: recipe)
         let base = recipe.id == recipeApplication?.recipe.id && recipeAmount != nil
