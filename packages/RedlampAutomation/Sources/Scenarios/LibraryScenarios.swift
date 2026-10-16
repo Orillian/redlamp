@@ -843,6 +843,7 @@
     enum RecipeScenarios {
         static let all: [Scenario] = [
             apply, createAndImport, fujifilmPack, favorites, filmLooks, baseLookOnly, searchBaseLooks, baseLookMenu,
+            showAndTrash, hideFolders,
         ]
 
         static func portra(_ app: RunningApp) throws -> Recipe {
