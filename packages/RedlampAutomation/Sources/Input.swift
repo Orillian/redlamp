@@ -927,7 +927,10 @@
         /// waits in the queue, where a control that tracks the press takes it from, and in a window that isn't key
         /// the press goes to the control under the pointer, as the click after activation would, even one that
         /// accepts first mouse: on macOS 27 a press sent through a window that isn't key, in an app in the
-        /// background, never reaches a button.
+        /// background, never reaches a button. On macOS 26 a button that leaves `mouseDown` to AppKit ignores a
+        /// press sent to it straight: it takes one only from its window, which highlights it and returns, and
+        /// clicks once its window sends it the release. A release still queued after the press is sent where the
+        /// press went, so the next click doesn't take it as its own.
         static func press(at location: NSPoint, in window: NSWindow) {
             let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
                 NSEvent.mouseEvent(
@@ -937,12 +940,25 @@
                 )
             }
             guard events.count == 2 else { return }
+            func queuedRelease() -> NSEvent? {
+                NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true)
+            }
             NSApp.postEvent(events[1], atStart: false)
             let hit = window.contentView?.superview?.hitTest(location) ?? window.contentView?.hitTest(location)
             if window.isKeyWindow {
                 window.sendEvent(events[0])
-            } else {
-                hit?.mouseDown(with: events[0])
+                return
+            }
+            hit?.mouseDown(with: events[0])
+            guard let release = queuedRelease() else { return }
+            guard let button = hit as? NSButton, button.isEnabled, !button.isHighlighted else {
+                hit?.mouseUp(with: release)
+                return
+            }
+            NSApp.postEvent(release, atStart: false)
+            window.sendEvent(events[0])
+            if let release = queuedRelease() {
+                window.sendEvent(release)
             }
         }
 

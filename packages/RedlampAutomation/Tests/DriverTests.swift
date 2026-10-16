@@ -355,7 +355,9 @@ struct DriverTests {
     }
 
     /// The panels' AppKit buttons take a click in a window that isn't key, as the run leaves the app in the
-    /// background: the Keywording panel's completions are buttons that accept first mouse (LIB-21).
+    /// background: the Keywording panel's completions are buttons that accept first mouse (LIB-21). macOS 26 and
+    /// 27 route the press to such a button differently (`Views.press`), and a release the click leaves in the
+    /// queue would be the next click's.
     @Test(.enabled(
         if: Displays.whyClicksWontArrive == nil,
         "No click arrives while the displays are asleep or the screen is locked",
@@ -381,7 +383,11 @@ struct DriverTests {
         #expect(Views.awaitQueuedEvents(at: middle, in: window) == nil)
 
         Views.press(at: middle, in: window)
-        #expect(chosen.count == 1, "the button tracks the press and reads the queued release")
+        #expect(chosen.count == 1, "the button takes the click")
+        #expect(
+            NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) == nil,
+            "no release is left in the queue",
+        )
     }
 
     private final class FirstMouseButton: NSButton {
