@@ -34,12 +34,14 @@ extension EditorModel {
     }
 
     /// The import's way to the photo open here (EDT-23): its edit is made as a step of its history, as Settings
-    /// Sync makes a batch's, never by its sidecar being written behind it.
+    /// Sync makes a batch's, and its versions join those Develop lists, never by its sidecar being written behind it.
     var lightroomEditor: LightroomEditor {
         LightroomEditor { [weak self] in
             await self?.openPhotoPath
         } change: { [weak self] path, recipe, over, adding, removing in
             await self?.changeFromLightroom(path, recipe, over: over, adding: adding, removing: removing) ?? .notOpen
+        } versions: { [weak self] path, adding, removing in
+            await self?.changeVersionsFromLightroom(path, adding: adding, removing: removing) ?? .notOpen
         }
     }
 
@@ -66,6 +68,36 @@ extension EditorModel {
         commit(next, .paste, over == nil ? "Import from Lightroom Classic" : "Undo Import from Lightroom Classic")
         changeSnapshots(adding: adding, removing: removing)
         return .changed(before, had, recipe)
+    }
+
+    /// The photo at `path` given the versions `adding` after its own, and those of `removing` taken off while each
+    /// is as given there, as Develop lists and saves them (EDT-09). The version open stays, whatever it holds.
+    private func changeVersionsFromLightroom(
+        _ path: String, adding: [PhotoVersion], removing: [PhotoVersion],
+    ) async -> LightroomEditor.VersionsOutcome {
+        let url = URL(fileURLWithPath: path)
+        await finishOpening(url)
+        guard let visit = currentVisit, visit.url.standardizedFileURL == url.standardizedFileURL else {
+            return isOpen(url) ? .left : .notOpen
+        }
+        guard !isReadOnly else { return .left }
+        let had = openSidecar.versions
+        let taken = Set(removing.filter { version in
+            version.id != openVersion && had.first { $0.id == version.id } == version
+        }.map(\.id))
+        let held = Set(had.map(\.id))
+        let now = had.filter { !taken.contains($0.id) } + adding.filter { !held.contains($0.id) }
+        guard now != had else { return .changed(had, had) }
+        openSidecar.versions = now
+        versions = Self.versions(of: openSidecar)
+        activity.record(
+            .edit,
+            taken.isEmpty
+                ? "Import from Lightroom Classic: \(LightroomImportModel.count(adding.count, "version"))"
+                : "Undo Import from Lightroom Classic: \(LightroomImportModel.count(taken.count, "version")) taken off",
+        )
+        saveNow()
+        return .changed(had, openSidecar.versions)
     }
 
     /// Whether an import from Lightroom Classic, or its Undo, is running: ⌘Z takes an import back once it's done.

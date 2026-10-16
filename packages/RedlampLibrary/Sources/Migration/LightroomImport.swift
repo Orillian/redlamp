@@ -263,8 +263,9 @@ public final class LightroomImport: Sendable {
         try save(outcome.record)
     }
 
-    /// Makes the edit of the photo open in the editor there, Lightroom's going in a version of its own when the
-    /// photo is edited, and gives it its versions there when the editor has them, after those it has. What the
+    /// Makes the edit of the photo open in the editor there, and gives it its versions there when the editor has
+    /// them, after those it has. Where the editor leaves the edit, Lightroom's goes in a version of its own when the
+    /// photo's sidecar holds an edit, and stays behind otherwise, as while one of its versions is open. What the
     /// editor doesn't take, the photo no longer being open or the editor having no versions, is written as a batch
     /// of its own.
     private func change(
@@ -287,7 +288,7 @@ public final class LightroomImport: Sendable {
         if develop.recipe == nil || outcomeOfEdit != .notOpen {
             let sidecar = try await SidecarStore(locator: LibrarySidecars(index: index, paths: paths).locator())
                 .load(for: URL(fileURLWithPath: photo.path)) ?? Sidecar(recipe: EditRecipe())
-            let adding = develop.added(to: sidecar, edited: outcomeOfEdit == .left)
+            let adding = develop.added(to: sidecar, edited: outcomeOfEdit == .left && !sidecar.recipe.isPristine)
             develop = MetadataBatch.Develop(recipe: nil, snapshots: [], versions: adding)
             if let versions = editor?.versions, !adding.isEmpty {
                 switch await versions(photo.path, adding.compactMap { $0.decoded(as: PhotoVersion.self) }, []) {

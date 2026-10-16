@@ -1,5 +1,6 @@
 import Foundation
 import RedlampDocument
+import RedlampEngineAPI
 import RedlampLibrary
 import Testing
 @_spi(Harness) @testable import RedlampUI
@@ -45,6 +46,33 @@ struct LightroomUndoTests {
         if let root = model.library.root(containing: other) {
             await model.library.remove(root)?.value
         }
+    }
+
+    @Test func `the import gives the photo open its versions, and takes back only those still as it gave them`(
+    ) async throws {
+        let model = EditorModel(engine: StubEngine())
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let photo = folder.appending(path: "IMG_0001.ARW")
+        model.select(photo)
+        try await SourcesSandbox.eventually { model.info?.url == photo }
+        let path = try #require(await model.lightroomEditor.open())
+        let versions = try #require(model.lightroomEditor.versions)
+        let copy = PhotoVersion(name: "Copy 1", recipe: EditRecipe(), metadata: PhotoMetadata(rating: 4))
+        let other = PhotoVersion(name: "Copy 2", recipe: EditRecipe())
+
+        let made = await versions(path, [copy, other], [])
+        #expect(made == .changed([], [copy, other]))
+        #expect(model.versions.map(\.name) == ["Copy 1", "Copy 2"], "Develop lists them")
+        try await SourcesSandbox.eventually { SidecarStore().load(for: photo)?.versions.count == 2 }
+
+        var changed = other
+        changed.name = "Copy 2 as imported"
+        #expect(await versions(path, [], [copy, changed]) == .changed([copy, other], [other]))
+        #expect(model.versions.map(\.name) == ["Copy 2"], "one that isn't as it was given stays")
+        try await SourcesSandbox.eventually { SidecarStore().load(for: photo)?.versions.map(\.name) == ["Copy 2"] }
+        #expect(await versions("/Elsewhere/B.jpg", [copy], []) == .notOpen)
     }
 
     @Test func `⌘Z takes an import back after the changes made since, through its window`() async throws {
