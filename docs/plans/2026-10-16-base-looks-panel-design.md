@@ -1,6 +1,6 @@
 # Base Looks panel, and Recipes as presets: design
 
-**Rows:** DEC-104 (the decision), UX-54 (the Base Looks panel), UX-55 (removing and hiding recipes and looks). **Revises:** DEC-74's placement of looks (UX-45, 13 October 2026). **Approved:** the owner's decisions of 16 October 2026, below.
+**Rows:** DEC-104 (the decision), UX-54 (the Base Looks panel), UX-55 (removing and hiding recipes and looks). **Revises:** DEC-74's placement of looks (UX-45, 13 October 2026). **Approved:** the owner's decisions of 16 October 2026, below, and his answers to the wireframes' questions the same day.
 
 ## Why
 
@@ -18,6 +18,7 @@ Today Redlamp lists every film stock, the firmware model's simulations and impor
 4. **Basic's Base Look menu stays as it is for now.**
 5. **Show in Finder and Move to Trash** for the photographer's own and installed recipes and imported looks, and **hiding whole built-in groups** in either panel.
 6. **Leaving a film stock for a look that isn't one takes the film's grain, halation and bloom away** (answered later the same day). Going from Portra 400 to Redlamp Color leaves no film grain behind.
+7. **A colour look chosen in place of a monochrome one sets Color** (answered with the wireframes' questions, the same day), as Lightroom's colour profiles do: Portra 400 after Tri-X 400 renders in colour. Black & White the photographer chose on a colour look stays.
 
 ## The left column
 
@@ -28,12 +29,12 @@ Navigator, Folders, **Base Looks**, Recipes, Snapshots, History: from top to bot
 From the top:
 
 1. **The header's + menu:** Import LUT (`.cube`, `.3dl` or HaldCLUT)…, with the input space accessory the Recipes panel uses today; Choose Camera Profiles…, the chooser Basic's menu has (TON-51); and Get Fujifilm's LUTs…, the link the browser has.
-2. **Search,** "Search Base Looks": names, summaries, makers and kinds ("kodak", "slide", "negative", "cinema", "black and white"). The words profile, film, simulation and LUT list a whole kind, as Lightroom's words do in recipe search. Results are one list, as in Recipes; nothing found shows "No matching Base Looks".
+2. **Search,** "Search Base Looks": names, summaries, makers and kinds ("kodak", "slide", "negative", "cinema", "black and white"). The words profile, film, simulation and LUT list a whole kind, as Lightroom's words do in recipe search. Results are one list, as in Recipes; nothing found shows "No matching Base Looks". Each result shows its folder at the end of its row.
 3. **The photo's look, with its Amount** (0 to 200), as the Recipes panel shows the applied recipe's Amount. It sets the same value as Basic's Base Look Amount.
 4. **The looks, in folders,** in this order, each shown only when it has looks:
    - **Favorites**
    - **In This Photo:** the camera profile look a DNG embeds.
-   - **The photo's camera profiles** (TON-51, TON-52): Adobe Raw, Camera Matching, the photographer's own and the creative groups, as Basic's menu lists them, where those profiles are on this Mac.
+   - **The photo's camera profiles** (TON-51, TON-52): Adobe Raw, Camera Matching, the photographer's own and the creative groups inside one Creative folder, as Basic's menu lists them, where those profiles are on this Mac.
    - **Redlamp:** Color, Neutral, Vivid, Landscape, Portrait and Monochrome.
    - **Film Styles:** the 15.
    - **Film Stocks:** the 36, with their icons, by kind, each variant beside its stock, as Recipes › Film Stocks lists them today. Its right-click menu opens the Film Looks window.
@@ -41,7 +42,7 @@ From the top:
    - **Fujifilm LUTs,** then **Imported:** the LUTs the photographer imported, and installed looks no recipe uses.
    - **Reproduction:** Redlamp Reproduction.
 
-Hovering a look previews it as a click applies it; a click applies it as one History step. Favorites, previews and icons come from what exists: film stocks keep the favourites the Film Looks window gave them.
+Hovering a look previews it as a click applies it; a click applies it as one History step. Favorites, previews and icons come from what exists: film stocks keep the favourites the Film Looks window gave them. Favorites, Redlamp and the folder holding the photo's look start open, that folder opening again for each photo, and the photo's look is highlighted in it, as History highlights the current step.
 
 **Right-click a look:** Add to Favorites or Remove from Favorites. A film stock also has Apply Without Grain, Halation and Bloom (today's Apply Base Look Only, previewing while highlighted). An imported look also has Show in Finder and Move to Trash (UX-55). **Right-click a folder:** Hide (built-in folders, UX-55); Film Stocks also has Open Film Looks.
 
@@ -51,7 +52,7 @@ A look that isn't a film stock sets the Base Look, as `EditorModel.setBaseLook` 
 
 A film stock sets its Base Look, Black & White for a monochrome stock, and the film's eight parameters: Grain Amount, Size, Roughness and Color, Halation Amount and Size, Bloom Amount and Size. The ones the stock doesn't list take their defaults, so moving from CineStill 800T to Portra 400 takes the bloom away. Nothing else changes.
 
-A look that isn't a film stock, chosen while the photo's look is one, also returns those eight to their defaults (decision 6), whatever they were set to since, so going from Portra 400 to Redlamp Color leaves no grain. Its Apply Without Grain, Halation and Bloom does the same. Chosen while the photo's look isn't a film stock, it leaves them as they are, so grain the photographer added on Redlamp Color stays when they try Vivid. The photo's look counts as a film stock whether a choice or a recipe (a mood) set it. Recipes apply as they do today (decision 2).
+A look that isn't a film stock, chosen while the photo's look is one, also returns those eight to their defaults (decision 6), whatever they were set to since, so going from Portra 400 to Redlamp Color leaves no grain. Its Apply Without Grain, Halation and Bloom does the same. Chosen while the photo's look isn't a film stock, it leaves them as they are, so grain the photographer added on Redlamp Color stays when they try Vivid. The photo's look counts as a film stock whether a choice or a recipe (a mood) set it. Recipes apply as they do today (decision 2). A colour look chosen while the photo's look is monochrome sets Color (decision 7); one chosen while it's a colour look leaves the treatment as it is.
 
 One choice in RedlampRecipes does this wherever a look is chosen: the Base Looks panel, Basic's Base Look menu and browser, the Film Looks window (whose header Amount becomes the Base Look's) and ⌘K. Hovering a look previews it as that choice would apply it. Edits made before keep their settings, and the edit's applied recipe stays recorded; nothing renders differently, so there's no new process version. The CLI and the MCP server keep applying the bundled film recipes as they do today.
 
@@ -67,8 +68,8 @@ One choice in RedlampRecipes does this wherever a look is chosen: the Base Looks
 ## Removing and hiding (UX-55)
 
 - **Show in Finder** selects the file Redlamp keeps: the recipe in `Application Support/Redlamp/Recipes` (or `Recipes/Installed`), which for an imported look is the recipe that holds it, and for a Lightroom preset the recipe made from it.
-- **Move to Trash** moves that file to the Trash, recoverable from there; today's Delete Recipe removes it at once, without asking. The look stays in `Looks/`, so edits that use it keep rendering, but it's listed nowhere afterwards: today a deleted LUT's look comes back under Installed in Basic's menu, and that must stop.
-- **Hiding a built-in folder** removes it and its items from its panel, its search and ⌘K; the photo keeps rendering with a hidden look, and the panel's Amount row still names it. Each panel's header menu lists the hidden folders to show again. Hidden folders are one preference, as Lightroom Classic's Manage Presets hides preset groups. The photographer's own lists aren't hidden; their recipes can be moved to the Trash.
+- **Move to Trash** moves that file to the Trash, recoverable from there; today's Delete Recipe removes it at once, without asking. The look stays in `Looks/`, so edits that use it keep rendering, but it's listed nowhere afterwards: today a deleted LUT's look comes back under Installed in Basic's menu, and that must stop. An installed look no recipe uses (one today's Delete Recipe left, listed under Imported) has Remove from Base Looks instead: it's listed nowhere afterwards and its file stays for its edits, with no Show in Finder, since its file is named by its content.
+- **Hiding a built-in folder** removes it and its items from its panel, its search and ⌘K; the photo keeps rendering with a hidden look, and the panel's Amount row still names it. Each panel's header menu lists the hidden folders to show again. Hidden folders are one preference, as Lightroom Classic's Manage Presets hides preset groups. The photographer's own lists aren't hidden; their recipes can be moved to the Trash. Adobe Raw, Camera Matching and Creative are built-in folders here, and the photographer's own profiles aren't.
 
 ## Elsewhere in Develop
 
