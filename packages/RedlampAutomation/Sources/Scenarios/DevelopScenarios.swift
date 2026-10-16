@@ -481,6 +481,7 @@
             try app.choose(.resetAll)
             try app.main { $0.expandedPanels.insert(.border) }
             let photo = try app.main { $0.canvas.imageSize }
+            let clippedWithout = try app.main { $0.histogram.highlightsClipped }
             try app.expectRenders("a white 4:5 border") {
                 try app.main { model in
                     model.setBorderStyle(.plain)
@@ -492,7 +493,9 @@
                 let size = model.canvas.imageSize
                 return size.width >= photo.width && abs(size.aspectRatio - 0.8) < 0.01
             }
-            try app.wait("the histogram counts the photo, not the white border") { !$0.histogram.highlightsClipped }
+            try app.wait("the histogram counts the photo, not the white border") {
+                $0.histogram.highlightsClipped == clippedWithout
+            }
             try app.click(.identifier("border.color.black"))
             try app.wait("a black border, as one History step") { model in
                 model.value(.borderRed) < 30 && model.history.last?.name == "Border Color"
