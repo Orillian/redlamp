@@ -292,6 +292,16 @@ struct LibraryFilterTests {
         #expect(filters.filter.text.isEmpty && model.items.count == 5 && !model.library.isFiltered)
     }
 
+    @Test func `Original and Version write version:no and version:yes, and the same again shows both`() {
+        let filters = LibraryFilters(defaults: nil, presetsURL: nil)
+        filters.toggleVersion(true)
+        #expect(filters.filter.text == "version:yes" && filters.attributes.version == true)
+        filters.toggleVersion(false)
+        #expect(filters.filter.text == "version:no" && filters.attributes.version == false)
+        filters.toggleVersion(false)
+        #expect(filters.filter.text.isEmpty && filters.attributes.version == nil)
+    }
+
     @Test func `columns count their own photos, and each narrows the columns after it`() async throws {
         defer { cleanUp() }
         let (model, _) = try await open()

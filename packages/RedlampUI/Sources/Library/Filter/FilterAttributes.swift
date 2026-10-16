@@ -3,7 +3,8 @@ import RedlampDocument
 import RedlampLibrary
 
 /// What the Attribute section shows of a filter's rules, and the filters it writes back (LIB-18):
-/// flags, the rating and its comparison, colour labels, edited or not, kinds of file, marked, offline and
+/// flags, the rating and its comparison, colour labels, edited or not, originals or versions (LIB-48), kinds of
+/// file, marked, offline and
 /// damaged photos (LIB-40), the moments without a pick (LIB-41), and the soft-frame check's proposed picks, soft
 /// frames and the frames Changed by You (LIB-42). Each is the first filter on its field
 /// at the top of the rules that keeps photos and that the section can show; anything else stays in the
@@ -13,6 +14,8 @@ struct FilterAttributes: Equatable {
     var rating: Rating?
     var labels: Set<LabelChoice> = []
     var edited: Bool?
+    /// Versions of photos' edits, or the files' own photos, as Lightroom Classic's Copy Status (LIB-48).
+    var version: Bool?
     var kinds: Set<PhotoRecord.Kind> = []
     var marked = false
     var offline = false
@@ -100,6 +103,11 @@ struct FilterAttributes: Equatable {
             let no = values.contains(.bool(false))
             edited = yes == no ? nil : yes
         }
+        if let values = Self.values(rules, .version) {
+            let yes = values.contains(.bool(true))
+            let no = values.contains(.bool(false))
+            version = yes == no ? nil : yes
+        }
         if let values = Self.values(rules, .ext) {
             kinds = Set(values.compactMap { value in
                 if case let .kind(kind) = value {
@@ -150,6 +158,10 @@ struct FilterAttributes: Equatable {
         edited.map { LibraryQuery.Filter(.edited, .equal, [.bool($0)]) }
     }
 
+    static func filter(version: Bool?) -> LibraryQuery.Filter? {
+        version.map { LibraryQuery.Filter(.version, .equal, [.bool($0)]) }
+    }
+
     static func filter(kinds: Set<PhotoRecord.Kind>) -> LibraryQuery.Filter? {
         guard !kinds.isEmpty else { return nil }
         let kinds = PhotoRecord.Kind.allCases.filter(kinds.contains)
@@ -193,6 +205,12 @@ public extension LibraryFilters {
     func toggleEdited(_ edited: Bool) {
         let next = attributes.edited == edited ? nil : edited
         edit { $0.replacingFilters(on: .edited, with: FilterAttributes.filter(edited: next)) }
+    }
+
+    /// Versions, or the files' own photos: the same again shows both.
+    func toggleVersion(_ version: Bool) {
+        let next = attributes.version == version ? nil : version
+        edit { $0.replacingFilters(on: .version, with: FilterAttributes.filter(version: next)) }
     }
 
     func toggle(_ kind: PhotoRecord.Kind) {

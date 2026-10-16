@@ -4,10 +4,10 @@ import RedlampDocument
 import RedlampLibrary
 
 /// The filter bar's Attribute section, as Lightroom Classic's: flags, the rating with its comparison,
-/// colour labels, edited or not, kinds of file, marked photos, offline and damaged ones (LIB-40), the
-/// moments without a pick (LIB-41), and the soft-frame check's Proposals menu (LIB-42). Each button sets its field's
-/// filter in the query, which the text shows. Missing photos have none: only Library Health's Missing check lists
-/// them (DEC-59).
+/// colour labels, edited or not, kinds of file with originals and versions (LIB-48), marked photos, offline and damaged
+/// ones (LIB-40), the moments without a pick (LIB-41), and the soft-frame check's Proposals menu (LIB-42). Each button
+/// sets its field's filter in the query, which the text shows. Missing photos have none: only Library Health's Missing
+/// check lists them (DEC-59).
 final class FilterAttributeRow: NSView {
     private let model: EditorModel
     private var tracker: Tracker?
@@ -18,6 +18,10 @@ final class FilterAttributeRow: NSView {
     private let labels: [FilterAttributes.LabelChoice: FilterToggle]
     private let edited: FilterToggle
     private let unedited: FilterToggle
+    private let original = FilterToggle(symbol: "photo", identifier: "library.filter.original", tip: "Originals")
+    private let version = FilterToggle(
+        symbol: "square.on.square", identifier: "library.filter.version", tip: "Versions, as virtual copies",
+    )
     private let kinds: [PhotoRecord.Kind: FilterToggle]
     private let marked: FilterToggle
     private let offline: FilterToggle
@@ -73,6 +77,8 @@ final class FilterAttributeRow: NSView {
         }
         edited.onPress = { [weak self] _ in self?.model.libraryFilters?.toggleEdited(true) }
         unedited.onPress = { [weak self] _ in self?.model.libraryFilters?.toggleEdited(false) }
+        original.onPress = { [weak self] _ in self?.model.libraryFilters?.toggleVersion(false) }
+        version.onPress = { [weak self] _ in self?.model.libraryFilters?.toggleVersion(true) }
         for (kind, toggle) in kinds {
             toggle.onPress = { [weak self] _ in self?.model.libraryFilters?.toggle(kind) }
         }
@@ -98,7 +104,7 @@ final class FilterAttributeRow: NSView {
             (filterLabel("Rating"), [comparison] + stars),
             (filterLabel("Label"), FilterAttributes.LabelChoice.all.compactMap { labels[$0] }),
             (filterLabel("Edit"), [edited, unedited]),
-            (filterLabel("Kind"), FilterAttributes.offeredKinds.compactMap { kinds[$0] }),
+            (filterLabel("Kind"), FilterAttributes.offeredKinds.compactMap { kinds[$0] } + [original, version]),
             (filterLabel("Status"), [marked, offline, damaged]),
             (filterLabel("Moment"), [unpicked, proposals]),
         ]
@@ -164,6 +170,8 @@ final class FilterAttributeRow: NSView {
         }
         edited.isOn = attributes.edited == true
         unedited.isOn = attributes.edited == false
+        original.isOn = attributes.version == false
+        version.isOn = attributes.version == true
         for (kind, toggle) in kinds {
             toggle.isOn = attributes.kinds.contains(kind)
         }
