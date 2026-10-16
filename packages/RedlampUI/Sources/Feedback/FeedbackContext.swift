@@ -163,12 +163,16 @@ public extension FeedbackContext {
                 return id
             }
             guard model.history.indices.contains(model.historyIndex) else { return nil }
-            let action = model.history[model.historyIndex].action
+            let step = model.history[model.historyIndex]
+            let action = step.action
             if case .baseLook = action, model.recipe.baseLook.isFirmwareModel {
                 return "develop.firmware-model"
             }
             if case .baseLook = action, model.recipe.baseLook.isAdobeProfile {
                 return "develop.adobe-profiles"
+            }
+            if step.id == model.baseLooksStep {
+                return "recipes.base-looks"
             }
             return FeedbackArea.featureID(for: action)
         }

@@ -594,7 +594,7 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         guard entry.film != nil else { return nil }
         let choice = entry.choice(in: model, withFilmEffects: false)
         let item = NSMenuItem(title: "Apply Without Grain, Halation and Bloom") { [model] in
-            model.chooseLook(choice)
+            model.chooseLook(choice, inBaseLooks: true)
         }
         item.isEnabled = model.info != nil
         item.representedObject = choice

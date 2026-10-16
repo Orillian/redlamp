@@ -272,6 +272,19 @@ struct FeedbackReportTests {
         #expect(FeedbackContext.suggestion(model) == "saving.not-saved")
     }
 
+    @Test func `a look chosen in Base Looks suggests the panel, and one chosen in Basic its Base Look`() async throws {
+        let (model, _, cleanUp) = try await openEditor()
+        defer { cleanUp() }
+        model.chooseLook(model.lookChoice(for: BuiltInBaseLook.vivid.reference), inBaseLooks: true)
+        #expect(FeedbackContext.suggestion(model) == "recipes.base-looks")
+        model.setBaseLook(BuiltInBaseLook.neutral.reference)
+        #expect(FeedbackContext.suggestion(model) == "develop.treatment")
+        model.undo()
+        #expect(FeedbackContext.suggestion(model) == "recipes.base-looks")
+        model.setValue(.exposure, 0.5)
+        #expect(FeedbackContext.suggestion(model) == "develop.tone")
+    }
+
     @Test func `a format that isn't supported yet asks for it, and any other open error reports a bug`() async throws {
         let engine = StubEngine()
         let model = EditorModel(engine: engine)

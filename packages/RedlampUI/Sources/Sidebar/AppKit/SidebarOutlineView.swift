@@ -537,7 +537,7 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
             model.applyRecipe(recipe)
         case let .look(entry, _, _):
             guard model.info != nil else { return }
-            model.chooseLook(entry.choice(in: model))
+            model.chooseLook(entry.choice(in: model), inBaseLooks: true)
         case let .snapshot(snapshot):
             model.applySnapshot(snapshot)
         case let .history(_, index, _, _):

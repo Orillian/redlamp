@@ -39,8 +39,9 @@ public extension EditorModel {
         }
     }
 
-    /// Chooses a look as one History step, as every place a look is chosen does (DEC-104).
-    func chooseLook(_ choice: LookChoice) {
+    /// Chooses a look as one History step, as every place a look is chosen does (DEC-104); `inBaseLooks`
+    /// when it's chosen in the Base Looks panel.
+    func chooseLook(_ choice: LookChoice, inBaseLooks: Bool = false) {
         previewingRecipe = nil
         previewingLook = nil
         if let embedded = engine.embeddedBaseLook(), embedded.reference.isSameLook(as: choice.look) {
@@ -49,7 +50,11 @@ public extension EditorModel {
         if choice.look.isFirmwareModel, let definition = try? recipes.package(for: choice.look)?.definition() {
             recipes.keepFirmwareLook(definition)
         }
+        let last = history.last?.id
         commit(applying(choice, to: recipe), .baseLook, "Base Look") { $0.baseLook.name }
+        if inBaseLooks, let step = history.last?.id, step != last {
+            baseLooksStep = step
+        }
     }
 
     /// `edit` with `choice` applied, as choosing it applies it: a colour look chosen in place of a

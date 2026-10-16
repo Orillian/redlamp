@@ -786,6 +786,9 @@ public final class EditorModel {
     public internal(set) var previewingRecipe: Recipe?
     /// The look under the pointer, rendered as choosing it would apply it.
     public internal(set) var previewingLook: LookChoice?
+    /// The History step a look chosen in the Base Looks panel made, which Report a Bug suggests as the
+    /// panel's feature while it's the current step.
+    @ObservationIgnored var baseLooksStep: UUID?
     /// An edit rendered in place of the photo's without being applied: the command
     /// palette's white balance, treatment, snapshot and history previews.
     public internal(set) var previewingEdit: EditRecipe?
