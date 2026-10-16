@@ -13,6 +13,10 @@ public struct ExportSheet: View {
     public static let size = CGSize(width: 540, height: 720)
 
     let photoSize: PixelSize
+    /// The open photo's edit, for the bordered size; nil leaves the readout at the photo's size.
+    let recipe: EditRecipe?
+    /// The Borders recipes the Border menu offers.
+    let borders: [ExportBorder]
     let store: ExportPresetStore
     let namingPresets: NamingPresetStore?
     let height: CGFloat
@@ -49,6 +53,8 @@ public struct ExportSheet: View {
     init(
         plan: ExportPlan,
         photoSize: PixelSize,
+        recipe: EditRecipe? = nil,
+        borders: [ExportBorder] = [],
         store: ExportPresetStore,
         namingPresets: NamingPresetStore?,
         settings: ExportSettings? = nil,
@@ -58,6 +64,8 @@ public struct ExportSheet: View {
         onExport: @escaping (ExportSettings, UUID?, [ExportNames.Target]) -> Void,
     ) {
         self.photoSize = photoSize
+        self.recipe = recipe
+        self.borders = borders
         _plan = State(initialValue: plan)
         self.store = store
         self.namingPresets = namingPresets
@@ -146,7 +154,13 @@ public struct ExportSheet: View {
             }
             ExportLocationSection(plan: plan, namingPresets: namingPresets, settings: $settings)
             ExportFileSection(settings: $settings)
-            ExportSizeSection(photoSize: photoSize, sizing: $settings.sizing)
+            ExportBorderSection(border: $settings.border, borders: borders)
+            ExportSizeSection(
+                photoSize: recipe.map { settings.sizingSource(recipe: $0, size: photoSize) } ?? photoSize,
+                bordered: recipe
+                    .map { settings.border.apply(to: $0).borderLayout(imageSize: photoSize).hasBorder } ?? false,
+                sizing: $settings.sizing,
+            )
             Section {
                 Picker("Metadata", selection: $settings.metadata) {
                     ForEach(ExportMetadataPolicy.allCases, id: \.self) { Text($0.name).tag($0) }

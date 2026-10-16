@@ -42,12 +42,15 @@ enum ExportCommand {
       --ppi <n>                the resolution print layouts read (default 300)
       --metadata all|no-location|none   what the files carry of the photos' metadata; all and no-location also
                                embed the edit (default all)
+      --border as-edited|none|<recipe id>
+                               each photo's own border (the default), none, or a border recipe's, such as
+                               redlamp/border/white-4x5, on every photo; sizes include the border
     """
 
     private static let valued: Set<String> = [
         "--to", "--name", "--text", "--start", "--existing", "--format", "--quality", "--limit", "--compression",
         "--bit-depth", "--color-space", "--long-edge", "--short-edge", "--fit", "--megapixels", "--percent",
-        "--ppi", "--metadata",
+        "--ppi", "--metadata", "--border",
     ]
 
     private static let existingFiles: [(String, ExistingFilePolicy)] = [
@@ -162,6 +165,7 @@ enum ExportCommand {
             settings.bitDepth = depth
         }
         settings.sizing = try sizing(options)
+        settings.border = try border(options)
         settings.naming.template = options.value("--name") ?? ExportNaming.standard
         for text in options.values("--text") {
             if let equals = text.firstIndex(of: "=") {
@@ -209,6 +213,22 @@ enum ExportCommand {
             sizing.ppi = ppi
         }
         return sizing
+    }
+
+    /// The border `--border` asks for: as edited, none, or a border recipe's from the library.
+    private static func border(_ options: Arguments) throws -> ExportBorder {
+        guard let text = options.value("--border") else { return .asEdited }
+        switch text.lowercased() {
+        case "as-edited": return .asEdited
+        case "none": return .none
+        default:
+            guard let recipe = RecipeLibrary().all.first(where: { $0.id == text }), recipe.isBorderOnly else {
+                throw CLIError(
+                    description: "--border takes as-edited, none or a border recipe's id, such as redlamp/border/white-4x5",
+                )
+            }
+            return ExportBorder(recipeID: recipe.id, name: recipe.name, values: recipe.settings.values)
+        }
     }
 
     /// The value `name` gives, by its name in `choices`; nil when it isn't given.

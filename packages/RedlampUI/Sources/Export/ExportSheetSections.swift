@@ -186,9 +186,41 @@ struct ExportFileSection: View {
     }
 }
 
+/// The border each photo is exported with (EDT-35).
+struct ExportBorderSection: View {
+    @Binding var border: ExportBorder
+    let borders: [ExportBorder]
+
+    var body: some View {
+        Section {
+            Picker("Border", selection: $border) {
+                Text(ExportBorder.asEdited.title).tag(ExportBorder.asEdited)
+                Text(ExportBorder.none.title).tag(ExportBorder.none)
+                if !borders.isEmpty {
+                    Divider()
+                    ForEach(borders, id: \.self) { Text($0.title).tag($0) }
+                }
+                // A preset's recipe that's no longer in the library still draws its border.
+                if case .recipe = border, !borders.contains(border) {
+                    Text(border.title).tag(border)
+                }
+            }
+            .accessibilityIdentifier("export.border")
+        } footer: {
+            Text("""
+            As Edited keeps each photo's own border; None leaves it out, for a lab or a client; a \
+            border from Recipes › Borders goes around every photo exported. Sizes include the border.
+            """)
+            .formFooter()
+        }
+    }
+}
+
 /// The exported size, and its resolution for print.
 struct ExportSizeSection: View {
+    /// The photo's size, or its bordered canvas's when the export draws a border.
     let photoSize: PixelSize
+    var bordered = false
     @Binding var sizing: ExportSizing
 
     var body: some View {
@@ -253,7 +285,8 @@ struct ExportSizeSection: View {
     private var readout: String {
         let size = sizing.isValid ? sizing.resolve(photoSize) : photoSize
         let source = "\(photoSize.width) × \(photoSize.height)"
-        return size == photoSize ? "\(source) px (full size)" : "\(source) → \(size.width) × \(size.height) px"
+        let text = size == photoSize ? "\(source) px (full size)" : "\(source) → \(size.width) × \(size.height) px"
+        return bordered ? "\(text), border included" : text
     }
 
     private func field(_ title: String, value: Binding<Int>, unit: String) -> some View {

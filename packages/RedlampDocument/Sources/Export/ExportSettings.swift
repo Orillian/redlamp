@@ -197,6 +197,8 @@ public struct ExportSettings: Sendable, Hashable {
     public var bitDepth = 8
     public var colorSpace: OutputColorSpace = .sRGB
     public var sizing = ExportSizing()
+    /// The border each photo is exported with (EDT-35).
+    public var border: ExportBorder = .asEdited
     public var metadata: ExportMetadataPolicy = .all
     /// nil exports next to the original.
     public var destinationFolder: URL?
@@ -228,11 +230,19 @@ public struct ExportSettings: Sendable, Hashable {
         limitsFileSize && !format.isLossless
     }
 
-    /// The still to render for a photo of `source` pixels.
+    /// The size the sizing applies to for a photo of `size` pixels with `recipe`: the bordered
+    /// canvas when the export draws a border, so a long edge is the file's.
+    public func sizingSource(recipe: EditRecipe, size: PixelSize) -> PixelSize {
+        let exported = border.apply(to: recipe)
+        let layout = exported.borderLayout(imageSize: size)
+        return layout.hasBorder ? layout.canvasSize : size
+    }
+
+    /// The still to render for a photo of `source` pixels, with the export's border.
     public func stillRequest(recipe: EditRecipe, source: URL, size: PixelSize) -> StillRequest {
         var request = StillRequest(
-            recipe: recipe,
-            maxLongEdge: sizing.maxLongEdge(for: size),
+            recipe: border.apply(to: recipe),
+            maxLongEdge: sizing.maxLongEdge(for: sizingSource(recipe: recipe, size: size)),
             colorSpace: colorSpace,
             bitsPerComponent: bitsPerComponent,
             purpose: .export,
@@ -245,7 +255,7 @@ public struct ExportSettings: Sendable, Hashable {
 extension ExportSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case format, quality, limitsFileSize, fileSizeLimitKB, tiffCompression, bitDepth, colorSpace, sizing
-        case metadata, destinationFolder, naming, existingFiles, revealInFinder
+        case border, metadata, destinationFolder, naming, existingFiles, revealInFinder
     }
 
     /// Missing or unreadable keys (from older or newer versions) take their defaults, so saved
@@ -264,6 +274,7 @@ extension ExportSettings: Codable {
         bitDepth = value(.bitDepth, defaults.bitDepth)
         colorSpace = value(.colorSpace, defaults.colorSpace)
         sizing = value(.sizing, defaults.sizing)
+        border = value(.border, defaults.border)
         metadata = value(.metadata, defaults.metadata)
         destinationFolder = value(.destinationFolder, defaults.destinationFolder)
         naming = value(.naming, defaults.naming)

@@ -2,6 +2,7 @@ import AppKit
 import RedlampDocument
 import RedlampEngineAPI
 import RedlampLibrary
+import RedlampRecipes
 import SwiftUI
 
 /// The Export dialog and Export with Previous, on the photos selected in the filmstrip or the grid (EDT-16): one
@@ -79,6 +80,10 @@ public enum ExportActions {
         sheetWindow.contentViewController = NSHostingController(rootView: ExportSheet(
             plan: plan,
             photoSize: info.pixelSize,
+            recipe: model.unobservedRecipe,
+            borders: model.recipes.library.all.filter(\.isBorderOnly).map { recipe in
+                ExportBorder(recipeID: recipe.id, name: recipe.name, values: recipe.settings.values)
+            },
             store: store,
             namingPresets: presets,
             height: height,
