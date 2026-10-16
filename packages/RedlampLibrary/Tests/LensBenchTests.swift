@@ -205,7 +205,7 @@ struct LensBenchTests {
         let url = directory.appending(path: "Index.sqlite")
         try await Self.olderIndex(at: url, photos: Self.photoCount)
         let started = ContinuousClock.now
-        let index = try await LibraryIndex.open(at: url)
+        let index = try await LibraryIndex.open(at: url, migrations: Array(LibraryIndex.migrations.prefix(12)))
         let elapsed = ContinuousClock.now - started
         defer { index.closeAndWait() }
         let (widest, focal35, marked, folders) = try await index.read { reader in
@@ -246,7 +246,7 @@ struct LensBenchTests {
             let copy = work.appending(path: "Run\(run).sqlite")
             try FileManager.default.copyItem(at: url, to: copy)
             let started = ContinuousClock.now
-            let index = try await LibraryIndex.open(at: copy)
+            let index = try await LibraryIndex.open(at: copy, migrations: Array(LibraryIndex.migrations.prefix(12)))
             let elapsed = ContinuousClock.now - started
             let (widest, focal35, marked, total) = try await index.read { reader in
                 func count(_ sql: String) throws -> Int {

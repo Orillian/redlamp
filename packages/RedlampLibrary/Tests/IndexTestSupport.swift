@@ -156,6 +156,10 @@ struct SyntheticIndexPhotos {
 }
 
 extension LibraryIndex {
+    /// What `withOlder` adds a column as where the writer needs more than the column: the file's own rows have an
+    /// empty `version`, which the writer's upsert finds by with `photos_place`.
+    private static let olderColumns = ["version": "TEXT NOT NULL DEFAULT ''"]
+
     /// Runs `body` on the index at `url` opened at the version `migrations` make, as that version's build filled and
     /// read it: the columns of `photos` this build's writer and readers name that later versions add are there while
     /// `body` runs, and gone again before the index closes, so opening it at this version migrates it as it would.
@@ -169,13 +173,20 @@ extension LibraryIndex {
             })
             let added = IndexColumns.photoFields.filter { !present.contains($0) }
             for column in added {
-                try writer.database.execute("ALTER TABLE photos ADD COLUMN \(column)")
+                try writer.database
+                    .execute("ALTER TABLE photos ADD COLUMN \(column) \(Self.olderColumns[column] ?? "")")
+            }
+            if added.contains("version") {
+                try writer.database.execute(Self.schemaVersion15Index)
             }
             return added
         }
         do {
             let result = try await body(index)
             try await index.write { writer in
+                if added.contains("version") {
+                    try writer.database.execute("DROP INDEX photos_place")
+                }
                 for column in added {
                     try writer.database.execute("ALTER TABLE photos DROP COLUMN \(column)")
                 }

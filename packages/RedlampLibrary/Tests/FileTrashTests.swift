@@ -212,6 +212,7 @@ struct FileTrashTests {
         row.widestAperture = 2.8
         row.focal35 = 105
         row.customLabelColor = .orange
+        row.version = UUID()
         return row
     }
 

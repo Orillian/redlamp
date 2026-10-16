@@ -59,6 +59,8 @@ extension LibraryIndexer {
             var ended: [Int64] = []
             /// Photos marked missing, their files gone (DEC-59).
             var missing: [Int64] = []
+            /// Versions taken out of their photos' sidecars, whose rows went (LIB-48).
+            var removed: [Int64] = []
             /// Folders that vanished with no photo in them, whose rows went.
             var foldersRemoved = 0
             var completed: [FolderIndexed] = []
@@ -379,9 +381,12 @@ private struct BatchWrite {
                 photos.append(replacement)
             }
         }
-        try writer.movePhotos(moving)
+        let versions = try writer.movePhotos(moving)
         try writer.markFound(moving.map(\.photo))
         outcome.updated = moving.map(\.photo)
+        for version in versions where updated.insert(version).inserted {
+            outcome.updated.append(version)
+        }
         outcome.moved = moving.count
     }
 
@@ -421,6 +426,25 @@ private struct BatchWrite {
             } else if updated.insert(id).inserted {
                 outcome.updated.append(id)
             }
+            try writeVersions(of: photo, as: id)
+        }
+    }
+
+    /// The rows of the photo's versions (LIB-48): from its sidecar when it was read, and otherwise the file's fields
+    /// its row has now.
+    private mutating func writeVersions(of photo: LibraryIndexer.PendingPhoto, as id: Int64) throws {
+        guard let versions = photo.versions else {
+            for version in try writer.carryFile(of: id) where updated.insert(version).inserted {
+                outcome.updated.append(version)
+            }
+            return
+        }
+        guard !(photo.isNew && versions.isEmpty) else { return }
+        let rows = try writer.setVersions(versions, ofPhoto: id)
+        outcome.inserted += rows.inserted
+        outcome.removed += rows.removed
+        for version in rows.updated where updated.insert(version).inserted {
+            outcome.updated.append(version)
         }
     }
 

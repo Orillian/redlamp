@@ -9,7 +9,7 @@ extension LibraryIndex {
     static let migrations: [Migration] = [
         createVersion1, migrateToVersion2, migrateToVersion3, migrateToVersion4, migrateToVersion5,
         migrateToVersion6, migrateToVersion7, migrateToVersion8, migrateToVersion9, migrateToVersion10,
-        migrateToVersion11, migrateToVersion12, migrateToVersion13, migrateToVersion14,
+        migrateToVersion11, migrateToVersion12, migrateToVersion13, migrateToVersion14, migrateToVersion15,
     ]
 
     /// The version of the schema this build makes and opens.
@@ -92,6 +92,50 @@ extension LibraryIndex {
 
     static func migrateToVersion14(_ database: SQLiteDatabase) throws {
         try database.execute(schemaVersion14)
+    }
+
+    /// SQLite can't drop a table's own `UNIQUE`, so `photos` is made again, every column as the table has it and every
+    /// row under its ID, which the text index, keywords, collections and the other tables name; its indexes and the
+    /// views, which name it, are made again from their SQL. An index set back to an earlier version with the column
+    /// only gains the unique index it lacks.
+    static func migrateToVersion15(_ database: SQLiteDatabase) throws {
+        let columns = try database.prepare("""
+        SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_info('photos') ORDER BY cid
+        """).map { row in
+            let name = row.string(at: 0) ?? ""
+            var definition = "\"\(name)\" \(row.string(at: 1) ?? "")"
+            if row.int(at: 4) != 0 {
+                definition += " PRIMARY KEY"
+            }
+            if row.int(at: 2) != 0 {
+                definition += " NOT NULL"
+            }
+            if let value = row.string(at: 3) {
+                definition += " DEFAULT \(value)"
+            }
+            return (name: name, definition: definition)
+        }
+        guard !columns.contains(where: { $0.name == "version" }) else {
+            return try database.execute(schemaVersion15Index)
+        }
+        let kept = try database.prepare("""
+        SELECT type, name, sql FROM sqlite_schema
+        WHERE sql IS NOT NULL AND ((type = 'index' AND tbl_name = 'photos') OR type = 'view') ORDER BY type, name
+        """).map { (type: $0.string(at: 0) ?? "", name: $0.string(at: 1) ?? "", sql: $0.string(at: 2) ?? "") }
+        for view in kept where view.type == "view" {
+            try database.execute("DROP VIEW \(view.name)")
+        }
+        let names = columns.map { "\"\($0.name)\"" }.joined(separator: ", ")
+        try database.execute("""
+        CREATE TABLE photos_15 (\(columns.map(\.definition).joined(separator: ", ")), version TEXT NOT NULL DEFAULT '');
+        INSERT INTO photos_15 (\(names)) SELECT \(names) FROM photos;
+        DROP TABLE photos;
+        ALTER TABLE photos_15 RENAME TO photos;
+        """)
+        for object in kept {
+            try database.execute(object.sql)
+        }
+        try database.execute(schemaVersion15Index)
     }
 
     /// Brings `database` up to the last version `migrations` knows, one step per transaction.
@@ -340,6 +384,14 @@ extension LibraryIndex {
     static let schemaVersion14 = """
     CREATE TABLE IF NOT EXISTS photo_sharpness (content_key BLOB PRIMARY KEY, version INTEGER NOT NULL,
       focus INTEGER NOT NULL, score REAL NOT NULL DEFAULT 0, cells BLOB) WITHOUT ROWID;
+    """
+
+    /// Versions of photos (LIB-48, EDT-09): each version of a photo's edit, as Lightroom Classic's virtual copies, is a
+    /// row of its own beside its file's, with the file's folder and name and the version's UUID in `version`, empty for
+    /// the file's own row; a photo's place is unique by the three, in an index rather than the table's `UNIQUE`, so a
+    /// later change to it needs no table made again. Empty rather than NULL, which a unique index takes as distinct.
+    static let schemaVersion15Index = """
+    CREATE UNIQUE INDEX IF NOT EXISTS photos_place ON photos (folder, name, version);
     """
 }
 

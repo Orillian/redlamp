@@ -167,7 +167,9 @@ public extension LibraryIndex.Writer {
     /// all its rows are in.
     @discardableResult
     func upsertPhotos(_ photos: [PhotoRecord]) throws -> [Int64] {
-        let existing = try database.cached("SELECT id, title, caption FROM photos WHERE folder = ? AND name = ?")
+        let existing = try database.cached(
+            "SELECT id, title, caption FROM photos WHERE folder = ? AND name = ? AND version = ?",
+        )
         let upsert = try database.cached(Self.upsertPhoto)
         var ids: [Int64] = []
         ids.reserveCapacity(photos.count)
@@ -178,6 +180,7 @@ public extension LibraryIndex.Writer {
         for photo in photos {
             try existing.bind(photo.folder, at: 1)
             try existing.bind(photo.name, at: 2)
+            try existing.bind(PhotoRecord.code(for: photo.version), at: 3)
             let before = try existing.first { row in
                 (
                     id: row.int64(at: 0),
@@ -215,39 +218,63 @@ public extension LibraryIndex.Writer {
 
     /// Moves photos to other folders or names (renames or moves Redlamp made), keeping their IDs; a
     /// new extension gives a photo the kind it names (LIB-40's renames to the extension a file's
-    /// format takes).
-    func movePhotos(_ moves: [(photo: Int64, folder: Int64, name: String)]) throws {
-        let statement = try database.cached("UPDATE photos SET folder = ?, name = ?, kind = ? WHERE id = ?")
+    /// format takes). A file's versions go with it (LIB-48), whichever of its rows is moved; returns the rows of
+    /// versions moved.
+    @discardableResult
+    func movePhotos(_ moves: [(photo: Int64, folder: Int64, name: String)]) throws -> [Int64] {
+        let statement = try database.cached("""
+        UPDATE photos SET folder = ?1, name = ?2, kind = ?3
+        WHERE (folder, name) = (SELECT folder, name FROM photos WHERE id = ?4) RETURNING id
+        """)
+        var moved: [Int64] = []
         for move in moves {
             try statement.bind(move.folder, at: 1)
             try statement.bind(move.name, at: 2)
             try statement.bind(PhotoRecord.Kind(pathExtension: (move.name as NSString).pathExtension).rawValue, at: 3)
             try statement.bind(move.photo, at: 4)
-            try statement.run()
+            moved += try statement.map { $0.int64(at: 0) }
         }
-        try writeText(replacing: moves.map(\.photo))
+        try writeText(replacing: Array(Set(moved).union(moves.map(\.photo))))
+        return Array(Set(moved).subtracting(moves.map(\.photo))).sorted()
     }
 
-    /// Removes photos, with their keywords, collection memberships and text; returns how many
-    /// there were.
+    /// Removes photos, with their keywords, collection memberships and text, and the versions of the files whose own
+    /// rows are among them (LIB-48); returns how many there were, versions included.
     @discardableResult
     func deletePhotos(_ ids: [Int64]) throws -> Int {
-        let photo = try database.cached("DELETE FROM photos WHERE id = ?")
+        try removePhotos(ids).count
+    }
+
+    /// Removes photos as `deletePhotos` does; returns the IDs of the rows removed, versions included.
+    func removePhotos(_ ids: [Int64]) throws -> [Int64] {
+        let photo = try database.cached("DELETE FROM photos WHERE id = ? RETURNING folder, name, version")
+        let versions = try database.cached(
+            "DELETE FROM photos WHERE folder = ? AND name = ? AND version != '' RETURNING id",
+        )
         let keywords = try database.cached("DELETE FROM photo_keywords WHERE photo = ?")
         let collections = try database.cached("DELETE FROM collection_photos WHERE photo = ?")
         let text = try database.cached("DELETE FROM photo_text WHERE rowid = ?")
-        var deleted = 0
+        var removed: [Int64] = []
         for id in ids {
             try photo.bind(id, at: 1)
-            try photo.run()
-            guard database.changes > 0 else { continue }
-            deleted += 1
-            for statement in [keywords, collections, text] {
-                try statement.bind(id, at: 1)
-                try statement.run()
+            guard let place = try photo
+                .map({ (folder: $0.int64(at: 0), name: $0.string(at: 1), file: $0.string(at: 2)) })
+                .first else { continue }
+            var gone = [id]
+            if place.file?.isEmpty != false {
+                try versions.bind(place.folder, at: 1)
+                try versions.bind(place.name, at: 2)
+                gone += try versions.map { $0.int64(at: 0) }
             }
+            for row in gone {
+                for statement in [keywords, collections, text] {
+                    try statement.bind(row, at: 1)
+                    try statement.run()
+                }
+            }
+            removed += gone
         }
-        return deleted
+        return removed
     }
 
     /// Sets organising fields on every photo in `ids` (the last change to a field wins); returns
@@ -421,10 +448,11 @@ extension LibraryIndex.Writer {
     static let upsertPhoto: String = {
         let fields = IndexColumns.photoFields
         let parameters = (fields.indices.map { "?\($0 + 1)" } + ["?\(upsertPhotoID)"]).joined(separator: ", ")
-        let updates = fields.dropFirst(2).map { "\($0) = excluded.\($0)" }.joined(separator: ", ")
+        let updates = fields.filter { !IndexColumns.photoPlace.contains($0) }.map { "\($0) = excluded.\($0)" }
+            .joined(separator: ", ")
         return """
         INSERT INTO photos (\(fields.joined(separator: ", ")), id) VALUES (\(parameters))
-        ON CONFLICT (folder, name) DO UPDATE SET \(updates) RETURNING id
+        ON CONFLICT (\(IndexColumns.photoPlace.joined(separator: ", "))) DO UPDATE SET \(updates) RETURNING id
         """
     }()
 
@@ -482,6 +510,7 @@ extension LibraryIndex.Writer {
         try statement.bind(photo.widestAperture, at: 48)
         try statement.bind(photo.focal35, at: 49)
         try statement.bind(photo.customLabelColor?.rawValue, at: 50)
+        try statement.bind(PhotoRecord.code(for: photo.version), at: 51)
     }
 
     /// The ID an `INSERT ... RETURNING id` returns. SQLite makes the change at the first step.

@@ -77,53 +77,77 @@ public extension IndexQueries {
         return try statement.first(PhotoRecord.init)
     }
 
+    /// The file's own photo named `name` in `folder`, not one of its versions.
     func photo(folder: Int64, name: String) throws -> PhotoRecord? {
-        let statement = try database.cached("SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? AND name = ?")
+        let statement = try database.cached(
+            "SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? AND name = ? AND version = ''",
+        )
         try statement.bind(folder, at: 1)
         try statement.bind(name, at: 2)
         return try statement.first(PhotoRecord.init)
     }
 
-    /// The photo at `path`: its folder's path, a slash and its name, as the file system lists them.
+    /// The versions of the file named `name` in `folder` (LIB-48), in the order they were added.
+    func versions(folder: Int64, name: String) throws -> [PhotoRecord] {
+        let statement = try database.cached(
+            "SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? AND name = ? AND version != '' ORDER BY id",
+        )
+        try statement.bind(folder, at: 1)
+        try statement.bind(name, at: 2)
+        return try statement.map(PhotoRecord.init)
+    }
+
+    /// The file's own photo at `path`: its folder's path, a slash and its name, as the file system lists them.
     func photo(path: String) throws -> PhotoRecord? {
         guard let slash = path.lastIndex(of: "/") else { return nil }
         let statement = try database.cached("""
         SELECT \(IndexColumns.photo(prefix: "p.")) FROM photos p JOIN folders f ON f.id = p.folder
-        WHERE f.path = ? AND p.name = ?
+        WHERE f.path = ? AND p.name = ? AND p.version = ''
         """)
         try statement.bind(String(path[..<slash]), at: 1)
         try statement.bind(String(path[path.index(after: slash)...]), at: 2)
         return try statement.first(PhotoRecord.init)
     }
 
-    /// The photos with file identifier `fileID` on `volume`: one, unless the volume reused it.
+    /// The files' own photos with file identifier `fileID` on `volume`: one, unless the volume reused it.
     func photos(fileID: UInt64, volume: Int64) throws -> [PhotoRecord] {
         let statement = try database.cached("""
         SELECT \(IndexColumns.photo(prefix: "p.")) FROM photos p JOIN folders f ON f.id = p.folder
-        JOIN roots r ON r.id = f.root WHERE p.file_id = ? AND r.volume = ? ORDER BY p.id
+        JOIN roots r ON r.id = f.root WHERE p.file_id = ? AND r.volume = ? AND p.version = '' ORDER BY p.id
         """)
         try statement.bind(Int64(bitPattern: fileID), at: 1)
         try statement.bind(volume, at: 2)
         return try statement.map(PhotoRecord.init)
     }
 
-    /// The photos showing the same content: copies of one file, on any volume. It reads every photo,
+    /// The files' own photos showing the same content: copies of one file, on any volume. It reads every photo,
     /// since content keys have no index (schema version 2): looking up many, load the keys once.
     func photos(contentKey: Data) throws -> [PhotoRecord] {
         let statement = try database
-            .cached("SELECT \(IndexColumns.photo) FROM photos WHERE content_key = ? ORDER BY id")
+            .cached("SELECT \(IndexColumns.photo) FROM photos WHERE content_key = ? AND version = '' ORDER BY id")
         try statement.bind(contentKey, at: 1)
         return try statement.map(PhotoRecord.init)
     }
 
-    /// The photos in `folder`, by name.
+    /// The files' own photos in `folder`, by name; their versions are `versions(inFolder:)`.
     func photos(inFolder folder: Int64) throws -> [PhotoRecord] {
-        let statement = try database.cached("SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? ORDER BY name")
+        let statement = try database.cached(
+            "SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? AND version = '' ORDER BY name",
+        )
         try statement.bind(folder, at: 1)
         return try statement.map(PhotoRecord.init)
     }
 
-    /// The photos in `folder` and every folder under it, by folder and name.
+    /// The versions of the files in `folder` (LIB-48), by name and then in the order they were added.
+    func versions(inFolder folder: Int64) throws -> [PhotoRecord] {
+        let statement = try database.cached(
+            "SELECT \(IndexColumns.photo) FROM photos WHERE folder = ? AND version != '' ORDER BY name, id",
+        )
+        try statement.bind(folder, at: 1)
+        return try statement.map(PhotoRecord.init)
+    }
+
+    /// The photos in `folder` and every folder under it, by folder and name, versions included.
     func photos(inSubtreeOf folder: Int64) throws -> [PhotoRecord] {
         guard let path = try self.folder(id: folder)?.path else { return [] }
         let statement = try database.cached("""
@@ -299,8 +323,12 @@ enum IndexColumns {
         "rating", "flag", "label", "marked", "edited", "sidecar_modified", "xmp_modified", "title", "caption", "state",
         "indexed", "custom_label", "creator", "copyright", "sublocation", "city", "province", "country", "country_code",
         "stack", "stack_top", "other_fields", "xmp_signature", "camera_captured", "camera_offset", "stack_position",
-        "missing_since", "widest_aperture", "focal35", "custom_label_color",
+        "missing_since", "widest_aperture", "focal35", "custom_label_color", "version",
     ]
+
+    /// The columns a photo's row is unique by: its file's folder and name, and its version's UUID, empty for the
+    /// file's own (LIB-48).
+    static let photoPlace = ["folder", "name", "version"]
 
     static func photo(prefix: String) -> String {
         (["id"] + photoFields).map { prefix + $0 }.joined(separator: ", ")
@@ -368,6 +396,7 @@ extension PhotoRecord {
             cameraCaptured: date(44), cameraOffset: row.optionalInt(at: 45), missingSince: date(47),
             widestAperture: row.optionalDouble(at: 48), focal35: row.optionalDouble(at: 49),
             customLabelColor: row.string(at: 50).map(LabelColor.init(rawValue:)),
+            version: Self.version(code: row.string(at: 51)),
         )
     }
 

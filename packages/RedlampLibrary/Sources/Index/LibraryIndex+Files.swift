@@ -55,7 +55,9 @@ public extension LibraryIndex.Writer {
     func placePhotos(_ places: [(photo: Int64, folder: Int64, name: String)]) throws -> [Int64] {
         let moving = Set(places.map(\.photo))
         var stale: [Int64] = []
-        let park = try database.cached("UPDATE photos SET name = ? WHERE id = ?")
+        let park = try database.cached(
+            "UPDATE photos SET name = ?1 WHERE (folder, name) = (SELECT folder, name FROM photos WHERE id = ?2)",
+        )
         for place in places {
             guard let holder = try photo(folder: place.folder, name: place.name),
                   holder.id != place.photo else { continue }
@@ -75,15 +77,17 @@ public extension LibraryIndex.Writer {
     /// Moves missing photo `photo` to the file it was found as (DEC-59), named `name` in `folder`, with that file's
     /// identifier, size and date: found again, and read again from the file when its folder is next listed. A row of
     /// another photo holding the place is of the file, indexed as new meanwhile, and is removed; returns those removed.
+    /// The photo's versions go with it (LIB-48), whichever of the file's rows `photo` is.
     @discardableResult
     func relinkPhoto(
         _ photo: Int64, toFolder folder: Int64, name: String, fileID: UInt64?, size: Int64?, modified: Date?,
     ) throws -> [Int64] {
+        let photo = try fileRow(of: photo) ?? photo
         var removed: [Int64] = []
         if let holder = try self.photo(folder: folder, name: name), holder.id != photo {
-            try deletePhotos([holder.id])
-            removed.append(holder.id)
+            removed = try removePhotos([holder.id])
         }
+        try movePhotos([(photo, folder, name)])
         let statement = try database.cached("""
         UPDATE photos SET folder = ?1, name = ?2, kind = ?3, file_id = ?4, size = coalesce(?5, size),
           modified = coalesce(?6, modified), state = state & ~?7, missing_since = NULL, indexed = 0 WHERE id = ?8
@@ -98,18 +102,25 @@ public extension LibraryIndex.Writer {
         try statement.bind(photo, at: 8)
         try statement.run()
         try writeText(replacing: [photo])
+        try carryFile(of: photo)
         return removed
     }
 
+    /// Sets the file identifier of `photo`'s file, on its own row and its versions' (LIB-48).
     func setFileID(_ fileID: UInt64?, forPhoto photo: Int64) throws {
-        let statement = try database.cached("UPDATE photos SET file_id = ? WHERE id = ?")
+        let statement = try database.cached("""
+        UPDATE photos SET file_id = ?1 WHERE (folder, name) = (SELECT folder, name FROM photos WHERE id = ?2)
+        """)
         try statement.bind(fileID.map { Int64(bitPattern: $0) }, at: 1)
         try statement.bind(photo, at: 2)
         try statement.run()
     }
 
+    /// Sets the date of `photo`'s sidecar, which its file's versions share (LIB-48), on every row of the file.
     func setSidecarModified(_ date: Date?, forPhoto photo: Int64) throws {
-        let statement = try database.cached("UPDATE photos SET sidecar_modified = ? WHERE id = ?")
+        let statement = try database.cached("""
+        UPDATE photos SET sidecar_modified = ?1 WHERE (folder, name) = (SELECT folder, name FROM photos WHERE id = ?2)
+        """)
         try statement.bind(date?.timeIntervalSince1970, at: 1)
         try statement.bind(photo, at: 2)
         try statement.run()

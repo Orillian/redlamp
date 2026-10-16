@@ -97,7 +97,7 @@ struct SharpnessIndexTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "Index.sqlite")
         try await Self.version13(at: url, photos: 1000)
-        let index = try await LibraryIndex.open(at: url)
+        let index = try await LibraryIndex.open(at: url, migrations: Array(LibraryIndex.migrations.prefix(14)))
         defer { index.closeAndWait() }
         let (version, photos, measured) = try await index.read { reader in
             try (
@@ -116,7 +116,7 @@ struct SharpnessIndexTests {
         let url = directory.appending(path: "Index.sqlite")
         try await Self.version13(at: url, photos: 1_000_000)
         let started = ContinuousClock.now
-        let index = try await LibraryIndex.open(at: url)
+        let index = try await LibraryIndex.open(at: url, migrations: Array(LibraryIndex.migrations.prefix(14)))
         let elapsed = ContinuousClock.now - started
         defer { index.closeAndWait() }
         #expect(try await index.read { try $0.database.userVersion } == 14)

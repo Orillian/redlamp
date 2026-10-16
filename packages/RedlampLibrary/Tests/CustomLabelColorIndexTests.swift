@@ -100,7 +100,7 @@ struct CustomLabelColorIndexTests {
         }
         let migrated = try await LibraryIndex.open(at: url)
         let (version, names) = try await columns(migrated)
-        #expect(version == LibraryIndex.schemaVersion && names.last == "custom_label_color")
+        #expect(version == LibraryIndex.schemaVersion && names.contains("custom_label_color"))
         await migrated.close()
 
         try SQLiteDatabase(path: url.path).setUserVersion(12)

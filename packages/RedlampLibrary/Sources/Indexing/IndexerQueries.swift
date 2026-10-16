@@ -131,9 +131,11 @@ public extension LibraryIndex.Writer {
             try statement.run()
             if database.changes > 0 {
                 marked.append(row.photo)
+                marked += try carryFile(of: row.photo)
             }
         }
-        return marked
+        var seen = Set<Int64>()
+        return marked.filter { seen.insert($0).inserted }
     }
 
     /// Marks missing, from `date`, the photos in `folder` and every folder under it, as `markMissing(_:at:)` does.
@@ -155,9 +157,11 @@ public extension LibraryIndex.Writer {
             try statement.run()
             if database.changes > 0 {
                 found.append(id)
+                found += try carryFile(of: id)
             }
         }
-        return found
+        var seen = Set<Int64>()
+        return found.filter { seen.insert($0).inserted }
     }
 
     /// Records that the index holds the changes of the volume with `uuid` up to `history.lastEvent`

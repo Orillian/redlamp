@@ -49,6 +49,7 @@ extension LibraryIndexer.Run {
                 folder: job.folder, record: record, keywords: changed.keywords,
                 collections: sidecar.summary.metadata.collections, isNew: false,
             )
+            photo.versions = sidecar.summary.versions
             photo.listed = job.existing
             count(photo, in: job.folder)
             await batcher.add([.photo(photo)])
@@ -257,6 +258,7 @@ extension LibraryIndexer.Run {
         )
         photo.health = health
         photo.endCheck = endCheck
+        photo.versions = sidecar?.summary.versions ?? []
         photo.listed = job.existing
         return photo
     }
@@ -718,6 +720,8 @@ extension LibraryIndexer {
         var thumbnail: Thumbnail?
         /// What its file's read found (LIB-40); nil keeps what the index has, for a photo not read.
         var health: PhotoHealth?
+        /// Its versions (LIB-48), as its sidecar has them, none without one; nil keeps their rows.
+        var versions: [VersionSummary]?
         /// Its end, still to be read once its row is written.
         var endCheck: EndCheck?
         /// Its row as its folder's listing found it; nil for a photo new to the index. A row that has changed since

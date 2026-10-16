@@ -206,6 +206,10 @@ public struct PhotoRecord: Sendable, Hashable {
     public var focal35: Double?
     /// The colour its sidecar gives `customLabel` (LIB-15).
     public var customLabelColor: LabelColor?
+    /// The version of its file's edit the row is (LIB-48, EDT-09), Lightroom Classic's virtual copy, with its own
+    /// organising fields and edit; nil for the file's own row. Every row of a file has the file's folder, name and
+    /// file fields.
+    public var version: UUID?
 
     public init(
         id: Int64 = 0, folder: Int64, name: String, kind: Kind? = nil, size: Int64 = 0,
@@ -220,6 +224,7 @@ public struct PhotoRecord: Sendable, Hashable {
         location: PhotoLocation? = nil, stack: PhotoStack? = nil, otherFields: Set<XMPField> = [],
         xmpSignature: Int64? = nil, cameraCaptured: Date? = nil, cameraOffset: Int? = nil, missingSince: Date? = nil,
         widestAperture: Double? = nil, focal35: Double? = nil, customLabelColor: LabelColor? = nil,
+        version: UUID? = nil,
     ) {
         self.id = id
         self.folder = folder
@@ -266,6 +271,16 @@ public struct PhotoRecord: Sendable, Hashable {
         self.widestAperture = widestAperture
         self.focal35 = focal35
         self.customLabelColor = customLabelColor
+        self.version = version
+    }
+
+    /// The `version` column: a version's UUID, empty for the file's own row, as a unique index wants.
+    public static func code(for version: UUID?) -> String {
+        version?.uuidString ?? ""
+    }
+
+    public static func version(code: String?) -> UUID? {
+        code.flatMap(UUID.init(uuidString:))
     }
 
     /// `indexed` of a photo read before the index kept its lens's widest aperture and 35 mm focal length (schema

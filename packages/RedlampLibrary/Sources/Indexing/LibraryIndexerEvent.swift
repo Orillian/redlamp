@@ -9,7 +9,8 @@ public enum LibraryIndexerEvent: Sendable, Hashable {
     /// Photos whose rows changed, keeping their IDs: read again, organised in another app, renamed
     /// or moved.
     case photosUpdated([Int64])
-    /// Photos taken out of the index: those of a root removed from the library.
+    /// Photos taken out of the index: those of a root removed from the library, and versions taken out of their
+    /// photos' sidecars (LIB-48).
     case photosRemoved([Int64])
     /// Photos whose files went from their folders outside Redlamp, kept in the index as missing (DEC-59): every list
     /// but Library Health's Missing check leaves them out.

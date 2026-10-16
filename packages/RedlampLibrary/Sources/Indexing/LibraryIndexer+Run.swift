@@ -780,6 +780,9 @@ extension LibraryIndexer.Run {
         if !outcome.missing.isEmpty {
             events.yield(.photosMissing(outcome.missing))
         }
+        if !outcome.removed.isEmpty {
+            events.yield(.photosRemoved(outcome.removed))
+        }
         for folder in outcome.completed {
             events.yield(.folderIndexed(folder))
         }
