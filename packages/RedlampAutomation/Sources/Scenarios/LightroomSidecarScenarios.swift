@@ -59,7 +59,12 @@
                 "the converted edits: \(String(describing: provenance))",
             )
             try app.expect(sidecars.load(for: photos[1])?.recipe == edited, "the photo edited in Redlamp kept its edit")
-            try app.expect(try app.pressInSheet(KeyCombo(.character("\r"))), "Done took Return")
+            // The sheet shows Done a moment after the conversion is done; until then nothing in it takes Return.
+            let deadline = Date().addingTimeInterval(10)
+            while try !app.pressInSheet(KeyCombo(.character("\r"))) {
+                try app.expect(Date() < deadline, "Done didn't take Return")
+                app.pause(0.1)
+            }
             try app.wait("the sheet closed", timeout: 10) { $0.lightroomConversion == nil }
 
             try app.choose(.undoSync)

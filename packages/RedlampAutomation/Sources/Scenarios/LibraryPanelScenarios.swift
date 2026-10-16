@@ -276,25 +276,9 @@
         /// its source as it's pressed. A list in a window that isn't key takes the press as the click after
         /// activation would.
         func clickSourceRow(_ identifier: String) throws {
-            @MainActor func row() -> NSView? {
-                guard let root = Views.editorWindow?.contentView?.superview else { return nil }
-                return Views.all(NSView.self, in: root).first {
-                    $0.accessibilityIdentifier() == identifier && !$0.isHiddenOrHasHiddenAncestor
-                }
-            }
-            // A row just added, or scrolled to, may still be moving into its place: pressed where it was a moment
-            // before, the press lands on the row beside it.
-            let place = PlaceBox()
-            try wait("\(identifier) on screen, in its place") { _ in
-                guard let row = row() else { return false }
-                row.scrollToVisible(row.bounds)
-                Views.editorWindow?.contentView?.layoutSubtreeIfNeeded()
-                let frame = row.convert(row.bounds, to: nil)
-                defer { place.last = frame }
-                return frame == place.last
-            }
+            try waitForSourceRowInPlace(identifier)
             post { _ in
-                guard let window = Views.editorWindow, let row = row() else { return }
+                guard let window = Views.editorWindow, let row = Self.sourceRow(identifier) else { return }
                 let frame = row.convert(row.bounds, to: nil)
                 let location = NSPoint(x: frame.midX, y: frame.midY)
                 guard let press = NSEvent.mouseEvent(
@@ -335,24 +319,17 @@
         /// it would wait behind the menu, which waits for the question.
         func rightClickSourceRow(_ identifier: String, choosing path: String...) throws {
             step("right-clicking \(identifier)")
-            let location = try main { _ -> NSPoint in
-                guard let window = Views.editorWindow, let root = window.contentView?.superview,
-                      let row = Views.all(NSView.self, in: root).first(where: {
-                          $0.accessibilityIdentifier() == identifier && !$0.isHiddenOrHasHiddenAncestor
-                      })
-                else { throw ScenarioFailure("\(identifier) isn't on screen") }
-                row.scrollToVisible(row.bounds)
-                window.contentView?.layoutSubtreeIfNeeded()
-                let frame = row.convert(row.bounds, to: nil)
-                return NSPoint(x: frame.midX, y: frame.midY)
-            }
+            try waitForSourceRowInPlace(identifier)
             let opened = OpenedMenu()
             try main { _ in opened.watch() }
             defer { try? main { _ in opened.stop() } }
-            let pressed = Flag()
+            let pressed = Flag(), place = PlaceBox()
             post { _ in
                 pressed.set()
-                guard let window = Views.editorWindow else { return }
+                guard let window = Views.editorWindow, let row = Self.sourceRow(identifier) else { return }
+                let frame = row.convert(row.bounds, to: nil)
+                place.last = frame
+                let location = NSPoint(x: frame.midX, y: frame.midY)
                 for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
                     guard let event = NSEvent.mouseEvent(
                         with: type, location: location, modifierFlags: [],
@@ -370,6 +347,7 @@
             } catch {
                 let state = try main { _ -> String in
                     let window = Views.editorWindow
+                    let location = place.last.map { NSPoint(x: $0.midX, y: $0.midY) } ?? .zero
                     let hit = window?.contentView?.superview?.hitTest(location)
                     let menus = NSApp.windows.filter { $0.isVisible && "\(Swift.type(of: $0))".contains("Menu") }.count
                     return "pressed \(pressed.isSet), \(hit.map { "\(Swift.type(of: $0))" } ?? "nothing") at \(location), "
@@ -403,6 +381,27 @@
             if let chosen {
                 post { _ in chosen.menu.menu.performActionForItem(at: chosen.index) }
                 pause(0.05)
+            }
+        }
+
+        /// The left panel's row carrying `identifier`, while it's on screen: the module not shown keeps its own left
+        /// panel in place, transparent, whose rows can sit elsewhere.
+        @MainActor static func sourceRow(_ identifier: String) -> NSView? {
+            Views.editorWindow.flatMap { Views.shown(identifier, in: $0) }
+        }
+
+        /// Waits for the row carrying `identifier` to be on screen and stay in its place: a row just added, or
+        /// scrolled to, may still be moving there, and a list listing again moves the rows below what it adds or
+        /// takes away, so a press where it was a moment before lands on the row beside it.
+        func waitForSourceRowInPlace(_ identifier: String) throws {
+            let place = PlaceBox()
+            try wait("\(identifier) on screen, in its place") { _ in
+                guard let row = Self.sourceRow(identifier) else { return false }
+                row.scrollToVisible(row.bounds)
+                Views.editorWindow?.contentView?.layoutSubtreeIfNeeded()
+                let frame = row.convert(row.bounds, to: nil)
+                defer { place.last = frame }
+                return frame == place.last
             }
         }
 
