@@ -52,15 +52,26 @@ struct LightroomSetupTests {
         }
     }
 
-    /// A develop preset as Lightroom Classic writes one, made up.
-    static func preset(_ name: String) -> String {
-        """
+    /// A develop preset as Lightroom Classic writes one, made up, in `group` when there's one.
+    static func preset(_ name: String, group: String? = nil) -> String {
+        let group = group.map {
+            """
+            <crs:Group>
+                <rdf:Alt>
+                 <rdf:li xml:lang="x-default">\($0)</rdf:li>
+                 <rdf:li xml:lang="fr-FR">\($0) (fr)</rdf:li>
+                </rdf:Alt>
+               </crs:Group>
+            """
+        } ?? ""
+        return """
         <x:xmpmeta xmlns:x="adobe:ns:meta/">
          <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
           <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
            crs:PresetType="Normal" crs:UUID="\(UUID().uuidString)" crs:Version="15.0" crs:ProcessVersion="11.0"
            crs:Exposure2012="+0.50" crs:Contrast2012="+10">
            <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">\(name)</rdf:li></rdf:Alt></crs:Name>
+           \(group)
           </rdf:Description>
          </rdf:RDF>
         </x:xmpmeta>
@@ -186,12 +197,41 @@ struct LightroomSetupTests {
         let lines = LightroomSetupScreen.catalogLines(
             LightroomSetup.find(locations).catalog,
             looking: false,
+            contents: nil,
             status: nil,
         )
-        #expect(lines.found == "Work.lrcat, the catalog Lightroom Classic last used" && lines.isProblem)
+        #expect(lines.count.isEmpty && lines.found.isEmpty && lines.place.hasPrefix("Work.lrcat · ") && lines.isProblem)
+        #expect(lines
+            .detail == "The catalog Lightroom Classic last used: \(used.path), 4 bytes. It's read, never changed.")
         #expect(lines.state == "Lightroom Classic has Work.lrcat open: quit Lightroom, or choose a copy of the catalog")
-        #expect(LightroomSetupScreen.catalogLines(nil, looking: false, status: nil).found
+        #expect(LightroomSetupScreen.catalogLines(nil, looking: false, contents: nil, status: nil).found
             == "No catalog found in Lightroom Classic's preferences or in Pictures › Lightroom")
+    }
+
+    @Test func `the catalog's card counts its photos and root folders once it's read, and says why when it can't be`() {
+        let catalog = LightroomSetup.Catalog(
+            url: URL(fileURLWithPath: "/Volumes/Photos/Lightroom/Lightroom Catalog.lrcat"), source: .pictures,
+            size: 2_000_000, modified: nil, isOpenInLightroom: false,
+        )
+        func lines(_ contents: LightroomSetupScreen.Contents?) -> LightroomSetupScreen.Lines {
+            LightroomSetupScreen.catalogLines(catalog, looking: false, contents: contents, status: nil)
+        }
+        let read = lines(.read(photos: 51030, roots: 6))
+        #expect(read.count == "51,030" && read.found == "photos in 6 root folders" && read.state.isEmpty)
+        #expect(read.place == "Lightroom Catalog.lrcat · /Volumes/Photos/Lightroom" && !read.isProblem)
+        #expect(read.detail.hasPrefix("The newest catalog in Pictures › Lightroom: /Volumes/Photos/Lightroom/"))
+        #expect(lines(.read(photos: 1, roots: 1)).found == "photo in 1 root folder")
+        #expect(lines(.reading).found == "Reading the catalog…" && lines(.reading).count.isEmpty)
+        let unreadable = lines(.unreadable("Lightroom Catalog.lrcat isn't a Lightroom Classic catalog"))
+        #expect(unreadable.count.isEmpty && unreadable.found.isEmpty && unreadable.isProblem)
+        #expect(unreadable.state == "Lightroom Catalog.lrcat isn't a Lightroom Classic catalog")
+        let reading = LightroomSetupScreen.catalogLines(
+            catalog, looking: false, contents: .read(photos: 3, roots: 1), status: ("Reading the catalog…", false),
+        )
+        #expect(reading.count == "3" && reading.state == "Reading the catalog…" && !reading.isProblem)
+        let date = DateComponents(calendar: .current, year: 2019, month: 10, day: 12).date ?? .now
+        #expect(LightroomSetupScreen.day(date) == date.formatted(.dateTime.day().month(.wide).year()))
+        #expect(LightroomSetupScreen.day(.now) == Date.now.formatted(.dateTime.day().month(.wide)))
     }
 
     @Test func `presets are found in Camera Raw's Settings folder, its profiles and photos' sidecars left out`() throws {
@@ -205,15 +245,22 @@ struct LightroomSetupTests {
 
         let settings = locations.settings
         let warm = try home.write(Self.preset("Warm"), to: settings.appending(path: "Warm.xmp"))
-        let cool = try home.write(Self.preset("Cool"), to: settings.appending(path: "Trips/Cool.xmp"))
+        let cool = try home.write(Self.preset("Cool", group: "Trips"), to: settings.appending(path: "Trips/Cool.xmp"))
+        let night = try home.write(Self.preset("Night", group: "Trips"), to: settings.appending(path: "Night.xmp"))
         try home.write(Self.look("Mine"), to: settings.appending(path: "Profiles/Mine.xmp"))
         try home.write(Self.sidecar, to: settings.appending(path: "IMG_0001.xmp"))
         try home.write("notes", to: settings.appending(path: "Read me.txt"))
         found = LightroomSetup.find(locations)
-        #expect(found.presets.map(\.lastPathComponent) == [cool, warm].map(\.lastPathComponent))
+        #expect(found.presets.map(\.lastPathComponent) == [night, cool, warm].map(\.lastPathComponent))
+        #expect(found.presetGroups == 2, "Trips, and the one Lightroom shows presets in no group in")
         #expect(found.cameraProfiles == [.init(kind: .userCameraRaw, folder: locations.userCameraRaw, count: 1)])
         let lines = LightroomSetupScreen.presetsLines(found, nil)
-        #expect(lines.found == "2 presets in Camera Raw's Settings folder" && lines.place == settings.path)
+        #expect(lines == .init(
+            count: "3", found: "presets in 2 groups", place: "Camera Raw's Settings folder", detail: settings.path,
+        ))
+        #expect(LightroomSetup.group(in: Data(Self.preset("Cool", group: " Trips ").utf8)) == "Trips")
+        #expect(LightroomSetup.group(in: Data(Self.preset("Warm").utf8)) == nil)
+        #expect(LightroomSetup.group(in: Data("<crs:Group><rdf:Alt><rdf:li>".utf8)) == nil)
     }
 
     @Test func `camera profiles are counted where Camera Raw installs them, in the photographer's folder and as chosen`(
@@ -252,7 +299,10 @@ struct LightroomSetupTests {
         #expect(lines.found == "5 camera profiles: 3 where Lightroom Classic and Camera Raw install them, 1 in your "
             + "Camera Raw folder and 1 in the files and folders you chose")
         #expect(lines.place == "\(cameraRaw.path) · \(locations.userCameraRaw.path)" && !lines.isProblem)
-        #expect(lines.state.hasPrefix("In use: Redlamp reads them where they are, on this Mac only"))
+        #expect(lines.state.hasPrefix("Redlamp reads them where they are, on this Mac only"))
+        let card = LightroomSetupScreen.profilesLines(found)
+        #expect(card.count == "5" && card.found == "5 camera profiles" && card.place == "Used on this Mac only")
+        #expect(card.detail == "\(lines.found). \(lines.state)" && card.state.isEmpty)
     }
 
     @Test func `lens profiles are counted in Camera Raw's folders and in Redlamp's Lens Profiles folder`() throws {
@@ -265,7 +315,7 @@ struct LightroomSetupTests {
         try home.write("<lcp/>", to: locations.lensProfiles.appending(path: "Helios.lcp"))
         var lines = LightroomSetupScreen.lensProfileLines(LightroomSetup.find(locations))
         #expect(lines.found == "1 lens profile in your Lens Profiles folder")
-        #expect(lines.state == "In use: Redlamp reads them where they are, on this Mac only.")
+        #expect(lines.state == "Redlamp reads them where they are, on this Mac only.")
 
         let installed = locations.cameraRaw.appending(path: "LensProfiles/1.0")
         try home.write("<lcp/>", to: installed.appending(path: "Canon/Canon EF 50mm f1.8 STM.lcp"))
@@ -277,6 +327,11 @@ struct LightroomSetupTests {
         #expect(lines.found == "4 lens profiles: 2 in Camera Raw's lens profiles, 1 in your Camera Raw lens profiles "
             + "and 1 in your Lens Profiles folder")
         #expect(lines.state.hasSuffix("Edits from process 17 on use those in Camera Raw's folders too."))
+
+        try home.write(Self.dcp, to: locations.userCameraRaw.appending(path: "CameraProfiles/Mine.dcp"))
+        let card = LightroomSetupScreen.profilesLines(LightroomSetup.find(locations))
+        #expect(card.count == "5" && card.found == "1 camera profile, 4 lens profiles")
+        #expect(card.detail.components(separatedBy: "\n").last == "\(lines.found). \(lines.state)")
     }
 
     @Test func `a folder that can't be read is said to be unreadable, not empty`() throws {
@@ -292,11 +347,14 @@ struct LightroomSetupTests {
         let lines = LightroomSetupScreen.lensProfileLines(found)
         #expect(lines.found == "No lens profiles on this Mac" && lines.isProblem)
         #expect(lines.state == "Redlamp can't read \(installed.path)")
+        let card = LightroomSetupScreen.profilesLines(found)
+        #expect(card.found == "No camera or lens profiles on this Mac" && card.count.isEmpty)
+        #expect(card.state == "Redlamp can't read \(installed.path)" && card.isProblem)
     }
 
     // MARK: - The window
 
-    @Test func `the window opens on what it found, imports the presets as recipes and goes on to the catalog's report`(
+    @Test func `the window opens on a card each for what it found, imports the presets and goes on to the catalog's report`(
     ) async throws {
         let sandbox = SourcesSandbox()
         defer { sandbox.remove() }
@@ -321,16 +379,30 @@ struct LightroomSetupTests {
         #expect(window.isShowingSetup)
         try await sandbox.eventually { window.setupFound != nil }
         #expect(window.setupFound?.catalog?.url.lastPathComponent == "Lightroom Catalog.lrcat")
-        #expect(window.setupLine("lightroom.setup.catalog.found")?
-            .text == "Lightroom Catalog.lrcat, in Pictures › Lightroom")
-        #expect(window.setupLine("lightroom.setup.presets.found")?.text == "2 presets in Camera Raw's Settings folder")
-        #expect(window.setupLine("lightroom.setup.camera-profiles.found")?
-            .text == "No Adobe camera profiles on this Mac")
-        #expect(window.setupLine("lightroom.setup.camera-profiles.place")?.shown == false, "nothing found is one line")
-        #expect(window.setupLine("lightroom.setup.lens-profiles.found")?.text
-            == "1 lens profile in your Lens Profiles folder")
+        try await sandbox.eventually { window.setupLine("lightroom.setup.catalog.count")?.text == "2" }
+        #expect(window.setupLine("lightroom.setup.catalog.found")?.text == "photos in 2 root folders")
+        let place = try #require(window.setupLine("lightroom.setup.catalog.place"))
+        #expect(place.text.hasPrefix("Lightroom Catalog.lrcat · ") && place.text.contains(" · changed "))
+        #expect(place.help?.hasPrefix("The newest catalog in Pictures › Lightroom: ") == true)
+        #expect(place.help?.contains("/Lightroom Catalog.lrcat, ") == true)
+        #expect(place.help?.hasSuffix(". It's read, never changed.") == true)
+        #expect(window.setupLine("lightroom.setup.catalog.state")?.shown == false)
+        #expect(window.setupLine("lightroom.setup.presets.count")?.text == "2")
+        #expect(window.setupLine("lightroom.setup.presets.found")?.text == "presets in 1 group")
+        #expect(window.setupLine("lightroom.setup.presets.place")?.text == "Camera Raw's Settings folder")
+        #expect(window.setupLine("lightroom.setup.profiles.count")?.text == "1")
+        #expect(window.setupLine("lightroom.setup.profiles.found")?.text == "1 lens profile")
+        let used = try #require(window.setupLine("lightroom.setup.profiles.place"))
+        #expect(used.text == "Used on this Mac only")
+        #expect(used.help == "1 lens profile in your Lens Profiles folder. Redlamp reads them where they are, on this "
+            + "Mac only.")
         #expect(window.button("lightroom.import")?.shown == false, "the catalog's screen waits")
-        #expect(window.button("lightroom.setup.camera-profiles.choose")?.title == "Choose Camera Profiles…")
+        #expect(window.button("lightroom.setup.catalog.choose")?.title == "Choose…")
+        #expect(window.button("lightroom.setup.presets.import")?.title == "Import Presets")
+        #expect(window.button("lightroom.setup.profiles.choose")?.title == "Choose Camera Profiles…")
+        #expect(window.button("lightroom.setup.profiles.open")?.title == "Open Lens Profiles Folder")
+        let review = try #require(button("lightroom.setup.catalog.review", in: window))
+        #expect(review.title == "Review…" && review.keyEquivalent == "\r" && review.isEnabled)
 
         try #require(button("lightroom.setup.presets.import", in: window)).performClick(nil)
         try await sandbox.eventually { window.presetsImported != nil }
@@ -343,7 +415,7 @@ struct LightroomSetupTests {
         let sheet = try #require(window.window?.attachedSheet, "the presets' report shows over the window")
         window.window?.endSheet(sheet)
 
-        try #require(button("lightroom.setup.catalog.import", in: window)).performClick(nil)
+        review.performClick(nil)
         #expect(!window.isShowingSetup)
         try await sandbox.eventually { window.isReported }
         #expect(window.report?.roots.map(\.state) == [.inLibrary, .notInLibrary])
@@ -352,11 +424,11 @@ struct LightroomSetupTests {
 
         try #require(button("lightroom.back", in: window)).performClick(nil)
         #expect(window.isShowingSetup)
-        #expect(window.setupLine("lightroom.setup.catalog.state")?.text
-            == "Import… reports what would come across before anything is written. The catalog is read, never changed.")
+        #expect(window.setupLine("lightroom.setup.catalog.count")?.text == "2")
+        #expect(window.setupLine("lightroom.setup.catalog.state")?.shown == false)
     }
 
-    @Test func `a catalog chosen on the first screen takes the found one's place until Import… goes on with it`(
+    @Test func `a catalog chosen on the first screen takes the found one's place until Review… goes on with it`(
     ) async throws {
         let home = Home()
         defer { home.remove() }
@@ -370,12 +442,18 @@ struct LightroomSetupTests {
         let window = try #require(LightroomWindowController.current)
         defer { window.close() }
         try await SourcesSandbox.eventually { window.setupFound != nil }
+        try await SourcesSandbox.eventually {
+            window.setupLine("lightroom.setup.catalog.state")?.text
+                == "Lightroom Catalog.lrcat isn't a Lightroom Classic catalog"
+        }
         window.chooseSetupCatalog(chosen)
-        #expect(window.setupLine("lightroom.setup.catalog.found")?.text == "Copy.lrcat")
-        #expect(window.setupLine("lightroom.setup.catalog.place")?.text
-            .hasPrefix(chosen.deletingLastPathComponent().path)
-            == true)
-        #expect(window.button("lightroom.setup.catalog.import")?.enabled == true)
+        let place = try #require(window.setupLine("lightroom.setup.catalog.place"))
+        #expect(place.text.hasPrefix("Copy.lrcat · ") && place.help?.hasPrefix("The catalog chosen: ") == true)
+        try await SourcesSandbox.eventually {
+            window.setupLine("lightroom.setup.catalog.state")?.text == "Copy.lrcat isn't a Lightroom Classic catalog"
+        }
+        #expect(window.setupLine("lightroom.setup.catalog.count")?.shown == false)
+        #expect(window.button("lightroom.setup.catalog.review")?.enabled == true)
         #expect(window.button("lightroom.setup.presets.import")?.enabled == false, "no presets were found")
     }
 

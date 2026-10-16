@@ -110,6 +110,8 @@ import Synchronization
     /// `RecipeLibrary.presets(in:)` lists a folder's.
     public var presetsFolder: URL
     public var presets: [URL]
+    /// The groups Lightroom Classic shows the presets in, those in none counting as one, as its User Presets.
+    public var presetGroups = 0
     public var presetsReadable = true
     /// Where camera profiles are, Camera Raw's first; only places holding some, or that can't be read.
     public var cameraProfiles: [Place]
@@ -161,7 +163,8 @@ import Synchronization
         }
         return LightroomSetup(
             catalog: lastUsedCatalog(home: locations.home) ?? newestCatalog(in: locations.pictures),
-            presetsFolder: locations.settings, presets: settings.presets, presetsReadable: settings.readable,
+            presetsFolder: locations.settings, presets: settings.presets, presetGroups: settings.groups,
+            presetsReadable: settings.readable,
             cameraProfiles: cameraProfiles.filter { $0.count > 0 || !$0.isReadable },
             lensProfiles: lensProfiles.filter { $0.count > 0 || !$0.isReadable },
         )
@@ -200,13 +203,16 @@ import Synchronization
 
     // MARK: - Folders
 
-    private enum SettingsFile: UInt8 {
-        case other, preset, profile
+    private enum SettingsFile: Equatable {
+        case other, profile
+        /// A preset, in the group its `crs:Group` names; nil for one in none.
+        case preset(group: String?)
     }
 
-    /// The Settings folder's XMP files: the presets, by path, and how many are profiles, which
-    /// `CameraProfileLibrary` reads there too. Each file is read whole, on every core, as EDT-11's import reads it.
-    static func settings(in folder: URL) -> (presets: [URL], profiles: Int, readable: Bool) {
+    /// The Settings folder's XMP files: the presets, by path, the groups they're in, and how many files are
+    /// profiles, which `CameraProfileLibrary` reads there too. Each file is read whole, on every core, as EDT-11's
+    /// import reads it.
+    static func settings(in folder: URL) -> (presets: [URL], groups: Int, profiles: Int, readable: Bool) {
         let listed = files(in: folder, extensions: ["xmp"])
         let urls = listed.urls.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         let kinds = Mutex([SettingsFile](repeating: .other, count: urls.count))
@@ -215,9 +221,16 @@ import Synchronization
             kinds.withLock { $0[index] = kind }
         }
         let found = kinds.withLock { $0 }
+        let groups = found.compactMap { kind -> String? in
+            guard case let .preset(group) = kind else { return nil }
+            return group ?? ""
+        }
         return (
-            zip(urls, found).compactMap { $1 == .preset ? $0 : nil },
-            found.count(where: { $0 == .profile }), listed.readable,
+            zip(urls, found).compactMap { url, kind in
+                guard case .preset = kind else { return nil }
+                return url
+            },
+            Set(groups).count, found.count(where: { $0 == .profile }), listed.readable,
         )
     }
 
@@ -226,11 +239,25 @@ import Synchronization
               size <= RecipeValidator.maximumFileSize, let data = try? Data(contentsOf: url)
         else { return .other }
         if LightroomPreset.isPreset(data) {
-            return .preset
+            return .preset(group: group(in: data))
         }
         let head = data.prefix(64 << 10)
         let look = ["crs:PresetType=\"Look\"", "<crs:PresetType>Look</crs:PresetType>"]
         return look.contains { head.range(of: Data($0.utf8)) != nil } ? .profile : .other
+    }
+
+    /// The group a preset's `crs:Group` names, the first of its languages: Lightroom Classic writes it as an
+    /// `rdf:Alt`, which XMP keeps in an element of its own.
+    static func group(in data: Data) -> String? {
+        guard let start = data.range(of: Data("<crs:Group>".utf8)),
+              let end = data.range(of: Data("</crs:Group>".utf8), in: start.upperBound ..< data.endIndex),
+              let item = data.range(of: Data("<rdf:li".utf8), in: start.upperBound ..< end.lowerBound),
+              let open = data[item.upperBound ..< end.lowerBound].firstIndex(of: UInt8(ascii: ">")),
+              let close = data.range(of: Data("</rdf:li>".utf8), in: open + 1 ..< end.lowerBound)
+        else { return nil }
+        let name = String(decoding: data[open + 1 ..< close.lowerBound], as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 
     /// The files with one of `extensions` in `url` and its subfolders, or `url` itself when it's such a file;

@@ -285,10 +285,11 @@
     extension LightroomScenarios {
         static let setup = Scenario(
             "library.lightroom-setup",
-            "File › Import from Lightroom Classic… opens on what it found of Lightroom Classic in a home of the run's "
-                + "own: the catalog Lightroom last used, the presets in Camera Raw's Settings folder and the camera and "
-                + "lens profiles, read where they are; Import brings the presets in as recipes with their report, and "
-                + "the catalog's Import… goes on to its report",
+            "File › Import from Lightroom Classic… opens on a card each for what it found of Lightroom Classic in a "
+                + "home of the run's own: the catalog Lightroom last used, with its photos and root folders, the "
+                + "presets in Camera Raw's Settings folder, and the camera and lens profiles, used where they are; "
+                + "Import Presets brings the presets in as recipes with their report, and Return, the catalog's "
+                + "Review…, goes on to its report",
             claims: [.action(.importFromLightroom)],
         ) { app in
             let scratch = try SourcesScratch(
@@ -329,17 +330,29 @@
             try app.wait("what the first screen found", timeout: 30) { _ in
                 LightroomWindowController.current?.setupFound != nil
             }
-            let parts = ["catalog", "presets", "camera-profiles", "lens-profiles"]
+            try app.wait("the catalog's photos counted", timeout: 30) { _ in
+                LightroomWindowController.current?.setupLine("lightroom.setup.catalog.count")?.text.isEmpty == false
+            }
+            let cards = ["catalog", "presets", "profiles"]
             let shown = try app.inLightroomWindow { window in
-                (window.isShowingSetup, parts.map { window.setupLine("lightroom.setup.\($0).found")?.text ?? "" })
+                (window.isShowingSetup, cards.map { card in
+                    ["count", "found", "place"].map { window.setupLine("lightroom.setup.\(card).\($0)")?.text ?? "" }
+                })
             }
             try app.expect(shown.0, "the window opens on what it found")
-            try app.expect(shown.1 == [
-                "Lightroom Catalog.lrcat, the catalog Lightroom Classic last used",
-                "2 presets in Camera Raw's Settings folder",
-                "4 camera profiles: 2 where Lightroom Classic and Camera Raw install them and 2 in your Camera Raw folder",
-                "2 lens profiles: 1 in Camera Raw's lens profiles and 1 in your Camera Raw lens profiles",
-            ], "what the first screen says it found: \(shown.1)")
+            try app.expect(shown.1[0][0 ... 1] == ["3", "photos in 1 root folder"], "the catalog's card: \(shown.1[0])")
+            try app.expect(
+                shown.1[0][2].hasPrefix("Lightroom Catalog.lrcat · ") && shown.1[0][2].contains(" · changed "),
+                "where the catalog is: \(shown.1[0][2])",
+            )
+            try app.expect(
+                shown.1[1] == ["2", "presets in 1 group", "Camera Raw's Settings folder"],
+                "the presets' card: \(shown.1[1])",
+            )
+            try app.expect(
+                shown.1[2] == ["6", "4 camera profiles, 2 lens profiles", "Used on this Mac only"],
+                "the profiles' card: \(shown.1[2])",
+            )
             let shots = app.runDirectory.appending(path: "shots", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: shots, withIntermediateDirectories: true)
             try app.main { _ in
@@ -367,7 +380,10 @@
                 LightroomWindowController.current?.window?.attachedSheet == nil
             }
 
-            try app.clickInLightroomWindow("lightroom.setup.catalog.import")
+            try app.main { _ in
+                _ = try LightroomWindowController.current?.window?
+                    .performKeyEquivalent(with: Keyboard.event(KeyCombo(.character("\r"))))
+            }
             try app.wait("the catalog's report", timeout: 60) { _ in
                 LightroomWindowController.current?.isReported == true
             }

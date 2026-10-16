@@ -20,16 +20,16 @@ import RedlampRecipes
         setup.found
     }
 
-    /// The text of the first screen's line carrying `identifier` (`lightroom.setup.presets.found`), and whether
-    /// it's shown.
-    func setupLine(_ identifier: String) -> (text: String, shown: Bool)? {
+    /// The text of the first screen's line carrying `identifier` (`lightroom.setup.presets.count`, `.found`,
+    /// `.place` or `.state`), whether it's shown, and its help.
+    func setupLine(_ identifier: String) -> (text: String, shown: Bool, help: String?)? {
         guard let label = Self.setupView(identifier, in: setup.view) as? NSTextField else { return nil }
-        return (label.stringValue, !label.isHiddenOrHasHiddenAncestor)
+        return (label.stringValue, !label.isHiddenOrHasHiddenAncestor, label.toolTip)
     }
 
     /// What the presets' import brought in, once it's done.
     var presetsImported: RecipeImportSummary? {
-        if case let .imported(summary, _) = setup.presetsImport {
+        if case let .imported(summary) = setup.presetsImport {
             return summary
         }
         return nil
