@@ -1,6 +1,42 @@
 import AppKit
 import RedlampEngineAPI
 
+/// A number a slider row edits that isn't one of the edit's parameters, such as a recipe's Amount.
+/// A drag or a scrub is `begin`, each `change` and `end`, one gesture, and a typed value, an arrow
+/// key's step or a double-click's reset to `defaultValue` is one `set`. The row shows `current` after
+/// each, and as what it reads changes while the row is in a window: a row built while a list reloads
+/// adds what it reads to what the list follows.
+public struct SliderValue {
+    public var label: String
+    public var spec: FieldSpec
+    public var defaultValue: Double
+    public var current: () -> Double
+    public var begin: () -> Void
+    public var change: (Double) -> Void
+    public var end: () -> Void
+    public var set: (Double) -> Void
+
+    public init(
+        label: String,
+        spec: FieldSpec,
+        defaultValue: Double,
+        current: @escaping () -> Double,
+        begin: @escaping () -> Void,
+        change: @escaping (Double) -> Void,
+        end: @escaping () -> Void,
+        set: @escaping (Double) -> Void,
+    ) {
+        self.label = label
+        self.spec = spec
+        self.defaultValue = defaultValue
+        self.current = current
+        self.begin = begin
+        self.change = change
+        self.end = end
+        self.set = set
+    }
+}
+
 /// A Lightroom-style parameter row: label, precision slider, editable value.
 ///
 /// - Drag the thumb for relative changes, or click the track to jump.
@@ -13,12 +49,12 @@ import RedlampEngineAPI
 ///   still scrolls the panels.
 ///
 /// While it is in a window, the row keeps itself in step with `editor`: a drag redraws
-/// the track and the readout, and nothing else.
+/// the track and the readout, and nothing else. A row for a number that isn't one of the edit's
+/// parameters (`SliderValue`) keeps itself in step with its value the same way.
 public final class SliderRowView: NSView {
-    public let parameter: ParameterID
-    private let spec: ParameterSpec
-    private let editor: ParameterEditing
-    private let enabled: @MainActor () -> Bool
+    /// The parameter the row edits; nil for a `SliderValue`'s row.
+    public let parameter: ParameterID?
+    private let edits: Edits
 
     private let labelView: RowLabelView
     private let trackView: SliderTrackView
@@ -36,6 +72,13 @@ public final class SliderRowView: NSView {
         .localExposure, .localHighlights, .localShadows, .localWhites, .localBlacks,
     ]
 
+    /// What the row reads and changes: one of the edit's parameters through its editor, or a
+    /// number of its own.
+    private enum Edits {
+        case parameter(ParameterID, ParameterSpec, ParameterEditing, enabled: @MainActor () -> Bool)
+        case value(SliderValue)
+    }
+
     public init(
         parameter: ParameterID,
         label: String? = nil,
@@ -43,29 +86,51 @@ public final class SliderRowView: NSView {
         enabled: @escaping @MainActor () -> Bool = { true },
     ) {
         self.parameter = parameter
-        spec = parameter.spec
-        self.editor = editor
-        self.enabled = enabled
-        labelView = RowLabelView(text: label ?? parameter.spec.label)
-        trackView = SliderTrackView(spec: parameter.spec)
-        valueView = ValueFieldView(spec: parameter.spec)
-        valueView.trailingInset = ValueFieldView.wellPadding
+        let spec = parameter.spec
+        edits = .parameter(parameter, spec, editor, enabled: enabled)
+        labelView = RowLabelView(text: label ?? spec.label)
+        trackView = SliderTrackView(spec: spec)
+        valueView = ValueFieldView(spec: spec)
         super.init(frame: CGRect(x: 0, y: 0, width: 280, height: Metrics.rowHeight))
+        addParts()
+        // Named from the parameter's key, for VoiceOver and the regression suite.
+        identify(as: "slider.\(parameter.rawValue)")
+        toolTip = spec.availability.isLive
+            ? "Double-click to reset. Shift-drag for fine control. ⌘-scroll to adjust. Drag or click the number."
+            : "\(spec.label) is laid out for reference and renders in \(Self.phase(spec))."
+        wireActions(parameter, editor)
+    }
+
+    /// A row for `value`, a number that isn't one of the edit's parameters, named `identifier` for
+    /// VoiceOver and the regression suite. ⌘-scrolling over it scrolls the panels.
+    public init(_ value: SliderValue, identifier: String) {
+        parameter = nil
+        edits = .value(value)
+        labelView = RowLabelView(text: value.label)
+        trackView = SliderTrackView(spec: value.spec, value: value.current())
+        valueView = ValueFieldView(spec: value.spec, value: value.current())
+        super.init(frame: CGRect(x: 0, y: 0, width: 280, height: Metrics.rowHeight))
+        addParts()
+        identify(as: identifier)
+        toolTip = "Double-click to reset. Shift-drag for fine control. Drag or click the number."
+        wireActions(value)
+    }
+
+    private func addParts() {
+        valueView.trailingInset = ValueFieldView.wellPadding
         wantsLayer = true
         clipsToBounds = false
         for view in [focusMarker, labelView, trackView, valueView] as [NSView] {
             addSubview(view)
         }
         focusMarker.isHidden = true
-        // Named from the parameter's key, for VoiceOver and the regression suite.
-        setAccessibilityIdentifier("slider.\(parameter.rawValue)")
-        labelView.setAccessibilityIdentifier("slider.\(parameter.rawValue).label")
-        trackView.setAccessibilityIdentifier("slider.\(parameter.rawValue).track")
-        valueView.setAccessibilityIdentifier("slider.\(parameter.rawValue).value")
-        toolTip = spec.availability.isLive
-            ? "Double-click to reset. Shift-drag for fine control. ⌘-scroll to adjust. Drag or click the number."
-            : "\(spec.label) is laid out for reference and renders in \(Self.phase(spec))."
-        wireActions()
+    }
+
+    private func identify(as identifier: String) {
+        setAccessibilityIdentifier(identifier)
+        labelView.setAccessibilityIdentifier("\(identifier).label")
+        trackView.setAccessibilityIdentifier("\(identifier).track")
+        valueView.setAccessibilityIdentifier("\(identifier).value")
     }
 
     @available(*, unavailable)
@@ -132,6 +197,11 @@ public final class SliderRowView: NSView {
         trackers.forEach { $0.cancel() }
         trackers = []
         guard window != nil else { return }
+        if case let .value(value) = edits {
+            trackers = [Tracker { [weak self] in self?.show(value.current()) }]
+            return
+        }
+        guard case let .parameter(parameter, spec, editor, enabled) = edits else { return }
         trackers = [
             Tracker { [weak self] in
                 guard let self else { return }
@@ -166,37 +236,63 @@ public final class SliderRowView: NSView {
         ]
     }
 
-    private func wireActions() {
-        let parameter = parameter
-        labelView.onClick = { [weak self] in self?.editor.focusedParameter = parameter }
-        labelView.onDoubleClick = { [weak self] in self?.editor.resetSlider(parameter) }
-        let begin: () -> Void = { [weak self] in
-            guard let self else { return }
+    private func wireActions(_ parameter: ParameterID, _ editor: ParameterEditing) {
+        labelView.onClick = { [weak editor] in editor?.focusedParameter = parameter }
+        labelView.onDoubleClick = { [weak editor] in editor?.resetSlider(parameter) }
+        let begin: () -> Void = { [weak editor] in
+            guard let editor else { return }
             editor.focusedParameter = parameter
             editor.beginEdit(parameter)
             if Self.clippingParameters.contains(parameter), NSEvent.modifierFlags.contains(.option) {
                 editor.setTemporaryClipping(true)
             }
         }
-        let change: (Double) -> Void = { [weak self] in self?.editor.setSliderValue(parameter, $0) }
-        let end: () -> Void = { [weak self] in
-            self?.editor.setTemporaryClipping(false)
-            self?.editor.endEdit(name: nil)
+        let change: (Double) -> Void = { [weak editor] in editor?.setSliderValue(parameter, $0) }
+        let end: () -> Void = { [weak editor] in
+            editor?.setTemporaryClipping(false)
+            editor?.endEdit(name: nil)
         }
         trackView.onBegin = begin
         trackView.onChange = change
         trackView.onEnd = end
-        trackView.onReset = { [weak self] in self?.editor.resetSlider(parameter) }
+        trackView.onReset = { [weak editor] in editor?.resetSlider(parameter) }
         valueView.onBegin = begin
         valueView.onChange = change
         valueView.onEnd = end
         valueView.onCommit = change
     }
 
+    private func wireActions(_ value: SliderValue) {
+        let change: (Double) -> Void = { [weak self] in
+            value.change(value.spec.quantize($0))
+            self?.show(value.current())
+        }
+        let set: (Double) -> Void = { [weak self] in
+            value.set($0)
+            self?.show(value.current())
+        }
+        labelView.onDoubleClick = { set(value.defaultValue) }
+        trackView.onBegin = value.begin
+        trackView.onChange = change
+        trackView.onEnd = value.end
+        trackView.onReset = { set(value.defaultValue) }
+        valueView.onBegin = value.begin
+        valueView.onChange = change
+        valueView.onEnd = value.end
+        valueView.onCommit = set
+    }
+
+    private func show(_ value: Double) {
+        trackView.value = value
+        valueView.value = value
+    }
+
     // MARK: - Scroll
 
     override public func scrollWheel(with event: NSEvent) {
-        guard event.modifierFlags.contains(.command), spec.availability.isLive, enabled() else {
+        guard case let .parameter(parameter, spec, editor, enabled) = edits, event.modifierFlags.contains(.command),
+              spec.availability.isLive, enabled()
+        else {
             super.scrollWheel(with: event)
             return
         }

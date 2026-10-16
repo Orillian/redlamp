@@ -13,7 +13,7 @@ final class SidebarNode: NSObject {
         /// A look in the Base Looks panel, highlighted while it's the photo's; a search result shows
         /// its folder.
         case look(LookEntry, current: Bool, showsFolder: Bool)
-        /// The last applied recipe's Amount slider.
+        /// The last applied recipe's name and Amount, shown as the Develop panels' slider rows.
         case recipeAmount(String, Double)
         case placeholder(String)
         case snapshot(Snapshot)
@@ -257,9 +257,13 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
         look == .sourceList && frameOfOutlineCell(atRow: row).insetBy(dx: -2, dy: 0).contains(point)
     }
 
-    /// A table view only passes clicks to controls in its rows: the Amount slider.
+    /// A table view lets a control in its rows take a click only when this says so: Recipes' Amount, whose value
+    /// field types into a text field of its own.
     override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool {
-        responder is NSSlider || super.validateProposedFirstResponder(responder, for: event)
+        let inSliderRow = (responder as? NSView).map { view in
+            sequence(first: view) { $0.superview }.contains { $0 is SliderRowView }
+        }
+        return inSliderRow == true || super.validateProposedFirstResponder(responder, for: event)
     }
 
     /// A source's row shows its source as it's pressed, as the Finder's sidebar shows a place, and a set's chevron

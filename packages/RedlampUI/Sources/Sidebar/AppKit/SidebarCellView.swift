@@ -97,7 +97,8 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
     /// What a folder's row or Recently Trashed's shows, for `refreshFolder` and `refreshTrash`.
     private var decoration: FolderDecoration?
     private var values: HistoryValuesView?
-    private var amountSlider: NSSlider?
+    /// The last applied recipe's Amount, drawn as the Develop panels' slider rows are.
+    private var amountRow: SliderRowView?
     private var hoverArea: NSTrackingArea?
     /// A source list's line saying what an empty section holds, which wraps.
     private var wraps = false
@@ -175,28 +176,13 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 trailing = SymbolImageView("cube", pointSize: 9, color: Palette.tertiaryLabel.nsColor)
             }
         case let .recipeAmount(title, amount):
-            label.stringValue = "Amount  \(Int(amount.rounded()))"
-            label.font = .systemFont(ofSize: 11)
-            label.textColor = Palette.secondaryLabel.nsColor
-            toolTip = "Strength of “\(title)”. 0 leaves the photo as it was; 200 goes twice as far."
-            let slider = NSSlider(value: amount, minValue: 0, maxValue: 200, target: nil, action: nil)
-            slider.controlSize = .small
-            slider.isContinuous = true
-            slider.setAccessibilityLabel("Recipe Amount")
-            let model = model
-            let label = label
-            slider.onAction { slider in
-                if model.editStart == nil {
-                    model.beginEdit()
-                }
-                model.setRecipeAmount(slider.doubleValue)
-                label.stringValue = "Amount  \(Int(slider.doubleValue.rounded()))"
-                if NSApp.currentEvent?.type == .leftMouseUp {
-                    model.endEdit(.recipe, "Recipe Amount", value: EditorModel.recipeAmountText)
-                }
-            }
-            amountSlider = slider
-            addSubview(slider)
+            label.isHidden = true
+            let row = SliderRowView(Self.recipeAmount(model, amount: amount), identifier: "recipes.amount")
+            row.toolTip = "Strength of “\(title)”. 0 leaves the photo as it was; 200 goes twice as far. "
+                + "Double-click to reset."
+            row.setAccessibilityLabel("Recipe Amount")
+            amountRow = row
+            addSubview(row)
         case let .placeholder(text):
             label.stringValue = text
             if look == .sourceList {
@@ -411,10 +397,13 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
             iconCenter = Layout.iconCenter
             titleX = Layout.titleInset
         }
-        if let amountSlider {
-            let width = min(max(bounds.width * 0.55, 80), 160)
-            amountSlider.frame = CGRect(
-                x: bounds.width - width - 2, y: centeredY(CGSize(width: width, height: 16)), width: width, height: 16,
+        if let amountRow {
+            let height = Metrics.rowHeight
+            amountRow.frame = CGRect(
+                x: 0,
+                y: centeredY(CGSize(width: bounds.width, height: height)),
+                width: bounds.width,
+                height: height,
             )
         }
         if let chevron {
@@ -428,7 +417,7 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 width: size.width, height: size.height,
             )
         }
-        var titleMaxX = amountSlider.map { $0.frame.minX - 4 } ?? bounds.width
+        var titleMaxX = bounds.width
         if let trailing {
             var size = trailing.intrinsicContentSize
             // A label draws its text inset by `labelPadding` on each side of its intrinsic width:
@@ -467,6 +456,18 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         var named = look
         named.name = model.recipes.package(for: look)?.name ?? look.name
         return named
+    }
+
+    /// The last applied recipe's Amount, 0 to 200: a drag is one History step, Recipe Amount. It reads
+    /// `recipeAmount`, which doesn't follow the edit, so the list doesn't reload as it's dragged.
+    private static func recipeAmount(_ model: EditorModel, amount: Double) -> SliderValue {
+        let end = { model.endEdit(.recipe, "Recipe Amount", value: EditorModel.recipeAmountText) }
+        return SliderValue(
+            label: "Amount", spec: FieldSpec(range: 0 ... 200), defaultValue: 100,
+            current: { model.recipeAmount ?? amount },
+            begin: { model.beginEdit() }, change: { model.setRecipeAmount($0) }, end: end,
+            set: { model.setRecipeAmount($0) },
+        )
     }
 
     func contextMenu() -> NSMenu? {

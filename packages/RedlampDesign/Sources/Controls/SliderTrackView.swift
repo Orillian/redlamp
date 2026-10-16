@@ -7,7 +7,7 @@ import RedlampEngineAPI
 /// - Drag the thumb for relative changes, or click the track to jump.
 /// - Shift-drag for fine control; double-click to reset.
 public final class SliderTrackView: LayerDrawnView {
-    public var spec: ParameterSpec {
+    public var spec: any SliderSpec {
         didSet { setNeedsContentDisplay() }
     }
 
@@ -42,7 +42,7 @@ public final class SliderTrackView: LayerDrawnView {
 
     private var dragStart: (location: CGFloat, position: Double)?
 
-    public init(spec: ParameterSpec, value: Double = 0) {
+    public init(spec: any SliderSpec, value: Double = 0) {
         self.spec = spec
         self.value = value
         super.init(frame: .zero)

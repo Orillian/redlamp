@@ -14,12 +14,19 @@ public protocol ValueFieldSpec: Sendable {
     func value(atPosition position: Double) -> Double
 }
 
-extension ParameterSpec: ValueFieldSpec {}
+/// What a slider's track needs beside its number's rules: how it's drawn, and whether it's
+/// centred on zero, which draws a centre tick.
+public protocol SliderSpec: ValueFieldSpec {
+    var track: TrackStyle { get }
+    var isBipolar: Bool { get }
+}
+
+extension ParameterSpec: SliderSpec {}
 
 /// A value field's rules for a number that isn't one of the edit's parameters, such as a
 /// brush's size or an overlay's opacity: linear over its range, with `digits` decimals and an
-/// optional unit after the number.
-public struct FieldSpec: ValueFieldSpec, Hashable {
+/// optional unit after the number. A slider shows it on a plain track.
+public struct FieldSpec: SliderSpec, Hashable {
     public let range: ClosedRange<Double>
     public let step: Double
     public let digits: Int
@@ -55,5 +62,13 @@ public struct FieldSpec: ValueFieldSpec, Hashable {
 
     public func value(atPosition position: Double) -> Double {
         range.lowerBound + min(max(position, 0), 1) * (range.upperBound - range.lowerBound)
+    }
+
+    public var track: TrackStyle {
+        .plain
+    }
+
+    public var isBipolar: Bool {
+        range.lowerBound < 0 && range.upperBound > 0
     }
 }

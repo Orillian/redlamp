@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import RedlampDesign
 import RedlampEngineAPI
 import RedlampRecipes
 import Testing
@@ -233,6 +234,43 @@ struct BaseLooksPanelTests {
             }
         }
         #expect(!recipes.isEmpty && recipes.allSatisfy { !$0.isLook })
+    }
+
+    @Test func `Recipes' Amount is the panels' slider row, a drag one History step that doesn't reload the list`(
+    ) async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try await openEditor()
+        let (list, window) = showLists(model)
+        defer { window.contentView = nil }
+        let punchy = try #require(model.recipes.presets.first { $0.name == "Punchy" })
+        model.applyRecipe(punchy)
+        func amountCell() -> SidebarCellView? {
+            guard case .recipeAmount? = (list.recipes.item(atRow: 0) as? SidebarNode)?.kind else { return nil }
+            return list.recipes.view(atColumn: 0, row: 0, makeIfNecessary: false) as? SidebarCellView
+        }
+        try await eventually { amountCell() != nil }
+        let cell = try #require(amountCell())
+        let row = try #require(cell.subviews.compactMap { $0 as? SliderRowView }.first)
+        let track = try #require(row.subviews.compactMap { $0 as? SliderTrackView }.first)
+        let field = try #require(row.subviews.compactMap { $0 as? ValueFieldView }.first)
+        #expect(row.accessibilityIdentifier() == "recipes.amount")
+        #expect(row.toolTip?.hasPrefix("Strength of “Punchy”") == true)
+        #expect(track.value == 100 && field.value == 100)
+        #expect(list.recipes.validateProposedFirstResponder(track, for: nil), "the list lets the slider take a press")
+
+        let steps = model.history.count
+        track.onBegin()
+        for amount in [120.4, 150, 160] {
+            track.onChange(amount)
+        }
+        try await eventually { track.value == 160 }
+        #expect(track.value == 160 && field.value == 160, "the row follows its drag")
+        #expect(amountCell() === cell, "the list doesn't reload while the Amount is dragged")
+        track.onEnd()
+        #expect(model.recipeAmount == 160)
+        #expect(model.history.count == steps + 1 && model.history.last?.name.hasPrefix("Recipe Amount") == true)
+        field.onCommit(80)
+        #expect(model.recipeAmount == 80 && model.history.count == steps + 2, "a typed Amount is a step of its own")
     }
 
     @Test func `a recipe that sets a Base Look says so, and one that doesn't says nothing of it`() async throws {
