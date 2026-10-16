@@ -407,5 +407,5 @@ summary = "The roadmap and Lightroom comparison against the tracker, then the is
 run = "scripts/roadmap-sync.py && scripts/tracker-issues.py"
 
 [later]
-mise = ["fixtures", "fixtures-shoots", "maskeval", "notarize", "profile-data", "release", "render", "screenshots", "setup", "site", "vendor", "video"]
-redlamp = ["stack", "mask", "noise", "bench", "camera-bench", "library", "mcp"]
+mise = ["fixtures", "fixtures-shoots", "maskeval", "notarize", "profile-data", "release", "release-checks", "render", "screenshots", "setup", "site", "vendor", "video"]
+redlamp = ["stack", "mask", "noise", "bench", "camera-bench", "library", "mcp", "export"]

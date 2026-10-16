@@ -72,5 +72,5 @@ Tests, lint, the push gate and the tracker's sync.
 
 Run these as before; they join the menu as they're described in the registry.
 
-- **mise tasks:** `fixtures`, `fixtures-shoots`, `maskeval`, `notarize`, `profile-data`, `release`, `render`, `screenshots`, `setup`, `site`, `vendor`, `video`
-- **redlamp subcommands:** `stack`, `mask`, `noise`, `bench`, `camera-bench`, `library`, `mcp`
+- **mise tasks:** `fixtures`, `fixtures-shoots`, `maskeval`, `notarize`, `profile-data`, `release`, `release-checks`, `render`, `screenshots`, `setup`, `site`, `vendor`, `video`
+- **redlamp subcommands:** `stack`, `mask`, `noise`, `bench`, `camera-bench`, `library`, `mcp`, `export`
