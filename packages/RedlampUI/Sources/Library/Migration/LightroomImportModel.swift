@@ -177,8 +177,14 @@ final class LightroomImportModel {
             if !folders.isEmpty {
                 phase = .adding
                 changed()
-                editor.library.add(folders)
-                guard await waitForIndexing(folders), !isStopping else {
+                let indexed: Bool
+                do {
+                    core.indexer.readFirst(folders)
+                    defer { core.indexer.stopReadingFirst(folders) }
+                    editor.library.add(folders)
+                    indexed = await waitForIndexing(folders)
+                }
+                guard indexed, !isStopping else {
                     finish(stoppedBeforeImport: true)
                     return
                 }

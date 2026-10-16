@@ -65,7 +65,7 @@ final class LibraryCore: Sendable {
 
     private init(
         paths: LibraryPaths, index: LibraryIndex, engine: QueryEngine, store: PhotoStore,
-        thumbnails: StoreThumbnails, locator: SidecarLocator,
+        thumbnails: StoreThumbnails, locator: SidecarLocator, scheduler: WorkScheduler,
     ) {
         self.paths = paths
         self.index = index
@@ -73,7 +73,7 @@ final class LibraryCore: Sendable {
         self.store = store
         self.thumbnails = thumbnails
         self.locator = locator
-        indexer = LibraryIndexer(index: index, thumbnails: thumbnails.maker.thumbnails)
+        indexer = LibraryIndexer(index: index, scheduler: scheduler, thumbnails: thumbnails.maker.thumbnails)
         tracker = ChangeTracker(indexer: indexer)
         live = LibraryLive(engine: engine)
         roots = LibraryRoots(index: index, indexer: indexer, live: live)
@@ -85,10 +85,11 @@ final class LibraryCore: Sendable {
     /// Opens the index (restoring its newest good snapshot when it's damaged, checking it first when
     /// `check`), loads the column store and opens the thumbnail store. `thumbnail` is the engine's
     /// `decodeThumbnail(for:maxPixelSize:)`, which the store's thumbnails of raws come from; `migrating`
-    /// hears, before the index opens, that opening it brings its schema up to date first.
+    /// hears, before the index opens, that opening it brings its schema up to date first. The indexer runs its work on
+    /// `scheduler`.
     static func open(
         paths: LibraryPaths, check: Bool, thumbnail: @escaping @Sendable (URL, Int) -> CGImage?,
-        migrating: @Sendable () async -> Void = {},
+        migrating: @Sendable () async -> Void = {}, scheduler: WorkScheduler = LibraryIndexer.scheduler,
     ) async throws -> (core: LibraryCore, outcome: LibraryIndex.OpenOutcome) {
         raiseFileLimit()
         if needsMigrating(paths.index) {
@@ -103,7 +104,7 @@ final class LibraryCore: Sendable {
         let locator = await (try? LibrarySidecars(index: index, paths: paths).locator()) ?? .besidePhotos
         let core = LibraryCore(
             paths: paths, index: index, engine: engine, store: store,
-            thumbnails: StoreThumbnails(store: store, thumbnail: thumbnail), locator: locator,
+            thumbnails: StoreThumbnails(store: store, thumbnail: thumbnail), locator: locator, scheduler: scheduler,
         )
         core.xmpSettings = await (try? core.xmp.settings()) ?? XMPSettings()
         return (core, outcome)

@@ -72,13 +72,14 @@ final class SourcesSandbox {
         return data as Data
     }
 
-    /// The editor, its library following the root, once the library has indexed it and caught up with the disk.
-    func open() async throws -> EditorModel {
+    /// The editor, its library following the root, once the library has indexed it and caught up with the disk; its
+    /// indexer runs its work on `indexerScheduler`.
+    func open(indexerScheduler: WorkScheduler = LibraryIndexer.scheduler) async throws -> EditorModel {
         let library = FolderLibrary()
         library.add([root])
         let service = LibraryService(
             paths: LibraryPaths(root: base.appending(path: "Library", directoryHint: .isDirectory)),
-            sidecars: library.sidecars,
+            sidecars: library.sidecars, indexerScheduler: indexerScheduler,
         ) { url, size in StoreThumbnailMaker.imageIO(url, nil, size) }
         library.attach(service)
         try await Self.eventually { await service.canShow(root, includingSubfolders: true) }

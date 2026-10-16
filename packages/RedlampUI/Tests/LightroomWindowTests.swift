@@ -88,6 +88,37 @@ struct LightroomWindowTests {
         }
     }
 
+    @Test func `in Low Power Mode the catalog's other folder is still indexed, read first, and imported`() async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let other = sandbox.base.appending(path: "Other", directoryHint: .isDirectory)
+        try sandbox.photos(["Day/B.jpg"], under: other, from: 1)
+        let catalog = sandbox.base.appending(path: "Catalog/Lightroom Catalog.lrcat")
+        try Self.catalog(root: sandbox.root, other: other, at: catalog)
+        let relaxed = Atomic(true)
+        let model = try await sandbox.open(indexerScheduler: WorkScheduler(
+            widths: .init(onScreen: 2, lookAhead: 2, background: 2),
+            canRunBackground: { relaxed.load(ordering: .relaxed) },
+        ))
+        relaxed.store(false, ordering: .relaxed)
+
+        LightroomWindowController.show(editor: model)
+        let window = try #require(LightroomWindowController.current)
+        defer { window.close() }
+        window.choose(catalog: catalog)
+        try await sandbox.eventually { window.isReported }
+        #expect(window.report?.roots.map(\.state) == [.inLibrary, .notInLibrary])
+        window.model.startImport()
+        try await sandbox.eventually(seconds: 90) { window.isImported }
+        #expect(window.problem == nil, "\(window.problem ?? "")")
+        #expect(window.outcome?.record.photos == 2)
+        #expect(SidecarStore().load(for: other.appending(path: "Day/B.jpg"))?.metadata?.rating == 3)
+        if let root = model.library.root(containing: other) {
+            await model.library.remove(root)?.value
+        }
+    }
+
     @Test func `the report counts the raws in the photographer's Adobe profile, the engine asked once a camera`(
     ) async throws {
         let sandbox = SourcesSandbox()
