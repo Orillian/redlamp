@@ -8,7 +8,7 @@ This page is the published schema (format version 1). A machine-readable [JSON S
 
 - **Declarative, never executable.** A file holds JSON and table data only. Every import goes through `RecipeValidator`: a 16 MB size cap, at most 8 embedded looks, tables of 2 to 65 points per side with finite values in −0.5…1.5 and a matching SHA-256, parameters clamped to their slider ranges, and settings outside the recipe's `includes` dropped.
 - **Immutable versions.** `id` plus `version` names one recipe forever. Improvements ship as a new version. Applying a recipe writes its resolved values into the edit, so a later version never changes photos already edited.
-- **Content-addressed tables.** A table is identified by the SHA-256 of its space, size and Float16 values. Edits pin it through `baseLook.contentHash`, and every look ever installed stays in `Application Support/Redlamp/Looks/`, so deleting a recipe never changes an edit.
+- **Content-addressed tables.** A table is identified by the SHA-256 of its space, size and Float16 values. Edits pin it through `baseLook.contentHash`, and every look ever installed stays in `Application Support/Redlamp/Looks/`, so moving a recipe to the Trash never changes an edit.
 - **Forward compatible.** Unknown fields, parameters and setting groups are kept and written back unchanged; the recipe reports that it needs a newer Redlamp.
 - **No images.** Previews are always rendered locally, on the user's own photo.
 
