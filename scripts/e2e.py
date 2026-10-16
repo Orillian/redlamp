@@ -739,6 +739,9 @@ class Launches:
         self.crashes: list[str] = []
         # Why a launch couldn't bring the app to the front; the run launches nothing more once it's set.
         self.refused: str | None = None
+        # Launches whose app was still running 30 s after its last scenario, with the photos whose edits it couldn't
+        # save then, which quitting stops to ask about: the relaunch after one finds what a quit didn't keep.
+        self.stuck_quits: list[dict] = []
 
     def run_group(self, group: str, ids: list[str], attempt: int = 1) -> bool:
         """Runs `ids` in launches of `group`, as attempt `attempt` of each; returns whether each got a result."""
@@ -758,6 +761,14 @@ class Launches:
             if self.refused:
                 log(f"{group}: the app couldn't come to the front ({self.refused}), so the run stops here")
                 return False
+            if outcome["timedOut"] == "(between scenarios)":
+                ended = [event for event in read_events(self.run_dir / f"events-{group}.jsonl", outcome["events"])
+                         if event.get("event") == "launch-end"]
+                if ended:
+                    failing = ended[-1].get("failingToSave") or []
+                    self.stuck_quits.append({"group": group, "attempt": attempt, "failingToSave": failing})
+                    log(f"{group}: the app didn't quit within 30 s of its last scenario"
+                        + (f"; edits it couldn't save: {', '.join(failing[:5])}" if failing else ""))
             stopped = unfinished or outcome["timedOut"]
             if stopped and stopped in ids:
                 if outcome["timedOut"]:
@@ -904,6 +915,13 @@ def write_report(run_dir: Path, report: dict) -> None:
         if retried:
             lines += ["", "In attempts a retry replaced, so they don't count against the run:", ""]
             lines += [stall_line(hang, attempt=True) for hang in retried]
+    stuck = report.get("stuckQuits") or []
+    if stuck:
+        lines += ["", "## Quitting", "", "Still running 30 s after their last scenario, so the run stopped them:", ""]
+        lines += [f"- the {item['group']} launch (attempt {item['attempt']})"
+                  + (f", with edits it couldn't save: {', '.join(f'`{path}`' for path in item['failingToSave'])}"
+                     if item["failingToSave"] else "")
+                  for item in stuck]
     cover = report.get("coverage")
     if cover:
         held = cover.get("knownIssues") or {}
@@ -1277,6 +1295,8 @@ def main() -> int:
         problems.append(f"{len(crashes)} crash report(s)")
     if hangs:
         problems.append(f"{len(hangs)} main-thread stall(s)")
+    if launches.stuck_quits:
+        problems.append(f"{len(launches.stuck_quits)} launch(es) didn't quit")
     if coverage_required and cover["missing"]:
         problems.append(f"{len(cover['missing'])} claim(s) not covered")
     if isolation_failed:
@@ -1297,7 +1317,8 @@ def main() -> int:
         "noisy": max(load_before, load_after) > QUIET_LOAD, "app": str(built), "seed": args.seed,
         "verdict": "Failed: " + ", ".join(problems) if problems else "Passed",
         "summary": summary, "scenarios": scenarios, "crashes": crashes, "hangs": hangs,
-        "retriedHangs": launches.retried_hangs, "coverage": cover, "coverageRequired": coverage_required,
+        "retriedHangs": launches.retried_hangs, "stuckQuits": launches.stuck_quits, "coverage": cover,
+        "coverageRequired": coverage_required,
         "ownerState": {"changed": changed, "ownerAppRunning": owner_running, "summary": state_summary},
         "relay": relay.count, "performance": performance, "storage": storage, "foreignKeys": foreign_keys(run_dir),
     }

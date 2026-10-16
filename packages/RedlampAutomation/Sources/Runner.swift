@@ -214,7 +214,8 @@
         private func finish() {
             let menu = (try? MainThread.run { Menus.allTitles() }) ?? []
             recorder.writeCoverage(menuItems: menu)
-            recorder.write("launch-end", ["footprintMB": Memory.footprint()])
+            let failing = (try? app.main { $0.photosFailingToSave.map(\.path) }) ?? []
+            recorder.write("launch-end", ["footprintMB": Memory.footprint(), "failingToSave": failing])
             watchdog.stop()
             MainThread.post { NSApp.terminate(nil) }
         }

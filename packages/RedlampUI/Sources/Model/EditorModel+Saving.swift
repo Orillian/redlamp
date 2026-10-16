@@ -57,6 +57,18 @@ extension EditorModel {
         return landed ? .saved : .timedOut
     }
 
+    /// The photos whose last save failed, which quitting asks about.
+    @_spi(Harness) public var photosFailingToSave: [URL] {
+        Set(failedSaves.keys).union(saves.failedPhotos).sorted { $0.path < $1.path }
+    }
+
+    /// The photos under `folder` with a save that hasn't finished or that failed.
+    @_spi(Harness) public func unsavedPhotos(under folder: URL) -> [URL] {
+        let prefix = folder.standardizedFileURL.path + "/"
+        return Set(saves.pending() + photosFailingToSave).filter { $0.standardizedFileURL.path.hasPrefix(prefix) }
+            .sorted { $0.path < $1.path }
+    }
+
     /// Saves again every photo's failed writes that may now go through.
     public func retrySave() {
         saveRetry.task?.cancel()

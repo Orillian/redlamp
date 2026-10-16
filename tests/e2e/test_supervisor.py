@@ -162,20 +162,22 @@ class Retries(unittest.TestCase):
         patcher = mock.patch.object(e2e, "log", lambda message: None)
         patcher.start()
         self.addCleanup(patcher.stop)
-        # What each launch writes, in order: its events, and how the app exited.
-        self.scripted: list[tuple[list[dict], int]] = []
+        # What each launch writes, in order: its events, how the app exited, and where the supervisor stopped it,
+        # if it did.
+        self.scripted: list[tuple] = []
         self.launched: list[tuple[str, list[str]]] = []
         self.launches = e2e.Launches(self.run, self.launch, timeout=300)
 
     def launch(self, group: str, ids: list[str]) -> dict:
         """Adds a launch's events to its group's file, as the driver does, and reports where they begin."""
         self.launched.append((group, ids))
-        events, returncode = self.scripted.pop(0)
+        events, returncode, *stopped = self.scripted.pop(0)
         path = self.run / f"events-{group}.jsonl"
         start = path.stat().st_size if path.exists() else 0
         with path.open("a") as handle:
             handle.writelines(json.dumps(event) + "\n" for event in events)
-        return {"returncode": returncode, "timedOut": None, "crashes": [], "seconds": 1, "events": start}
+        return {"returncode": returncode, "timedOut": stopped[0] if stopped else None, "crashes": [], "seconds": 1,
+                "events": start}
 
     def stalls(self, hangs: list[dict]) -> list[tuple]:
         return [(hang.get("scenario"), hang["seconds"], hang["attempt"]) for hang in hangs]
@@ -252,6 +254,29 @@ class Retries(unittest.TestCase):
         self.assertEqual(self.launches.results["performance.open"],
                          {"status": "failed", "message": "The app crashed (exit -5) during this scenario"})
         self.assertEqual(self.launches.results["performance.drag"]["status"], "passed")
+
+    def test_a_launch_still_running_after_its_last_scenario_didnt_quit_and_names_the_edits_it_couldnt_save(self):
+        ended = {"event": "launch-end", "failingToSave": ["/run/scratch/A.jpg"]}
+        self.scripted = [(scenario("smoke.leave-an-edit") + [ended], -15, "(between scenarios)")]
+        self.assertTrue(self.launches.run_group("main", ["smoke.leave-an-edit"]))
+        self.assertEqual(self.launches.results["smoke.leave-an-edit"]["status"], "passed")
+        self.assertEqual(self.launches.stuck_quits,
+                         [{"group": "main", "attempt": 1, "failingToSave": ["/run/scratch/A.jpg"]}])
+
+    def test_a_launch_stopped_between_scenarios_before_its_end_isnt_a_quit(self):
+        self.scripted = [(scenario("smoke.photos-open"), -15, "(between scenarios)"), (scenario("smoke.export"), 0)]
+        self.launches.run_group("main", ["smoke.photos-open", "smoke.export"])
+        self.assertEqual(self.launches.stuck_quits, [])
+
+    def test_the_report_lists_a_launch_that_didnt_quit(self):
+        report = {"tier": "release", "commit": "abc1234", "dirty": False, "verdict": "Failed", "summary": "",
+                  "started": "", "seconds": 60, "machine": "", "load": {"before": 1.0, "after": 1.0},
+                  "scenarios": [], "crashes": [], "hangs": [], "retriedHangs": [],
+                  "stuckQuits": [{"group": "main", "attempt": 1, "failingToSave": ["/run/scratch/A.jpg"]}],
+                  "ownerState": {"summary": ""}}
+        e2e.write_report(self.run, report)
+        text = (self.run / "report.md").read_text()
+        self.assertIn("- the main launch (attempt 1), with edits it couldn't save: `/run/scratch/A.jpg`", text)
 
     def test_a_launch_reads_its_own_events_after_one_cut_short_midway_through_a_line(self):
         path = self.run / "events-main.jsonl"

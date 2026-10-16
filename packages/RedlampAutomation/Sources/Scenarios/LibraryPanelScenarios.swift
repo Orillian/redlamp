@@ -210,8 +210,14 @@
             }
         }
 
+        /// Deleted once the editor has left its photos and their saves have landed: a save made after the folder has
+        /// gone fails again every 30 s for the rest of the launch, and quitting stops to ask about it.
         func remove(_ app: RunningApp) {
             let folder = folder
+            try? app.showRunPhotos()
+            try? app.wait("the saves of \(folder.lastPathComponent)'s photos", timeout: 30) { model in
+                model.unsavedPhotos(under: folder).isEmpty
+            }
             try? app.main { model in
                 if let root = model.library.root(containing: folder) {
                     model.library.remove(root)
