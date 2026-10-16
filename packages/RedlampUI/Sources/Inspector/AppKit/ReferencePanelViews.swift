@@ -3,7 +3,7 @@ import RedlampDesign
 import RedlampEngineAPI
 import SwiftUI
 
-/// Detail, Lens Corrections, Transform, Effects and Calibration. Their sliders come from the
+/// Detail, Lens Corrections, Transform, Effects, Border and Calibration. Their sliders come from the
 /// parameter schema, so any the engine doesn't render yet show dimmed with their phase.
 @MainActor
 @_spi(Harness) public enum ReferencePanelViews {
@@ -75,14 +75,18 @@ import SwiftUI
                 + [rows.header("Bloom", bloom)] + rows.sliders(bloom)
                 + [rows.header("Light Leak", leak)] + rows.sliders(leak)
                 + [rows.header("Dust & Scratches", dust)] + rows.sliders(dust)
-                + [
-                    rows.header("Frame", [.frameStyle, .frameSize]),
-                    rows.controls("Style", FrameStylePicker()),
-                    rows.slider(.frameSize),
-                ]
+                + [rows.native(FrameOverPhotoSection())]
                 + [rows.header("Camera Recipe", PanelID.cameraRecipeParameters), rows.native(FirmwareModelControls())]
                 + rows.sliders(PanelID.cameraRecipeParameters),
         )
+    }
+
+    public static func border(model: EditorModel) -> PanelSectionView {
+        let rows = PanelRows(model: model)
+        return rows.panel(.border, rows: [
+            rows.controls("Style", BorderStylePicker()),
+            rows.native(BorderOptions()),
+        ])
     }
 
     public static func calibration(model: EditorModel) -> PanelSectionView {

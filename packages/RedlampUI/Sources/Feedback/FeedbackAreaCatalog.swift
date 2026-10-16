@@ -94,6 +94,10 @@ public extension FeedbackArea {
                     ["vignette", "grain", "halation", "bloom", "light leak", "dust", "scratches", "frame", "film"],
                 ),
                 FeedbackFeature(
+                    "border", "Border",
+                    ["border", "frame", "mat", "keyline", "instagram", "instant", "rebate", "slide mount", "polaroid"],
+                ),
+                FeedbackFeature(
                     "camera-recipe", "Camera Recipe",
                     [
                         "fujifilm",

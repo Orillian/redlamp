@@ -60,6 +60,9 @@ public enum AdjustmentSearch {
         .calibrationShadowsTint: "Shadows", .calibrationRedHue: "Red Primary", .calibrationRedSaturation: "Red Primary",
         .calibrationGreenHue: "Green Primary", .calibrationGreenSaturation: "Green Primary",
         .calibrationBlueHue: "Blue Primary", .calibrationBlueSaturation: "Blue Primary",
+        .borderSize: "Border", .borderOffsetX: "Border", .borderOffsetY: "Border", .borderRatioWidth: "Border",
+        .borderRatioHeight: "Border", .borderFrameNumber: "Border", .borderKeylineWidth: "Keyline",
+        .borderKeylineGap: "Keyline",
     ]
 
     /// The words people use: Lightroom's current and older names, and plain descriptions.
@@ -77,6 +80,12 @@ public enum AdjustmentSearch {
         .dehaze: ["haze", "fog", "mist", "atmosphere", "smog"],
         .vibrance: ["color", "intensity", "muted", "saturation"],
         .saturation: ["color", "intensity", "vivid", "desaturate", "black and white"],
+        .borderSize: ["border", "frame", "mat", "margin", "padding", "instagram", "no crop"],
+        .borderOffsetY: ["border", "mat", "bottom margin", "position"],
+        .borderOffsetX: ["border", "mat", "position"],
+        .borderKeylineWidth: ["border", "keyline", "stroke", "line"],
+        .borderKeylineGap: ["border", "keyline", "stroke"],
+        .borderFrameNumber: ["border", "film", "edge print", "frame number", "rebate"],
         .curveHighlights: ["curve", "tone curve", "parametric"],
         .curveLights: ["curve", "tone curve", "parametric"],
         .curveDarks: ["curve", "tone curve", "parametric"],

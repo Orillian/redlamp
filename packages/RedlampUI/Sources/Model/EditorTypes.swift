@@ -78,7 +78,7 @@ public struct LibraryItem: Identifiable, Hashable, Sendable {
 
 /// The Develop panels, in Lightroom's order.
 public enum PanelID: String, CaseIterable, Identifiable, Sendable {
-    case basic, toneCurve, colorMixer, colorGrading, detail, lens, transform, effects, calibration
+    case basic, toneCurve, colorMixer, colorGrading, detail, lens, transform, effects, border, calibration
 
     public var id: String {
         rawValue
@@ -94,6 +94,7 @@ public enum PanelID: String, CaseIterable, Identifiable, Sendable {
         case .lens: "Lens Corrections"
         case .transform: "Transform"
         case .effects: "Effects"
+        case .border: "Border"
         case .calibration: "Calibration"
         }
     }
@@ -109,6 +110,7 @@ public enum PanelID: String, CaseIterable, Identifiable, Sendable {
         case .lens: "camera.aperture"
         case .transform: "perspective"
         case .effects: "sparkles"
+        case .border: "photo.artframe"
         case .calibration: "dial.medium"
         }
     }
@@ -133,6 +135,7 @@ public enum PanelID: String, CaseIterable, Identifiable, Sendable {
             "effects.vignette", "effects.grain", "effects.glow", "effects.leak", "effects.dust", "effects.frame",
             "effects.camera",
         ],
+        .border: ["border"],
         .calibration: ["calibration"],
     ]
 
@@ -235,6 +238,8 @@ public enum PanelID: String, CaseIterable, Identifiable, Sendable {
                 .frameStyle,
                 .frameSize,
             ] + PanelID.cameraRecipeParameters
+        case .border:
+            EditRecipe.borderParameters
         case .calibration:
             [
                 .calibrationShadowsTint,

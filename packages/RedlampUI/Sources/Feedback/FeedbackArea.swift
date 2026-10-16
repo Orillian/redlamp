@@ -159,6 +159,7 @@ public extension FeedbackArea {
         case .lens: "develop.lens-corrections"
         case .transform: "develop.transform"
         case .effects: "develop.effects"
+        case .border: "develop.border"
         case .calibration: "develop.calibration"
         }
     }

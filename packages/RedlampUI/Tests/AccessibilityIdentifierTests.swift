@@ -13,8 +13,11 @@ struct AccessibilityIdentifierTests {
         (ParameterID.curveSplitShadows, "a handle under the curve, and its value"),
         (.curveSplitMidtones, "a handle under the curve, and its value"),
         (.curveSplitHighlights, "a handle under the curve, and its value"),
-        (.frameStyle, "the frame menu"),
-    ] + ColorBand.allCases.flatMap { band in
+        (.frameStyle, "the frame menu, on an edit with a frame over the photo"),
+        (.frameSize, "shown on an edit with a frame over the photo"),
+    ] + EditRecipe.borderParameters.map { parameter in
+        (parameter, "the Border panel's menus, swatches and colour wells, and its sliders once a style needs them")
+    } + ColorBand.allCases.flatMap { band in
         [
             (band.saturationParameter, "the Color Mixer's Saturation mode"),
             (band.luminanceParameter, "the Color Mixer's Luminance mode"),

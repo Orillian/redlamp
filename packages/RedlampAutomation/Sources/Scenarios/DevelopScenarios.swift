@@ -18,6 +18,7 @@
             lensAndTransform,
             LensProfileScenarios.choice,
             effectsAndCalibration,
+            border,
             firmwareModel,
             adobeProfiles,
             panelSwitches,
@@ -466,6 +467,49 @@
                 [.feature("develop.effects"), .feature("develop.camera-recipe"), .feature("develop.calibration")],
                 via: .model,
             )
+        }
+
+        /// TON-53, TON-54: a border grows the canvas around the photo; its colour from the panel's
+        /// swatches; film's Crop to Format; the panel's switch takes it away.
+        static let border = Scenario(
+            "develop.border",
+            "Border: a white 4:5 border grows the canvas, a swatch turns it black, film crops to its format, the switch hides it",
+            claims: [.feature("develop.border"), .panel(.border)],
+            needsFocus: true,
+        ) { app in
+            try app.openWorking()
+            try app.choose(.resetAll)
+            try app.main { $0.expandedPanels.insert(.border) }
+            let photo = try app.main { $0.canvas.imageSize }
+            try app.expectRenders("a white 4:5 border") {
+                try app.main { model in
+                    model.setBorderStyle(.plain)
+                    model.setBorderShape(.fourByFive)
+                    model.setBorderOrientation(.portrait)
+                }
+            }
+            try app.wait("the canvas grows to 4:5 around the photo") { model in
+                let size = model.canvas.imageSize
+                return size.width >= photo.width && abs(size.aspectRatio - 0.8) < 0.01
+            }
+            try app.wait("the histogram counts the photo, not the white border") { !$0.histogram.highlightsClipped }
+            try app.click(.identifier("border.color.black"))
+            try app.wait("a black border, as one History step") { model in
+                model.value(.borderRed) < 30 && model.history.last?.name == "Border Color"
+            }
+            try app.expectRenders("35 mm film") { try app.main { $0.setBorderStyle(.film35) } }
+            try app.click(.identifier("border.cropToFormat"))
+            try app.wait("the crop at 2:3") { model in
+                let crop = model.recipe.crop
+                let aspect = model.pixelAspect(of: crop)
+                return abs(aspect - 1.5) < 0.01 || abs(aspect - 2.0 / 3) < 0.01
+            }
+            try app.click(.identifier("panel.border.switch"))
+            try app.wait("Border off: the canvas is the photo again") { model in
+                !model.isOn(.border) && !model.hasBorder
+            }
+            try app.choose(.resetAll)
+            app.covered([.feature("develop.border"), .panel(.border)], via: .mouse)
         }
 
         static let firmwareModel = Scenario(

@@ -358,9 +358,7 @@ struct ProcessVersion: View {
             SubsectionHeader(title: "Dust & Scratches", parameters: [.dustAmount, .scratchAmount])
             ParameterSlider(parameter: .dustAmount)
             ParameterSlider(parameter: .scratchAmount)
-            SubsectionHeader(title: "Frame", parameters: [.frameStyle, .frameSize])
-            ControlRow(label: "Style") { FrameStylePicker() }
-            ParameterSlider(parameter: .frameSize)
+            FrameOverPhotoSection()
             SubsectionHeader(title: "Camera Recipe", parameters: PanelID.cameraRecipeParameters)
             FirmwareModelControls()
             ForEach(PanelID.cameraRecipeParameters, id: \.self) { ParameterSlider(parameter: $0) }
@@ -410,6 +408,7 @@ struct ProcessVersion: View {
             LensPanel()
             TransformPanel()
             EffectsPanel()
+            BorderPanel()
             CalibrationPanel()
         }
         .padding(.horizontal, Theme.panelCardMargin)
