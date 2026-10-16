@@ -17,7 +17,8 @@ public extension LightroomReport {
             public var paths: [String] = []
         }
 
-        /// The photos found whose edits come across: Lightroom edited them, and Redlamp hasn't.
+        /// The photos found whose edits come across: Lightroom edited them. Those Redlamp has edited too (`kept`)
+        /// get Lightroom's as a version.
         public var photos = 0
         public var full = 0
         public var approximated = 0
@@ -36,15 +37,24 @@ public extension LightroomReport {
         /// Their snapshots, which come across beside their edits, and the steps of their histories, which don't.
         public var snapshots = 0
         public var historySteps = 0
-        /// Photos found that Redlamp has edited already: they keep their edit, Lightroom's is reported.
+        /// Of them, photos Redlamp has edited already: they keep their edit, and Lightroom's comes across as a
+        /// version named “Lightroom Classic”, which takes the photo's metadata as a new virtual copy does.
         public var kept = 0
         public var keptPaths: [String] = []
         /// JPEGs Lightroom kept with their raws: the edit goes to the raw only.
         public var pairs = 0
-        /// Photos found whose settings the catalog doesn't hold, or holds in a form that can't be read.
+        /// Photos and virtual copies found whose settings the catalog doesn't hold, or holds in a form that can't
+        /// be read.
         public var unreadable = 0
-        /// Virtual copies of the photos found, whose edits stay behind until versions come (0.3.4).
+        /// Virtual copies of the photos found, which come across as versions of their photos (EDT-09), each named
+        /// as Lightroom named it, with its own edit, snapshots and fields.
         public var virtualCopies = 0
+        /// Of them, those in collections: the versions name their collections, which list them once the library
+        /// shows versions as photos (LIB-48).
+        public var copiesInCollections = 0
+        /// Edits of the photos found and of their virtual copies that came across from this catalog before, as a
+        /// photo's edit or a version: they're left as they are.
+        public var alreadyThere = 0
         /// Photos whose edits come across with an `.xmp` beside them changed since the catalog was last written:
         /// the catalog's settings win.
         public var newerXMP = 0
@@ -65,16 +75,45 @@ struct LightroomEdit: Sendable {
     }
 }
 
+/// A virtual copy of a photo found, which the import writes as a version of the photo (EDT-23): its edit,
+/// converted as its photo's is, and, from the plan, its name and its own fields.
+struct LightroomCopy: Sendable {
+    /// Its image in the catalog.
+    var image: Int64
+    /// Nil when its settings can't be read: the version is the photo as it was shot, with `provenance`.
+    var edit: LightroomEdit?
+    var provenance: LightroomProvenance
+    /// As Lightroom named it; nil or empty takes the name Create Version would give.
+    var name: String?
+    var values = LightroomValues()
+
+    /// The version as the sidecar holds it, made now with the ID `id`, `date` its and its snapshots'; named “”
+    /// when it has no name, for the batch to name it.
+    func version(id: UUID = UUID(), date: Date = Date()) -> PhotoVersion {
+        var (recipe, snapshots) = edit?.made(date: date) ?? (EditRecipe(), [])
+        if edit == nil {
+            recipe.provenance = provenance.recorded
+        }
+        return PhotoVersion(
+            id: id, name: name ?? "", created: date, recipe: recipe, metadata: values.metadata, snapshots: snapshots,
+        )
+    }
+}
+
 /// The catalog's Develop settings read again and converted for the photos the library has (EDT-23): each
 /// part on every core while the next is read, only the compact conversions kept.
 struct LightroomEditReading: Sendable {
-    /// A photo of the catalog found in the index: its row, and how many JPEGs Lightroom kept with it.
+    /// A photo of the catalog found in the index: its row, how many JPEGs Lightroom kept with it, and the images of
+    /// the catalog (the photo's own and its virtual copies) whose edits its sidecar holds already.
     struct Target: Sendable {
         let row: PhotoRecord
         let pairs: Int
+        var there: Set<Int64> = []
     }
 
     var edits: [Int64: LightroomEdit] = [:]
+    /// The virtual copies of each photo found, by its ID in the index, in the catalog's order.
+    var copies: [Int64: [LightroomCopy]] = [:]
     var report = LightroomReport.Edits()
     /// The photos of each reason, by their IDs in the index, in the report's order of the reasons.
     var reasonPhotos: [[Int64]] = []
@@ -82,6 +121,7 @@ struct LightroomEditReading: Sendable {
 
     private struct Part: Sendable {
         var edits: [(Int64, LightroomEdit)] = []
+        var copies: [(Int64, LightroomCopy)] = []
         var report = LightroomReport.Edits()
         var reasons: [LightroomImportReport.Reason: (settings: [String: Int], photos: [Int64])] = [:]
         var reasonOrder: [LightroomImportReport.Reason] = []
@@ -114,6 +154,9 @@ struct LightroomEditReading: Sendable {
         for part in parts {
             for (id, edit) in part.edits {
                 reading.edits[id] = edit
+            }
+            for (id, copy) in part.copies {
+                reading.copies[id, default: []].append(copy)
             }
             reading.report.add(part.report)
             reading.keptPhotos += part.kept
@@ -156,7 +199,26 @@ struct LightroomEditReading: Sendable {
         var part = Part()
         for develop in records {
             if let master = develop.master {
-                part.report.virtualCopies += targets[master] == nil ? 0 : 1
+                guard let target = targets[master] else { continue }
+                guard !target.there.contains(develop.image) else {
+                    part.report.alreadyThere += 1
+                    continue
+                }
+                let photo = context(
+                    target.row, develop, slotLooks: slotLooks, unturned: unturned, adobeProfiles: adobeProfiles,
+                )
+                let source = LightroomProvenance.Source.catalog(catalog, photo: develop.image, digest: develop.digest)
+                var copy = LightroomCopy(
+                    image: develop.image, provenance: LightroomProvenance(source: source, date: date),
+                )
+                if let text = develop.text, let settings = try? CameraRawSettings(lua: text) {
+                    copy.edit = converted(settings, develop, photo: photo, source: source, date: date).edit
+                } else if develop.adjusted == true {
+                    part.report.unreadable += 1
+                }
+                part.copies.append((target.row.id, copy))
+                part.report.virtualCopies += 1
+                part.report.snapshots += copy.edit?.snapshots.count ?? 0
                 continue
             }
             guard let target = targets[develop.image], develop.adjusted != false else { continue }
@@ -165,31 +227,25 @@ struct LightroomEditReading: Sendable {
                 continue
             }
             guard LightroomPhoto.holdsEdit(settings) else { continue }
-            guard !target.row.edited else {
+            guard !target.there.contains(develop.image) else {
+                part.report.alreadyThere += 1
+                continue
+            }
+            if target.row.edited {
                 part.report.kept += 1
                 part.kept.append(target.row.id)
-                continue
             }
             let photo = context(
                 target.row, develop, slotLooks: slotLooks, unturned: unturned, adobeProfiles: adobeProfiles,
             )
             let source = LightroomProvenance.Source.catalog(catalog, photo: develop.image, digest: develop.digest)
-            var converted = LightroomPhoto.convert(settings, photo: photo, source: source, date: date)
-            let report = converted.report
+            let (edit, report) = converted(settings, develop, photo: photo, source: source, date: date)
             switch report.profile {
             case .onThisMac?: part.report.ownProfiles += 1
             case let .standIn(profile, _)?: part.report.standIns[profile, default: 0] += 1
             case nil: break
             }
-            converted.report = LightroomImportReport(processVersion: report.processVersion)
-            var snapshots: [(name: String, edit: LightroomPhotoImport)] = []
-            for snapshot in develop.snapshots {
-                guard let text = snapshot.text, let settings = try? CameraRawSettings(lua: text) else { continue }
-                var edit = LightroomPhoto.convert(settings, photo: photo, source: source, date: date)
-                edit.report = LightroomImportReport(processVersion: edit.report.processVersion)
-                snapshots.append((snapshot.name ?? "Snapshot", edit))
-            }
-            part.edits.append((target.row.id, LightroomEdit(photo: converted, snapshots: snapshots)))
+            part.edits.append((target.row.id, edit))
             part.report.photos += 1
             switch report.conversion {
             case .full: part.report.full += 1
@@ -200,7 +256,7 @@ struct LightroomEditReading: Sendable {
                 LightroomPhoto.processName(report.processVersion ?? develop.processVersion),
                 default: 0,
             ] += 1
-            part.report.snapshots += snapshots.count
+            part.report.snapshots += edit.snapshots.count
             part.report.turned += photo.orientationCode == nil ? 0 : 1
             part.report.historySteps += develop.historySteps
             part.report.pairs += target.pairs
@@ -219,6 +275,25 @@ struct LightroomEditReading: Sendable {
             }
         }
         return part
+    }
+
+    /// A photo's or virtual copy's `settings` and its snapshots in `develop`, converted for `photo`, the edits
+    /// keeping only their process versions of their reports; and the edit's whole report.
+    private static func converted(
+        _ settings: CameraRawSettings, _ develop: LightroomCatalog.Develop, photo: LightroomPhotoContext,
+        source: LightroomProvenance.Source, date: Date,
+    ) -> (edit: LightroomEdit, report: LightroomImportReport) {
+        var converted = LightroomPhoto.convert(settings, photo: photo, source: source, date: date)
+        let report = converted.report
+        converted.report = LightroomImportReport(processVersion: report.processVersion)
+        var snapshots: [(name: String, edit: LightroomPhotoImport)] = []
+        for snapshot in develop.snapshots {
+            guard let text = snapshot.text, let settings = try? CameraRawSettings(lua: text) else { continue }
+            var edit = LightroomPhoto.convert(settings, photo: photo, source: source, date: date)
+            edit.report = LightroomImportReport(processVersion: edit.report.processVersion)
+            snapshots.append((snapshot.name ?? "Snapshot", edit))
+        }
+        return (LightroomEdit(photo: converted, snapshots: snapshots), report)
     }
 
     /// What converting a photo's settings needs of it, from its row in the index and the catalog's record. Its
@@ -276,6 +351,8 @@ extension LightroomReport.Edits {
         pairs += other.pairs
         unreadable += other.unreadable
         virtualCopies += other.virtualCopies
+        copiesInCollections += other.copiesInCollections
+        alreadyThere += other.alreadyThere
         newerXMP += other.newerXMP
     }
 
@@ -297,7 +374,7 @@ extension LightroomReport.Edits {
 
     /// The section's lines, as `LightroomReport.lines` prints them.
     var lines: [String] {
-        guard photos > 0 || kept > 0 || virtualCopies > 0 || unreadable > 0 else { return [] }
+        guard photos > 0 || virtualCopies > 0 || unreadable > 0 || alreadyThere > 0 else { return [] }
         let count = LightroomReport.count
         var lines = ["  edits, for the photos found:"]
         if photos > 0 {
@@ -333,6 +410,18 @@ extension LightroomReport.Edits {
                 + (reason.settings.count > 6 ? " and \(count(reason.settings.count - 6)) more" : "")
             lines.append("      left out of \(count(reason.photos)) photos, \(reason.why): \(shown)")
         }
+        if kept > 0 {
+            lines.append("      photos Redlamp has edited already: \(count(kept)), which keep their edit; Lightroom's "
+                + "comes across as a version named “Lightroom Classic”")
+        }
+        if virtualCopies > 0 {
+            lines.append("    virtual copies: \(count(virtualCopies)), which come across as versions of their photos, "
+                + "named as Lightroom named them, with their own edits, snapshots and fields")
+        }
+        if copiesInCollections > 0 {
+            lines.append("      in collections: \(count(copiesInCollections)), which their versions name; the "
+                + "collections list them once the library shows versions as photos (LIB-48)")
+        }
         if snapshots > 0 {
             lines.append("    snapshots: \(count(snapshots)), converted as the edits are")
         }
@@ -345,9 +434,9 @@ extension LightroomReport.Edits {
                     + "which take the catalog's settings",
             )
         }
-        if kept > 0 {
-            lines.append("    photos Redlamp has edited already: \(count(kept)), which keep their edit; Lightroom's "
-                + "isn't brought")
+        if alreadyThere > 0 {
+            lines.append("    edits brought from this catalog before: \(count(alreadyThere)), as photos' edits or "
+                + "versions, which are left as they are")
         }
         return lines
     }
@@ -363,7 +452,7 @@ extension LightroomReport.Edits {
         }
         if unreadable > 0 {
             left.append(LightroomReport.Left(
-                what: "photos edited in Lightroom whose settings can't be read", count: unreadable,
+                what: "photos and virtual copies edited in Lightroom whose settings can't be read", count: unreadable,
                 why: "the catalog doesn't hold them in a form Redlamp reads; they show as they were shot",
             ))
         }

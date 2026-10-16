@@ -111,7 +111,7 @@ struct LightroomImportTests {
         #expect(report.collections == 3 && report.sets == 1)
         #expect(report.smartMapped.map(\.query) == ["rating>=4 -flag:reject"])
         #expect(report.smartLeft.map(\.path) == ["Recently edited"])
-        #expect(report.left.map(\.what).contains("virtual copies"))
+        #expect(report.edits.virtualCopies == 1 && !report.left.map(\.what).contains("virtual copies"))
         #expect(report.left.map(\.what).contains("places Lightroom's map gave photos"))
         #expect(!report.lines().isEmpty)
         #expect(Self.names.map { library.sandbox.sidecar($0) } == before, "the report writes nothing")
@@ -150,6 +150,9 @@ struct LightroomImportTests {
         let kept = try #require(library.sandbox.sidecar("2024/July/IMG_0004.JPG"))
         #expect(kept.metadata?.collections == ["Mine"] && kept.recipe[.exposure] == 0.35)
         #expect(kept.unknownFields["fromTheFuture"] == .string("kept"))
+        let copied = try #require(library.sandbox.sidecar("2024/July/IMG_0003.JPG")?.versions.first)
+        #expect(copied.name == "Copy 1" && copied.metadata?.rating == 5, "the virtual copy, with its own rating")
+        #expect(copied.recipe.provenance?.source == .lightroomCatalog && copied.recipe[.exposure] == 0)
 
         let keywords = try await library.sandbox.keywords().definitions()
         #expect(keywords.keywords[kw("Places/Lisbon")]?.synonyms == ["Lisboa"])
@@ -171,6 +174,7 @@ struct LightroomImportTests {
 
         try await importer.undo()
         #expect(Self.names.map { library.sandbox.sidecar($0)?.metadata } == sidecarsBefore)
+        #expect(Self.names.allSatisfy { library.sandbox.sidecar($0)?.versions.isEmpty ?? true })
         let undone = try await library.row("2024/June/IMG_0001.CR3")
         #expect(undone.rating == 0 && undone.flag == nil && undone.label == nil && undone.title == nil)
         #expect(try await library.row("2024/July/IMG_0004.JPG").rating == 3)

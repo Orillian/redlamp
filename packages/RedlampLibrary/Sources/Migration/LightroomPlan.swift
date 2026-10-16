@@ -2,6 +2,7 @@ import Foundation
 import RedlampDocument
 import RedlampEngineAPI
 import RedlampRecipes
+import Synchronization
 
 /// What a photo gets from a Lightroom Classic catalog (LIB-29): Lightroom's value of each field it has
 /// one for, its keywords and its collections.
@@ -57,6 +58,18 @@ struct LightroomValues: Sendable, Hashable {
         }
         return edits
     }
+
+    /// The fields, keywords and collections as a version's own metadata, which starts with none of its photo's
+    /// (EDT-23); nil when there are none.
+    var metadata: PhotoMetadata? {
+        var edits = edits
+        if !keywords.isEmpty {
+            edits["keywords"] = .add(keywords.map(\.text))
+        }
+        let values = PhotoMetadata.canonical(edits.applied(to: [:], fallback: [:]))
+        guard let metadata = PhotoMetadata().setting(values), !metadata.isEmpty else { return nil }
+        return metadata
+    }
 }
 
 /// A Lightroom Classic catalog's import into the library, worked out from the catalog and the index as they
@@ -72,6 +85,9 @@ struct LightroomValues: Sendable, Hashable {
 ///   a label, IPTC's fields); keywords and collections join the photo's; the Quick Collection is the mark.
 /// - **Collections** keep their places, sets around them; one at a place where the library has another kind
 ///   of thing is renamed “(Lightroom)”. Smart collections come across when every rule maps.
+/// - **Edits** (EDT-23): each photo's, with its snapshots; a photo Redlamp has edited keeps its edit and gets
+///   Lightroom's as a version named “Lightroom Classic”. Each virtual copy is a version of its photo, with its own
+///   edit, snapshots and fields. An edit the photo's sidecar has from this catalog already is left as it is.
 public struct LightroomPlan: Sendable {
     public let report: LightroomReport
     /// The catalog's name, as titles of its batches name it: `Lightroom Catalog`.
@@ -82,8 +98,10 @@ public struct LightroomPlan: Sendable {
     let keywords: [KeywordPath: KeywordOptions]
     /// The sets, smart collections and collections without photos found that the definitions keep.
     let collections: [CollectionPath: CollectionOptions]
-    /// Each photo's edit from Lightroom, converted, by its ID in the index: those Redlamp hasn't edited.
+    /// Each photo's edit from Lightroom, converted, by its ID in the index.
     let edits: [Int64: LightroomEdit]
+    /// Each photo's virtual copies, which come across as its versions, by its ID in the index.
+    let copies: [Int64: [LightroomCopy]]
     /// The root folders on this Mac the library doesn't have: importing adds them first.
     public let foldersToAdd: [URL]
 
@@ -123,6 +141,13 @@ public struct LightroomPlan: Sendable {
         if let adobeProfiles {
             profiles = try await Self.adobeProfiles(of: planner.targets.values.map(\.row), in: index, adobeProfiles)
         }
+        let there = try await Self.there(
+            planner.targets, copied: Set(catalog.virtualCopies.map(\.master)), from: catalog.url, index: index,
+            paths: paths,
+        )
+        for (image, images) in there {
+            planner.targets[image]?.there = images
+        }
         let reading = try LightroomEditReading.read(
             catalog.url, targets: planner.targets, slotLooks: slotLooks, adobeProfiles: profiles,
         )
@@ -132,6 +157,38 @@ public struct LightroomPlan: Sendable {
         let found = try await index.read { reader in try reader.photoPaths(listed.flatMap(\.self)) }
         planner.add(reading, paths: listed.map { $0.compactMap { found[$0] } })
         return planner.plan()
+    }
+
+    /// The images of the catalog at `catalog` whose edits each photo found holds already, as its edit or a version,
+    /// by the photo's image: read from the sidecars of the photos Redlamp has edited and of those with virtual copies
+    /// (`copied`), which are the ones that can hold them, on every core.
+    static func there(
+        _ targets: [Int64: LightroomEditReading.Target], copied: Set<Int64>, from catalog: URL, index: LibraryIndex,
+        paths: LibraryPaths?,
+    ) async throws -> [Int64: Set<Int64>] {
+        let candidates = targets.filter { image, target in
+            target.row.sidecarModified != nil && (target.row.edited || copied.contains(image))
+        }.map { (image: $0.key, row: $0.value.row.id) }
+        guard !candidates.isEmpty else { return [:] }
+        let found = try await index.read { reader in try reader.photoPaths(candidates.map(\.row)) }
+        let library = paths ?? LibraryPaths(root: index.url.deletingLastPathComponent())
+        let store = try await SidecarStore(locator: LibrarySidecars(index: index, paths: library).locator())
+        let there = Mutex<[Int64: Set<Int64>]>([:])
+        DispatchQueue.concurrentPerform(iterations: candidates.count) { place in
+            guard let path = found[candidates[place].row],
+                  let sidecar = store.load(for: URL(fileURLWithPath: path))
+            else { return }
+            let images = Set(([sidecar.recipe] + sidecar.versions.map(\.recipe)).compactMap { recipe -> Int64? in
+                guard let provenance = recipe.provenance, provenance.source == .lightroomCatalog,
+                      provenance.path == catalog.path
+                else { return nil }
+                return provenance.photo
+            })
+            if !images.isEmpty {
+                there.withLock { $0[candidates[place].image] = images }
+            }
+        }
+        return there.withLock { $0 }
     }
 
     /// What `list` gives for the camera of each raw among `rows`, by the camera's ID in `index`: asked once for each
@@ -178,6 +235,9 @@ struct LightroomPlanner {
     /// The photos found whose edits are read, by their images' IDs in the catalog: raws, not their JPEGs.
     var targets: [Int64: LightroomEditReading.Target] = [:]
     var edits: [Int64: LightroomEdit] = [:]
+    /// What the catalog gives each virtual copy of the photos found, by its image's ID.
+    var copyValues: [Int64: LightroomValues] = [:]
+    var copies: [Int64: [LightroomCopy]] = [:]
     /// The row each photo found had, by its ID in the index.
     var rows: [Int64: PhotoRecord] = [:]
     var keywordDefinitions: [KeywordPath: KeywordOptions] = [:]
@@ -342,6 +402,22 @@ struct LightroomPlanner {
         name.precomposedStringWithCanonicalMapping.lowercased()
     }
 
+    /// What the catalog gives the photo or virtual copy `image`: its fields, its keywords by their paths, its
+    /// collections, and the mark when it's in the Quick Collection (`marked`).
+    static func values(
+        of image: LightroomCatalog.Photo, keywords: [Int64: KeywordPath], collections: [Int64: [CollectionPath]],
+        marked: Set<Int64>,
+    ) -> LightroomValues {
+        var values = LightroomValues(
+            rating: image.rating, flag: image.flag, label: image.label, mark: marked.contains(image.id),
+            title: image.title, caption: image.caption, creator: image.creator, copyright: image.copyright,
+            location: image.location,
+        )
+        values.keywords = KeywordPath.paths(image.keywords.compactMap { keywords[$0]?.text })
+        values.collections = Array(Set(collections[image.id] ?? [])).sorted()
+        return values
+    }
+
     /// Gives each photo found what the catalog has for it, and works out the keywords and collections.
     mutating func collect(_ matches: [Int: Match], existing: CollectionList) {
         let keywordPaths = keywordPaths()
@@ -371,13 +447,7 @@ struct LightroomPlanner {
                 rootsFound[folder.root, default: 0] += 1
             }
             targets[photo.id] = LightroomEditReading.Target(row: match.row, pairs: match.pairs.count)
-            var values = LightroomValues(
-                rating: photo.rating, flag: photo.flag, label: photo.label, mark: marked.contains(photo.id),
-                title: photo.title, caption: photo.caption, creator: photo.creator, copyright: photo.copyright,
-                location: photo.location,
-            )
-            values.keywords = KeywordPath.paths(photo.keywords.compactMap { keywordPaths[$0]?.text })
-            values.collections = Array(Set(collectionsOf[photo.id] ?? [])).sorted()
+            let values = Self.values(of: photo, keywords: keywordPaths, collections: collectionsOf, marked: marked)
             if photo.hasGPS, match.row.latitude == nil {
                 placed += 1
             }
@@ -386,6 +456,11 @@ struct LightroomPlanner {
                 rows[row.id] = row
             }
             report.pairs += match.pairs.count
+        }
+        for copy in catalog.virtualCopies where targets[copy.master] != nil {
+            copyValues[copy.id] = Self.values(
+                of: copy.photo, keywords: keywordPaths, collections: collectionsOf, marked: marked,
+            )
         }
         report.found = matches.count
         report.notFoundPaths = notFound
@@ -591,13 +666,6 @@ struct LightroomPlanner {
 
     /// What the catalog holds that doesn't come across.
     private mutating func addLeftovers() {
-        if !catalog.virtualCopies.isEmpty {
-            report.left.append(LightroomReport.Left(
-                what: "virtual copies", count: catalog.virtualCopies.count,
-                why: "a virtual copy is another edit of its photo, which comes across as a version once Redlamp has "
-                    + "them (0.3.4); until then its edit stays in Lightroom",
-            ))
-        }
         if catalog.stacks > 0 {
             report.left.append(LightroomReport.Left(
                 what: "stacks", count: catalog.stacks, why: "Lightroom's stacks aren't brought across",
@@ -605,10 +673,21 @@ struct LightroomPlanner {
         }
     }
 
-    /// The edits read, in the report with the paths listed of each reason's photos and of those kept, in order.
+    /// The edits read, in the report with the paths listed of each reason's photos and of those kept, in order;
+    /// each virtual copy with its name and what the catalog gives it.
     mutating func add(_ reading: LightroomEditReading, paths: [[String]]) {
         edits = reading.edits
         report.edits = reading.report
+        let names = Dictionary(catalog.virtualCopies.map { ($0.id, $0.name) }) { first, _ in first }
+        copies = reading.copies.mapValues { list in
+            list.map { copy in
+                var copy = copy
+                copy.name = names[copy.image] ?? nil
+                copy.values = copyValues[copy.image] ?? LightroomValues()
+                return copy
+            }
+        }
+        report.edits.copiesInCollections = copies.values.joined().count(where: { !$0.values.collections.isEmpty })
         for place in report.edits.reasons.indices where place < paths.count {
             report.edits.reasons[place].paths = paths[place]
         }
@@ -621,7 +700,8 @@ struct LightroomPlanner {
         return LightroomPlan(
             report: report, name: name,
             photos: found.sorted { $0.key < $1.key }.map { (id: $0.key, values: $0.value) },
-            keywords: keywordDefinitions, collections: collectionDefinitions, edits: edits, foldersToAdd: foldersToAdd,
+            keywords: keywordDefinitions, collections: collectionDefinitions, edits: edits, copies: copies,
+            foldersToAdd: foldersToAdd,
         )
     }
 }

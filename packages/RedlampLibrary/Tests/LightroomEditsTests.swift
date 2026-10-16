@@ -62,7 +62,14 @@ struct LightroomEditsTests {
         let third = try maker.photo(july, "IMG_0003.JPG")
         let fourth = try maker.photo(july, "IMG_0004.JPG")
         let sixth = try maker.photo(july, "IMG_0006.CR3", size: size)
-        let copy = try maker.photo(june, "IMG_0001.CR3", master: first, copyName: "Copy 1")
+        let copy = try maker.photo(
+            june, "IMG_0001.CR3", rating: 4, pick: 1, label: "Green", master: first, copyName: "Copy 1",
+        )
+        let unnamed = try maker.photo(june, "IMG_0001.CR3", master: first, copyName: "")
+        try maker.tag(copy, maker.keyword("Mono"))
+        try maker.collection("Selects", photos: [copy])
+        try maker.iptc(copy, caption: "Darker")
+        try maker.xmp(copy, title: "The copy's title")
         try maker.develop(first, LightroomSettingsText.text(["Exposure2012": "0.5"]), digest: "D1")
         try maker.snapshot(first, name: "Brighter", text: LightroomSettingsText.text(["Exposure2012": "1.5"]))
         try maker.history(first, steps: 3)
@@ -73,11 +80,16 @@ struct LightroomEditsTests {
         try maker.edited(third)
         try maker.develop(fourth, LightroomSettingsText.text(["Exposure2012": "1"]))
         try maker.develop(sixth, LightroomSettingsText.text(["ProcessVersion": "\"5.7\"", "Brightness": "60"]))
-        try maker.develop(copy, LightroomSettingsText.text(["Exposure2012": "-1"]))
+        try maker.develop(copy, LightroomSettingsText.text(["Exposure2012": "-1"]), digest: "D2")
+        try maker.snapshot(copy, name: "Darkest", text: LightroomSettingsText.text(["Exposure2012": "-2"]))
+        try maker.develop(unnamed, LightroomSettingsText.text(["Exposure2012": "0.75"]))
         maker.close()
         return Library(
             sandbox: sandbox, folder: folder, catalog: maker.url,
-            images: ["IMG_0001.CR3": first, "IMG_0002.CR3": second, "IMG_0006.CR3": sixth],
+            images: [
+                "IMG_0001.CR3": first, "IMG_0002.CR3": second, "IMG_0004.JPG": fourth, "IMG_0006.CR3": sixth,
+                "Copy 1": copy, "unnamed": unnamed,
+            ],
         )
     }
 
@@ -87,33 +99,50 @@ struct LightroomEditsTests {
         defer { library.remove() }
         let plan = try await library.plan()
         let edits = plan.report.edits
-        #expect(edits.photos == 3, "IMG_0001, IMG_0002 and IMG_0006; IMG_0004 is Redlamp's")
-        #expect(edits.full + edits.approximated + edits.leftOut == 3 && edits.leftOut >= 2)
-        #expect(edits.processes["Process 2010"] == 1 && edits.processes["Process 2012"] == 2)
-        #expect(edits.snapshots == 1 && edits.historySteps == 3 && edits.pairs == 1)
+        #expect(edits.photos == 4, "IMG_0001, IMG_0002, IMG_0006, and IMG_0004, which Redlamp has edited")
+        #expect(edits.full + edits.approximated + edits.leftOut == 4 && edits.leftOut >= 2)
+        #expect(edits.processes["Process 2010"] == 1 && edits.processes["Process 2012"] == 3)
+        #expect(edits.snapshots == 2 && edits.historySteps == 3 && edits.pairs == 1, "IMG_0001's and its copy's")
         #expect(edits.kept == 1 && edits.keptPaths.first?.hasSuffix("2024/July/IMG_0004.JPG") == true)
         #expect(edits.unreadable == 1, "IMG_0003 is marked edited without settings")
-        #expect(edits.virtualCopies == 1)
+        #expect(edits.virtualCopies == 2 && edits.copiesInCollections == 1 && edits.alreadyThere == 0)
         #expect(edits.newerXMP == 1, "IMG_0002's .xmp changed after the catalog was written")
         let lensBlur = try #require(edits.reasons.first { $0.settings.contains("LensBlur") })
         #expect(lensBlur.why.contains("OTH-03") && lensBlur.photos == 1)
         #expect(lensBlur.paths.first?.hasSuffix("2024/June/IMG_0002.CR3") == true)
         #expect(edits.reasons.contains { $0.why.contains("EDT-31") && $0.photos == 1 })
-        #expect(plan.report.left.contains { $0.what == "virtual copies" && $0.why.contains("0.3.4") })
+        #expect(!plan.report.left.contains { $0.what == "virtual copies" }, "they come across")
         #expect(plan.report.left.contains { $0.what.hasPrefix("steps of the edited photos' histories") })
-        #expect(plan.report.lines().contains("  edits, for the photos found:"))
+        let lines = plan.report.lines()
+        #expect(lines.contains("  edits, for the photos found:"))
+        #expect(lines.contains { $0.contains("virtual copies: 2, which come across as versions of their photos") })
+        #expect(lines.contains { $0.contains("edited already: 1, which keep their edit") && $0.contains("Lightroom") })
         let json = try JSONDecoder().decode(LightroomReport.self, from: plan.report.json())
         #expect(json.edits == edits)
 
         let raw = try await library.sandbox.id("2024/June/IMG_0001.CR3")
         let jpeg = try await library.sandbox.id("2024/June/IMG_0001.JPG")
-        #expect(plan.edits.count == 3 && plan.edits[jpeg] == nil, "the raw takes the pair's edit")
+        #expect(plan.edits.count == 4 && plan.edits[jpeg] == nil, "the raw takes the pair's edit")
         let made = try #require(plan.edits[raw]).made()
         #expect(made.recipe[.exposure] == 0.5)
         #expect(made.recipe.provenance?.source == .lightroomCatalog)
         #expect(made.recipe.provenance?.photo == library.images["IMG_0001.CR3"])
         #expect(made.recipe.provenance?.digest == "D1" && made.recipe.provenance?.path == library.catalog.path)
         #expect(made.snapshots.map(\.name) == ["Brighter"] && made.snapshots.first?.recipe[.exposure] == 1.5)
+
+        let copies = try #require(plan.copies[raw])
+        #expect(copies.map(\.image) == [library.images["Copy 1"], library.images["unnamed"]])
+        #expect(copies.map(\.name) == ["Copy 1", ""] && plan.copies[jpeg] == nil)
+        let version = copies[0].version()
+        #expect(version.name == "Copy 1" && version.recipe[.exposure] == -1)
+        #expect(version.recipe.provenance?.photo == library.images["Copy 1"] && version.recipe.provenance?
+            .digest == "D2")
+        #expect(version.snapshots.map(\.name) == ["Darkest"] && version.snapshots.first?.recipe[.exposure] == -2)
+        let own = try #require(version.metadata)
+        #expect(own.rating == 4 && own.flag == .pick && own.label == .green, "the copy's own fields")
+        #expect(own.keywords == ["Mono"] && own.collections == ["Selects"])
+        #expect(own.title == "The copy's title" && own.caption == "Darker")
+        #expect(copies[1].version().metadata == nil && copies[1].version().recipe[.exposure] == 0.75)
     }
 
     @Test func `the import writes each photo's edit and snapshots with its fields, and Undo takes them back`(
@@ -124,23 +153,37 @@ struct LightroomEditsTests {
         let plan = try await library.plan()
         try library.sandbox.sidecar("2024/June/IMG_0002.CR3", PhotoMetadata(rating: 2))
         let outcome = try await importer.run(plan)
-        #expect(outcome.record.batches.map(\.journal) == [.metadata])
-        #expect(outcome.written == 3, "IMG_0001, IMG_0006 and IMG_0002, which kept its sidecar as it was")
+        #expect(outcome.record.batches.map(\.journal) == [.keywords, .metadata], "Mono, the copy's alone, is kept")
+        #expect(outcome.written == 4, "IMG_0001, IMG_0006, and IMG_0002 and IMG_0004, which keep their edits")
         let raw = try #require(library.sandbox.sidecar("2024/June/IMG_0001.CR3"))
         #expect(raw.recipe[.exposure] == 0.5 && raw.recipe.provenance?.digest == "D1")
         #expect(raw.snapshots.map(\.name) == ["Brighter"] && raw.snapshots.first?.recipe[.exposure] == 1.5)
+        #expect(raw.versions.map(\.name) == ["Copy 1", "Copy 2"], "an unnamed copy named as Create Version would")
+        #expect(raw.versions.map { $0.recipe[.exposure] } == [-1, 0.75])
+        #expect(raw.versions.first?.snapshots.map(\.name) == ["Darkest"] && raw.versions.first?.metadata?.rating == 4)
+        #expect(raw.metadata?.rating ?? 0 == 0, "the photo keeps its own fields")
         #expect(try await library.edited("2024/June/IMG_0001.CR3"))
         #expect(try await library.edited("2024/July/IMG_0006.CR3"))
         #expect(library.sandbox.sidecar("2024/June/IMG_0001.JPG") == nil, "the raw takes the pair's edit")
         let meanwhile = try #require(library.sandbox.sidecar("2024/June/IMG_0002.CR3"))
         #expect(meanwhile.recipe[.exposure] == 0.35 && meanwhile.recipe.provenance == nil, "edited since the plan")
-        #expect(library.sandbox.sidecar("2024/July/IMG_0004.JPG")?.recipe.provenance == nil, "Redlamp's edit stays")
+        #expect(meanwhile.versions.map(\.name) == [LightroomImport.versionName])
+        #expect(meanwhile.versions.first?.recipe[.exposure] == 0.25 && meanwhile.versions.first?.metadata?.rating == 2)
+        let kept = try #require(library.sandbox.sidecar("2024/July/IMG_0004.JPG"))
+        #expect(kept.recipe.provenance == nil && kept.recipe[.exposure] == 0.35, "Redlamp's edit stays")
+        let lightroom = try #require(kept.versions.first)
+        #expect(kept.versions.count == 1 && lightroom.name == "Lightroom Classic" && lightroom.recipe[.exposure] == 1)
+        #expect(lightroom.recipe.provenance?.photo == library.images["IMG_0004.JPG"])
+        #expect(lightroom.metadata == PhotoMetadata(rating: 3), "the photo's metadata, as a new virtual copy takes it")
 
         try await importer.undo()
         #expect(library.sandbox.sidecar("2024/June/IMG_0001.CR3") == nil, "nothing is left in it")
         #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3") == nil)
         #expect(try await !library.edited("2024/June/IMG_0001.CR3"))
         #expect(library.sandbox.sidecar("2024/June/IMG_0002.CR3")?.recipe[.exposure] == 0.35)
+        #expect(library.sandbox.sidecar("2024/June/IMG_0002.CR3")?.versions.isEmpty == true)
+        let undone = try #require(library.sandbox.sidecar("2024/July/IMG_0004.JPG"))
+        #expect(undone.recipe[.exposure] == 0.35 && undone.versions.isEmpty && undone.metadata?.rating == 3)
     }
 
     @Test func `Undo keeps an imported edit changed since, and takes off only the snapshots the import added`(
@@ -159,6 +202,56 @@ struct LightroomEditsTests {
         let kept = try #require(library.sandbox.sidecar("2024/June/IMG_0001.CR3"))
         #expect(kept.recipe[.contrast] == 20 && kept.recipe[.exposure] == 0.5, "edited since: the edit stays")
         #expect(kept.snapshots.map(\.name) == ["Mine"])
+        #expect(kept.versions.isEmpty, "the versions it added, as it left them, go")
+    }
+
+    @Test func `Undo takes off only the versions the import added, keeping one changed since and the photo's own`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let path = "2024/July/IMG_0004.JPG"
+        let store = SidecarStore()
+        var before = try #require(library.sandbox.sidecar(path))
+        let added = before.addVersion(of: nil, named: "Mine")
+        let mine = try #require(added)
+        try store.save(before, for: library.sandbox.url(path))
+        try await library.sandbox.indexAll()
+        before = try #require(library.sandbox.sidecar(path))
+        let importer = library.importer()
+        try await importer.run(library.plan())
+        var imported = try #require(library.sandbox.sidecar(path))
+        #expect(imported.versions.map(\.name) == ["Mine", "Lightroom Classic"], "after those it has")
+        #expect(imported.versions.first == before.versions.first, "the photo's own version is left as it was")
+
+        try await importer.undo()
+        #expect(library.sandbox.sidecar(path)?.versions.map(\.id) == [mine.id])
+
+        try await importer.run(library.plan())
+        imported = try #require(library.sandbox.sidecar(path))
+        imported.versions[1].name = "Lightroom, renamed"
+        try store.save(imported, for: library.sandbox.url(path))
+        try await importer.undo()
+        let kept = try #require(library.sandbox.sidecar(path))
+        #expect(kept.versions.map(\.name) == ["Mine", "Lightroom, renamed"], "changed since: the version stays")
+        #expect(kept.recipe[.exposure] == 0.35)
+    }
+
+    @Test func `an edit brought from the catalog before is left as it is, and the report counts it as already there`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let importer = library.importer()
+        try await importer.run(library.plan())
+        let names = ["2024/June/IMG_0001.CR3", "2024/June/IMG_0002.CR3", "2024/July/IMG_0004.JPG"]
+        let first = names.map { library.sandbox.sidecar($0) }
+        let again = try await library.plan()
+        let edits = again.report.edits
+        #expect(edits.alreadyThere == 6, "IMG_0001's edit and its two copies, IMG_0002's, IMG_0004's and IMG_0006's")
+        #expect(edits.photos == 0 && edits.virtualCopies == 0 && edits.kept == 0 && again.copies.isEmpty)
+        #expect(again.report.lines().contains { $0.contains("edits brought from this catalog before: 6") })
+        try await importer.run(again)
+        #expect(names.map { library.sandbox.sidecar($0)?.versions } == first.map { $0?.versions })
+        #expect(names.map { library.sandbox.sidecar($0)?.recipe } == first.map { $0?.recipe })
     }
 
     @Test func `the photo open in the editor takes its edit there, and Undo Import takes it back there`(
@@ -178,7 +271,7 @@ struct LightroomEditsTests {
         #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3") == nil, "the editor saves it")
         let made = try #require(calls.withLock { $0.first })
         #expect(made.recipe.provenance?.photo == library.images["IMG_0006.CR3"] && made.over == nil)
-        #expect(outcome.record.inEditor?.count == 1 && outcome.record.photos == 3)
+        #expect(outcome.record.inEditor?.count == 1 && outcome.record.photos == 4)
         #expect(library.sandbox.sidecar("2024/June/IMG_0001.CR3")?.recipe[.exposure] == 0.5)
 
         try await importer.undo()
@@ -187,10 +280,53 @@ struct LightroomEditsTests {
 
         isOpen.withLock { $0 = false }
         let closed = try await importer.run(library.plan())
-        #expect(closed.record.inEditor == nil && closed.record.batches.count == 2, "closed meanwhile: its own batch")
+        #expect(closed.record.inEditor == nil, "closed meanwhile")
+        #expect(closed.record.batches.map(\.journal) == [.keywords, .metadata, .metadata], "its own batch")
         #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3")?.recipe.provenance != nil)
         try await importer.undo()
         #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3") == nil)
+    }
+
+    @Test func `the photo open in an editor with versions takes them there, and Undo Import takes them back there`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let open = LibraryIndexer.path(library.sandbox.url("2024/June/IMG_0001.CR3"))
+        let given = Mutex<[(adding: [PhotoVersion], removing: [PhotoVersion])]>([])
+        let held = Mutex<[PhotoVersion]>([])
+        let editor = LightroomEditor(open: { open }) { path, recipe, _, _, _ in
+            path == open ? .changed(EditRecipe(), [], recipe) : .notOpen
+        } versions: { path, adding, removing in
+            guard path == open else { return .notOpen }
+            given.withLock { $0.append((adding, removing)) }
+            return held.withLock { versions in
+                let had = versions
+                versions = versions.filter { !removing.contains($0) } + adding
+                return .changed(had, versions)
+            }
+        }
+        let importer = library.importer(editor: editor)
+        let outcome = try await importer.run(library.plan())
+        let added = try #require(given.withLock { $0.first?.adding })
+        #expect(added.map(\.name) == ["Copy 1", "Copy 2"] && added.first?.metadata?.rating == 4)
+        #expect(library.sandbox.sidecar("2024/June/IMG_0001.CR3") == nil, "the editor saves them")
+        #expect(outcome.record.inEditor?.first?.after["versions"]?.arrayValue?.count == 2)
+
+        try await importer.undo()
+        #expect(given.withLock { $0.last?.removing.map(\.name) } == ["Copy 1", "Copy 2"])
+        #expect(held.withLock { $0.isEmpty })
+
+        let edited = LibraryIndexer.path(library.sandbox.url("2024/July/IMG_0004.JPG"))
+        let photographers = LightroomEditor(open: { edited }) { _, _, _, _, _ in .left } versions: { path, adding, _ in
+            guard path == edited else { return .notOpen }
+            given.withLock { $0.append((adding, [])) }
+            return .changed([], adding)
+        }
+        try await library.importer(editor: photographers).run(library.plan())
+        let lightroom = try #require(given.withLock { $0.last?.adding.first })
+        #expect(lightroom.name == "Lightroom Classic" && lightroom.recipe[.exposure] == 1)
+        #expect(lightroom.metadata == PhotoMetadata(rating: 3), "the photo's, read from its sidecar")
+        #expect(library.sandbox.sidecar("2024/July/IMG_0004.JPG")?.versions.isEmpty == true)
     }
 
     @Test func `EXIF's orientations are a mirror then clockwise quarter turns, and the size is the stored one`() {

@@ -23,13 +23,15 @@ extension LibraryCommand {
                converted: a raw's names the photographer's own copy of the Adobe profile Lightroom used where
                Camera Raw's folders on this Mac hold it, Redlamp's look standing in where they don't (the profiles
                chosen in the app's settings aren't seen here), and a Fujifilm simulation takes the Fujifilm LUT the
-               photographer imported where it fills its slot; then what doesn't come across and why: virtual
-               copies, the steps of edits' histories, stacks and rules with no counterpart. --root says where a
-               root folder that moved is now, by the path the report shows for it. --apply adds the root folders
-               the library doesn't have and indexes them, then imports as the library's journaled batches,
-               writing each photo's .redlamp sidecar: Lightroom's value replaces the library's where Lightroom
-               has one, keywords and collections join the photos', and a photo Redlamp has edited keeps its edit.
-               --undo takes the last import back. --json prints JSON.
+               photographer imported where it fills its slot; each virtual copy as a version of its photo, named
+               as Lightroom named it, with its own edit, snapshots and fields; then what doesn't come across and
+               why: the steps of edits' histories, stacks and rules with no counterpart. --root says where a root
+               folder that moved is now, by the path the report shows for it. --apply adds the root folders the
+               library doesn't have and indexes them, then imports as the library's journaled batches, writing
+               each photo's .redlamp sidecar: Lightroom's value replaces the library's where Lightroom has one,
+               keywords and collections join the photos', a photo Redlamp has edited keeps its edit and gets
+               Lightroom's as a version named "Lightroom Classic", and an edit brought from the catalog before is
+               left as it is. --undo takes the last import back. --json prints JSON.
                --census counts what the catalog's edits use instead, over every photo and virtual copy, and
                names no photo, path, keyword or value, so it can be shared: the photos by process version; each
                setting with the photos carrying it and, of those, the ones whose value isn't the one most of them

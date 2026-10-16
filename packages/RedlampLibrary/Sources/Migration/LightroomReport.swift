@@ -130,6 +130,7 @@ public struct LightroomReport: Sendable, Hashable, Codable {
     /// Whether importing would change nothing: no photo found, no keyword and no collection to bring.
     public var isEmpty: Bool {
         changing == 0 && keywords == 0 && collections == 0 && sets == 0 && smartMapped.isEmpty && edits.photos == 0
+            && edits.virtualCopies == 0
     }
 
     public func json() throws -> Data {

@@ -15,8 +15,8 @@ public struct LightroomImportRecord: Sendable, Hashable, Codable, Identifiable {
         public var id: UUID
     }
 
-    /// A photo whose edit it made in the editor, where the photo was open: its sidecar's `recipe` and `snapshots`
-    /// before and after, as the sidecar writes them.
+    /// A photo whose edit or versions it made in the editor, where the photo was open: its sidecar's `recipe` and
+    /// `snapshots`, or its `versions`, before and after, as the sidecar writes them.
     public struct EditorChange: Sendable, Hashable, Codable {
         public var photo: Int64
         public var path: String
@@ -50,6 +50,15 @@ public struct LightroomEditor: Sendable {
         case notOpen
     }
 
+    /// What became of versions given the photo open in the editor.
+    public enum VersionsOutcome: Sendable, Hashable {
+        /// Made: the versions it had, and those it has now.
+        case changed([PhotoVersion], [PhotoVersion])
+        /// Left as they are: it's read-only.
+        case left
+        case notOpen
+    }
+
     /// The path of the photo open in the editor, or opening there.
     public var open: @Sendable () async -> String?
     /// Gives the photo open at `path` the edit `recipe` while its edit is `over` (nil: while it's unedited), with
@@ -57,13 +66,21 @@ public struct LightroomEditor: Sendable {
     public var change: @Sendable (
         _ path: String, _ recipe: EditRecipe, _ over: EditRecipe?, _ adding: [Snapshot], _ removing: Set<UUID>,
     ) async -> Outcome
+    /// Gives the photo open at `path` the versions `adding` after its own, and takes off those of `removing` that
+    /// are as given there (EDT-09). Nil for an editor without versions: the import writes them in the photo's
+    /// sidecar, which the editor's save keeps.
+    public var versions: (@Sendable (
+        _ path: String, _ adding: [PhotoVersion], _ removing: [PhotoVersion],
+    ) async -> VersionsOutcome)?
 
     public init(
         open: @escaping @Sendable () async -> String?,
         change: @escaping @Sendable (String, EditRecipe, EditRecipe?, [Snapshot], Set<UUID>) async -> Outcome,
+        versions: (@Sendable (String, [PhotoVersion], [PhotoVersion]) async -> VersionsOutcome)? = nil,
     ) {
         self.open = open
         self.change = change
+        self.versions = versions
     }
 }
 
@@ -90,7 +107,8 @@ public enum LightroomImportError: Error, Sendable, Hashable, CustomStringConvert
 ///   export options and keywords no photo has) go first, as a keyword batch of no photos. `stop` is asked
 ///   between parts, so a stopped import leaves whole batches, which Undo takes back.
 /// - **Edits** go to photos whose sidecars hold no edit when they're written: a photo edited in Redlamp keeps
-///   its edit. The photo open in the editor takes its edit there (`LightroomEditor`).
+///   its edit, and gets Lightroom's as a version named “Lightroom Classic”. Each virtual copy is a version of its
+///   photo, after those it has. The photo open in the editor takes its edit and versions there (`LightroomEditor`).
 /// - **Undo** takes back every batch of the import, newest first, each keeping what changed since, as a
 ///   batch's Undo does.
 /// - **The record** of imports (`Lightroom Imports.json` in the library's folder) names each import's batches,
@@ -204,8 +222,8 @@ public final class LightroomImport: Sendable {
             }
             let open = await editor?.open()
             let (metadataPlan, inEditor) = try await metadataPlan(
-                slice, edits: plan.edits, leaving: open, definitions: part == 0 ? plan.collections : [:],
-                title: "Import \(title)",
+                slice, edits: plan.edits, copies: plan.copies, leaving: open,
+                definitions: part == 0 ? plan.collections : [:], title: "Import \(title)",
             )
             if !metadataPlan.isEmpty {
                 try await run(metadataPlan, into: &outcome, changed: &changedPhotos, report: report)
@@ -245,43 +263,57 @@ public final class LightroomImport: Sendable {
         try save(outcome.record)
     }
 
-    /// Makes the edit of the photo open in the editor there; one no longer open has it written as a batch of its
-    /// own.
+    /// Makes the edit of the photo open in the editor there, Lightroom's going in a version of its own when the
+    /// photo is edited, and gives it its versions there when the editor has them, after those it has. What the
+    /// editor doesn't take, the photo no longer being open or the editor having no versions, is written as a batch
+    /// of its own.
     private func change(
-        _ photo: (id: Int64, path: String, edit: LightroomEdit), into outcome: inout Outcome,
+        _ photo: (id: Int64, path: String, develop: MetadataBatch.Develop), into outcome: inout Outcome,
         changed changedPhotos: inout Set<Int64>, title: String,
     ) async throws {
-        let made = photo.edit.made()
-        let recipe = JSONValue(sidecar: made.recipe)?.decoded(as: EditRecipe.self) ?? made.recipe
-        let snapshots = JSONValue(sidecar: made.snapshots)?.decoded(as: [Snapshot].self) ?? made.snapshots
-        switch await editor?.change(photo.path, recipe, nil, snapshots, []) ?? .notOpen {
-        case let .changed(previous, had, now):
-            let change = LightroomImportRecord.EditorChange(
-                photo: photo.id, path: photo.path,
-                before: [
-                    "recipe": JSONValue(sidecar: previous) ?? .null,
-                    "snapshots": JSONValue(sidecar: had) ?? .null,
-                ],
-                after: [
-                    "recipe": JSONValue(sidecar: now) ?? .null,
-                    "snapshots": JSONValue(sidecar: had + snapshots) ?? .null,
-                ],
-            )
-            outcome.record.inEditor = (outcome.record.inEditor ?? []) + [change]
-            changedPhotos.insert(photo.id)
-        case .left:
-            break
-        case .notOpen:
-            var batch = MetadataBatch(kind: .metadata, title: title)
-            batch.photos = try await metadata.photos(
-                [photo.id], edits: [photo.id: [:]], edit: [:], keepingUnchanged: true,
-            )
-            for place in batch.photos.indices {
-                batch.photos[place].develop = Self.develop(recipe, snapshots)
+        var develop = photo.develop
+        var made = LightroomImportRecord.EditorChange(photo: photo.id, path: photo.path, before: [:], after: [:])
+        var outcomeOfEdit = LightroomEditor.Outcome.notOpen
+        if let recipe = develop.recipe?.decoded(as: EditRecipe.self) {
+            let snapshots = develop.snapshots.compactMap { $0.decoded(as: Snapshot.self) }
+            outcomeOfEdit = await editor?.change(photo.path, recipe, nil, snapshots, []) ?? .notOpen
+            if case let .changed(previous, had, now) = outcomeOfEdit {
+                made.before["recipe"] = JSONValue(sidecar: previous) ?? .null
+                made.before["snapshots"] = JSONValue(sidecar: had) ?? .null
+                made.after["recipe"] = JSONValue(sidecar: now) ?? .null
+                made.after["snapshots"] = JSONValue(sidecar: had + snapshots) ?? .null
             }
-            guard !batch.photos.isEmpty else { return }
-            try await run(MetadataPlan(batch: batch), into: &outcome, changed: &changedPhotos)
         }
+        if develop.recipe == nil || outcomeOfEdit != .notOpen {
+            let sidecar = try await SidecarStore(locator: LibrarySidecars(index: index, paths: paths).locator())
+                .load(for: URL(fileURLWithPath: photo.path)) ?? Sidecar(recipe: EditRecipe())
+            let adding = develop.added(to: sidecar, edited: outcomeOfEdit == .left)
+            develop = MetadataBatch.Develop(recipe: nil, snapshots: [], versions: adding)
+            if let versions = editor?.versions, !adding.isEmpty {
+                switch await versions(photo.path, adding.compactMap { $0.decoded(as: PhotoVersion.self) }, []) {
+                case let .changed(had, now):
+                    made.before["versions"] = JSONValue(sidecar: had) ?? .null
+                    made.after["versions"] = JSONValue(sidecar: now) ?? .null
+                    develop.versions = nil
+                case .left:
+                    develop.versions = nil
+                case .notOpen:
+                    break
+                }
+            }
+        }
+        if !made.after.isEmpty {
+            outcome.record.inEditor = (outcome.record.inEditor ?? []) + [made]
+            changedPhotos.insert(photo.id)
+        }
+        guard develop.recipe != nil || !(develop.versions ?? []).isEmpty else { return }
+        var batch = MetadataBatch(kind: .metadata, title: title)
+        batch.photos = try await metadata.photos([photo.id], edits: [photo.id: [:]], edit: [:], keepingUnchanged: true)
+        for place in batch.photos.indices {
+            batch.photos[place].develop = develop
+        }
+        guard !batch.photos.isEmpty else { return }
+        try await run(MetadataPlan(batch: batch), into: &outcome, changed: &changedPhotos)
     }
 
     /// `1,200 photos from “Lightroom Catalog”`, and which part when there are several.
@@ -330,13 +362,14 @@ public final class LightroomImport: Sendable {
     }
 
     /// The metadata batch of `part`: each photo's fields, the keywords Lightroom gives it that it lacks (after
-    /// those it has), its collections, and its edit with its snapshots, made now; and the collections'
-    /// definitions. The photo at `open`, open in the editor, is left without its edit, which comes back to be
-    /// made there.
+    /// those it has), its collections, and its edit with its snapshots and its virtual copies as versions, made
+    /// now; and the collections' definitions. The photo at `open`, open in the editor, is left without its edit and
+    /// versions, which come back to be made there.
     func metadataPlan(
-        _ part: [(id: Int64, values: LightroomValues)], edits developed: [Int64: LightroomEdit], leaving open: String?,
-        definitions: [CollectionPath: CollectionOptions], title: String,
-    ) async throws -> (plan: MetadataPlan, inEditor: (id: Int64, path: String, edit: LightroomEdit)?) {
+        _ part: [(id: Int64, values: LightroomValues)], edits developed: [Int64: LightroomEdit],
+        copies: [Int64: [LightroomCopy]] = [:], leaving open: String?, definitions: [CollectionPath: CollectionOptions],
+        title: String,
+    ) async throws -> (plan: MetadataPlan, inEditor: (id: Int64, path: String, develop: MetadataBatch.Develop)?) {
         let keyworded = part.filter { !$0.values.keywords.isEmpty }.map(\.id)
         let shown = try await index.read { try $0.keywordPaths(ofPhotos: keyworded) }
         var edits: [Int64: [String: FieldEdit]] = [:]
@@ -348,10 +381,10 @@ public final class LightroomImport: Sendable {
             if !adding.isEmpty {
                 edit["keywords"] = .add(adding.map(\.text))
             }
-            if developed[id] != nil {
+            if developed[id] != nil || copies[id] != nil {
                 withEdits.insert(id)
             }
-            if !edit.isEmpty || developed[id] != nil {
+            if !edit.isEmpty || withEdits.contains(id) {
                 edits[id] = edit
             }
         }
@@ -359,11 +392,16 @@ public final class LightroomImport: Sendable {
         batch.photos = try await metadata.photos(
             Array(edits.keys), edits: edits, edit: [:], keepingUnchanged: false, keeping: withEdits,
         )
-        let inEditor = batch.photos.first { $0.path == open }.flatMap { photo in
-            developed[photo.id].map { (id: photo.id, path: photo.path, edit: $0) }
-        }
-        let made = Self.develop(batch.photos.map { $0.path == open ? nil : developed[$0.id] }, date: Date())
+        let made = Self.develop(
+            batch.photos.map { (edit: developed[$0.id], copies: copies[$0.id] ?? []) }, date: Date(),
+        )
+        var inEditor: (id: Int64, path: String, develop: MetadataBatch.Develop)?
         for place in batch.photos.indices {
+            let photo = batch.photos[place]
+            guard photo.path != open else {
+                inEditor = made[place].map { (id: photo.id, path: photo.path, develop: $0) }
+                continue
+            }
             batch.photos[place].develop = made[place]
         }
         if !definitions.isEmpty {
@@ -379,27 +417,40 @@ public final class LightroomImport: Sendable {
         return (MetadataPlan(batch: batch), inEditor)
     }
 
-    /// Each of `edits` with its snapshots as a batch carries them, made on every core, `date` the snapshots'.
-    static func develop(_ edits: [LightroomEdit?], date: Date) -> [MetadataBatch.Develop?] {
-        let made = Mutex([MetadataBatch.Develop?](repeating: nil, count: edits.count))
+    /// The name of the version a photo edited in Redlamp gets Lightroom's edit in (decision 4 of the Lightroom
+    /// edits design).
+    public static let versionName = "Lightroom Classic"
+
+    /// Each photo's edit with its snapshots, and its virtual copies as versions, as a batch carries them, made on
+    /// every core, `date` theirs.
+    static func develop(
+        _ photos: [(edit: LightroomEdit?, copies: [LightroomCopy])], date: Date,
+    ) -> [MetadataBatch.Develop?] {
+        let made = Mutex([MetadataBatch.Develop?](repeating: nil, count: photos.count))
         let chunk = 64
-        DispatchQueue.concurrentPerform(iterations: (edits.count + chunk - 1) / chunk) { number in
-            let range = number * chunk ..< min((number + 1) * chunk, edits.count)
-            let developed = range.map { place in
-                edits[place].flatMap { edit in
-                    let (recipe, snapshots) = edit.made(date: date)
-                    return develop(recipe, snapshots)
-                }
-            }
+        DispatchQueue.concurrentPerform(iterations: (photos.count + chunk - 1) / chunk) { number in
+            let range = number * chunk ..< min((number + 1) * chunk, photos.count)
+            let developed = range.map { place in develop(photos[place].edit, photos[place].copies, date: date) }
             made.withLock { $0.replaceSubrange(range, with: developed) }
         }
         return made.withLock { $0 }
     }
 
-    /// An edit and its snapshots as a batch carries them.
-    static func develop(_ recipe: EditRecipe, _ snapshots: [Snapshot]) -> MetadataBatch.Develop? {
-        guard let recipe = JSONValue(sidecar: recipe) else { return nil }
-        return MetadataBatch.Develop(recipe: recipe, snapshots: snapshots.compactMap { JSONValue(sidecar: $0) })
+    /// An edit and its snapshots, and virtual copies as versions, as a batch carries them; nil for none of them.
+    /// The edit goes in a version named “Lightroom Classic” while the photo is edited.
+    static func develop(_ edit: LightroomEdit?, _ copies: [LightroomCopy], date: Date) -> MetadataBatch.Develop? {
+        let made = edit?.made(date: date)
+        let versions = copies.compactMap { JSONValue(sidecar: $0.version(date: date)) }
+        let recipe = made.flatMap { JSONValue(sidecar: $0.recipe) }
+        guard recipe != nil || !versions.isEmpty else { return nil }
+        var develop = MetadataBatch.Develop(
+            recipe: recipe, snapshots: made?.snapshots.compactMap { JSONValue(sidecar: $0) } ?? [],
+            versions: versions.isEmpty ? nil : versions,
+        )
+        if recipe != nil {
+            develop.whileEdited = .init(id: UUID(), name: versionName, created: date)
+        }
+        return develop
     }
 
     /// `body` in the turn the app gives batches, or at once.
@@ -471,38 +522,37 @@ public final class LightroomImport: Sendable {
         return record
     }
 
-    /// `plan`, the Undo of one of the import's batches, with the edit it gave the photo open in the editor taken
-    /// back there instead, while that edit is as the import left it; one no longer open stays in the plan.
+    /// `plan`, the Undo of one of the import's batches, with the edit and versions it gave the photo open in the
+    /// editor taken back there instead, while each is as the import left it; one no longer open stays in the plan,
+    /// as do versions an editor without them can't take back.
     private func leavingOpenPhoto(_ plan: MetadataPlan) async -> MetadataPlan {
         guard let editor, let open = await editor.open(),
               let place = plan.batch.photos.firstIndex(where: { $0.path == open }),
-              let undo = plan.batch.photos[place].undo, let made = undo.sidecarAfter["recipe"],
-              made != undo.sidecarBefore["recipe"], let after = made.decoded(as: EditRecipe.self),
-              let before = undo.sidecarBefore["recipe"]?.decoded(as: EditRecipe.self)
+              let undo = plan.batch.photos[place].undo
         else { return plan }
-        let had = Set((undo.sidecarBefore["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id))
-        let added = (undo.sidecarAfter["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id)
-        guard await editor.change(open, before, after, [], Set(added).subtracting(had)) != .notOpen else { return plan }
+        let taken = await takeBack(
+            in: editor, at: open, before: undo.sidecarBefore, after: undo.sidecarAfter,
+        )
+        guard !taken.isEmpty else { return plan }
         var batch = plan.batch
-        for key in MetadataBatch.developKeys {
+        for key in taken {
             batch.photos[place].undo?.sidecarBefore[key] = nil
             batch.photos[place].undo?.sidecarAfter[key] = nil
         }
         return MetadataPlan(batch: batch)
     }
 
-    /// Takes back an edit the import made in the editor, while the photo's edit is as the import left it: there,
+    /// Takes back an edit and versions the import made in the editor, while each is as the import left it: there,
     /// if the photo is open still, otherwise in its sidecar, as a batch of its own.
     private func takeBack(_ change: LightroomImportRecord.EditorChange) async throws {
-        if let editor, let before = change.before["recipe"]?.decoded(as: EditRecipe.self),
-           let after = change.after["recipe"]?.decoded(as: EditRecipe.self) {
-            let had = Set((change.before["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id))
-            let added = (change.after["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id)
-            switch await editor.change(change.path, before, after, [], Set(added).subtracting(had)) {
-            case .changed, .left: return
-            case .notOpen: break
+        var change = change
+        if let editor {
+            for key in await takeBack(in: editor, at: change.path, before: change.before, after: change.after) {
+                change.before[key] = nil
+                change.after[key] = nil
             }
         }
+        guard !change.after.isEmpty else { return }
         var batch = MetadataBatch(kind: .undo, title: "Undo the edit imported from Lightroom Classic")
         batch.photos = [MetadataBatch.Photo(
             id: change.photo, path: change.path, index: [:],
@@ -512,6 +562,32 @@ public final class LightroomImport: Sendable {
         )]
         let plan = MetadataPlan(batch: batch)
         _ = try await inTurn { [metadata] in try await metadata.run(plan) }
+    }
+
+    /// Takes back in `editor` what the import did to the photo open at `path`, its sidecar's `before` and `after`:
+    /// the edit and the snapshots it added, and the versions it added. Returns the sidecar's keys taken back there,
+    /// or left as they are, the photo being read-only.
+    private func takeBack(
+        in editor: LightroomEditor, at path: String, before: MetadataValues, after: MetadataValues,
+    ) async -> Set<String> {
+        var taken: Set<String> = []
+        if let made = after["recipe"], made != before["recipe"], let edit = made.decoded(as: EditRecipe.self),
+           let was = before["recipe"]?.decoded(as: EditRecipe.self) {
+            let had = Set((before["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id))
+            let added = (after["snapshots"]?.decoded(as: [Snapshot].self) ?? []).map(\.id)
+            if await editor.change(path, was, edit, [], Set(added).subtracting(had)) != .notOpen {
+                taken.formUnion(["recipe", "snapshots"])
+            }
+        }
+        if let versions = editor.versions, let made = after["versions"], made != before["versions"] {
+            let had = Set((before["versions"]?.arrayValue ?? []).map { $0.objectValue?["id"] })
+            let added = (made.arrayValue ?? []).filter { !had.contains($0.objectValue?["id"]) }
+                .compactMap { $0.decoded(as: PhotoVersion.self) }
+            if await versions(path, [], added) != .notOpen {
+                taken.insert("versions")
+            }
+        }
+        return taken
     }
 
     // MARK: - The record
