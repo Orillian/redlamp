@@ -159,9 +159,13 @@ public protocol SimulationClock: Sendable {
 }
 
 /// Real time: a simulated volume's waits are real sleeps, so what's measured through it is what
-/// the volume would cost.
+/// the volume would cost. A wait ends when it's due, as a read ends when the disk answers: a strict
+/// timer at the highest priority wakes it. A thread's own timed sleep won't do, since the kernel
+/// lets the timers of threads at utility priority, which the readers' operations run on, wake late
+/// to coalesce them.
 public struct SystemClock: SimulationClock {
     private let origin = ContinuousClock.now
+    private static let alarms = DispatchQueue(label: "app.redlamp.library.simulation-clock", qos: .userInteractive)
 
     public init() {}
 
@@ -172,12 +176,13 @@ public struct SystemClock: SimulationClock {
     public func sleep(until deadline: Duration) {
         let remaining = deadline - now
         guard remaining > .zero else { return }
-        let (seconds, attoseconds) = remaining.components
-        var request = timespec(tv_sec: Int(seconds), tv_nsec: Int(attoseconds / 1_000_000_000))
-        var left = timespec()
-        while nanosleep(&request, &left) == -1, errno == EINTR {
-            request = left
-        }
+        let due = DispatchSemaphore(value: 0)
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: Self.alarms)
+        timer.setEventHandler { due.signal() }
+        timer.schedule(deadline: .now() + remaining.seconds, leeway: .nanoseconds(0))
+        timer.activate()
+        due.wait()
+        timer.cancel()
     }
 }
 

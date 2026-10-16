@@ -178,6 +178,32 @@ struct FileSystemSimulationTests {
         #expect(elapsed >= 40)
         #expect(elapsed < 140)
     }
+
+    @Test(.measuresSpeed)
+    func `a wait on a utility thread ends when it's due, where the thread's own timed sleep can wake late`() async {
+        let clock = SystemClock()
+        let simulated = await Self.meanWait { clock.sleep(until: clock.now + .milliseconds(10)) }
+        let slept = await Self.meanWait {
+            var request = timespec(tv_sec: 0, tv_nsec: 10_000_000)
+            nanosleep(&request, nil)
+        }
+        print("SIMULATION-CLOCK a 10 ms wait on a utility thread: \(String(format: "%.1f", simulated)) ms on the "
+            + "simulation's clock, \(String(format: "%.1f", slept)) ms in nanosleep")
+        #expect(simulated > 9.9 && simulated < 20)
+    }
+
+    /// The mean time `wait` takes on a utility thread, over 40 waits.
+    static func meanWait(_ wait: @escaping @Sendable () -> Void) async -> Double {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let started = ContinuousClock.now
+                for _ in 0 ..< 40 {
+                    wait()
+                }
+                continuation.resume(returning: milliseconds(ContinuousClock.now - started) / 40)
+            }
+        }
+    }
 }
 
 func milliseconds(_ duration: Duration) -> Double {
