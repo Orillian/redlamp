@@ -118,7 +118,7 @@ public struct FilmCatalogView: View {
                     .frame(width: 160)
                     Text("\(Int(amount.rounded()))").monospacedDigit().frame(width: 32, alignment: .trailing)
                 }
-                .help("The Base Look's Amount, as in Basic and the Base Looks panel")
+                .help("The Base Look's Amount, as in Basic")
             }
             Picker("Show", selection: $filter) {
                 ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
