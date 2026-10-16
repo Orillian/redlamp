@@ -116,9 +116,10 @@ struct LightroomDiskBenchTests {
         if disk == Self.spinning[1] {
             profile.isRotational = nil
         }
+        let base: any LibraryFileSystem = disk == Self.spinning[1] ? SpinningDiskTests
+            .UnsaidFileSystem() : LocalFileSystem()
         let importer = LightroomImport(
-            index: library.index, paths: library.paths,
-            fileSystem: SimulatedFileSystem(base: LocalFileSystem(), profile: profile),
+            index: library.index, paths: library.paths, fileSystem: SimulatedFileSystem(base: base, profile: profile),
         )
         let operations = try await Self.traced(under: library.photos.url) { _ = try await importer.run(plan) }
         let folders = operations.filter { $0.kind == .rename }.map { DiskReplay.folder(of: $0) }
