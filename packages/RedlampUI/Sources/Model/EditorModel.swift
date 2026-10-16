@@ -772,6 +772,8 @@ public final class EditorModel {
     public var showShortcuts = false
     /// The photo viewed before the current one, for Paste from Previous.
     public internal(set) var previousSelection: URL?
+    /// The version of `previousSelection` open when it was left (EDT-09); nil for its own edit.
+    @ObservationIgnored var previousVersion: UUID?
     /// Window-level effects the app layer performs (full screen, toolbar visibility).
     @ObservationIgnored public var onToggleFullScreen: (() -> Void)?
     @ObservationIgnored public var onToggleToolbar: (() -> Void)?
@@ -1111,6 +1113,7 @@ public final class EditorModel {
             saves.enqueue(.forget, for: selection)
             if selection != url {
                 previousSelection = selection
+                previousVersion = openVersion
             }
         }
         selection = url
@@ -1455,6 +1458,8 @@ public final class EditorModel {
         endNudgeRun()
         saveNow()
         openSidecar[edit: openVersion] = currentEdit
+        previousSelection = info.url
+        previousVersion = openVersion
         show(version, of: info, title: title)
     }
 

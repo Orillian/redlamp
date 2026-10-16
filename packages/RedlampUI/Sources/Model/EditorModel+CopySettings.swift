@@ -65,18 +65,20 @@ public extension EditorModel {
     }
 
     /// ⌥⌘V: the previously viewed photo's settings, with the last choice (Lightroom's "Previous"),
-    /// onto the open photo and the rest of the selection.
+    /// onto the open photo and the rest of the selection. The previous photo's edit is the one open on it then,
+    /// its own or a version's, as is the edit open before Develop opened another of the photo's (EDT-09).
     func pasteFromPrevious() {
         guard let previous = previousSelection, info != nil, let visit = currentVisit else { return }
-        Task { await pasteFromPrevious(previous, during: visit) }
+        Task { await pasteFromPrevious(previous, version: previousVersion, during: visit) }
     }
 
-    /// Nothing when `previous` has no sidecar or it can't be read, or another photo has opened since.
-    private func pasteFromPrevious(_ previous: URL, during visit: PhotoVisit) async {
+    /// Nothing when `previous` has no sidecar or it can't be read, when it no longer has `version`, or another
+    /// photo has opened since.
+    private func pasteFromPrevious(_ previous: URL, version: UUID?, during visit: PhotoVisit) async {
         await saves.wait(for: previous)
         let store = library.sidecars.store(for: previous)
         let read = try? await library.scheduler.run(.onScreen) { () -> EditRecipe? in
-            (try? store.loadThrowing(for: previous))?.recipe
+            (try? store.loadThrowing(for: previous))?[edit: version]?.recipe
         }
         guard let source = read ?? nil, currentVisit == visit else { return }
         let step = paste(source, copySelection, name: "Paste from Previous")

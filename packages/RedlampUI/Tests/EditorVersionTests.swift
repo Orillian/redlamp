@@ -232,6 +232,28 @@ struct EditorVersionTests {
         #expect(unrated.rating == nil && unrated.label == nil && unrated.keywordPaths == photo.keywordPaths)
     }
 
+    @Test func `Paste from Previous pastes the edit open before, a version's or the photo's own`() async throws {
+        let (editor, cleanup) = try await openEditor()
+        defer { cleanup() }
+        let model = editor.model
+        model.copySelection = .default
+        model.createVersion()
+        let version = try #require(model.openVersion)
+        model.setValue(.exposure, 1)
+        try await open(editor.other, in: model)
+        model.pasteFromPrevious()
+        try await eventually { model.value(.exposure) == 1 }
+        #expect(model.value(.exposure) == 1, "the version open on the photo left")
+
+        try await open(editor.photo, in: model)
+        model.showVersion(version)
+        model.showVersion(nil)
+        #expect(model.value(.exposure) == 0)
+        model.pasteFromPrevious()
+        try await eventually { model.value(.exposure) == 1 }
+        #expect(model.openVersion == nil && model.value(.exposure) == 1, "the version open before the photo's own")
+    }
+
     @Test func `another writer's removal of the version open opens the photo's own edit`() async throws {
         let (editor, cleanup) = try await openEditor()
         defer { cleanup() }
