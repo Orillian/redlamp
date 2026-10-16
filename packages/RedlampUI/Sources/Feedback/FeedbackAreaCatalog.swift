@@ -229,7 +229,8 @@ public extension FeedbackArea {
                     "base-looks", "Base Looks Panel",
                     [
                         "base looks", "film stock", "film styles", "profile", "lut", "in this photo", "imported",
-                        "search base looks", "apply without grain",
+                        "search base looks", "apply without grain", "show in finder", "move to trash",
+                        "remove from base looks", "hide", "hidden folders",
                     ],
                 ),
                 FeedbackFeature(

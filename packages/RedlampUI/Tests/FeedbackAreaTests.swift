@@ -103,6 +103,9 @@ struct FeedbackAreaTests {
         #expect(FeedbackArea.search("x-trans").first?.id == "raw.demosaic")
         #expect(FeedbackArea.search("masking brush").first?.id == "masking.brush")
         #expect(FeedbackArea.search("search base looks").first?.id == "recipes.base-looks")
+        #expect(FeedbackArea.search("move to trash").first?.id == "recipes.base-looks")
+        #expect(FeedbackArea.search("show in finder").first?.id == "recipes.base-looks")
+        #expect(FeedbackArea.search("hide folder").first?.id == "recipes.base-looks")
         #expect(FeedbackArea.search("   ").isEmpty)
         #expect(FeedbackArea.search("zzzz").isEmpty)
     }
