@@ -78,14 +78,6 @@ public enum LightroomPhotoXMP {
         else { return nil }
         return CameraRawSettings(xmp: xmp)
     }
-
-    /// What converting a photo's settings needs to know of it, from what the library indexes: its size after
-    /// the camera's orientation (`PhotoRecord.width`, `height`) and that orientation, as EXIF numbers it.
-    public static func context(size: PixelSize, exifOrientation: Int?, isRaw: Bool) -> LightroomPhotoContext {
-        let camera = ImageOrientation(exif: exifOrientation ?? 1)
-        let stored = camera.swapsAxes ? PixelSize(width: size.height, height: size.width) : size
-        return LightroomPhotoContext(size: stored, cameraOrientation: camera, isRaw: isRaw)
-    }
 }
 
 extension ImageOrientation {

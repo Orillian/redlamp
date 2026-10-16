@@ -12,8 +12,9 @@ import UniformTypeIdentifiers
 /// were written for, the settings as attributes, and a mask group, whose corrections and their masks are arrays
 /// of structures.
 enum LightroomXMPFixture {
-    static func packet(rawFileName: String? = "IMG_0001.CR3", exposure: String = "+0.40", settings: String? = nil)
-        -> String {
+    static func packet(
+        rawFileName: String? = "IMG_0001.CR3", exposure: String = "+0.40", settings: String? = nil, masks: Bool = true,
+    ) -> String {
         let rawFile = rawFileName.map { "\n   crs:RawFileName=\"\($0)\"" } ?? ""
         let develop = settings ?? """
            crs:Version="15.4"
@@ -23,6 +24,7 @@ enum LightroomXMPFixture {
            crs:HasSettings="True"
            crs:HasCrop="False"
         """
+        let maskGroup = masks ? Self.maskGroup : ""
         return """
         <x:xmpmeta xmlns:x="adobe:ns:meta/">
          <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -32,7 +34,15 @@ enum LightroomXMPFixture {
             xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
            tiff:Make="Example"
            xmp:Rating="3"
-        \(develop)>
+        \(develop)>\(maskGroup)
+          </rdf:Description>
+         </rdf:RDF>
+        </x:xmpmeta>
+        """
+    }
+
+    private static let maskGroup = """
+
            <crs:MaskGroupBasedCorrections>
             <rdf:Seq>
              <rdf:li rdf:parseType="Resource">
@@ -47,17 +57,14 @@ enum LightroomXMPFixture {
              </rdf:li>
             </rdf:Seq>
            </crs:MaskGroupBasedCorrections>
-          </rdf:Description>
-         </rdf:RDF>
-        </x:xmpmeta>
-        """
-    }
+    """
 
     /// Ratings and keywords only, as the XMP sync or Bridge leave them: no develop settings.
     static let metadataOnly = packet(settings: "   crs:HasSettings=\"False\"\n   crs:Exposure2012=\"+1.00\"")
 
-    /// A small photo at `url` of `type` holding `xmp` as its own XMP, written by ImageIO.
-    static func image(_ url: URL, type: UTType, xmp: String? = nil) throws {
+    /// A small photo at `url` of `type` holding `xmp` as its own XMP, or else turned by the camera's
+    /// `orientation`, written by ImageIO.
+    static func image(_ url: URL, type: UTType, xmp: String? = nil, orientation: Int? = nil) throws {
         let context = try #require(CGContext(
             data: nil, width: 8, height: 6, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
@@ -69,8 +76,16 @@ enum LightroomXMPFixture {
             1,
             nil,
         ))
-        let metadata = try xmp.map { try #require(CGImageMetadataCreateFromXMPData(Data($0.utf8) as CFData)) }
-        CGImageDestinationAddImageAndMetadata(destination, image, metadata, nil)
+        if let xmp {
+            let metadata = try #require(CGImageMetadataCreateFromXMPData(Data(xmp.utf8) as CFData))
+            CGImageDestinationAddImageAndMetadata(destination, image, metadata, nil)
+        } else {
+            CGImageDestinationAddImage(
+                destination,
+                image,
+                orientation.map { [kCGImagePropertyOrientation: $0] as CFDictionary },
+            )
+        }
         #expect(CGImageDestinationFinalize(destination))
     }
 }
@@ -151,12 +166,14 @@ struct LightroomPhotoXMPTests {
         #expect(LightroomPhotoXMP.edit(for: raw)?.source == .sidecar(shared))
     }
 
-    @Test func `the size the index keeps is turned back to the size the file stores`() {
-        let size = PixelSize(width: 4000, height: 6000)
-        let turned = LightroomPhotoXMP.context(size: size, exifOrientation: 6, isRaw: true)
-        #expect(turned.size == PixelSize(width: 6000, height: 4000))
-        #expect(turned.cameraOrientation == ImageOrientation(quarterTurns: 1) && turned.isRaw)
-        #expect(LightroomPhotoXMP.context(size: size, exifOrientation: nil, isRaw: false).size == size)
+    @Test func `a photo's size as stored and its camera's orientation are read without decoding it`() throws {
+        let folder = try TemporaryFolder()
+        let photo = folder.url.appending(path: "IMG_0006.jpg")
+        try LightroomXMPFixture.image(photo, type: .jpeg, orientation: 6)
+        let context = try #require(LightroomPhotoXMP.context(of: photo))
+        #expect(context.size == PixelSize(width: 8, height: 6) && !context.isRaw)
+        #expect(context.cameraOrientation == ImageOrientation(quarterTurns: 1))
+        #expect(LightroomPhotoXMP.context(of: folder.url.appending(path: "missing.jpg")) == nil)
         #expect((1 ... 8).map { ImageOrientation(exif: $0).swapsAxes } == [
             false,
             false,
