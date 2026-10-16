@@ -96,7 +96,8 @@ import UniformTypeIdentifiers
                 // The command palette says what it's previewing beside its own hint bar.
                 if model.lightsOut == 0, model.commandPalette == nil,
                    model.exportStatus != nil
-                   || model.isShowingOriginal || model.previewingRecipe != nil || model.previewingEdit != nil
+                   || model.isShowingOriginal || model.previewingRecipe != nil || model.previewingLook != nil
+                   || model.previewingEdit != nil
                    || model.eyedropperActive || model.pointColorEyedropperActive || model.calibrationTargetActive
                    || model.drawingKind != nil
                    || (model.notice != nil && !model.canStartOver)
@@ -210,6 +211,9 @@ import UniformTypeIdentifiers
         }
         if let recipe = model.previewingRecipe {
             return "Preview: \(recipe.name)"
+        }
+        if let look = model.previewingLook {
+            return "Preview: \(look.look.name)"
         }
         if model.previewingEdit != nil {
             return "Preview"

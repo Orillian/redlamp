@@ -34,10 +34,41 @@ public extension EditorModel {
         }
     }
 
-    /// Hover preview: renders a recipe without applying it.
+    /// Chooses a look as one History step, as every place a look is chosen does (DEC-104).
+    func chooseLook(_ choice: LookChoice) {
+        previewingRecipe = nil
+        previewingLook = nil
+        if let embedded = engine.embeddedBaseLook(), embedded.reference.isSameLook(as: choice.look) {
+            recipes.remember(embedded)
+        }
+        if choice.look.isFirmwareModel, let definition = try? recipes.package(for: choice.look)?.definition() {
+            recipes.keepFirmwareLook(definition)
+        }
+        commit(anchored(choice.apply(to: recipe)), .baseLook, "Base Look") { $0.baseLook.name }
+    }
+
+    /// Choosing `look`: Black & White for a monochrome look, and for a film stock its grain, halation
+    /// and bloom unless `withFilmEffects` is false.
+    func lookChoice(for look: BaseLookReference, withFilmEffects: Bool = true) -> LookChoice {
+        let monochrome = look.isSameLook(as: BuiltInBaseLook.monochrome.reference)
+            || recipes.package(for: look)?.parameters.isMonochrome == true
+            || cameraProfileLooks.contains { $0.isMonochrome && $0.reference.isSameLook(as: look) }
+        return LookChoice(look, monochrome: monochrome, withFilmEffects: withFilmEffects)
+    }
+
+    /// Hover preview of a look, rendered as choosing it would apply it; nil ends any hover preview.
+    func previewLook(_ choice: LookChoice?) {
+        guard previewingLook != choice || previewingRecipe != nil else { return }
+        previewingRecipe = nil
+        previewingLook = choice
+        requestRender()
+    }
+
+    /// Hover preview: renders a recipe without applying it; nil ends any hover preview.
     func previewRecipe(_ recipe: Recipe?) {
         let recipe = recipe.map(recipes.resolved)
-        guard previewingRecipe != recipe else { return }
+        guard previewingRecipe != recipe || previewingLook != nil else { return }
+        previewingLook = nil
         if let recipe {
             recipes.prepare(recipe)
             if needsAutoWhiteBalance(recipe), autoWhiteBalance == nil, let visit = currentVisit {

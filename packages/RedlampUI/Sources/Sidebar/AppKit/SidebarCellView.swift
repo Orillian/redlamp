@@ -485,14 +485,15 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
         return menu
     }
 
-    /// Apply Base Look Only, for a recipe with a Base Look: sets its look and leaves the rest of the
-    /// edit. Its represented object is the recipe that previews the look alone while it's highlighted.
+    /// Apply Base Look Only, for a recipe with a Base Look: sets its look, without a film stock's grain,
+    /// halation and bloom, and leaves the rest of the edit. Its represented object is the recipe that
+    /// previews the look alone while it's highlighted.
     static func baseLookOnlyItem(_ recipe: Recipe, model: EditorModel) -> NSMenuItem? {
         guard let look = recipe.baseLook, recipe.includes.contains(.baseLook),
               let package = model.recipes.package(for: look) else { return nil }
         let item = NSMenuItem(title: "Apply Base Look Only") { [model] in
             model.recipes.prepare(recipe)
-            model.setBaseLook(look)
+            model.chooseLook(model.lookChoice(for: look, withFilmEffects: false))
         }
         item.isEnabled = model.info != nil
         item.representedObject = BaseLookBrowser.previewRecipe(for: package)

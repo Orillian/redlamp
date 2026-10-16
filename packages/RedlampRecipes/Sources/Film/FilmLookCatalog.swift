@@ -570,6 +570,11 @@ public enum FilmLookCatalog {
         looks.first { $0.baseLookID == id || $0.recipeID == id }
     }
 
+    /// The catalogue look whose bundled Base Look `id` is, at any of its versions.
+    public static func look(forBaseLookID id: String) -> FilmLookDefinition? {
+        looks.first { $0.baseLookID == id }
+    }
+
     /// The bundled recipes: each look's bundled Base Look with its effects. A look whose
     /// table isn't bundled is left out.
     public static var bundledRecipes: [Recipe] {

@@ -772,6 +772,8 @@ public final class EditorModel {
     public internal(set) var calibrationMessage: String?
     /// The recipe under the pointer, rendered without being applied.
     public internal(set) var previewingRecipe: Recipe?
+    /// The look under the pointer, rendered as choosing it would apply it.
+    public internal(set) var previewingLook: LookChoice?
     /// An edit rendered in place of the photo's without being applied: the command
     /// palette's white balance, treatment, snapshot and history previews.
     public internal(set) var previewingEdit: EditRecipe?
@@ -1113,6 +1115,9 @@ public final class EditorModel {
         if previewingRecipe != nil {
             previewingRecipe = nil
         }
+        if previewingLook != nil {
+            previewingLook = nil
+        }
         if previewingEdit != nil {
             previewingEdit = nil
         }
@@ -1449,7 +1454,8 @@ public final class EditorModel {
         guard let info, opening == nil else { return }
         var displayed = isShowingOriginal
             ? beforeRecipe.withGeometry(of: recipe)
-            : (previewingEdit ?? previewingRecipe.map { previewEdit(for: $0) } ?? recipe)
+            : (previewingEdit ?? previewingLook.map { anchored($0.apply(to: recipe)) }
+                ?? previewingRecipe.map { previewEdit(for: $0) } ?? recipe)
         // The crop tool shows the whole straightened frame, with the crop drawn over it.
         if activeTool == .crop {
             displayed.crop = .full
@@ -1760,17 +1766,9 @@ public final class EditorModel {
         commit(next, .treatment, "Treatment") { $0.treatment.name }
     }
 
+    /// Chooses `look` as the photo's Base Look, a film stock with its grain, halation and bloom (`LookChoice`).
     public func setBaseLook(_ look: BaseLookReference) {
-        if let embedded = engine.embeddedBaseLook(), embedded.reference.isSameLook(as: look) {
-            recipes.remember(embedded)
-        }
-        var next = recipe
-        next.baseLook = look.withAmount(recipe.baseLook.isSameLook(as: look) ? recipe.baseLook.amount : look.amount)
-        if look == BuiltInBaseLook.monochrome.reference || recipes.package(for: look)?.parameters.isMonochrome == true
-            || cameraProfileLooks.contains(where: { $0.isMonochrome && $0.reference.isSameLook(as: look) }) {
-            next.treatment = .blackAndWhite
-        }
-        commit(anchored(next), .baseLook, "Base Look") { $0.baseLook.name }
+        chooseLook(lookChoice(for: look))
     }
 
     public func setWhiteBalanceMode(_ mode: WhiteBalanceMode) {

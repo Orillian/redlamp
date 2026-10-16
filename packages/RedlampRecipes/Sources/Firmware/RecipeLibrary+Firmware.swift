@@ -3,6 +3,8 @@ import RedlampEngineAPI
 
 public extension RecipeLibrary {
     static let firmwareGroup = "Firmware Model"
+    /// The start of the ids of the model's recipes.
+    static let firmwareIDPrefix = "\(RecipeNamespace.local)/firmware-model/"
 
     #if !REDLAMP_APP_STORE
         /// One recipe for each of the model's simulations at its neutral settings.
@@ -11,7 +13,7 @@ public extension RecipeLibrary {
                 guard let look = try? FirmwareLook.package(FirmwareLookSettings(simulation: simulation), model: model)
                 else { return nil }
                 return Recipe(
-                    id: "\(RecipeNamespace.local)/firmware-model/\(simulation.rawValue)",
+                    id: firmwareIDPrefix + simulation.rawValue,
                     name: simulation.name,
                     group: firmwareGroup,
                     summary: "The firmware model's \(simulation.name) at its neutral settings.",

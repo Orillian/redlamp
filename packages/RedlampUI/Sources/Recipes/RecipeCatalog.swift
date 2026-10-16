@@ -15,6 +15,8 @@ public final class RecipeCatalog {
     public private(set) var lastError: String?
     /// The Recipes panel's lists imports have added to since the panel last took them.
     @ObservationIgnored private var importedLists: Set<String> = []
+    /// The Base Looks panel's folders imports have added to since the panel last took them.
+    @ObservationIgnored private var importedLookFolders: Set<String> = []
     /// The looks given to the engine, by id, version and table hash.
     @ObservationIgnored private var registered: Set<String> = []
     #if !REDLAMP_APP_STORE
@@ -82,9 +84,24 @@ public final class RecipeCatalog {
     }
 
     /// Each look once, at its newest version: what menus and the browser offer. Looks
-    /// embedded in photos are offered only with their photo.
+    /// embedded in photos are offered only with their photo, and looks whose recipes went to the
+    /// Trash nowhere.
     public var currentBaseLooks: [BaseLookPackage] {
-        BuiltInBaseLooks.newest(baseLooks).filter { !$0.reference.isEmbedded && !$0.reference.isFirmwareModel }
+        BuiltInBaseLooks.newest(baseLooks).filter {
+            !$0.reference.isEmbedded && !$0.reference.isFirmwareModel && !library.isUnlisted($0)
+        }
+    }
+
+    /// The recipes the Recipes panel lists: those that aren't looks, but for hidden folders'.
+    public var presets: [Recipe] {
+        _ = revision
+        return library.presets
+    }
+
+    /// The recipes that stand for looks, which the Base Looks panel lists.
+    public var lookRecipes: [Recipe] {
+        _ = revision
+        return library.lookRecipes
     }
 
     /// The looks recipes stand for, by id: the film stocks' and the installed looks a recipe uses as
@@ -101,6 +118,12 @@ public final class RecipeCatalog {
         return importedLists
     }
 
+    /// The Base Looks folders imports have added to since the last call, for the panel to open once.
+    public func takeImportedLookFolders() -> Set<String> {
+        defer { importedLookFolders = [] }
+        return importedLookFolders
+    }
+
     public func recipe(id: String) -> Recipe? {
         _ = revision
         return library.recipe(id: id)
@@ -109,6 +132,23 @@ public final class RecipeCatalog {
     public func search(_ query: String) -> [Recipe] {
         _ = revision
         return library.search(query)
+    }
+
+    /// The presets matching `query`, as the Recipes panel's search finds them.
+    public func searchPresets(_ query: String) -> [Recipe] {
+        _ = revision
+        return library.search(query, among: library.presets)
+    }
+
+    /// The built-in folders hidden from `panel`.
+    public func hiddenFolders(in panel: RecipePanel) -> Set<String> {
+        _ = revision
+        return library.hiddenFolders(in: panel)
+    }
+
+    /// The file Redlamp keeps a recipe made here or installed in, for Show in Finder.
+    public func file(of recipe: Recipe) -> URL? {
+        library.file(of: recipe)
     }
 
     /// The Base Looks the menu lists that match `query` by name or summary, for the Recipes panel's
@@ -176,6 +216,7 @@ public final class RecipeCatalog {
     public func install(_ read: RecipeImportSummary) -> RecipeImportSummary {
         let summary = library.install(read)
         importedLists.formUnion(summary.lists)
+        importedLookFolders.formUnion(summary.lookFolders)
         lastError = nil
         changed()
         return summary
@@ -183,6 +224,16 @@ public final class RecipeCatalog {
 
     public func delete(_ recipe: Recipe) {
         perform { try library.delete(recipe) }
+    }
+
+    /// Moves a recipe made here or installed to the Trash; its looks keep rendering in their edits.
+    public func moveToTrash(_ recipe: Recipe) {
+        perform { try library.moveToTrash(recipe) }
+    }
+
+    /// Hides one of a panel's built-in folders, or shows it again.
+    public func setHidden(_ folder: String, in panel: RecipePanel, _ hidden: Bool) {
+        perform { try library.setHidden(folder, in: panel, hidden) }
     }
 
     public func setFavorite(_ recipe: Recipe, _ favorite: Bool) {

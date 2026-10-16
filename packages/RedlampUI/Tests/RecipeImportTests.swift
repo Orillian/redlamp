@@ -126,9 +126,20 @@ struct RecipeImportTests {
         #expect(catalog.takeImportedLists().isEmpty)
 
         let summary = catalog.install(RecipeLibrary.read(importing: [cube], reading: UnreadableFiles()))
-        #expect(!summary.lists.isEmpty)
-        #expect(catalog.takeImportedLists() == Set(summary.lists))
-        #expect(catalog.sections.map(\.name) == summary.lists)
+        #expect(summary.lists.isEmpty && summary.lookFolders == [RecipeLibrary.importedLooksFolder])
+        #expect(summary.placement == "In the Base Looks panel under Imported")
+        #expect(catalog.takeImportedLists().isEmpty && catalog.sections.isEmpty, "a LUT is a look, not a preset")
+        #expect(catalog.takeImportedLookFolders() == [RecipeLibrary.importedLooksFolder])
+        #expect(catalog.takeImportedLookFolders().isEmpty)
+
+        let recipe = try write(String(decoding: RecipeFile.encode(Recipe(
+            id: "example/fade", name: "Fade", group: "Portrait", includes: [.tone],
+            settings: RecipeSettings(values: [.contrast: -10]),
+        )), as: UTF8.self), as: "Fade.redrecipe")
+        let presets = catalog.install(RecipeLibrary.read(importing: [recipe], reading: UnreadableFiles()))
+        #expect(presets.lists == ["Installed"] && presets.lookFolders.isEmpty)
+        #expect(catalog.takeImportedLists() == Set(presets.lists))
+        #expect(catalog.sections.map(\.name) == presets.lists)
         #expect(catalog.takeImportedLists().isEmpty)
     }
 

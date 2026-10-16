@@ -10,6 +10,8 @@ import RedlampEngineAPI
 /// - `Recipes/Installed/*.redrecipe`: recipes installed from files;
 /// - `Recipes/favorites.json`: favorite recipe ids;
 /// - `Recipes/slots.json`: film slots that keep Redlamp's look though an imported LUT fills them;
+/// - `Recipes/hidden-folders.json`: the built-in folders hidden from each panel;
+/// - `Recipes/unlisted-looks.json`: looks whose recipes went to the Trash, kept for their edits;
 /// - `Looks/`: every Base Look ever installed, by content (see `LookStore`).
 public final class RecipeLibrary {
     public struct Locations: Sendable {
@@ -17,6 +19,8 @@ public final class RecipeLibrary {
         public var installed: URL
         public var favorites: URL
         public var slots: URL
+        public var hiddenFolders: URL
+        public var unlistedLooks: URL
         public var looks: URL
 
         public init(root: URL) {
@@ -24,6 +28,8 @@ public final class RecipeLibrary {
             installed = recipes.appendingPathComponent("Installed", isDirectory: true)
             favorites = recipes.appendingPathComponent("favorites.json")
             slots = recipes.appendingPathComponent("slots.json")
+            hiddenFolders = recipes.appendingPathComponent("hidden-folders.json")
+            unlistedLooks = recipes.appendingPathComponent("unlisted-looks.json")
             looks = root.appendingPathComponent("Looks", isDirectory: true)
         }
     }
@@ -45,6 +51,14 @@ public final class RecipeLibrary {
     /// Film slots that keep Redlamp's own look, though an imported LUT fills them.
     public private(set) var slotsKeepingRedlampLooks: Set<FilmSlot> = []
     public private(set) var storedLooks: [BaseLookPackage] = []
+    /// The built-in folders hidden from each panel (UX-55).
+    var hiddenByPanel: [RecipePanel: Set<String>] = [:]
+    /// The keys (`key(_:)`) of the looks whose recipes went to the Trash.
+    public internal(set) var unlistedLooks: Set<String> = []
+    /// The file each recipe made here or installed was read from.
+    var files: [RecipeVersion: URL] = [:]
+    /// Moves a file to the Trash, returning where it went.
+    public var trash: (URL) throws -> URL? = RecipeLibrary.moveToSystemTrash
     /// Files that couldn't be read, with the reasons.
     public private(set) var loadIssues: [URL: [RecipeIssue]] = [:]
     /// The firmware model while its switch is on: card recipes resolve through it
@@ -68,6 +82,7 @@ public final class RecipeLibrary {
 
     public func reload() {
         loadIssues = [:]
+        files = [:]
         bundled = includeBundled ? BuiltInRecipes.all : []
         userRecipes = readRecipes(in: locations.recipes)
         installed = readRecipes(in: locations.installed)
@@ -84,17 +99,26 @@ public final class RecipeLibrary {
         } else {
             slotsKeepingRedlampLooks = []
         }
+        let hidden = (try? Data(contentsOf: locations.hiddenFolders))
+            .flatMap { try? JSONDecoder().decode([String: [String]].self, from: $0) } ?? [:]
+        hiddenByPanel = Dictionary(uniqueKeysWithValues: hidden.compactMap { name, folders in
+            RecipePanel(rawValue: name).map { ($0, Set(folders)) }
+        })
+        unlistedLooks = (try? Data(contentsOf: locations.unlistedLooks))
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) }.map(Set.init) ?? []
     }
 
     private func readRecipes(in directory: URL) -> [Recipe] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == Recipe.fileExtension }
+        let contents = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))
+            ?? []
+        return contents.filter { $0.pathExtension == Recipe.fileExtension }
             .compactMap { url in
                 do {
                     let (recipe, issues) = try RecipeFile.read(url)
                     if !issues.isEmpty {
                         loadIssues[url] = issues
                     }
+                    files[RecipeVersion(id: recipe.id, version: recipe.version)] = url
                     return recipe
                 } catch let error as RecipeValidationError {
                     loadIssues[url] = error.issues
@@ -166,19 +190,19 @@ public final class RecipeLibrary {
             .write(to: locations.slots, options: .atomic)
     }
 
-    /// Named sections for a recipe list: Favorites, your recipes in their lists (My Recipes
-    /// first, then the others by name), the bundled groups in order, then Installed. A list
-    /// of yours named like a bundled group is listed with it.
+    /// The Recipes panel's sections, of presets only (DEC-104): Favorites, your recipes in their lists
+    /// (My Recipes first, then the others by name), the bundled groups in order but those hidden,
+    /// then Installed. A list of yours named like a bundled group is listed with it.
     public var sections: [(name: String, recipes: [Recipe])] {
         var result: [(String, [Recipe])] = []
-        let favorite = all.filter(isFavorite)
+        let favorite = presets.filter(isFavorite)
         if !favorite.isEmpty {
             result.append(("Favorites", favorite))
         }
-        let mine = Dictionary(grouping: userRecipes, by: Self.list(for:))
+        let mine = Dictionary(grouping: userRecipes.filter { !$0.isLook }, by: Self.list(for:))
         var order: [String] = []
         var grouped: [String: [Recipe]] = [:]
-        for recipe in bundled {
+        for recipe in bundled where !recipe.isLook && !isHidden(recipe) {
             if grouped[recipe.group] == nil {
                 order.append(recipe.group)
             }
@@ -192,13 +216,20 @@ public final class RecipeLibrary {
             }
         }
         result += order.map { ($0, (grouped[$0] ?? []) + (mine[$0] ?? [])) }
-        if !firmwareRecipes.isEmpty {
-            result.append((Self.firmwareGroup, firmwareRecipes))
-        }
-        if !installed.isEmpty {
-            result.append(("Installed", installed))
+        let installedPresets = installed.filter { !$0.isLook }
+        if !installedPresets.isEmpty {
+            result.append(("Installed", installedPresets))
         }
         return result
+    }
+
+    /// The groups of the bundled presets, in order: the Recipes panel's built-in folders.
+    public var bundledGroups: [String] {
+        var groups: [String] = []
+        for recipe in bundled where !recipe.isLook && !groups.contains(recipe.group) {
+            groups.append(recipe.group)
+        }
+        return groups
     }
 
     static let myRecipes = "My Recipes"
@@ -210,13 +241,14 @@ public final class RecipeLibrary {
         return group.isEmpty || ["Favorites", "Installed"].contains(group) ? myRecipes : group
     }
 
-    /// Recipes matching `query` by name, group, tag or summary. Lightroom's words work as
-    /// aliases: "preset" finds every recipe, "profile" the ones with a Base Look, "LUT"
-    /// or "cube" the ones built on a look table.
-    public func search(_ query: String) -> [Recipe] {
+    /// The recipes among `recipes` (every recipe when nil) matching `query` by name, group, tag or
+    /// summary. Lightroom's words work as aliases: "preset" finds every recipe, "profile" the ones
+    /// with a Base Look, "LUT" or "cube" the ones built on a look table.
+    public func search(_ query: String, among recipes: [Recipe]? = nil) -> [Recipe] {
+        let recipes = recipes ?? all
         let terms = query.lowercased().split(separator: " ").map(String.init)
-        guard !terms.isEmpty else { return all }
-        return all.filter { recipe in
+        guard !terms.isEmpty else { return recipes }
+        return recipes.filter { recipe in
             terms.allSatisfy { term in
                 switch term {
                 case "preset", "presets", "recipe", "recipes": true
@@ -635,10 +667,10 @@ public struct RecipeImportSummary: Sendable {
         return presets == 0 ? recipes : "\(recipes), \(presets) of them from Lightroom presets"
     }
 
-    /// The Recipes panel's lists the installed recipes appear in, in import order.
+    /// The Recipes panel's lists the installed presets appear in, in import order.
     public var lists: [String] {
         var lists: [String] = []
-        for recipe in imported.map(\.recipe) {
+        for recipe in imported.map(\.recipe) where !recipe.isLook {
             let list = recipe.isLocal ? RecipeLibrary.list(for: recipe) : "Installed"
             if !lists.contains(list) {
                 lists.append(list)
@@ -647,10 +679,23 @@ public struct RecipeImportSummary: Sendable {
         return lists
     }
 
-    /// Where the installed recipes are listed: "In the Recipes panel under Lightroom".
+    /// The Base Looks panel's folders the installed looks appear in, in import order.
+    public var lookFolders: [String] {
+        var folders: [String] = []
+        for folder in imported.compactMap(\.recipe.lookFolder) where !folders.contains(folder) {
+            folders.append(folder)
+        }
+        return folders
+    }
+
+    /// Where the installed recipes are listed: "In the Recipes panel under Lightroom", "In the Base
+    /// Looks panel under Imported".
     public var placement: String? {
-        let lists = lists
-        return lists.isEmpty ? nil : "In the Recipes panel under \(Self.joined(lists))"
+        let places = [
+            lists.isEmpty ? nil : "the Recipes panel under \(Self.joined(lists))",
+            lookFolders.isEmpty ? nil : "the Base Looks panel under \(Self.joined(lookFolders))",
+        ].compactMap(\.self)
+        return places.isEmpty ? nil : "In " + places.joined(separator: ", and ")
     }
 
     /// A title for the files that didn't come in.
