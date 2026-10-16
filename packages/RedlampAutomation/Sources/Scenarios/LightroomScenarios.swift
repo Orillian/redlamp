@@ -13,9 +13,8 @@
         static let importEdits = Scenario(
             "library.lightroom-edits",
             "File › Import from Lightroom Classic… brings a photo's Lightroom edit and snapshot into its sidecar with its "
-                + "fields, and its virtual copy as a version; the photo opens in Develop with them, the version from "
-                +
-                "Photo › Versions, and Undo Import takes the edit back there, as a step of its history, and the version",
+                + "fields, and its virtual copy as a version; the photo opens in Develop with them and the version "
+                + "from Photo › Versions, and Undo Import takes both back there, the edit as a step of its history",
             claims: [.action(.importFromLightroom)],
         ) { app in
             let scratch = try SourcesScratch(
