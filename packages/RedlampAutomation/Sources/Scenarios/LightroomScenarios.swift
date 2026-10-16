@@ -110,6 +110,9 @@
             }
             let state = try app.inLightroomWindow { $0.report?.roots.first?.state }
             try app.expect(state == .needsAccess, "the folder Redlamp can't read is \(String(describing: state))")
+            try app.wait("the folder's Allow Access…") { _ in
+                LightroomWindowController.current?.button("lightroom.locate.0") != nil
+            }
             let button = try app.inLightroomWindow { $0.button("lightroom.locate.0") }
             try app.expect(
                 button?.title == "Allow Access…" && button?.shown == true && button?.enabled == true,
@@ -143,7 +146,8 @@
             "library.lightroom",
             "File › Import from Lightroom Classic… reports a catalog of a folder the library doesn't have, Import adds "
                 + "the folder and brings its ratings, picks, labels, keywords, title and collections into the photos' "
-                + "sidecars, and Undo Import takes them back",
+                + "sidecars, the result says what came across and its log each stage, Done goes back to what was "
+                + "found, which now says the catalog came across, and Undo Import from the report takes it back",
             claims: [.action(.importFromLightroom)],
         ) { app in
             let scratch = try SourcesScratch(
@@ -172,9 +176,19 @@
                 "the report: \(report.map { $0.lines().joined(separator: " / ") } ?? "none")",
             )
             try app.expect(report?.smartMapped.count == 1 && report?.smartLeft.count == 1, "the smart collections")
+            let review = try app.inLightroomWindow { window in
+                (window.screen.phase, window.button("lightroom.import")?.title ?? "", window.screen.review?.headline)
+            }
+            try app.expect(
+                review.0 == .review && review.1 == "Import 3 Photos" && review.2?.first?.figure == "3",
+                "the review: \(review)",
+            )
             let sidecars = SidecarStore(locator: .besidePhotos)
             let photos = scratch.names.map(scratch.photo)
             try app.expect(photos.allSatisfy { sidecars.load(for: $0) == nil }, "the report wrote nothing")
+            let shots = app.runDirectory.appending(path: "shots", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: shots, withIntermediateDirectories: true)
+            try app.captureLightroomWindow(to: shots.appending(path: "lightroom-review.png"))
 
             try app.clickInLightroomWindow("lightroom.import")
             try app.wait("the import", timeout: 180) { _ in LightroomWindowController.current?.isImported == true }
@@ -182,6 +196,19 @@
                 window.outcome.map { "\($0.record.photos) \($0.skipped.count)" } ?? (window.problem ?? "nothing")
             }
             try app.expect(outcome == "3 0", "imported: \(outcome)")
+            let result = try app.inLightroomWindow { window in
+                (window.screen.phase, window.screen.resultTitle, window.screen.log.map(\.text))
+            }
+            try app.expect(
+                result.0 == .done && result.1.hasPrefix("Imported 3 photos from “Lightroom Catalog” in "),
+                "the result: \(result.0) \(result.1)",
+            )
+            try app.expect(
+                result.2.contains { $0.hasPrefix("Added 1 folder to Folders: ") }
+                    && result.2.contains { $0.hasPrefix("Indexed 3 photos in ") }
+                    && result.2.last?.hasPrefix("Imported 3 photos in ") == true,
+                "the log: \(result.2)",
+            )
             try app.expect(
                 try app.main { model in model.library.root(containing: scratch.folder) != nil },
                 "the catalog's root folder is in Folders",
@@ -205,6 +232,27 @@
 
             try app.wait("Undo Import", timeout: 30) { _ in
                 LightroomWindowController.current?.button("lightroom.undo")?.enabled == true
+            }
+            try app.captureLightroomWindow(to: shots.appending(path: "lightroom-done.png"))
+            try app.clickInLightroomWindow("lightroom.done")
+            try app.wait("what was found, with the catalog done") { _ in
+                guard let window = LightroomWindowController.current, window.isShowingSetup else { return false }
+                return window.setupLine("lightroom.setup.done.catalog")?.shown == true
+            }
+            let done = try app.inLightroomWindow { $0.setupLine("lightroom.setup.done.catalog")?.text ?? "" }
+            try app.expect(
+                done.hasPrefix("Catalog: 3 photos imported from “Lightroom Catalog”, "), "the done row: \(done)",
+            )
+            try app.captureLightroomWindow(to: shots.appending(path: "lightroom-found-done.png"))
+
+            // Return is the catalog's Review…, which shows the report again, with Undo Import beside Import.
+            try app.main { _ in
+                _ = try LightroomWindowController.current?.window?
+                    .performKeyEquivalent(with: Keyboard.event(KeyCombo(.character("\r"))))
+            }
+            try app.wait("the catalog's report again", timeout: 60) { _ in
+                guard let window = LightroomWindowController.current else { return false }
+                return window.isReported && window.button("lightroom.undo")?.shown == true
             }
             try app.clickInLightroomWindow("lightroom.undo")
             try app.wait("the import taken back", timeout: 120) { _ in
@@ -263,6 +311,27 @@
                 window.sendEvent(events[0])
             }
             pause(0.2)
+        }
+
+        /// The Lightroom Classic window as the window server shows it, its SwiftUI screens drawn, which a view's own
+        /// drawing of itself leaves blank: an app may capture its own windows without Screen Recording.
+        func captureLightroomWindow(to url: URL) throws {
+            pause(0.4)
+            try inLightroomWindow { controller in
+                guard let window = controller.window else { return }
+                typealias CreateImage = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+                // Obsoleted in the macOS 15 SDK, still there at run time: ScreenCaptureKit asks for Screen Recording.
+                guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage"),
+                      let image = unsafeBitCast(symbol, to: CreateImage.self)(
+                          .null, CGWindowListOption.optionIncludingWindow.rawValue, CGWindowID(window.windowNumber),
+                          CGWindowImageOption([.boundsIgnoreFraming, .bestResolution]).rawValue,
+                      )?.takeRetainedValue()
+                else {
+                    Snapshot.capture(window, to: url)
+                    return
+                }
+                try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: url)
+            }
         }
 
         @MainActor private static func lightroomView(_ identifier: String, in view: NSView) -> NSView? {
