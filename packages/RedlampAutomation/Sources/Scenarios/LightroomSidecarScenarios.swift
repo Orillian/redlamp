@@ -1,6 +1,7 @@
 #if DEBUG || REDLAMP_PROFILING
     import AppKit
     import RedlampDocument
+    import RedlampEngineAPI
     @_spi(Harness) import RedlampLibrary
     @_spi(Harness) import RedlampUI
 
