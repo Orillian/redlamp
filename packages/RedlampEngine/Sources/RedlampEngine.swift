@@ -850,6 +850,13 @@ public final class RedlampEngine: EditingEngine, @unchecked Sendable {
         return registerProfileLooks(for: session, refresh: true).map(\.descriptor)
     }
 
+    public func cameraProfileLooks(make: String, model: String) async -> [CameraProfileLook] {
+        guard let profileLooks else { return [] }
+        let (entries, gone) = profileLooks.looks(make: make, model: model, refresh: false)
+        baseLooks.unregister(gone)
+        return entries.map(\.descriptor)
+    }
+
     public func setChosenCameraProfiles(_ urls: [URL]) {
         profileLooks?.library.setChosen(urls)
     }

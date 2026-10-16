@@ -150,6 +150,12 @@ public protocol EditingEngine: AnyObject, Sendable {
     /// menu's order (TON-51, TON-52). Lists Camera Raw's folders, so never call it on the main thread.
     func cameraProfileLooks() async -> [CameraProfileLook]
 
+    /// The photographer's Adobe camera profiles that can render a raw photo from the camera `make` and
+    /// `model`, without opening one: those found for the camera before, else listed now, as the open
+    /// photo's render. What a Lightroom edit converted for such a photo can name (EDT-33). Lists Camera
+    /// Raw's folders, so never call it on the main thread.
+    func cameraProfileLooks(make: String, model: String) async -> [CameraProfileLook]
+
     /// The `.dcp` and `.xmp` files, or folders, the photographer chose, read where they are.
     func setChosenCameraProfiles(_ urls: [URL])
 
@@ -281,6 +287,10 @@ public extension EditingEngine {
     }
 
     func cameraProfileLooks() async -> [CameraProfileLook] {
+        []
+    }
+
+    func cameraProfileLooks(make _: String, model _: String) async -> [CameraProfileLook] {
         []
     }
 

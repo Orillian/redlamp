@@ -454,6 +454,28 @@ struct AdobeProfileLookTests {
         registry.unregister(after.gone)
         #expect(!registry.canRender(color.look.reference) && registry.canRender(after.found[0].look.reference))
     }
+
+    @Test func `a camera's looks are listed without opening a photo, as its photos render them`() async throws {
+        let standard = Synthetic.dcp(
+            name: "Adobe Standard", camera: "Canon EOS R5", colorMatrices: [Self.colorMatrix], illuminants: [21],
+            forwardMatrices: [Self.forward],
+        )
+        let color = Synthetic.xmpLook(name: "Adobe Color", lookTable: .uniform(shift: SIMD3(8, 1.2, 1)))
+        let (engine, root) = try engine(with: ["CameraProfiles/R5.dcp": standard, "Settings/Color.xmp": color])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let looks = await engine.cameraProfileLooks(make: "Canon", model: "EOS R5")
+        #expect(looks.map(\.reference.name) == ["Adobe Color", "Adobe Standard"])
+        // A catalog names the camera as its EXIF does, the make repeated.
+        #expect(await engine.cameraProfileLooks(make: "Canon", model: "Canon EOS R5") == looks)
+        #expect(await engine.cameraProfileLooks(make: "Canon", model: "EOS R6").isEmpty)
+        let photo = try session(Self.patches)
+        for look in looks {
+            let resolved = engine.resolveBaseLook(look.reference, session: photo)
+            #expect(resolved.isAvailable && resolved.calibration != nil, "\(look.reference.name)")
+        }
+        let unprofiled = try RedlampEngine(stillTile: 2048)
+        #expect(await unprofiled.cameraProfileLooks(make: "Canon", model: "EOS R5").isEmpty)
+    }
 }
 
 private extension SyntheticCameraProfiles.HSVTable {
