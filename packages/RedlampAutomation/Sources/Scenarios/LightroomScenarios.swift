@@ -35,10 +35,11 @@
             try app.wait("the catalog's report", timeout: 60) { _ in
                 LightroomWindowController.current?.isReported == true
             }
-            let edits = try app.inLightroomWindow { $0.report?.edits }
+            // The folder isn't in the library yet: its photos, and their edits, are found once Import adds it.
+            let waiting = try app.inLightroomWindow { $0.report?.waiting }
             try app.expect(
-                edits?.photos == 1 && edits?.snapshots == 1,
-                "the report's edits: \(String(describing: edits))",
+                waiting == 3,
+                "the photos waiting for their folder: \(String(describing: waiting))",
             )
             try app.clickInLightroomWindow("lightroom.import")
             try app.wait("the import", timeout: 180) { _ in LightroomWindowController.current?.isImported == true }
