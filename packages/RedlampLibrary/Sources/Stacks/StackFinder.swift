@@ -6,7 +6,8 @@ import RedlampDocument
 ///
 /// - **Pairs:** raw, JPEG and HEIC photos in one folder whose names differ only in their extension,
 ///   compared as APFS compares names, as naming pairs them (`NamingJob`). The raw is on top, then
-///   the JPEG, then the HEIC.
+///   the JPEG, then the HEIC, each followed by the versions of its edit (LIB-48); a file of another
+///   kind with versions is a pair with them, on top of them.
 /// - **Bursts:** a camera's frames in one folder with one exposure length, each starting at most
 ///   `burstGap` after the one before ended: its capture time plus its exposure length, so long
 ///   exposures shot back to back stay together where the gap between capture times would part
@@ -299,6 +300,7 @@ extension StackFinder {
         let shutter: UnsafeBufferPointer<UInt32>
         let kinds: UnsafeBufferPointer<UInt8>
         let nameRanks: UnsafeBufferPointer<Int32>
+        let packed: UnsafeBufferPointer<UInt16>
         let names: UnsafeBufferPointer<String>
         let flags: UnsafeBufferPointer<UInt8>
 
@@ -316,14 +318,17 @@ extension StackFinder {
                                         store.shutter.withUnsafeBufferPointer { shutter in
                                             store.kinds.withUnsafeBufferPointer { kinds in
                                                 store.nameRanks.withUnsafeBufferPointer { nameRanks in
-                                                    names.withUnsafeBufferPointer { names in
-                                                        flags.withUnsafeBufferPointer { flags in
-                                                            body(Columns(
-                                                                ids: ids, captured: captured, cameras: cameras,
-                                                                lenses: lenses, iso: iso, aperture: aperture,
-                                                                focal: focal, shutter: shutter, kinds: kinds,
-                                                                nameRanks: nameRanks, names: names, flags: flags,
-                                                            ))
+                                                    store.packed.withUnsafeBufferPointer { packed in
+                                                        names.withUnsafeBufferPointer { names in
+                                                            flags.withUnsafeBufferPointer { flags in
+                                                                body(Columns(
+                                                                    ids: ids, captured: captured, cameras: cameras,
+                                                                    lenses: lenses, iso: iso, aperture: aperture,
+                                                                    focal: focal, shutter: shutter, kinds: kinds,
+                                                                    nameRanks: nameRanks, packed: packed, names: names,
+                                                                    flags: flags,
+                                                                ))
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -341,6 +346,12 @@ extension StackFinder {
         func name(ofRow row: Int) -> String {
             let id = Int(ids[row])
             return id < names.count ? names[id] : ""
+        }
+
+        /// 1 for a version of its file's edit (LIB-48), which comes after the files of its kind in its pair; 0 for a
+        /// file's own row.
+        func version(ofRow row: Int) -> UInt16 {
+            packed[row] & Packed.version == 0 ? 0 : 1
         }
 
         /// The choice of the photo in `row`, as `StackFinder.flags` keeps them.
@@ -402,10 +413,11 @@ extension StackFinder {
             bases.removeAll(keepingCapacity: true)
             for (place, row) in rows.enumerated() {
                 let kind = columns.kinds[Int(row)]
-                guard kind >= 1, kind <= 3 else { continue }
-                let (base, ext) = NamingJob.split(columns.name(ofRow: Int(row)))
-                guard !ext.isEmpty else { continue }
-                let key = NamingJob.fold(base)
+                let name = columns.name(ofRow: Int(row))
+                let (base, ext) = NamingJob.split(name)
+                // A file of another kind, or without an extension, is in a pair with its versions alone.
+                let key = StackFinder.pairable.contains(kind) && !ext.isEmpty
+                    ? NamingJob.fold(base) : "\u{0}" + NamingJob.fold(name)
                 if let first = bases[key] {
                     heads[place] = first
                     links[place] = links[Int(first)]
@@ -435,9 +447,8 @@ extension StackFinder {
                 let columns = columns
                 members.sort { lhs, rhs in
                     let (left, right) = (Int(rows[Int(lhs)]), Int(rows[Int(rhs)]))
-                    return (columns.kinds[left], columns.nameRanks[left]) < (
-                        columns.kinds[right],
-                        columns.nameRanks[right],
+                    return (columns.kinds[left], columns.version(ofRow: left), columns.nameRanks[left]) < (
+                        columns.kinds[right], columns.version(ofRow: right), columns.nameRanks[right],
                     )
                 }
                 var choice: UInt8 = 0

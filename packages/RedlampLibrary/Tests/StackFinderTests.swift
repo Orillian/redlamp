@@ -203,6 +203,19 @@ struct StackFinderTests {
         #expect(stacks.photos(.burst).isEmpty)
     }
 
+    @Test func `a file's versions are in its pair after it, and a file of another kind is a pair with its versions`() {
+        var library = StackLibrary()
+        let (raw, jpeg) = library.addPair("IMG_0001", at: 1000)
+        let rawVersion = library.add("IMG_0001.CR3", at: 1000, version: true)
+        let tiff = library.add("Pano.TIF", at: 1100)
+        let tiffVersions = (0 ..< 2).map { _ in library.add("Pano.TIF", at: 1100, version: true) }
+        library.add("IMG_0002.CR3", at: 1200)
+        library.add("Plan.PNG", at: nil)
+        let stacks = library.find()
+        #expect(Set(stacks.photos(.pair)) == [[raw, rawVersion, jpeg], [tiff] + tiffVersions])
+        #expect(stacks.photos(.burst).isEmpty, "a version is no frame of a burst")
+    }
+
     // MARK: - Manual stacks
 
     @Test func `manual stacks gather photos from any folders and keep them out of bursts`() {

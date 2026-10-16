@@ -16,6 +16,8 @@ struct StackLibrary {
         var aperture: Double?
         var shutter: Double?
         var focal: Double?
+        /// A version of its file's edit (LIB-48), with its file's name.
+        var isVersion = false
     }
 
     private(set) var photos: [Photo] = []
@@ -25,11 +27,12 @@ struct StackLibrary {
     mutating func add(
         _ name: String, folder: Int64 = 1, at captured: Double?, camera: Int64? = 1, lens: Int64? = 1,
         iso: Double? = 100, aperture: Double? = 2.8, shutter: Double? = 1.0 / 250, focal: Double? = 35,
+        version: Bool = false,
     ) -> Int64 {
         let id = Int64(photos.count + 1)
         photos.append(Photo(
             id: id, folder: folder, name: name, captured: captured, camera: camera, lens: lens, iso: iso,
-            aperture: aperture, shutter: shutter, focal: focal,
+            aperture: aperture, shutter: shutter, focal: focal, isVersion: version,
         ))
         return id
     }
@@ -52,7 +55,7 @@ struct StackLibrary {
                 focal: photo.focal,
                 kind: PhotoRecord.Kind(pathExtension: (photo.name as NSString).pathExtension).rawValue,
                 name: photo.name,
-            ), shutter: photo.shutter)
+            ), shutter: photo.shutter, isVersion: photo.isVersion)
         })
     }
 
