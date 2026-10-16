@@ -426,7 +426,7 @@ extension LibraryKeywords {
             let (place, path) = present[result.index]
             let photo = batch.photos[place]
             do {
-                let outcome = try logged(result, photo, place: place, of: batch, at: path, store: store, log: log)
+                let outcome = try logged(result, photo, place: place, of: batch, at: path, log: log)
                 results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
                 report(done.add())
             } catch {
@@ -443,7 +443,7 @@ extension LibraryKeywords {
     /// everything else in it, or left as it is.
     private static func logged(
         _ result: SidecarBatchResult, _ photo: KeywordBatch.Photo, place: Int, of batch: KeywordBatch,
-        at path: String, store: SidecarStore, log: KeywordJournal.Log,
+        at path: String, log: KeywordJournal.Log,
     ) throws -> SidecarResult.Outcome {
         let before = SidecarKeywords(keywords: result.sidecar?.metadata?.keywords)
         let after = batch.sidecarAfter(photo, current: before, fallback: photo.index)
@@ -453,8 +453,7 @@ extension LibraryKeywords {
             return .kept(after.paths)
         case .saved:
             try log.written(place, before: before, after: after)
-            let date = try? LocalFileSystem().attributes(of: store.locator.readURL(for: result.image)).modified
-            return .written(after.paths, date)
+            return .written(after.paths, result.modified)
         case let .failed(error):
             try log.skipped(place, Self.describe(error))
             return .skipped(path, before.paths ?? photo.undo?.indexBefore ?? photo.index)

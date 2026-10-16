@@ -324,7 +324,7 @@ public final class LibraryMetadata: Sendable {
             let (place, path) = present[result.index]
             let photo = batch.photos[place]
             do {
-                let outcome = try logged(result, photo, place: place, of: batch, at: path, store: store, log: log)
+                let outcome = try logged(result, photo, place: place, of: batch, at: path, log: log)
                 results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
                 report(done.add())
             } catch {
@@ -354,7 +354,7 @@ public final class LibraryMetadata: Sendable {
     /// everything else in it, or left as it is.
     private static func logged(
         _ result: SidecarBatchResult, _ photo: MetadataBatch.Photo, place: Int, of batch: MetadataBatch,
-        at path: String, store: SidecarStore, log: MetadataJournal.Log,
+        at path: String, log: MetadataJournal.Log,
     ) throws -> SidecarResult.Outcome {
         let (before, after) = changes(photo, of: batch, from: result.sidecar)
         switch result.outcome {
@@ -363,9 +363,8 @@ public final class LibraryMetadata: Sendable {
             return .kept
         case .saved:
             try log.written(place, before: before, after: after)
-            let date = try? LocalFileSystem().attributes(of: store.locator.readURL(for: result.image)).modified
             let edited = after["recipe"].flatMap { $0 == before["recipe"] ? nil : $0.isEdit }
-            return .written(date, edited: edited)
+            return .written(result.modified, edited: edited)
         case let .failed(error):
             let reason = LibraryKeywords.describe(error)
             try log.skipped(place, reason)

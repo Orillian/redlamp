@@ -539,9 +539,11 @@ public struct SidecarStore: Sendable {
             // History first: an interrupted save leaves the new step in history, where it can be
             // restored, rather than an edit its history doesn't record.
             try writeBitmaps(of: sidecar, into: destination)
-            try writeHistory(of: sidecar, in: destination)
+            let historyChanged = try writeHistory(of: sidecar, in: destination)
             try edits.replace(json, destination.appending(path: editFile))
-            removeUnusedBitmaps(of: sidecar, in: destination, json: json)
+            if historyChanged || mayLeaveUnusedBitmaps(over: existing, sidecar) {
+                removeUnusedBitmaps(of: sidecar, in: destination, json: json)
+            }
             return
         }
         // A new package, or a single-file sidecar becoming one: built beside it, then moved in.
@@ -595,6 +597,14 @@ public struct SidecarStore: Sendable {
         }
     }
 
+    /// Whether writing `sidecar` over `existing`, the edit as it was, can leave a bitmap of the package unused:
+    /// `existing` names one `sidecar` doesn't, or it couldn't be read. A write that changes history looks too.
+    private static func mayLeaveUnusedBitmaps(over existing: Sidecar?, _ sidecar: Sidecar) -> Bool {
+        guard let existing else { return true }
+        let kept = Set(bitmaps(of: sidecar).map(\.sha256))
+        return bitmaps(of: existing).contains { !kept.contains($0.sha256) }
+    }
+
     /// Whether any of `written` names the bitmap `sha256`, in a field this build may not know.
     static func isNamed(_ sha256: String, in written: [Data]) -> Bool {
         written.contains { $0.range(of: Data(sha256.utf8)) != nil }
@@ -606,6 +616,11 @@ public struct SidecarStore: Sendable {
     /// say) may name one. Nothing is removed while a session file can't be read, since the
     /// bitmaps it needs aren't known.
     private static func removeUnusedBitmaps(of sidecar: Sidecar, in package: URL, json: Data) {
+        let masks = package.appending(path: masksDirectory)
+        FileTrace.note(.list, masks)
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: masks.path)) ?? [])
+            .filter { $0.hasSuffix(".png") }
+        guard !files.isEmpty else { return }
         var used = Set(bitmaps(of: sidecar).map(\.sha256))
         var written = [json] + damagedCopies(in: package).compactMap { try? Data(contentsOf: $0) }
         for file in historyFiles(in: package) {
@@ -615,10 +630,7 @@ public struct SidecarStore: Sendable {
             used.formUnion(summary.bitmaps ?? [])
             written.append(data)
         }
-        let masks = package.appending(path: masksDirectory)
-        FileTrace.note(.list, masks)
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: masks.path)) ?? []
-        for file in files where file.hasSuffix(".png") {
+        for file in files {
             let sha256 = String(file.dropLast(4))
             if !used.contains(sha256), !isNamed(sha256, in: written) {
                 try? FileManager.default.removeItem(at: masks.appending(path: file))

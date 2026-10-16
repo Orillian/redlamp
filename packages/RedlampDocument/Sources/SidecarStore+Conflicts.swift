@@ -1,4 +1,6 @@
 import Foundation
+import RedlampEngineAPI
+import Synchronization
 
 public extension SidecarStore {
     /// Conflicting copies, made when the same photo was edited on two Macs before iCloud Drive
@@ -105,5 +107,28 @@ extension NSFileVersion: SidecarConflict {
 struct SidecarConflicts: Sendable {
     let versions: @Sendable (_ sidecar: URL) -> [any SidecarConflict]
 
-    static let iCloudDrive = SidecarConflicts { NSFileVersion.unresolvedConflictVersionsOfItem(at: $0) ?? [] }
+    static let iCloudDrive = SidecarConflicts { sidecar in
+        guard mayBeInICloudDrive(sidecar) else { return [] }
+        FileTrace.note(.versions, sidecar)
+        return NSFileVersion.unresolvedConflictVersionsOfItem(at: sidecar) ?? []
+    }
+
+    /// Whether `url` can be in iCloud Drive, whose folders (its own, the Desktop and Documents) are in the home
+    /// folder: anywhere but on a volume mounted in /Volumes, unless the home folder is on it or it's the link there
+    /// to the startup disk. Asked once for each volume.
+    static func mayBeInICloudDrive(_ url: URL) -> Bool {
+        let parts = url.path.split(separator: "/", maxSplits: 2)
+        guard parts.count > 1, parts[0] == "Volumes" else { return true }
+        let volume = "/Volumes/" + parts[1]
+        if let known = volumes.withLock({ $0[volume] }) {
+            return known
+        }
+        var status = stat()
+        let may = NSHomeDirectory().hasPrefix(volume + "/")
+            || lstat(volume, &status) == 0 && status.st_mode & S_IFMT == S_IFLNK
+        volumes.withLock { $0[volume] = may }
+        return may
+    }
+
+    private static let volumes = Mutex<[String: Bool]>([:])
 }

@@ -33,6 +33,9 @@ public struct SidecarBatchResult: Sendable {
     /// `.keep` for a sidecar that couldn't be read: no change was asked of it.
     public let change: SidecarChange
     public let outcome: Outcome
+    /// When the sidecar was modified once the batch wrote it, as its folder's listing gives it; nil when it
+    /// wasn't written, or was removed.
+    public let modified: Date?
 }
 
 /// Many photos' sidecars changed at once (LIB-15, LIB-21, LIB-26), each by the rules its own save
@@ -152,7 +155,10 @@ extension SidecarStore {
         _ place: Place, read: URL, write: URL, edits: EditWriter,
         _ make: @Sendable (Int, Sidecar?) -> SidecarChange,
     ) -> SidecarBatchResult? {
-        let edit = Result { try Self.batchEditData(inSidecar: write) }
+        // Where the edit is says whether the sidecar is a package, which its write needs to know too.
+        let editFile = Self.editURL(inSidecar: write)
+        let isPackage = editFile.path != write.path
+        let edit = Result { try Self.batchEditData(at: editFile, of: write) }
         let sidecar: Sidecar?
         do {
             sidecar = try read.path == write.path
@@ -160,13 +166,11 @@ extension SidecarStore {
         } catch {
             return Self.unreadable(place, error)
         }
-        if sidecar != nil {
-            FileTrace.note(.versions, write)
-        }
         if sidecar != nil, !conflicts.versions(write).isEmpty {
             return nil
         }
         let change = make(place.index, sidecar)
+        var modified: Date?
         let outcome: SidecarBatchResult.Outcome = switch change {
         case .keep:
             .kept
@@ -174,16 +178,17 @@ extension SidecarStore {
             Self.outcome {
                 try makeFolder(for: write, of: place.image)
                 let existing = try Self.existing(edit.get(), at: write)
-                try Self.write(changed, to: write, over: existing, isPackage: Self.isPackage(write), edits: edits)
+                try Self.write(changed, to: write, over: existing, isPackage: isPackage, edits: edits)
+                modified = Self.modified(write)
             }
         case let .saveOrRemove(changed):
             Self.outcome {
                 let existing = try Self.existing(edit.get(), at: write)
                 guard Self.leavesNothing(changed, over: existing, at: write) else {
                     try makeFolder(for: write, of: place.image)
-                    return try Self.write(
-                        changed, to: write, over: existing, isPackage: Self.isPackage(write), edits: edits,
-                    )
+                    try Self.write(changed, to: write, over: existing, isPackage: isPackage, edits: edits)
+                    modified = Self.modified(write)
+                    return
                 }
                 if FileManager.default.fileExists(atPath: write.path) {
                     try Self.remove(write)
@@ -196,6 +201,7 @@ extension SidecarStore {
             sidecar: sidecar,
             change: change,
             outcome: outcome,
+            modified: modified,
         )
     }
 
@@ -214,12 +220,18 @@ extension SidecarStore {
         case let .save(changed): Self.outcome { try save(changed, for: place.image) }
         case let .saveOrRemove(changed): Self.outcome { try saveOrRemove(changed, for: place.image) }
         }
+        let written = if case .saved = outcome {
+            Self.modified(url(for: place.image))
+        } else {
+            Date?.none
+        }
         return SidecarBatchResult(
             index: place.index,
             image: place.image,
             sidecar: sidecar,
             change: change,
             outcome: outcome,
+            modified: written,
         )
     }
 
@@ -254,9 +266,29 @@ extension SidecarStore {
         }
     }
 
+    /// The bytes of the edit at `file` in the sidecar at `sidecar`, as `editData(inSidecar:)` reads them, but a read
+    /// that fails fails as `.unreadable`.
+    private static func batchEditData(at file: URL, of sidecar: URL) throws -> Data? {
+        guard isPresent(file) else { return nil }
+        do {
+            return try contents(of: file)
+        } catch {
+            throw SidecarStoreError.unreadable(sidecar)
+        }
+    }
+
+    /// When the sidecar at `sidecar` was modified, as its folder's listing gives it: nil when it isn't there.
+    private static func modified(_ sidecar: URL) -> Date? {
+        FileTrace.note(.stat, sidecar)
+        return try? URL(fileURLWithPath: sidecar.path).resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+    }
+
     /// The result of a place whose sidecar couldn't be read: failed, with nothing asked of it.
     private static func unreadable(_ place: Place, _ error: any Error) -> SidecarBatchResult {
-        SidecarBatchResult(index: place.index, image: place.image, sidecar: nil, change: .keep, outcome: .failed(error))
+        SidecarBatchResult(
+            index: place.index, image: place.image, sidecar: nil, change: .keep, outcome: .failed(error), modified: nil,
+        )
     }
 
     private static func outcome(_ save: () throws -> Void) -> SidecarBatchResult.Outcome {

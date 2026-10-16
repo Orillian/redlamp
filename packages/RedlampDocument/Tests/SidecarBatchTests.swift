@@ -383,6 +383,45 @@ extension SidecarBatchTests {
         }
     }
 
+    // MARK: - What each write does on the disk
+
+    @Test func `a rewrite that leaves no bitmap unused lists nothing, and gives the date its folder's listing shows`(
+    ) throws {
+        let shoot = try Shoot()
+        defer { shoot.remove() }
+        let store = SidecarStore()
+        FileTrace.start()
+        let results = Self.batch(store, shoot.images, width: 1, Self.tagged)
+        let operations = FileTrace.stop().filter { $0.path.hasPrefix(shoot.photos.path + "/") }
+        #expect(!operations.contains { $0.kind == .list }, "\(operations.filter { $0.kind == .list })")
+        let versions = operations.count { $0.kind == .versions }
+        #expect(versions == (SidecarConflicts.mayBeInICloudDrive(shoot.photos) ? 7 : 0))
+        for (number, image) in shoot.images.enumerated() {
+            let result = try #require(results[number])
+            guard case .saved = result.outcome else {
+                #expect(result.modified == nil)
+                continue
+            }
+            let listed = try URL(fileURLWithPath: store.url(for: image).path)
+                .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            #expect(result.modified != nil && result.modified == listed, "\(image.lastPathComponent)")
+        }
+    }
+
+    @Test func `only a sidecar where iCloud Drive can be is asked for its conflicting copies`() throws {
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let drive = home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs/IMG_0001.CR3.redlamp")
+        #expect(SidecarConflicts.mayBeInICloudDrive(drive))
+        #expect(SidecarConflicts.mayBeInICloudDrive(URL(fileURLWithPath: "/Users/Shared/IMG_0001.CR3.redlamp")))
+        let external = URL(fileURLWithPath: "/Volumes/Photos \(UUID().uuidString)/IMG_0001.CR3.redlamp")
+        #expect(!SidecarConflicts.mayBeInICloudDrive(external))
+        let names = try FileManager.default.contentsOfDirectory(atPath: "/Volumes")
+        if let startup = names
+            .first(where: { (try? FileManager.default.destinationOfSymbolicLink(atPath: "/Volumes/" + $0)) == "/" }) {
+            #expect(SidecarConflicts.mayBeInICloudDrive(URL(fileURLWithPath: "/Volumes/\(startup)\(drive.path)")))
+        }
+    }
+
     // MARK: - Stopping and undoing
 
     @Test func `a batch stopped partway has written only what it reported, each sidecar whole`() throws {
