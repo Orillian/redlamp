@@ -442,6 +442,7 @@
                 .feature("develop.camera-recipe"),
                 .feature("develop.calibration"),
                 .parameter(.frameStyle),
+                .parameter(.frameSize),
             ],
         ) { app in
             try app.openWorking()
@@ -454,6 +455,12 @@
                     spec.clamp(spec.defaultValue + (spec.range.upperBound - spec.defaultValue) / 2),
                 ) }
             }
+            // The frame's size shows only on an edit with a frame over the photo, so smoke.panel-sliders doesn't find
+            // it.
+            try app.expect(
+                try app.value(.frameSize) != ParameterID.frameSize.spec.defaultValue, "The frame's size didn't move",
+            )
+            app.covered(.parameter(.frameSize), via: .model)
             try app.expectRenders("the effects") { try app.main { $0.setSliderValue(.vignetteAmount, -40) } }
             let current = EditRecipe.currentProcessVersion
             for version in 1 ... current {
@@ -469,14 +476,27 @@
             )
         }
 
-        /// TON-53, TON-54: a border grows the canvas around the photo; its colour from the panel's
+        /// TON-53, TON-54: a border grows the canvas around the photo; its sliders; its colour from the panel's
         /// swatches; film's Crop to Format; the panel's switch takes it away.
         static let border = Scenario(
             "develop.border",
-            "Border: a white 4:5 border grows the canvas, a swatch turns it black, film crops to its format, the switch hides it",
-            claims: [.feature("develop.border"), .panel(.border)],
+            "Border: a white 4:5 border grows the canvas, its sliders move and reset, a swatch turns it black, film "
+                + "crops to its format, the switch hides it",
+            claims: [.feature("develop.border"), .panel(.border)] + PanelID.border.parameters.map(Claim.parameter),
             needsFocus: true,
         ) { app in
+            /// The style's sliders, each moved and reset through the model: smoke.panel-sliders drags the panels' own,
+            /// but these show only for a style that has them, in the panel's SwiftUI options, which the driver can't
+            /// find by identifier.
+            func exercise(_ parameters: [ParameterID]) throws {
+                for parameter in parameters {
+                    let spec = parameter.spec
+                    let value = spec.clamp(spec.defaultValue + (spec.range.upperBound - spec.defaultValue) / 2)
+                    try app.set(parameter, value == spec.defaultValue ? spec.range.lowerBound : value)
+                    try app.main { $0.reset(parameter) }
+                    app.covered(.parameter(parameter), via: .model)
+                }
+            }
             try app.openWorking()
             try app.choose(.resetAll)
             // The last panel: alone, with the others collapsed above it, so its controls are on screen.
@@ -497,12 +517,29 @@
             try app.wait("the histogram counts the photo, not the white border") {
                 $0.histogram.highlightsClipped == clippedWithout
             }
+            // The style, shape and orientation menus are SwiftUI's, which macOS 27 draws itself (UX-44).
+            app.covered([.borderStyle, .borderShape, .borderOrientation].map(Claim.parameter), via: .model)
+            try app.main { $0.setBorderShape(.custom) }
+            try exercise([
+                .borderRatioWidth, .borderRatioHeight, .borderSize, .borderOffsetY, .borderOffsetX,
+                .borderKeylineWidth, .borderKeylineGap,
+            ])
+            try app.main { $0.setBorderShape(.fourByFive) }
             // The swatches and Crop to Format are SwiftUI buttons, which the mouse can't find by identifier.
             try app.main { $0.setBorderColor(.black, keyline: false) }
             try app.wait("a black border, as one History step") { model in
                 model.value(.borderRed) < 30 && model.history.last?.name == "Border Color"
             }
+            app.covered([.borderRed, .borderGreen, .borderBlue].map(Claim.parameter), via: .model)
+            try app.main { $0.setBorderColor(.white, keyline: true) }
+            try app.wait("a white keyline") { $0.value(.borderKeylineRed) > 200 }
+            app.covered([.borderKeylineRed, .borderKeylineGreen, .borderKeylineBlue].map(Claim.parameter), via: .model)
             try app.expectRenders("35 mm film") { try app.main { $0.setBorderStyle(.film35) } }
+            try exercise([.borderFrameNumber])
+            // Edge Print is a SwiftUI switch, which macOS 27 draws itself.
+            try app.main { $0.setSliderValue(.borderEdgePrint, 0) }
+            try app.wait("the edge print off") { $0.value(.borderEdgePrint) < 0.5 }
+            app.covered(.parameter(.borderEdgePrint), via: .model)
             try app.main { $0.cropToBorderFormat() }
             try app.wait("the crop at 2:3") { model in
                 let crop = model.recipe.crop
