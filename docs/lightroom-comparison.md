@@ -58,7 +58,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | B&W mix: brightness per colour band | Yes | Planned | | P2 | TON-41 | Today the Color Mixer's Luminance shapes a black-and-white photo |
 | Point Color | Yes | Done | | | TON-29 | Lightroom's now has a Variance slider too, which evens out similar colours; Redlamp's adds Capture One's separate hue, saturation and lightness uniformity, for skin |
 | Color Grading | Yes | Done | | | | Shadows, midtones, highlights and global wheels, with Blending and Balance |
-| Profiles | Yes | Done | Different | | EDT-04 | Profiles are Base Looks inside Recipes: six built-in looks and 15 film styles, each with an Amount slider (0–200); film looks and LUTs are recipes, each of which can set its look alone |
+| Profiles | Yes | Done | Different | | EDT-04 | Profiles are Base Looks, chosen in Basic or from a Base Looks panel of their own before Recipes, with its own search: six built-in looks, 15 film styles, the film stocks and imported LUTs, each with an Amount slider (0–200) |
 | Camera-matching looks | Yes | Done | Different | | TON-14 | Four looks measured from Fujifilm cameras' own JPEGs (one provisional), under Redlamp's own names |
 | More camera-matching looks (Eterna, Classic Negative, Acros and others) | Yes | In progress | | P3 | TON-14, TON-20, TON-35, TON-43, TON-44, TON-45, TON-49, TON-50 | Need more photos with the camera's JPEG beside the raw; Fujifilm's own LUTs for ten simulations, downloaded from Fujifilm, import in one step and fill the film slots; a model of the camera's own processing for twenty simulations, with their tone and colour settings, is an experiment turned on in Settings |
 | DNG camera profiles | Yes | Done | | | CAM-04, TON-09 | Dual-illuminant colour and the embedded HueSatMap; a profile's look is offered as a Base Look |
@@ -165,14 +165,14 @@ A high-level list of the features photographers know from Lightroom, and where R
 
 | Feature | Lightroom | Redlamp | vs Lightroom | Phase | Tracker | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Presets | Yes | Done | Different | | EDT-07 | Presets, profiles and LUTs are all Recipes, with an Amount slider; Lightroom's words still work in search |
+| Presets | Yes | Done | | | EDT-07 | Presets are Recipes, with an Amount slider (0–200); a recipe can set a Base Look, as a preset can include a profile, and its row shows it; Lightroom's words still work in search |
 | Lightroom presets (`.xmp`) | Yes | Done | | | EDT-11, EDT-24 | Imported with a report of what came across exactly, approximately or not at all. Sliders aren't yet calibrated against Lightroom's renders, so a preset can look different |
-| LUTs (`.cube`, `.3dl`, HaldCLUT) | Partly | Done | Beyond | | TON-11, TON-28 | Imported directly, including LUTs made for camera log footage; Lightroom takes LUTs only wrapped as profiles |
+| LUTs (`.cube`, `.3dl`, HaldCLUT) | Partly | Done | Beyond | | TON-11, TON-28 | Imported directly into Base Looks, including LUTs made for camera log footage; Lightroom takes LUTs only wrapped as profiles |
 | Film stock simulations (Portra, Tri-X and others) | Partly (film-inspired presets) | Done | Beyond | | TON-22, TON-26 | 36 looks from 30 stocks, built from the manufacturers' datasheets; Lightroom's film-inspired presets don't replicate particular films |
 | Film looks fitted from film shot beside digital | No | Planned | | P3 | TON-21 | With charts and lab scans, per stock |
 | Camera recipe cards | No | Done | | | | Fujifilm-style recipes, typed in as the card lists them |
-| Each look in one place, with its icon | No (profiles in Basic, presets in the left panel) | Done | | | UX-45 | Film looks and LUTs listed once, as recipes, with each film's icon; the Base Look menu keeps Redlamp's own looks, and recipe search finds them too |
-| Profiles apart from presets | Yes (profiles in Basic's Profile Browser, presets in the left panel) | In progress | | P2 | UX-54 | A Base Looks panel before Recipes lists every look, film stock and LUT, with its own search; Recipes keeps the presets, and a recipe that sets a look shows it |
+| Each look in one place, with its icon | No (profiles in Basic, presets in the left panel) | Done | | | UX-45 | Each look listed once in the Base Looks panel, film stocks with their icons; Basic's Base Look menu keeps Redlamp's own looks and shows a film stock or LUT only while it's the photo's look |
+| Profiles apart from presets | Yes (profiles in Basic's Profile Browser, presets in the left panel) | In progress | | P2 | UX-54 | A Base Looks panel before Recipes lists every look, film stock and LUT in folders, with its own search and favourites; Recipes keeps the presets, and a recipe that sets a look shows it; a film stock brings its own grain, halation and bloom and leaves the rest of the edit |
 | Show presets in Finder, delete them, hide preset groups | Yes (Manage Presets hides groups) | In progress | | P2 | UX-55 | Your own recipes and imported looks shown in Finder or moved to the Trash, and built-in folders hidden in either panel |
 | Premium and recommended presets | Yes (cloud) | Out of scope | | | | Redlamp has no cloud service |
 
