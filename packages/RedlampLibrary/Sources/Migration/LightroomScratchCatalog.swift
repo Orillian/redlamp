@@ -4,8 +4,9 @@ import Foundation
 /// rated, picked, rejected and labelled, one in the Quick Collection, a keyword with a synonym, a title, a
 /// collection in a set, and two smart collections, one whose rule maps and one whose doesn't.
 @_spi(Harness) public enum LightroomScratchCatalog {
-    /// `otherRoots` are root folders the catalog names without photos in them, such as one that has moved.
-    public static func make(of folder: URL, tag: String, otherRoots: [URL] = []) throws -> URL {
+    /// `otherRoots` are root folders the catalog names without photos in them, such as one that has moved. With
+    /// `edits`, the first photo has Develop settings (Exposure +0.75, Contrast +20) and a snapshot, Brighter (EDT-23).
+    public static func make(of folder: URL, tag: String, otherRoots: [URL] = [], edits: Bool = false) throws -> URL {
         let url = folder.deletingLastPathComponent()
             .appending(path: "lightroom-\(tag)/Lightroom Catalog.lrcat")
         try FileManager.default.createDirectory(
@@ -80,6 +81,18 @@ import Foundation
            || 'combine = "intersect", }', 'ag.library.smart_collection');
         INSERT INTO Adobe_AdditionalMetadata VALUES (80, 'x1', 21, \(text(packet)));
         """)
+        if edits {
+            try database.execute("""
+            CREATE TABLE Adobe_imageDevelopSettings (id_local INTEGER PRIMARY KEY, digest, hasDevelopAdjustments,
+              hasDevelopAdjustmentsEx, image INTEGER, processVersion, text);
+            CREATE TABLE Adobe_libraryImageDevelopSnapshot (id_local INTEGER PRIMARY KEY, id_global UNIQUE NOT NULL,
+              digest, hasDevelopAdjustments, image INTEGER, locked, name, snapshotID, text);
+            INSERT INTO Adobe_imageDevelopSettings VALUES (90, 'd1', 1, 1, 21, '15.4',
+              's = { ProcessVersion = "15.4", Exposure2012 = 0.75, Contrast2012 = 20, }');
+            INSERT INTO Adobe_libraryImageDevelopSnapshot VALUES (91, 's1', 'd2', 1, 21, 0, 'Brighter', 'S1',
+              's = { ProcessVersion = "15.4", Exposure2012 = 1.5, }');
+            """)
+        }
         for (offset, other) in otherRoots.enumerated() {
             let id = 100 + offset
             let path = other.standardizedFileURL.path + "/"

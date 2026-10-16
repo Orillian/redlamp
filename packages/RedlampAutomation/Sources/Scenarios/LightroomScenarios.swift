@@ -7,7 +7,73 @@
     /// Lightroom Classic catalogs (LIB-29), from a catalog the run makes of photos of its own: never one Lightroom
     /// made, and never the run's working folder.
     enum LightroomScenarios {
-        static let all: [Scenario] = [importCatalog, allowAccess]
+        static let all: [Scenario] = [importCatalog, importEdits, allowAccess]
+
+        static let importEdits = Scenario(
+            "library.lightroom-edits",
+            "File › Import from Lightroom Classic… brings a photo's Lightroom edit and snapshot into its sidecar with its "
+                + "fields, the photo opens in Develop with them, and Undo Import takes the edit back there, as a step of "
+                + "its history",
+            claims: [.action(.importFromLightroom)],
+        ) { app in
+            let scratch = try SourcesScratch(
+                app, photos: ["Shoot/LR_0001.jpg", "Shoot/LR_0002.jpg", "Shoot/LR_0003.jpg"],
+            )
+            let tag = String(scratch.folder.lastPathComponent.suffix(8))
+            let catalog = try LightroomScratchCatalog.make(of: scratch.folder, tag: tag, edits: true)
+            defer {
+                try? app.main { _ in LightroomWindowController.current?.close() }
+                scratch.remove(app)
+                try? FileManager.default.removeItem(at: catalog.deletingLastPathComponent())
+            }
+            try app.main { model in model.showLibrary(.grid) }
+            try app.choose(.importFromLightroom)
+            try app.wait("the Lightroom Classic window", timeout: 30) { _ in
+                LightroomWindowController.current?.window?.isVisible == true
+            }
+            try app.inLightroomWindow { $0.choose(catalog: catalog) }
+            try app.wait("the catalog's report", timeout: 60) { _ in
+                LightroomWindowController.current?.isReported == true
+            }
+            let edits = try app.inLightroomWindow { $0.report?.edits }
+            try app.expect(
+                edits?.photos == 1 && edits?.snapshots == 1,
+                "the report's edits: \(String(describing: edits))",
+            )
+            try app.clickInLightroomWindow("lightroom.import")
+            try app.wait("the import", timeout: 180) { _ in LightroomWindowController.current?.isImported == true }
+            let photo = scratch.photo(scratch.names[0])
+            let written = SidecarStore(locator: .besidePhotos).load(for: photo)
+            try app.expect(
+                written?.recipe[.exposure] == 0.75 && written?.recipe.provenance?.source == .lightroomCatalog
+                    && written?.snapshots.map(\.name) == ["Brighter"] && written?.metadata?.rating == 5,
+                "the first photo's sidecar: \(String(describing: written))",
+            )
+
+            try app.main { model in
+                Views.editorWindow?.makeKeyAndOrderFront(nil)
+                model.select(photo)
+            }
+            try app.choose(.develop)
+            try app.wait("the photo in Develop with Lightroom's edit", timeout: 60) { model in
+                model.selection == photo && model.info != nil && model.recipe[.exposure] == 0.75
+            }
+            let snapshots = try app.main { model in model.snapshots.map(\.name) }
+            try app.expect(snapshots == ["Brighter"], "the snapshots in Develop: \(snapshots)")
+
+            try app.wait("Undo Import", timeout: 30) { _ in
+                LightroomWindowController.current?.button("lightroom.undo")?.enabled == true
+            }
+            try app.clickInLightroomWindow("lightroom.undo")
+            try app.wait("the import taken back", timeout: 120) { _ in
+                LightroomWindowController.current?.isUndone == true
+            }
+            try app.wait("the edit taken back in Develop, as a step of its history", timeout: 30) { model in
+                model.recipe.isPristine && model.snapshots.isEmpty
+                    && model.history.last?.title == "Undo Import from Lightroom Classic"
+            }
+            app.covered(.action(.importFromLightroom), via: .menu)
+        }
 
         /// A catalog's root folder Redlamp can't read, as each one is in the App Sandbox until it's chosen in a panel
         /// (ARC-17): its permissions keep it from being read until the panel would have given access to it.
