@@ -58,11 +58,26 @@ struct LightroomDiskBenchTests {
         #expect(!followed.contains { $0.path == "/before" || $0.path == "/after" })
     }
 
-    @Test(.measuresSpeed)
-    func `the import's writes on a simulated 2.5-inch disk, operation by operation`() async throws {
+    /// The write bench's photos before the import: without sidecars, as most of a catalog's are, or each with one
+    /// holding an edit made in Redlamp, which the import writes over.
+    static let sidecarsBefore = ["no sidecars", "a sidecar each"]
+
+    @Test(.measuresSpeed, arguments: sidecarsBefore)
+    func `the import's writes on a simulated 2.5-inch disk, operation by operation`(before: String) async throws {
         let count = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_DISK_PHOTOS"].flatMap { Int($0) } ?? 2000
         let library = try await LightroomBenchTests.library(photos: count, perFolder: 200)
         defer { library.index.closeAndWait() }
+        if before == Self.sidecarsBefore[1] {
+            var recipe = EditRecipe()
+            recipe.crop = CropRect(left: 0.1, top: 0.1, right: 0.9, bottom: 0.9)
+            for number in 0 ..< count {
+                let folder = library.photos.url.appending(path: String(format: "Shoot %03d", number / 200))
+                try SidecarStore().save(
+                    Sidecar(recipe: recipe),
+                    for: folder.appending(path: String(format: "IMG_%06d.CR3", number)),
+                )
+            }
+        }
         let catalog = try LightroomCatalog.read(library.catalog)
         let plan = try await LightroomPlan.make(catalog, index: library.index, paths: library.paths)
         let importer = LightroomImport(index: library.index, paths: library.paths)
@@ -76,7 +91,8 @@ struct LightroomDiskBenchTests {
         let ordered = disk.replay(Self.folderByFolder(operations))
         #expect(asRun.operations[.create, default: 0] >= count)
         #expect(ordered.duration <= asRun.duration)
-        print("LIGHTROOM-DISK-BENCH \(count) photos in folders of 200 on a simulated 2.5-inch disk (usb-2.5): "
+        print("LIGHTROOM-DISK-BENCH \(count) photos with \(before) in folders of 200 on a simulated 2.5-inch disk "
+            + "(usb-2.5): "
             + "as run, \(Self.describe(asRun, photos: count)); one folder at a time, "
             + "\(Self.describe(ordered, photos: count))")
     }
