@@ -93,11 +93,14 @@ public struct LightroomXMPScan: Sendable {
 
     /// Reads each of `photos`' Lightroom edits on every core, and converts those `edit` says have none in Redlamp
     /// yet, dated `date`. `edit` is asked only of photos with a Lightroom edit, from several threads at once. A photo
-    /// in `indexed` is converted for what the index holds of it, any other for what ImageIO reads; a raw whose
-    /// camera `adobeProfiles` lists names the photographer's Adobe profile where it's among them (EDT-33).
+    /// in `indexed` is converted for what the index holds of it, any other for what ImageIO reads. `slotLooks` are
+    /// the looks that fill film slots on this Mac (`RecipeLibrary.filledSlots`), which Fujifilm's simulations take
+    /// first; a raw whose camera `adobeProfiles` lists names the photographer's Adobe profile where it's among them
+    /// (EDT-33).
     public static func scan(
         _ photos: [URL], date: Date = Date(), indexed: [URL: Indexed] = [:],
-        adobeProfiles: [Camera: [CameraProfileLook]]? = nil, edit: @Sendable (URL) -> Edit,
+        slotLooks: [FilmSlot: BaseLookReference] = [:], adobeProfiles: [Camera: [CameraProfileLook]]? = nil,
+        edit: @Sendable (URL) -> Edit,
     ) -> LightroomXMPScan {
         let rawsBeside = rawStems(beside: photos.filter { !LightroomPhotoXMP.isCameraRaw($0) })
         var found = [Found?](repeating: nil, count: photos.count)
@@ -110,8 +113,9 @@ public struct LightroomXMPScan: Sendable {
                     rawsBeside[photo.deletingLastPathComponent().path]?.contains(stem) == true
                 }) else { return }
                 slots.base?[index] = switch edit(photo) {
-                case .none: context(of: photo, indexed[photo], adobeProfiles: adobeProfiles).map { context in
-                        .convert(LightroomPhoto.convert(read.settings, photo: context, source: read.source, date: date))
+                case .none:
+                    context(of: photo, indexed[photo], slotLooks: slotLooks, adobeProfiles: adobeProfiles).map {
+                        .convert(LightroomPhoto.convert(read.settings, photo: $0, source: read.source, date: date))
                     } ?? .unsized
                 case .edited: .edited
                 case .converted: .converted
@@ -134,11 +138,14 @@ public struct LightroomXMPScan: Sendable {
     }
 
     /// What converting `photo`'s settings needs of it: what the index holds of it (`indexed`), else what ImageIO
-    /// reads, with the Adobe profiles for a raw's camera where `adobeProfiles` lists them.
+    /// reads, with the looks filling film slots and the Adobe profiles for a raw's camera where `adobeProfiles` lists
+    /// them.
     static func context(
-        of photo: URL, _ indexed: Indexed?, adobeProfiles: [Camera: [CameraProfileLook]]?,
+        of photo: URL, _ indexed: Indexed?, slotLooks: [FilmSlot: BaseLookReference],
+        adobeProfiles: [Camera: [CameraProfileLook]]?,
     ) -> LightroomPhotoContext? {
         guard var context = indexed?.context ?? LightroomPhotoXMP.context(of: photo) else { return nil }
+        context.slotLooks = slotLooks
         if context.isRaw, let camera = indexed?.camera, let profiles = adobeProfiles?[camera] {
             context.adobeProfiles = profiles
         }

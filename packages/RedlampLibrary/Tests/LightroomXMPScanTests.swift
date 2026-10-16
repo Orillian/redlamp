@@ -101,6 +101,45 @@ struct LightroomXMPScanTests {
         #expect(standIn.report.profile == .standIn(profile: "Adobe Standard", look: look.name))
     }
 
+    @Test func `a Fujifilm simulation takes the look filling its slot on this Mac, else Redlamp's film look`() throws {
+        let folder = try TemporaryFolder()
+        let store = SidecarStore()
+        func raw(_ name: String, profile: String) throws -> URL {
+            let url = folder.url.appending(path: "\(name).RAF")
+            try Data("not an image".utf8).write(to: url)
+            let settings = """
+               crs:Version="15.4"
+               crs:ProcessVersion="11.0"
+               crs:CameraProfile="\(profile)"
+               crs:Exposure2012="+0.40"
+               crs:HasSettings="True"
+            """
+            try Data(LightroomXMPFixture.packet(rawFileName: nil, settings: settings, masks: false).utf8)
+                .write(to: folder.url.appending(path: "\(name).xmp"))
+            return url
+        }
+        let chrome = try raw("DSCF0001", profile: "Camera CLASSIC CHROME")
+        let velvia = try raw("DSCF0002", profile: "Camera Velvia/Vivid")
+        let size = PixelSize(width: 6240, height: 4160)
+        let indexed = LightroomXMPScan.Indexed(context: LightroomPhotoContext(size: size))
+        let lut = BaseLookReference(id: BaseLookReference.makerIDPrefix + "chrome", name: "Classic Chrome LUT")
+        let scan = LightroomXMPScan.scan(
+            [chrome, velvia], indexed: [chrome: indexed, velvia: indexed], slotLooks: [.chrome: lut],
+        ) { LightroomPhotoXMP.redlampEdit(of: $0, in: store) }
+
+        #expect(scan.conversions.map(\.photo) == [chrome, velvia])
+        func note(_ imported: LightroomPhotoImport) -> String? {
+            imported.report.entries.first { $0.setting == "CameraProfile" }?.note
+        }
+        let filled = scan.conversions[0].imported
+        #expect(filled.recipe.baseLook == lut)
+        #expect(note(filled) == "Classic Chrome LUT stands in for Lightroom's “Camera CLASSIC CHROME”.")
+        let unfilled = scan.conversions[1].imported
+        let film = FilmSlot.vividSlide.baseLook
+        #expect(unfilled.recipe.baseLook == film)
+        #expect(note(unfilled) == "\(film.name) stands in for Lightroom's “Camera Velvia/Vivid”.")
+    }
+
     @Test func `the index's size and orientation of a photo are ImageIO's, its size turned back for the camera's turn`(
     ) async throws {
         let sandbox = try await XMPSandbox.make()

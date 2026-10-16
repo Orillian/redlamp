@@ -1352,7 +1352,10 @@ public final class EditorModel {
         photoMetadata = metadata
         let converted = read.protection == nil && sidecar?.recipe.isPristine ?? true
             ? read.lightroom.map {
-                Self.converting($0.edit, photo: $0.photo, opened, adobeProfiles: read.adobeProfiles)
+                Self.converting(
+                    $0.edit, photo: $0.photo, opened, slotLooks: recipes.library.filledSlots,
+                    adobeProfiles: read.adobeProfiles,
+                )
             } : nil
         let loaded = withPhotoAnchor(
             Self.asShot(converted ?? sidecar?.recipe ?? EditRecipe(), opened), of: opened, changed: converted != nil,

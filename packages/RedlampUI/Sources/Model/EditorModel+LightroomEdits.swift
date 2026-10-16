@@ -106,6 +106,7 @@ public extension EditorModel {
         activity.record(.action, "Convert Lightroom Edits…: reading \(subject)")
         let placement = library.sidecars
         let index = library.service?.core?.index
+        let slotLooks = recipes.library.filledSlots
         Task { [engine] in
             let urls = await photos.all()
             var indexed: [URL: LightroomXMPScan.Indexed] = [:]
@@ -117,7 +118,7 @@ public extension EditorModel {
                 profiles[camera] = await engine.cameraProfileLooks(make: camera.make, model: camera.model)
             }
             let scan = await Task.detached(priority: .userInitiated) { [indexed, profiles] in
-                LightroomXMPScan.scan(urls, indexed: indexed, adobeProfiles: profiles) {
+                LightroomXMPScan.scan(urls, indexed: indexed, slotLooks: slotLooks, adobeProfiles: profiles) {
                     LightroomPhotoXMP.redlampEdit(of: $0, in: placement.store(for: $0))
                 }
             }.value
@@ -184,7 +185,9 @@ public extension EditorModel {
             guard let (edit, photo) = read else { return }
             let profiles = await adobeProfiles(of: info)
             guard currentVisit == visit else { return }
-            let converted = Self.converting(edit, photo: photo, info, adobeProfiles: profiles)
+            let converted = Self.converting(
+                edit, photo: photo, info, slotLooks: recipes.library.filledSlots, adobeProfiles: profiles,
+            )
             keepSnapshot(of: recipe, named: "Before Convert Again")
             commit(withPhotoAnchor(Self.asShot(converted, info), of: info, changed: true), .recipe, "Convert Again")
             activity.record(.edit, "\(activity.alias(for: url)): its Lightroom edit converted again")
@@ -199,15 +202,17 @@ extension EditorModel {
 
     /// `edit` converted for the photo `opened` describes: its size as stored and its camera's orientation as
     /// ImageIO read them (`photo`), else as the engine decoded it, with what only the engine knows of the file. A
-    /// raw's names the photographer's Adobe profile where `adobeProfiles`, its camera's, has it (EDT-33).
+    /// Fujifilm simulation takes the look filling its slot in `slotLooks`, and a raw's edit names the photographer's
+    /// Adobe profile where `adobeProfiles`, its camera's, has it (EDT-33).
     static func converting(
         _ edit: LightroomXMPEdit, photo: LightroomPhotoContext?, _ opened: ImageInfo,
-        adobeProfiles: [CameraProfileLook]? = nil,
+        slotLooks: [FilmSlot: BaseLookReference], adobeProfiles: [CameraProfileLook]? = nil,
     ) -> EditRecipe {
         var context = photo ?? LightroomPhotoContext(size: opened.pixelSize)
         context.isRaw = opened.isRaw
         context.hasLensCorrection = opened.lensCorrection != nil
         context.embeddedLook = opened.embeddedBaseLook
+        context.slotLooks = slotLooks
         context.adobeProfiles = opened.isRaw ? adobeProfiles : nil
         return LightroomPhoto.convert(edit.settings, photo: context, source: edit.source).recipe
     }
