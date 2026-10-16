@@ -886,7 +886,7 @@
             "develop.base-looks",
             "Base Looks' search finds a film stock, which previews, and a click applies it with its grain, keeping "
                 + "the vignette",
-            claims: [.feature("recipes.favorites"), .feature("recipes.applying")],
+            claims: [.feature("recipes.base-looks"), .feature("recipes.favorites")],
             needsFocus: true,
         ) { app in
             try app.openWorking()
@@ -921,7 +921,7 @@
             )
             try app.expect(try app.main { $0.value(.grainAmount) } > 0, "\(ektar.name) came without its grain")
             try app.choose(.resetAll)
-            app.covered([.feature("recipes.favorites"), .feature("recipes.applying")], via: focused ? .mouse : .model)
+            app.covered([.feature("recipes.base-looks"), .feature("recipes.favorites")], via: focused ? .mouse : .model)
         }
 
         static let baseLookMenu = Scenario(

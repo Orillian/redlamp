@@ -102,6 +102,7 @@ struct FeedbackAreaTests {
         #expect(FeedbackArea.search("beach ball").first?.id == "performance.freeze")
         #expect(FeedbackArea.search("x-trans").first?.id == "raw.demosaic")
         #expect(FeedbackArea.search("masking brush").first?.id == "masking.brush")
+        #expect(FeedbackArea.search("search base looks").first?.id == "recipes.base-looks")
         #expect(FeedbackArea.search("   ").isEmpty)
         #expect(FeedbackArea.search("zzzz").isEmpty)
     }

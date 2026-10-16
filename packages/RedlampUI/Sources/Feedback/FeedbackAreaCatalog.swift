@@ -222,9 +222,16 @@ public extension FeedbackArea {
         ),
         FeedbackArea(
             "recipes", "Recipes & Looks", symbol: "wand.and.stars",
-            summary: "Recipes, presets, LUTs and the Film Looks window.",
-            tracker: ["TON", "EDT"],
+            summary: "Base Looks and Recipes: profiles, film stocks, LUTs, presets and the Film Looks window.",
+            tracker: ["TON", "EDT", "UX"],
             features: [
+                FeedbackFeature(
+                    "base-looks", "Base Looks Panel",
+                    [
+                        "base looks", "film stock", "film styles", "profile", "lut", "in this photo", "imported",
+                        "search base looks", "apply without grain",
+                    ],
+                ),
                 FeedbackFeature(
                     "applying", "Applying Recipes",
                     ["apply", "amount", "hover preview", "preset", "apply base look only", "film icon"],
@@ -241,7 +248,7 @@ public extension FeedbackArea {
                 FeedbackFeature("film-looks", "Film Looks Window", ["film", "film stock", "film looks"]),
                 FeedbackFeature(
                     "favorites", "Favorites and Search",
-                    ["favorite", "favourite", "search recipes", "search base looks"],
+                    ["favorite", "favourite", "search recipes"],
                 ),
             ],
         ),

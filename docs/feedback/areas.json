@@ -284,6 +284,10 @@
     {
       "features" : [
         {
+          "id" : "recipes.base-looks",
+          "title" : "Base Looks Panel"
+        },
+        {
           "id" : "recipes.applying",
           "title" : "Applying Recipes"
         },
@@ -310,11 +314,12 @@
       ],
       "id" : "recipes",
       "label" : "component:recipes",
-      "summary" : "Recipes, presets, LUTs and the Film Looks window.",
+      "summary" : "Base Looks and Recipes: profiles, film stocks, LUTs, presets and the Film Looks window.",
       "title" : "Recipes & Looks",
       "tracker" : [
         "TON",
-        "EDT"
+        "EDT",
+        "UX"
       ]
     },
     {
