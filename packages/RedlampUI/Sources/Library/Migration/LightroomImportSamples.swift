@@ -329,12 +329,12 @@ import RedlampLibrary
             State(
                 id: "writing-spinning", title: "Writing on a spinning disk, hours left",
                 note: "About 1 h 45 min, rounded to five minutes past the hour; the spinning disk's notice says why.",
-                screen: screen(.writing, run: writingSpinning, log: log(until: "10:41:12")),
+                screen: screen(.writing, run: writingSpinning, log: log(until: "10:33:12")),
             ),
             State(
                 id: "writing-details", title: "Writing, Details open",
                 note: "The log opened, as it stays once opened; Copy, and Report Text for the report's lines.",
-                screen: screen(.writing, run: writingSpinning, log: log(until: "10:41:12")), detailsOpen: true,
+                screen: screen(.writing, run: writingSpinning, log: log(until: "10:33:12")), detailsOpen: true,
             ),
             State(
                 id: "stopping", title: "Stopping",
