@@ -1,12 +1,15 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import RedlampDocument
+@_spi(Harness) import RedlampEngineAPI
 import SQLite3
 import Testing
 
-/// `redlamp library lightroom --census` (EDT-23), run as a person runs it: the census of a Lightroom Classic
-/// catalog made for the test, never one Lightroom made, its rotation codes paired with the EXIF orientations
-/// of the files a library has indexed, naming none of the photos.
+/// `redlamp library lightroom` (EDT-23), run as a person runs it on a Lightroom Classic catalog made for the test,
+/// never one Lightroom made: its census, the rotation codes paired with the EXIF orientations of the files a
+/// library has indexed, naming none of the photos; and its import, raws naming the synthetic Adobe profiles of a
+/// Camera Raw folder made for the test (EDT-33).
 struct LightroomCommandTests {
     private final class Bundled {}
 
@@ -20,7 +23,8 @@ struct LightroomCommandTests {
         var errors: String
     }
 
-    private static func run(_ arguments: [String], in scratch: URL) async throws -> Run {
+    /// `redlamp library` with `arguments`, its home `home` where it's given.
+    private static func run(_ arguments: [String], in scratch: URL, home: URL? = nil) async throws -> Run {
         try #require(FileManager.default.isExecutableFile(atPath: redlamp.path), "redlamp isn't built beside the tests")
         let name = UUID().uuidString
         let output = scratch.appending(path: "\(name).out"), errors = scratch.appending(path: "\(name).err")
@@ -29,6 +33,11 @@ struct LightroomCommandTests {
         let process = Process()
         process.executableURL = redlamp
         process.arguments = ["library"] + arguments
+        if let home {
+            process.environment = ProcessInfo.processInfo.environment.merging(["CFFIXED_USER_HOME": home.path]) {
+                $1
+            }
+        }
         process.standardOutput = try FileHandle(forWritingTo: output)
         process.standardError = try FileHandle(forWritingTo: errors)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
@@ -45,8 +54,8 @@ struct LightroomCommandTests {
         )
     }
 
-    /// A JPEG of 8 by 8 pixels whose EXIF orientation is `orientation`.
-    private static func jpeg(at url: URL, orientation: Int) throws {
+    /// A JPEG of 8 by 8 pixels whose EXIF orientation is `orientation`, from `camera` where it's given.
+    private static func jpeg(at url: URL, orientation: Int, camera: (make: String, model: String)? = nil) throws {
         let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
         let context = try #require(CGContext(
             data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32, space: space,
@@ -56,7 +65,13 @@ struct LightroomCommandTests {
         context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
         let image = try #require(context.makeImage())
         let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil))
-        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
+        var properties: [CFString: Any] = [kCGImagePropertyOrientation: orientation]
+        if let camera {
+            properties[kCGImagePropertyTIFFDictionary] = [
+                kCGImagePropertyTIFFMake: camera.make, kCGImagePropertyTIFFModel: camera.model,
+            ]
+        }
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         try #require(CGImageDestinationFinalize(destination))
     }
 
@@ -166,6 +181,46 @@ struct LightroomCommandTests {
         for secret in ["Smith", scratch.path, "0.4567", "Lightroom Catalog.lrcat"] {
             #expect(!text.output.contains(secret) && !json.output.contains(secret), "the census names “\(secret)”")
         }
+    }
+
+    @Test func `an import names the Adobe profile Camera Raw's folder holds for a raw's camera, else Redlamp's look`(
+    ) async throws {
+        let scratch = FileManager.default.temporaryDirectory.appending(path: "redlamp-profiles-\(UUID().uuidString)")
+        let photos = scratch.appending(path: "Shoot")
+        let home = scratch.appending(path: "Home")
+        let profiles = home.appending(path: "Library/Application Support/Adobe/CameraRaw/CameraProfiles")
+        let index = scratch.appending(path: "Library/Index.sqlite")
+        for folder in [photos, profiles, index.deletingLastPathComponent()] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        // Cameras no Adobe profile installed on this Mac is for, as JPEGs named as raws, which ImageIO reads.
+        try SyntheticCameraProfiles.dcp(
+            name: "Adobe Standard", camera: "Redlamp Testcam One",
+            colorMatrices: [[0.6722, -0.0635, -0.0963, -0.4287, 1.2460, 0.2028, -0.0908, 0.2162, 0.5668]],
+            illuminants: [21],
+        ).write(to: profiles.appending(path: "Testcam One.dcp"))
+        let own = photos.appending(path: "TC1_0001.DNG"), standIn = photos.appending(path: "TC2_0001.DNG")
+        try Self.jpeg(at: own, orientation: 1, camera: ("Redlamp", "Testcam One"))
+        try Self.jpeg(at: standIn, orientation: 1, camera: ("Redlamp", "Testcam Two"))
+        let catalog = scratch.appending(path: "Lightroom/Lightroom Catalog.lrcat")
+        let settings = #"s = { ProcessVersion = "11.0", Exposure2012 = 0.5, CameraProfile = "Adobe Standard" }"#
+        try Self.catalog(at: catalog, root: photos.standardizedFileURL.path + "/", photos: [
+            ("TC1_0001.DNG", "AB", settings), ("TC2_0001.DNG", "AB", settings),
+        ])
+
+        let applied = try await Self.run(
+            ["lightroom", catalog.path, "--index", index.path, "--apply", "--json"], in: scratch, home: home,
+        )
+        #expect(applied.status == 0, "\(applied.errors)")
+        let json = try #require(try JSONSerialization.jsonObject(with: Data(applied.output.utf8)) as? [String: Any])
+        let edits = try #require((json["report"] as? [String: Any])?["edits"] as? [String: Any])
+        #expect(edits["photos"] as? Int == 2 && edits["ownProfiles"] as? Int == 1)
+        #expect(edits["standIns"] as? [String: Int] == ["Adobe Standard": 1])
+        let ownLook = try #require(SidecarStore().load(for: own)).recipe.baseLook
+        #expect(ownLook.isAdobeProfile && ownLook.name == "Adobe Standard")
+        let standInLook = try #require(SidecarStore().load(for: standIn)).recipe
+        #expect(!standInLook.baseLook.isAdobeProfile && standInLook[.exposure] == 0.5)
     }
 
     @Test func `the census takes no --apply or --undo, and an --index that isn't there is refused`() async throws {

@@ -1,5 +1,8 @@
 import Foundation
+import RedlampEngine
+import RedlampEngineAPI
 import RedlampLibrary
+import RedlampServices
 import Synchronization
 
 extension LibraryCommand {
@@ -14,13 +17,17 @@ extension LibraryCommand {
                --index, the app's own library without it (best with Redlamp closed): the catalog's root folders and
                where each is on this Mac, its photos found by path, their ratings, picks, rejects, colour labels,
                Quick Collection (Redlamp's mark), titles, captions, creators, copyrights and locations, the
-               keywords with their hierarchy, synonyms and export options, the collections and sets, and the smart
-               collections whose rules the query language can say; then what doesn't come across and why: virtual
-               copies, Lightroom's edits, stacks and rules with no counterpart. --root says where a root folder
-               that moved is now, by the path the report shows for it. --apply adds the root folders the library
-               doesn't have and indexes them, then imports as the library's journaled batches, writing each
-               photo's .redlamp sidecar: Lightroom's value replaces the library's where Lightroom has one, and
-               keywords and collections join the photos'. --undo takes the last import back. --json prints JSON.
+               keywords with their hierarchy, synonyms and export options, the collections and sets, the smart
+               collections whose rules the query language can say, and the photos' edits with their snapshots,
+               converted: a raw's names the photographer's own copy of the Adobe profile Lightroom used where
+               Camera Raw's folders on this Mac hold it, Redlamp's look standing in where they don't (the profiles
+               chosen in the app's settings aren't seen here); then what doesn't come across and why: virtual
+               copies, the steps of edits' histories, stacks and rules with no counterpart. --root says where a
+               root folder that moved is now, by the path the report shows for it. --apply adds the root folders
+               the library doesn't have and indexes them, then imports as the library's journaled batches,
+               writing each photo's .redlamp sidecar: Lightroom's value replaces the library's where Lightroom
+               has one, keywords and collections join the photos', and a photo Redlamp has edited keeps its edit.
+               --undo takes the last import back. --json prints JSON.
                --census counts what the catalog's edits use instead, over every photo and virtual copy, and
                names no photo, path, keyword or value, so it can be shared: the photos by process version; each
                setting with the photos carrying it and, of those, the ones whose value isn't the one most of them
@@ -95,7 +102,8 @@ extension LibraryCommand {
     ) async throws {
         let clock = ContinuousClock()
         let started = clock.now
-        var plan = try await LightroomPlan.make(catalog, index: index, moved: moved)
+        let profiles = adobeProfiles()
+        var plan = try await LightroomPlan.make(catalog, index: index, moved: moved, adobeProfiles: profiles)
         let planned = clock.now - started
         guard apply else {
             if json {
@@ -108,7 +116,7 @@ extension LibraryCommand {
         }
         if !plan.foldersToAdd.isEmpty {
             try await addFolders(plan.foldersToAdd, to: index)
-            plan = try await LightroomPlan.make(catalog, index: index, moved: moved)
+            plan = try await LightroomPlan.make(catalog, index: index, moved: moved, adobeProfiles: profiles)
         }
         let reported = Mutex(ContinuousClock.now)
         let importer = LightroomImport(index: index)
@@ -149,6 +157,13 @@ extension LibraryCommand {
         if !outcome.skipped.isEmpty {
             throw ExitCode(1)
         }
+    }
+
+    /// The Adobe profiles in Camera Raw's folders on this Mac for a camera, which raws' edits name (EDT-33). The
+    /// files chosen in the app's settings are the app's to read, so they aren't among them. Nil without Metal.
+    private static func adobeProfiles() -> (@Sendable (String, String) async -> [CameraProfileLook])? {
+        guard let engine = try? RedlampEngine(decoder: InProcessDecoder(), cameraProfiles: .user) else { return nil }
+        return { await engine.cameraProfileLooks(make: $0, model: $1) }
     }
 
     /// The census of the catalog's edits (EDT-23), its rotation codes paired with the files of the library whose
