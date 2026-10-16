@@ -234,9 +234,21 @@ Builds from before `provenance` keep it as an unknown key.
 | `effects.leak.{amount,variation}` | 0…100 | 0 | Light leaking in at the frame's edges. |
 | `effects.leak.warmth` | −100…100 | 60 | |
 | `effects.dust.amount`, `effects.scratches.amount` | 0…100 | 0 | Dust and scratches on the film. |
-| `effects.frame.style` | 0…4 | 0 | A border drawn over the photo's edges, by number: 0 none, 1 keyline, 2 print border, 3 35 mm rebate, 4 slide mount. The numbers never change; a new style gets the next one. |
+| `effects.frame.style` | 0…4 | 0 | A frame drawn over the photo's edges, by number: 0 none, 1 keyline, 2 print border, 3 35 mm rebate, 4 slide mount. The numbers never change. Kept for the edits that have one; new borders are `border.…`. |
 | `effects.frame.size` | 0…100 | 50 | |
 | `effects.colorChrome`, `effects.colorChromeBlue` | 0…100 | 0 | Color Chrome deepens highly saturated colors; Color Chrome FX Blue does so for blues only. |
+| `border.style` | 0…9 | 0 | A border around the photo, by number: 0 none, 1 plain, 2 35 mm film, 3 medium format, 4 instant square, 5 instant mini, 6 instant wide, 7 slide mount, 8 plastic slide mount, 9 filed carrier. The numbers never change. See [Borders](#borders). |
+| `border.shape` | 0…9 | 0 | A plain border's canvas, short side to long: 0 even, 1 1:1, 2 4:5, 3 3:4, 4 2:3, 5 9:16, 6 5:7, 7 11:14, 8 A paper (1:√2), 9 custom. The numbers never change. |
+| `border.orientation` | 0…2 | 0 | 0 the canvas turns with the photo, 1 portrait, 2 landscape. |
+| `border.{ratioWidth,ratioHeight}` | 1…100 | 4, 5 | The custom shape. |
+| `border.size` | 0…20 | 4 | The margin on the narrowest sides, in percent of the photo's long side. |
+| `border.{offsetX,offsetY}` | −100…100 | 0 | Where the photo sits in the spare margin: +100 puts all of it to the left of the photo, or below it. |
+| `border.{red,green,blue}` | 0…255 | 255 | The border's colour, sRGB. |
+| `border.keylineWidth` | 0…2 | 0 | A line around the photo, in percent of its long side. |
+| `border.keylineGap` | 0…5 | 0 | The keyline's distance from the photo, in percent of its long side. |
+| `border.keyline{Red,Green,Blue}` | 0…255 | 0 | The keyline's colour, sRGB. |
+| `border.edgePrint` | 0…1 | 1 | Film frames' edge print. |
+| `border.frameNumber` | 0…36 | 0 | The edge print's frame number; 0 follows the file's number. |
 | `calibration.shadowsTint` | −100…100 | 0 | |
 | `calibration.{red,green,blue}.{hue,saturation}` | −100…100 | 0 | The primaries' hue and saturation. |
 
@@ -251,15 +263,19 @@ Every value is a number, switches and the frame style included. The defaults are
 
 Followed from a pixel of the developed photo back to the image point it shows, the geometry applies in this order: the crop and its angle, then Transform, then `orientation`, then lens distortion (the manual Distortion slider, then the photo's own lens profile).
 
+### Borders
+
+A border goes around the developed photo, and the canvas grows to hold it: every render, thumbnail and export is the photo plus its border. A plain border with a shape scales the canvas to that shape so that the photo keeps at least `border.size` on its narrowest sides; film and instant styles take their formats' proportions, scaled to the photo, and ignore shape, size and position. `border.size`, the keyline's width and gap, and every style's margins are relative to the photo, so a border looks the same at any export size. Without `border.style` an edit has no border, so every edit made before borders renders as it did; a Redlamp from before borders keeps the keys and renders the photo without its border. `effects.frame.…`, drawn over the photo's edges, is kept for the edits that have it.
+
 ### Panel switches
 
-`panelsOff` lists the Develop panels switched off with the eye on their headers, as in Lightroom: any of `toneCurve`, `colorMixer`, `colorGrading`, `detail`, `lens`, `transform`, `effects` and `calibration`, in that order. Basic has no eye and can't be switched off. A panel that's off keeps its settings and renders as though each of them left the photo alone:
+`panelsOff` lists the Develop panels switched off with the eye on their headers, as in Lightroom: any of `toneCurve`, `colorMixer`, `colorGrading`, `detail`, `lens`, `transform`, `effects`, `border` and `calibration`, in that order. Basic has no eye and can't be switched off. A panel that's off keeps its settings and renders as though each of them left the photo alone:
 
 - **Detail:** no sharpening and no noise reduction, though `detail.sharpen.amount` and `detail.noise.color` have defaults that act.
 - **Lens Corrections:** none of its corrections: not the lens correction the photo's file carries (whatever `lens.profile` says), the manual Distortion and Vignetting, Remove Chromatic Aberration or Defringe.
 - **Tone Curve:** neither the parametric sliders nor the point curves, `pointCurve` and red's, green's and blue's own.
 - **Color Mixer:** neither its bands nor the edit's `pointColor` swatches, which the panel shows. A mask's own swatches still apply.
-- **Color Grading, Transform, Effects** (the camera-recipe settings `basic.dynamicRange`, `effects.colorChrome`, `effects.colorChromeBlue` and `wb.shift.…` included) **and Calibration:** none of their settings.
+- **Color Grading, Transform, Effects** (the camera-recipe settings `basic.dynamicRange`, `effects.colorChrome`, `effects.colorChromeBlue` and `wb.shift.…` included), **Border and Calibration:** none of their settings.
 
 Masks, Basic, the crop, orientation and spots, and the Base Look are never switched off. Changing a setting of a panel that's off turns the panel back on. Without the key every panel is on, so every edit made before it renders as it did. A panel name a newer Redlamp wrote is kept and written back. A Redlamp from before panel switches (0.2.8 and earlier) keeps `panelsOff` as an unknown key and writes it back, but renders every panel on.
 

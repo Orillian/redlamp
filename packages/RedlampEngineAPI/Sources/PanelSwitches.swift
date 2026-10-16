@@ -5,7 +5,7 @@ import Foundation
 /// that leaves the photo alone, and keeps its settings for when it's turned back on. The raw
 /// values are the sidecar's names for them (`EditRecipe.panelsOff`).
 public enum SwitchablePanel: String, Codable, Sendable, Hashable, CaseIterable, Comparable {
-    case toneCurve, colorMixer, colorGrading, detail, lens, transform, effects, calibration
+    case toneCurve, colorMixer, colorGrading, detail, lens, transform, effects, border, calibration
 
     public var name: String {
         switch self {
@@ -16,6 +16,7 @@ public enum SwitchablePanel: String, Codable, Sendable, Hashable, CaseIterable, 
         case .lens: "Lens Corrections"
         case .transform: "Transform"
         case .effects: "Effects"
+        case .border: "Border"
         case .calibration: "Calibration"
         }
     }
@@ -59,6 +60,8 @@ public enum SwitchablePanel: String, Codable, Sendable, Hashable, CaseIterable, 
                 .bloomSize, .leakAmount, .leakWarmth, .leakVariation, .dustAmount, .scratchAmount, .frameStyle,
                 .frameSize, .dynamicRange, .colorChrome, .colorChromeBlue, .wbShiftRed, .wbShiftBlue,
             ]
+        case .border:
+            EditRecipe.borderParameters
         case .calibration:
             [
                 .calibrationShadowsTint, .calibrationRedHue, .calibrationRedSaturation, .calibrationGreenHue,

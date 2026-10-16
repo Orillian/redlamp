@@ -420,14 +420,14 @@ public extension EditRecipe {
         .transformRotate, .transformAspect, .transformScale, .transformOffsetX, .transformOffsetY,
     ]
 
-    /// This edit with `other`'s crop, angle, Transform and orientation, as `other` renders them: a
-    /// Before view framed like the After.
+    /// This edit with `other`'s crop, angle, Transform, orientation and border, as `other` renders
+    /// them: a Before view framed like the After.
     func withGeometry(of other: EditRecipe) -> EditRecipe {
         let other = other.rendered
         var framed = self
         framed.crop = other.crop
         framed.orientation = other.orientation
-        for parameter in Self.geometryParameters {
+        for parameter in Self.geometryParameters + Self.borderParameters {
             framed[parameter] = other[parameter]
         }
         return framed

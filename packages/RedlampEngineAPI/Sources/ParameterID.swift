@@ -155,6 +155,36 @@ public enum ParameterID: String, CaseIterable, Codable, Sendable, Hashable {
     /// The same, for blues only.
     case colorChromeBlue = "effects.colorChromeBlue"
 
+    // Border: drawn around the photo, the canvas growing to hold it (`BorderLayout`)
+    /// `BorderStyle`.
+    case borderStyle = "border.style"
+    /// `BorderShape`, for Plain.
+    case borderShape = "border.shape"
+    /// `BorderOrientation`.
+    case borderOrientation = "border.orientation"
+    /// The Custom shape's sides.
+    case borderRatioWidth = "border.ratioWidth"
+    case borderRatioHeight = "border.ratioHeight"
+    /// The margin on the narrowest sides, in percent of the photo's long side.
+    case borderSize = "border.size"
+    /// Where the photo sits in the spare margin: +100 puts all of it to the left of the photo, or below it.
+    case borderOffsetX = "border.offsetX"
+    case borderOffsetY = "border.offsetY"
+    /// The border's colour, sRGB 0...255.
+    case borderRed = "border.red"
+    case borderGreen = "border.green"
+    case borderBlue = "border.blue"
+    /// A line around the photo: its width and its distance from the photo, in percent of the photo's long side.
+    case borderKeylineWidth = "border.keylineWidth"
+    case borderKeylineGap = "border.keylineGap"
+    case borderKeylineRed = "border.keylineRed"
+    case borderKeylineGreen = "border.keylineGreen"
+    case borderKeylineBlue = "border.keylineBlue"
+    /// Film frames' edge print, on or off.
+    case borderEdgePrint = "border.edgePrint"
+    /// The edge print's frame number; 0 follows the file's number.
+    case borderFrameNumber = "border.frameNumber"
+
     // Calibration
     case calibrationShadowsTint = "calibration.shadowsTint"
     case calibrationRedHue = "calibration.red.hue"
