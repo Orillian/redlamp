@@ -105,7 +105,8 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Post-crop vignette | Yes | Done | | | | With Highlights, to keep bright areas bright |
 | Grain | Yes | Done | | | TON-19 | Sized to the frame and strongest in the shadows, as film's is |
 | Halation and bloom | No | Done | | | TON-17, TON-18 | The glow film gives bright lights |
-| Light leaks, dust and scratches, and frames | No | Done | | | TON-25 | |
+| Light leaks, dust and scratches | No | Done | | | TON-25 | |
+| Borders and frames | Partly (Classic, when printing) | Planned | | P3 | TON-53, TON-54, EDT-35 | Around the photo, the canvas growing to Instagram, Stories or paper shapes, with film and instant frames and a Borders folder in Recipes; Lightroom Classic makes borders only in its Print module (Print to JPEG included) or through export plug-ins. Today's frames are drawn over the photo's edges |
 
 ## Masking
 
