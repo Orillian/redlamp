@@ -28,16 +28,23 @@ public enum FileTrace {
         public let kind: Kind
         public let path: String
         public let bytes: Int
+        /// What it was made for, as `marking` said where it ran; nil when nothing did.
+        public let purpose: String?
 
-        public init(kind: Kind, path: String, bytes: Int = 0) {
+        public init(kind: Kind, path: String, bytes: Int = 0, purpose: String? = nil) {
             self.kind = kind
             self.path = path
             self.bytes = bytes
+            self.purpose = purpose
         }
     }
 
+    /// What a photo's thumbnail reads, as `marking` names it.
+    public static let thumbnail = "thumbnail"
+
     private static let following = Atomic(false)
     private static let recorded = Mutex<[Operation]>([])
+    private static let purposeKey = "app.redlamp.file-trace.purpose"
 
     /// Starts following operations, forgetting any followed before.
     public static func start() {
@@ -67,6 +74,18 @@ public enum FileTrace {
 
     public static func note(_ kind: Kind, path: String, bytes: Int = 0) {
         guard following.load(ordering: .relaxed) else { return }
-        recorded.withLock { $0.append(Operation(kind: kind, path: path, bytes: bytes)) }
+        let purpose = Thread.current.threadDictionary[purposeKey] as? String
+        recorded.withLock { $0.append(Operation(kind: kind, path: path, bytes: bytes, purpose: purpose)) }
+    }
+
+    /// Runs `body`, the operations it notes on this thread made for `purpose`, so a bench can tell
+    /// them from the rest.
+    public static func marking<T>(_ purpose: String, _ body: () throws -> T) rethrows -> T {
+        guard following.load(ordering: .relaxed) else { return try body() }
+        let thread = Thread.current.threadDictionary
+        let outer = thread[purposeKey]
+        thread[purposeKey] = purpose
+        defer { thread[purposeKey] = outer }
+        return try body()
     }
 }

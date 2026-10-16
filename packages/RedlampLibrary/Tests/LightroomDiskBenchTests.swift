@@ -88,21 +88,19 @@ struct LightroomDiskBenchTests {
         return try await EmbeddedPreviews.best(in: &bytes, reaching: 384)?.length ?? data.count
     }
 
-    /// `operations` without one of each of `taken`.
-    static func removing(
-        _ taken: [FileTrace.Operation],
-        from operations: [FileTrace.Operation],
-    ) -> [FileTrace.Operation] {
-        var left = Dictionary(taken.map { ($0, 1) }, uniquingKeysWith: +)
-        return operations.filter { operation in
-            guard let count = left[operation], count > 0 else { return true }
-            left[operation] = count - 1
-            return false
-        }
+    /// Hours at 100,000 photos for `seconds` at `photos`.
+    static func hours(_ seconds: Double, photos: Int) -> String {
+        String(format: "%.2f h", seconds * 100_000 / Double(photos) / 3600)
     }
 
-    @Test(.measuresSpeed)
-    func `indexing a catalog's folders on a simulated 2.5-inch disk, thumbnails and all`() async throws {
+    /// The volumes the index bench's indexer reads through: one that answers at once, whose order of operations
+    /// is the SSD's, and the 2.5-inch disk itself in real time, whose one head makes what waits for it wait.
+    static let indexedVolumes = ["external", VolumeProfile.usb25.name]
+
+    @Test(.measuresSpeed, arguments: indexedVolumes)
+    func `indexing a catalog's folders on a simulated 2.5-inch disk, thumbnails and all`(
+        volume: String,
+    ) async throws {
         let count = ProcessInfo.processInfo.environment["REDLAMP_LIGHTROOM_DISK_INDEXED"].flatMap { Int($0) } ?? 600
         let raws = try FileManager.default.contentsOfDirectory(
             at: FixtureTests.rawFolder,
@@ -136,48 +134,66 @@ struct LightroomDiskBenchTests {
         defer { index.closeAndWait() }
         let store = PhotoStore(root: library.url.appending(path: "Store"))
         defer { store.close() }
-        let thumbnails = Mutex<[FileTrace.Operation]>([])
+        let made = Atomic(0)
         let sizes = previews
         let image: StoreThumbnailMaker.ImageSource = { photo, _, _ in
-            let read = FileTrace.Operation(kind: .read, path: photo.path, bytes: sizes[photo.pathExtension] ?? 0)
-            FileTrace.note(read.kind, path: read.path, bytes: read.bytes)
-            thumbnails.withLock { $0.append(read) }
+            FileTrace.note(.read, path: photo.path, bytes: sizes[photo.pathExtension] ?? 0)
+            made.add(1, ordering: .relaxed)
             let context = CGContext(
                 data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
             )
             return context?.makeImage()
         }
+        let profile = try #require(volume == "external"
+            ? VolumeProfile(name: "external", isInternal: false) : VolumeProfile.named(volume))
         let width = CoreCounts.performance
+        let maker = StoreThumbnailMaker(store: store, image: image)
         let indexer = LibraryIndexer(
             index: index,
-            fileSystem: SimulatedFileSystem(profile: VolumeProfile(name: "external", isInternal: false)),
+            fileSystem: SimulatedFileSystem(profile: profile),
             scheduler: WorkScheduler(
                 widths: WorkScheduler.Widths(onScreen: width, lookAhead: width, background: width),
                 canRunBackground: { true },
             ),
-            thumbnails: StoreThumbnailMaker(store: store, image: image).thumbnails,
+            thumbnails: { photo, key, head in
+                FileTrace.marking(FileTrace.thumbnail) { _ = maker.make(photo, key: key, head: head) }
+            },
         )
+        let start = ContinuousClock.now
+        var indexed = Duration.zero
         let operations = try await Self.traced(under: photos.url) {
             for await _ in indexer.index([photos.url]) {}
-            let deadline = ContinuousClock.now + .seconds(60)
-            while thumbnails.withLock({ $0.count }) < count, ContinuousClock.now < deadline {
+            indexed = ContinuousClock.now - start
+            let deadline = ContinuousClock.now + .seconds(600)
+            while made.load(ordering: .relaxed) < count, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
         }
-        let made = thumbnails.withLock { $0 }
-        #expect(made.count == count)
+        let finished = ContinuousClock.now - start
+        #expect(made.load(ordering: .relaxed) == count)
+        let isThumbnail = { (operation: FileTrace.Operation) in operation.purpose == FileTrace.thumbnail }
+        let last = try #require(operations.lastIndex { !isThumbnail($0) })
         let disk = DiskReplay(profile: .usb25)
         let asRun = disk.replay(operations)
-        let reads = disk.replay(Self.removing(made, from: operations))
-        let afterwards = disk.replay(made)
+        let untilImport = disk.replay(Array(operations[...last]))
+        let reads = disk.replay(operations.filter { !isThumbnail($0) })
+        let afterwards = disk.replay(operations.filter(isThumbnail))
         let read = previews.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value / 1000) KB" }.joined(separator: ", ")
+        let io = indexer.volumes.all.first
+        let real = profile.maxInFlight == nil ? "" : "; on the simulated disk itself, indexed in "
+            + "\(String(format: "%.1f", indexed.seconds)) s (\(Self.hours(indexed.seconds, photos: count))) and "
+            + "thumbnails made by \(String(format: "%.1f", finished.seconds)) s "
+            + "(\(Self.hours(finished.seconds, photos: count)))"
         print(
             "LIGHTROOM-DISK-INDEX-BENCH \(count) raws (\(raws.count) files, previews read: \(read)) in folders of 200 "
-                + "on a simulated 2.5-inch disk (usb-2.5), as an external disk's two readers read them: as run, "
-                + "\(Self.describe(asRun, photos: count)); the indexing's own reads, which the import waits for, "
-                +
-                "\(Self.describe(reads, photos: count)); thumbnails made afterwards, \(Self.describe(afterwards, photos: count))",
+                + "on a simulated 2.5-inch disk (usb-2.5), read through a volume simulated as \(volume) "
+                + "(\(io.map { "\($0.width) readers at the end" } ?? "no readers")): as run, "
+                + "\(Self.describe(asRun, photos: count)); until the import could start (the replay up to the "
+                + "indexing's last operation), \(String(format: "%.1f", untilImport.duration.seconds)) s, "
+                + "\(Self.hours(untilImport.duration.seconds, photos: count)) at 100,000 photos; the indexing's own "
+                + "operations, which the import waits for, \(Self.describe(reads, photos: count)); thumbnails "
+                + "made afterwards, \(Self.describe(afterwards, photos: count))\(real)",
         )
     }
 }
