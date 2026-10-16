@@ -50,6 +50,8 @@ public final class BatchExport {
         var settings: ExportSettings
         /// The open photo and its edit as it is on screen, when it's one of them.
         var open: (url: URL, recipe: EditRecipe)?
+        /// The metadata of the version open, when `open`'s edit is a version's (EDT-09).
+        var openVersion: PhotoMetadata?
         var done: @MainActor (Report) -> Void = { _ in }
     }
 
@@ -68,8 +70,9 @@ public final class BatchExport {
     @ObservationIgnored var saved: @MainActor (URL) async -> Void = { _ in }
     /// A Base Look an edit uses that the engine doesn't know, from the looks installed.
     @ObservationIgnored var baseLook: @MainActor (BaseLookReference) -> BaseLookDefinition? = { _ in nil }
-    /// The library's fields for a photo, which go with it under the settings' metadata policy.
-    @ObservationIgnored var fields: @MainActor (URL) async -> ExportMetadata.Fields? = { _ in nil }
+    /// The library's fields for a photo, or for the version of it whose metadata is given, which go with it under the
+    /// settings' metadata policy.
+    @ObservationIgnored var fields: @MainActor (URL, PhotoMetadata?) async -> ExportMetadata.Fields? = { _, _ in nil }
     /// Waited for as each photo's export starts (tests hold a photo here).
     @ObservationIgnored var beforeExporting: @MainActor (URL) async -> Void = { _ in }
 
@@ -135,7 +138,10 @@ public final class BatchExport {
                 guard let engine else { throw Problem("Redlamp couldn't start its export engine.") }
                 // A task of its own, which Cancel doesn't reach: the photo under way is finished.
                 let edit = edits[index]
-                try await Task { try await write(target, edit: edit, settings: job.settings, engine: engine) }.value
+                let version = target.photo == job.open?.url ? job.openVersion : nil
+                try await Task {
+                    try await write(target, edit: edit, version: version, settings: job.settings, engine: engine)
+                }.value
                 report.written.append(target.url)
             } catch {
                 report.failures.append(Failure(photo: target.photo, reason: Self.reason(error)))
@@ -208,9 +214,11 @@ public final class BatchExport {
         return task
     }
 
-    /// Opens `target`'s photo, renders it with `edit` and writes it.
+    /// Opens `target`'s photo, renders it with `edit` and writes it, with the metadata of `version` when its edit is
+    /// a version's.
     private func write(
-        _ target: ExportNames.Target, edit: Edit, settings: ExportSettings, engine: any EditingEngine,
+        _ target: ExportNames.Target, edit: Edit, version: PhotoMetadata?, settings: ExportSettings,
+        engine: any EditingEngine,
     ) async throws {
         let url = target.photo
         await beforeExporting(url)
@@ -245,7 +253,7 @@ public final class BatchExport {
         let request = settings.stillRequest(recipe: EditorModel.asShot(recipe, info), source: url, size: info.pixelSize)
         let image = try await engine.renderStill(request)
         let files = engine.files
-        let libraryFields = settings.metadata == .none ? nil : await fields(url)
+        let libraryFields = settings.metadata == .none ? nil : await fields(url, version)
         try await Task.detached(priority: .utility) {
             let metadata = ExportMetadata.properties(
                 from: url, reading: files, policy: settings.metadata, recipe: request.recipe, fields: libraryFields,

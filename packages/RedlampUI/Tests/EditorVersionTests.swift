@@ -1,6 +1,7 @@
 import Foundation
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampLibrary
 import Testing
 @testable import RedlampUI
 
@@ -207,6 +208,28 @@ struct EditorVersionTests {
         model.showVersion(nil)
         let own = ExportActions.reader(for: SelectedPhotos([editor.photo]), model: model)
         #expect(await own().map(\.fields.version) == [nil])
+    }
+
+    @Test func `a version's export carries its own rating, label and fields, and the photo's where it holds none`() {
+        let photo = ExportMetadata.Fields(
+            title: "The photo", caption: "Its caption", creators: ["Pedro"], copyright: "© Pedro",
+            keywords: ["Lisbon", "Places"], keywordPaths: [["Places", "Lisbon"]], rating: 2, label: "Red",
+        )
+        let metadata = PhotoMetadata(rating: 5, label: .green, keywords: ["Places/Porto"], title: "The version")
+        let fields = EditorModel.versionFields(
+            metadata,
+            over: photo,
+            keywords: KeywordDefinitions(),
+            labels: .lightroom,
+        )
+        #expect(fields.rating == 5 && fields.label == "Green" && fields.title == "The version")
+        #expect(fields.caption == "Its caption" && fields.creators == ["Pedro"] && fields.copyright == "© Pedro")
+        #expect(fields.keywordPaths == [["Places", "Porto"]] && !fields.keywords.contains("Lisbon"))
+
+        let unrated = EditorModel.versionFields(
+            PhotoMetadata(), over: photo, keywords: KeywordDefinitions(), labels: .lightroom,
+        )
+        #expect(unrated.rating == nil && unrated.label == nil && unrated.keywordPaths == photo.keywordPaths)
     }
 
     @Test func `another writer's removal of the version open opens the photo's own edit`() async throws {

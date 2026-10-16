@@ -1,6 +1,7 @@
 #if DEBUG || REDLAMP_PROFILING
     import AppKit
     import Foundation
+    import ImageIO
     import RedlampDocument
     import RedlampEngineAPI
     @_spi(Harness) import RedlampUI
@@ -78,8 +79,12 @@
             try app.choose(.deselectOtherPhotos)
         }
 
-        /// Exports the version open, named by its name, and finds its edit in the file.
+        /// Exports the version open, rated as the photo isn't, named by its name, and finds its edit and its rating in
+        /// the file.
         private static func exportsVersion(_ app: RunningApp) throws {
+            try app.press(.rating4)
+            try app.wait("the version's rating") { $0.openVersion != nil && $0.photoMetadata.rating == 4 }
+            try app.wait("the library to open", timeout: 60) { $0.library.service?.isReady == true }
             let settings = try app.host.map { host in try app.main { _ in host.exports.initialSettings } }
                 ?? ExportSettings()
             let folder = settings.destinationFolder ?? app.photos
@@ -102,6 +107,10 @@
             try app.wait("the export written", timeout: 30) { _ in EmbeddedEdit.read(file) != nil }
             let contrast = EmbeddedEdit.read(file)?.recipe[.contrast]
             try app.expect(contrast == 25, "The export carries Contrast \(contrast.map { "\($0)" } ?? "none"), not 25")
+            let rating = CGImageSourceCreateWithURL(file as CFURL, nil)
+                .flatMap { CGImageSourceCopyMetadataAtIndex($0, 0, nil) }
+                .flatMap { CGImageMetadataCopyStringValueWithPath($0, nil, "xmp:Rating" as CFString) as String? }
+            try app.expect(rating == "4", "The export's rating is \(rating ?? "none"), not the version's 4")
         }
     }
 #endif

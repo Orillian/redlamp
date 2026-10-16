@@ -163,8 +163,11 @@ public enum ExportActions {
         let open = model.info.flatMap { info in
             job.targets.contains { $0.photo == info.url } ? (url: info.url, recipe: model.unobservedRecipe) : nil
         }
+        let openVersion = open != nil && model.openVersion != nil ? model.photoMetadata : nil
         model.activity.record(.export, "Export of \(job.targets.count) photos")
-        model.batchExport.run(BatchExport.Job(targets: job.targets, settings: job.settings, open: open) { report in
+        model.batchExport.run(BatchExport.Job(
+            targets: job.targets, settings: job.settings, open: open, openVersion: openVersion,
+        ) { report in
             finished(report, settings: job.settings, model: model, window: window)
         })
     }
@@ -275,6 +278,7 @@ public enum ExportActions {
                 var fields = fields
                 if let version, version.url == url {
                     fields.apply(version.metadata)
+                    fields.keywords = version.metadata.keywords ?? fields.keywords
                     fields.version = version.name
                 }
                 return ExportNames.Photo(url: url, fields: fields)
