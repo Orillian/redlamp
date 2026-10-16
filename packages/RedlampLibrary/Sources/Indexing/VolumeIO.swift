@@ -19,6 +19,8 @@ public final class VolumeIO: Sendable {
         /// What's on screen: the folders shown, and the listings on the way to them.
         case high
         case normal
+        /// What nobody waits for: the thumbnails of photos indexed, read once nothing else waits.
+        case background
 
         public static func < (lhs: Priority, rhs: Priority) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -92,6 +94,11 @@ public final class VolumeIO: Sendable {
 
     public var isReachable: Bool {
         state.withLock { $0.reachable }
+    }
+
+    /// Operations waiting for a place in flight.
+    var waiting: Int {
+        state.withLock { $0.tracked.values.count { $0.started == nil } }
     }
 
     public var statistics: Statistics {

@@ -19,9 +19,9 @@ extension LibraryIndexer {
     }
 
     /// A run's writes, written in the order they're added, in transactions of up to `batchSize`
-    /// photos: a batch is written once it's full (or holds `retainedHeadBytes` of heads for the
+    /// photos: a batch is written once it's full (or holds `retainedHeadBytes` of files for the
     /// thumbnails), or `batchInterval` after the first of its items arrived. Adding waits while three
-    /// batches' worth wait to be written.
+    /// batches' worth wait to be written. Once a batch is written, its photos' thumbnails are queued.
     final class Batcher: Sendable {
         enum Item: Sendable {
             case folder(FolderListing)
@@ -45,7 +45,7 @@ extension LibraryIndexer {
 
             var retained: Int {
                 guard case let .photo(photo) = self else { return 0 }
-                return photo.thumbnail?.head.count ?? 0
+                return photo.thumbnail?.file?.count ?? 0
             }
         }
 
@@ -91,18 +91,16 @@ extension LibraryIndexer {
 
         private let index: LibraryIndex
         private let configuration: Configuration
-        private let scheduler: WorkScheduler
-        private let thumbnails: Thumbnails?
+        private let thumbnails: ThumbnailQueue?
         private let committed: @Sendable (Outcome) -> Void
         private let state = Mutex(State())
 
         init(
-            index: LibraryIndex, configuration: Configuration, scheduler: WorkScheduler, thumbnails: Thumbnails?,
+            index: LibraryIndex, configuration: Configuration, thumbnails: ThumbnailQueue?,
             committed: @escaping @Sendable (Outcome) -> Void,
         ) {
             self.index = index
             self.configuration = configuration
-            self.scheduler = scheduler
             self.thumbnails = thumbnails
             self.committed = committed
         }
@@ -261,12 +259,10 @@ extension LibraryIndexer {
             }
             committed(outcome)
             guard outcome.failure == nil, let thumbnails else { return }
-            for item in batch {
-                guard case let .photo(photo) = item, let thumbnail = photo.thumbnail else { continue }
-                scheduler.submit(.background) {
-                    thumbnails(thumbnail.url, thumbnail.key, thumbnail.head)
-                }
-            }
+            thumbnails.add(batch.compactMap { item in
+                guard case let .photo(photo) = item else { return nil }
+                return photo.thumbnail
+            })
         }
 
         /// The photos of the file batches beside the index that a forced quit left unfinished (LIB-26), when `batch`

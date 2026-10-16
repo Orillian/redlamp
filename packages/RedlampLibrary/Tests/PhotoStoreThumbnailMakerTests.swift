@@ -68,8 +68,8 @@ struct PhotoStoreThumbnailMakerTests {
         )
         let indexer = LibraryIndexer(
             index: sandbox.index, scheduler: scheduler, configuration: .testing(),
-            thumbnails: { photo, key, head in
-                maker.make(photo, key: key, head: head)
+            thumbnails: LibraryIndexer.Thumbnails { photo, key, file in
+                maker.make(photo, key: key, head: file)
                 made.count.add(1, ordering: .relaxed)
             },
         )

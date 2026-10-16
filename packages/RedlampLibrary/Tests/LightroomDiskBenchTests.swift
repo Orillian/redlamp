@@ -134,10 +134,9 @@ struct LightroomDiskBenchTests {
         defer { index.closeAndWait() }
         let store = PhotoStore(root: library.url.appending(path: "Store"))
         defer { store.close() }
+        // The indexer reads what each thumbnail is made from through the volume, and the decode finds it in memory.
         let made = Atomic(0)
-        let sizes = previews
-        let image: StoreThumbnailMaker.ImageSource = { photo, _, _ in
-            FileTrace.note(.read, path: photo.path, bytes: sizes[photo.pathExtension] ?? 0)
+        let image: StoreThumbnailMaker.ImageSource = { _, _, _ in
             made.add(1, ordering: .relaxed)
             let context = CGContext(
                 data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
@@ -156,9 +155,7 @@ struct LightroomDiskBenchTests {
                 widths: WorkScheduler.Widths(onScreen: width, lookAhead: width, background: width),
                 canRunBackground: { true },
             ),
-            thumbnails: { photo, key, head in
-                FileTrace.marking(FileTrace.thumbnail) { _ = maker.make(photo, key: key, head: head) }
-            },
+            thumbnails: maker.thumbnails,
         )
         let start = ContinuousClock.now
         var indexed = Duration.zero

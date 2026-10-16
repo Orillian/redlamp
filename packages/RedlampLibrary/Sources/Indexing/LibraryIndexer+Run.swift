@@ -87,8 +87,8 @@ extension LibraryIndexer {
             // one thunk deeper than the last.
             let owner = Mutex(Owner())
             batcher = Batcher(
-                index: indexer.index, configuration: indexer.configuration, scheduler: indexer.scheduler,
-                thumbnails: indexer.thumbnails, committed: { outcome in owner.withLock { $0.run }?.committed(outcome) },
+                index: indexer.index, configuration: indexer.configuration, thumbnails: indexer.thumbnails,
+                committed: { outcome in owner.withLock { $0.run }?.committed(outcome) },
             )
             owner.withLock { $0.run = self }
         }

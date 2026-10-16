@@ -31,7 +31,16 @@ public struct StoreThumbnailMaker: Sendable {
 
     /// For `LibraryIndexer(thumbnails:)`.
     public var thumbnails: LibraryIndexer.Thumbnails {
-        { photo, key, head in make(photo, key: key, head: head) }
+        LibraryIndexer.Thumbnails(edge: tier.pixelSize, isNeeded: { photo, key in needs(photo, key: key) }) {
+            photo, key, file in make(photo, key: key, head: file)
+        }
+    }
+
+    /// Whether the store lacks the photo's image for the tier, of its file as it is now; false when the file
+    /// is gone.
+    public func needs(_ photo: URL, key: ContentKey) -> Bool {
+        guard let file = try? fileSystem.attributes(of: photo) else { return false }
+        return !store.contains(key, tier: tier, size: file.size, modified: file.modified)
     }
 
     /// Makes and stores the photo's image for the tier unless the store has one of the file as it

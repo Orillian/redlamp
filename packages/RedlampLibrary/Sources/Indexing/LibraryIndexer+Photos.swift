@@ -243,7 +243,9 @@ extension LibraryIndexer.Run {
         Self.place(sidecar?.summary.metadata ?? PhotoMetadata(), in: &record)
         var thumbnail: LibraryIndexer.Thumbnail?
         if indexer.thumbnails != nil, !unreadable, let head, let key {
-            thumbnail = LibraryIndexer.Thumbnail(url: url, key: key, head: head)
+            thumbnail = LibraryIndexer.Thumbnail(
+                url: url, key: key, size: size, file: head.count >= size ? head : nil, io: io,
+            )
         }
         var photo = LibraryIndexer.PendingPhoto(
             folder: job.folder, record: record,
@@ -691,10 +693,14 @@ extension LibraryIndexer {
         let model: String?
     }
 
+    /// A photo whose thumbnail is to be made, on the volume whose readers read it.
     struct Thumbnail: Sendable {
         let url: URL
         let key: ContentKey
-        let head: Data
+        let size: Int
+        /// Its file, when the head read held all of it; otherwise what it's made from is read again.
+        let file: Data?
+        let io: VolumeIO
     }
 
     /// A row to write, with what's resolved to IDs as it's written.

@@ -253,19 +253,24 @@ struct LibraryIndexerTests {
         #expect(ratedRow.contentKey == before[sandbox.path(rated.path)]?.contentKey)
     }
 
-    @Test func `the thumbnail handler gets each new photo's content key and head once its row is written`(
+    @Test func `the thumbnail handler gets each new photo's content key, and its file where the head held it, once its row is written`(
     ) async throws {
         let sandbox = try await IndexerSandbox.make(.init(photos: 150, seed: 27, shapes: []))
         defer { sandbox.remove() }
-        let calls = Mutex<[String: (key: ContentKey, head: Int, written: Bool)]>([:])
+        let calls = Mutex<[String: (key: ContentKey, file: Int, written: Bool)]>([:])
         let index = sandbox.index
-        let indexer = LibraryIndexer(index: sandbox.index, configuration: .testing(batchSize: 40)) { url, key, head in
+        let thumbnails = LibraryIndexer.Thumbnails { url, key, file in
             let written = (
                 try? index.onWriterAndWait { try LibraryIndex.Reader(database: $0).photo(path: url.path) },
             ) !=
                 nil
-            calls.withLock { $0[url.path] = (key, head.count, written) }
+            calls.withLock { $0[url.path] = (key, file.count, written) }
         }
+        let indexer = LibraryIndexer(
+            index: sandbox.index,
+            configuration: .testing(batchSize: 40),
+            thumbnails: thumbnails,
+        )
         _ = await IndexerRun.collect(indexer.index([sandbox.root]))
         let deadline = ContinuousClock.now + .seconds(10)
         while calls.withLock({ $0.count }) < 150, ContinuousClock.now < deadline {
@@ -277,7 +282,7 @@ struct LibraryIndexerTests {
         for (path, row) in rows {
             let call = try #require(made[path])
             #expect(call.key.data == row.contentKey && call.written)
-            #expect(call.head == min(Int(row.size), PhotoMetadataReader.headLength))
+            #expect(call.file == (row.size <= PhotoMetadataReader.headLength ? Int(row.size) : 0))
         }
     }
 

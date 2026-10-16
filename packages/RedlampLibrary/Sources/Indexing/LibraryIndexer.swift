@@ -24,7 +24,8 @@ public final class LibraryIndexer: Sendable {
         public var batchSize: Int
         /// How long photos read wait for the rest of their batch before they're written anyway.
         public var batchInterval: Duration
-        /// The bytes of heads kept for `thumbnails` until their batch is written, at most.
+        /// The bytes of small files, whose heads held all of them, kept for `thumbnails` until their batch is
+        /// written, at most.
         public var retainedHeadBytes: Int
 
         public init(
@@ -38,9 +39,28 @@ public final class LibraryIndexer: Sendable {
         }
     }
 
-    /// Called with a photo's URL, its content key and the head read for it once its row is written,
-    /// to make its thumbnail (LIB-09). Called on the scheduler's background lane.
-    public typealias Thumbnails = @Sendable (_ photo: URL, _ key: ContentKey, _ head: Data) -> Void
+    /// Makes the thumbnails of the photos read, once their rows are written (LIB-09): `isNeeded` says whether a
+    /// photo needs one (not when the store has it), then what it's made from is read through the photo's volume
+    /// (`ThumbnailQueue`), and `make` makes it, called with the photo's URL, its content key, and its file when the
+    /// head read held all of it (otherwise empty). Both are called on the scheduler's background lane.
+    public struct Thumbnails: Sendable {
+        public typealias Make = @Sendable (_ photo: URL, _ key: ContentKey, _ file: Data) -> Void
+
+        /// The long edge they're made at, which decides the embedded preview a raw's is read from.
+        public var edge: Int
+        public var isNeeded: @Sendable (_ photo: URL, _ key: ContentKey) -> Bool
+        public var make: Make
+
+        public init(
+            edge: Int = PhotoStore.Tier.grid.pixelSize,
+            isNeeded: @escaping @Sendable (_ photo: URL, _ key: ContentKey) -> Bool = { _, _ in true },
+            make: @escaping Make,
+        ) {
+            self.edge = edge
+            self.isNeeded = isNeeded
+            self.make = make
+        }
+    }
 
     /// Every lane as wide as the performance cores; the background lane waits in Low Power Mode and
     /// while the Mac is hot.
@@ -52,7 +72,7 @@ public final class LibraryIndexer: Sendable {
     public let volumes: VolumeIORegistry
     public let scheduler: WorkScheduler
     public let configuration: Configuration
-    let thumbnails: Thumbnails?
+    let thumbnails: ThumbnailQueue?
     private let state = Mutex(State())
 
     private struct State {
@@ -85,7 +105,7 @@ public final class LibraryIndexer: Sendable {
         self.volumes = volumes
         self.scheduler = scheduler
         self.configuration = configuration
-        self.thumbnails = thumbnails
+        self.thumbnails = thumbnails.map { ThumbnailQueue(thumbnails: $0, scheduler: scheduler) }
     }
 
     public var fileSystem: any LibraryFileSystem {
