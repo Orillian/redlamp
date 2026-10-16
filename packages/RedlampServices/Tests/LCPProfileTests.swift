@@ -67,15 +67,47 @@ struct LCPProfileTests {
         }
     }
 
-    @Test func `a fisheye sub-profile is left out, with the reason`() throws {
+    /// A 15 mm fisheye on the Nikon Z 6, every model's fx = fy = 0.42 of the larger side.
+    static var fisheye: SyntheticLCP.Spec {
         var fisheye = SyntheticLCP.Spec()
         fisheye.fisheye = true
         fisheye.focalLength = 15
-        let profile = try Self.profile([fisheye, SyntheticLCP.Spec()])
-        #expect(profile.subProfiles.map(\.focalLength) == [24])
-        #expect(profile.skipped == [
-            "Synthetic (Nikon NIKKOR Z 24-70mm f/4 S) at 15 mm: fisheye profiles aren't supported yet",
-        ])
+        fisheye.focal = 0.42
+        fisheye.distortion = SIMD3(0.03, -0.004, 0)
+        return fisheye
+    }
+
+    @Test func `a fisheye sub-profile is read with its models`() throws {
+        let profile = try Self.profile([Self.fisheye, SyntheticLCP.Spec()])
+        #expect(profile.subProfiles.map(\.isFisheye) == [true, false] && profile.skipped.isEmpty)
+        let lens = try #require(profile.subProfiles.first)
+        #expect(lens.distortion?.radial == SIMD3(0.03, -0.004, 0) && lens.distortion?.focalLength == SIMD2(0.42, 0.42))
+        #expect(lens.chromatic?.green.radial == SIMD3(-0.121, 0.051, -0.011) && lens.vignette != nil)
+    }
+
+    @Test func `the fisheye tables follow the published equations`() throws {
+        let lens = try #require(try Self.correction([Self.fisheye], focalLength: 15))
+        try #require(lens.distortion.count == LCPProfile.radii.count)
+        // Green follows its colour model in the fisheye form, a point r from the principal point,
+        // over the focal length of 2520 pixels, being recorded at θ(1 + k₁θ² + k₂θ⁴ + k₃θ⁶), θ =
+        // atan r; red and blue follow green's recorded point, and the vignette the recorded radius,
+        // as in a rectilinear profile (computed separately, in Python).
+        let expected: [(index: Int, scales: SIMD3<Double>, gain: Double)] = [
+            (0, SIMD3(1.0004, 1, 0.9997), 1),
+            (8, SIMD3(0.940181936509, 0.939713868115, 0.939361248717), 1.093952194791),
+            (16, SIMD3(0.815342927591, 0.814810494886, 0.814398602367), 1.444560247790),
+            (24, SIMD3(0.693534721743, 0.693015724322, 0.692598040915), 2.391417305204),
+            (32, SIMD3(0.594128944349, 0.593660183546, 0.593267093317), 6.545709273178),
+        ]
+        for (index, scales, gain) in expected {
+            #expect(simd_abs(lens.distortion[index] - scales).max() < 1e-11, "scales at \(lens.radii[index])")
+            #expect(abs(lens.vignetting[index] - gain) < 1e-11, "gain at \(lens.radii[index])")
+        }
+        var monochrome = Self.fisheye
+        monochrome.colour = false
+        let geometric = try #require(try Self.correction([monochrome], focalLength: 15))
+        try #require(geometric.distortion.count == LCPProfile.radii.count)
+        #expect(abs(geometric.distortion[32].y - 0.662301902043) < 1e-11, "without a colour model, the fisheye model's")
     }
 
     @Test func `the tables follow the published equations`() throws {

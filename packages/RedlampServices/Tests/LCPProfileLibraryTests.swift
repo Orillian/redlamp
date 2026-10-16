@@ -447,19 +447,21 @@ struct LCPProfileLibraryTests {
         #expect(correction(in: library) == nil && library.issues.isEmpty)
     }
 
-    @Test func `a fisheye profile is skipped and reported, as is a file that isn't a profile`() throws {
+    @Test func `a fisheye profile corrects its lens from process 17, and a file that isn't a profile is reported`(
+    ) throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         var fisheye = SyntheticLCP.Spec()
         fisheye.fisheye = true
         try write([fisheye])
         try Data("<x:xmpmeta".utf8).write(to: directory.appending(path: "Nikon/broken.lcp"))
         let library = LCPProfileLibrary(directory: directory)
-        #expect(correction(in: library) == nil)
-        let issues = library.issues.values.flatMap(\.self).sorted()
-        #expect(issues == [
-            "Synthetic (Nikon NIKKOR Z 24-70mm f/4 S) at 24 mm: fisheye profiles aren't supported yet",
-            "not an XML file",
-        ])
+        let lens = try #require(correction(in: library))
+        #expect(lens.profileProcess == 17 && lens.process == 17 && lens.profileFolder == .redlamp)
+        #expect(library.issues.values.flatMap(\.self) == ["not an XML file"])
+        // A rectilinear profile of the lens is the match every process makes, as before.
+        try write([SyntheticLCP.Spec()], to: "Nikon/Z 6 24-70 rectilinear.lcp")
+        let rectilinear = try #require(correction(in: LCPProfileLibrary(directory: directory)))
+        #expect(rectilinear.profileProcess == nil && rectilinear.profileFileName == "Z 6 24-70 rectilinear.lcp")
     }
 
     // MARK: - Raw files

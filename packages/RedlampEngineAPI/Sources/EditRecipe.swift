@@ -105,8 +105,9 @@ public struct EditRecipe: Sendable, Hashable {
     /// clipped in green and blue no longer turns lilac when pulled below white.
     /// 16: a raw's values below black are kept through the demosaic and noise reduction, and clamped
     /// after the detail stage (`RawRevision.third`), so deep shadows at high ISO keep their level.
-    /// 17: a lens profile made on another body than the photo's, or found in Camera Raw's folders,
-    /// corrects a raw that carries no correction (`LCPProfileLibrary.widerMatchingProcess`).
+    /// 17: a lens profile made on another body than the photo's, found in Camera Raw's folders, or
+    /// made for a fisheye, corrects a raw that carries no correction
+    /// (`LCPProfileLibrary.widerMatchingProcess`).
     /// A new version records its references for the process-stability gate (`ProcessStabilityTests`).
     public static let currentProcessVersion = 17
     public static let linearPointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)]

@@ -2,10 +2,11 @@ import Foundation
 import RedlampEngineAPI
 import simd
 
-/// The Adobe Camera Model's rectilinear equations, tabulated into a `LensCorrection` as
+/// The Adobe Camera Model's rectilinear and fisheye equations, tabulated into a `LensCorrection` as
 /// `LensCorrection.tabulated` tabulates DNG opcodes. A point (x, y) from the principal point,
 /// over the focal length, both in pixels, is recorded at (x, y)·s·(1 + k₁r² + k₂r⁴ + k₃r⁶), r² =
-/// x² + y², plus tangential terms in k₄ and k₅. Red is recorded at green's recorded point
+/// x² + y², plus tangential terms in k₄ and k₅; through a fisheye, at (x, y)·(θ/r)(1 + k₁θ² +
+/// k₂θ⁴), θ = atan r, which turns the photo rectilinear. Red is recorded at green's recorded point
 /// (x_d, y_d) times α₀(1 + α₁r_d² + α₂r_d⁴ + α₃r_d⁶), r_d² = x_d² + y_d², and blue likewise with β.
 /// A recorded point keeps 1 + α₁r_d² + α₂r_d⁴ + α₃r_d⁶ of its light, which the vignetting gain
 /// undoes.
@@ -130,7 +131,8 @@ extension LCPProfile {
 }
 
 extension LCPProfile.SubProfile {
-    /// The model green's geometry follows: the colour model's own, else the rectilinear model.
+    /// The model green's geometry follows: the colour model's own, else the geometric model. Both
+    /// take the fisheye form in a fisheye profile.
     var geometry: LCPProfile.Model? {
         chromatic?.green ?? distortion
     }
@@ -187,7 +189,7 @@ extension LCPProfile.SubProfile {
     /// the centre of the corrected photo.
     func scales(at radius: Double, size: SIMD2<Double>, fit: LCPProfile.Fit = .recorded) -> SIMD3<Double>? {
         guard let geometry, let f = pixelFocalLength(geometry, size: size, fit: fit) else { return nil }
-        let green = geometry.scale * geometry.polynomial(radius / f)
+        let green = geometry.scale * (isFisheye ? geometry.fisheye(radius / f) : geometry.polynomial(radius / f))
         guard let chromatic else { return SIMD3(repeating: green) }
         guard let red = pixelFocalLength(chromatic.red, size: size, fit: fit),
               let blue = pixelFocalLength(chromatic.blue, size: size, fit: fit)
@@ -220,5 +222,12 @@ extension LCPProfile.Model {
     func polynomial(_ r: Double) -> Double {
         let r2 = r * r
         return 1 + r2 * (radial.x + r2 * (radial.y + r2 * radial.z))
+    }
+
+    /// (θ/r)(1 + k₁θ² + k₂θ⁴ + k₃θ⁶), θ = atan r: where the fisheye model records a point r from the
+    /// principal point, over the focal length, as a multiple of r.
+    func fisheye(_ r: Double) -> Double {
+        let theta = atan(r)
+        return (r > 0 ? theta / r : 1) * polynomial(theta)
     }
 }

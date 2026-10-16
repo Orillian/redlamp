@@ -49,8 +49,8 @@ public final class LCPProfileLibrary: Sendable {
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
     }
 
-    /// The first process version that matches a profile made on another body than the photo's, or
-    /// one in Camera Raw's folders (LNS-14, LNS-16).
+    /// The first process version that matches a profile made on another body than the photo's, one
+    /// in Camera Raw's folders, or a fisheye profile (LNS-14, LNS-16, LNS-17).
     public static let widerMatchingProcess = 17
 
     /// Larger files aren't lens profiles.
@@ -115,7 +115,7 @@ public final class LCPProfileLibrary: Sendable {
     }
 
     /// Files in Redlamp's Lens Profiles folder that couldn't be read, or whose sub-profiles were
-    /// left out (fisheye ones), with the reasons, as of the last listing.
+    /// left out, with the reasons, as of the last listing.
     public var issues: [URL: [String]] {
         files.withLock { files in
             files.compactMapValues { $0.folder == .redlamp && !$0.issues.isEmpty ? $0.issues : nil }
@@ -123,10 +123,10 @@ public final class LCPProfileLibrary: Sendable {
     }
 
     /// The correction for a raw photo from the profile for its camera and lens. Every process from 5
-    /// takes a profile made on the photo's own body, in Redlamp's folder: one whose lens name is the
-    /// one the file reports, else one whose display name is, the first by path among equals. Where
-    /// there's none, process 17 looks further (`acrossBodies`), and the correction says so in its
-    /// `profileProcess`. Nil when nothing matches.
+    /// takes a rectilinear profile made on the photo's own body, in Redlamp's folder: one whose lens
+    /// name is the one the file reports, else one whose display name is, the first by path among
+    /// equals. Where there's none, process 17 looks further (`acrossBodies`), fisheye profiles
+    /// included, and the correction says so in its `profileProcess`. Nil when nothing matches.
     public func correction(for info: ImageInfo, sensorSize: PixelSize, orientation: Int) -> LensCorrection? {
         if var correction = ownBody(for: info, sensorSize: sensorSize, orientation: orientation) {
             correction.profileFolder = .redlamp
@@ -137,11 +137,13 @@ public final class LCPProfileLibrary: Sendable {
         return wider
     }
 
-    /// The match every process makes, as LNS-04 made it.
+    /// The match every process makes, as LNS-04 made it, which read no fisheye profiles.
     private func ownBody(for info: ImageInfo, sensorSize: PixelSize, orientation: Int) -> LensCorrection? {
         guard let make = info.make, let lens = info.lens else { return nil }
         let matches = profiles(in: [.redlamp]).map { url, profile in
-            let camera = profile.subProfiles.filter { $0.isRaw && $0.matchesCamera(make: make, model: info.model) }
+            let camera = profile.subProfiles.filter {
+                $0.isRaw && !$0.isFisheye && $0.matchesCamera(make: make, model: info.model)
+            }
             let match = camera.map { $0.lensMatch(lens, make: make) }.max() ?? .unmatched
             return (url: url, match: match, subProfiles: camera.filter { $0.lensMatch(lens, make: make) == match })
         }

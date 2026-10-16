@@ -35,7 +35,9 @@ struct LCPProfile: Sendable {
         var imageSize: SIMD2<Double>?
         /// Made from raw photos for raw photos, rather than from JPEG or TIFF.
         var isRaw: Bool
-        /// The rectilinear geometric distortion model.
+        /// The geometric models take the fisheye form (`FisheyeModel`, LNS-17).
+        var isFisheye = false
+        /// The geometric distortion model, rectilinear or fisheye.
         var distortion: Model?
         var chromatic: Chromatic?
         var vignette: Model?
@@ -65,7 +67,7 @@ struct LCPProfile: Sendable {
     }
 
     var subProfiles: [SubProfile]
-    /// Sub-profiles left out, each with the reason (fisheye ones aren't supported yet).
+    /// Sub-profiles left out, each with the reason.
     var skipped: [String]
 }
 
@@ -124,17 +126,16 @@ extension LCPProfile.SubProfile {
             .failure(LCPProfile.ReadError(description: "\(label): \(reason)"))
         }
         let perspective = item.resource("PerspectiveModel")
-        if perspective == nil, item.resource("FisheyeModel") != nil {
-            return skip("fisheye profiles aren't supported yet")
-        }
+        let fisheye = perspective == nil ? item.resource("FisheyeModel") : nil
+        let geometric = perspective ?? fisheye
         guard let make = item.string("Make") else { return skip("no camera make") }
         guard let focalLength = item.number("FocalLength"), focalLength > 0 else { return skip("no focal length") }
         guard let apertureValue = item.number("ApertureValue") else { return skip("no aperture") }
         /// Adobe's files nest the colour and vignette models in the geometric model.
         func nested(_ name: String, coefficients: String = "RadialDistortParam") -> LCPProfile.Model? {
-            LCPProfile.Model(perspective?.resource(name) ?? item.resource(name), coefficients: coefficients)
+            LCPProfile.Model(geometric?.resource(name) ?? item.resource(name), coefficients: coefficients)
         }
-        let distortion = LCPProfile.Model(perspective, coefficients: "RadialDistortParam")
+        let distortion = LCPProfile.Model(geometric, coefficients: "RadialDistortParam")
         var chromatic: LCPProfile.Chromatic?
         if let green = nested("ChromaticGreenModel") ?? distortion, let red = nested("ChromaticRedGreenModel"),
            let blue = nested("ChromaticBlueGreenModel") {
@@ -142,7 +143,7 @@ extension LCPProfile.SubProfile {
         }
         let vignette = nested("VignetteModel", coefficients: "VignetteModelParam")
         guard distortion != nil || chromatic != nil || vignette != nil else {
-            return skip("no rectilinear lens model")
+            return skip("no lens model")
         }
         let (width, length) = (item.number("ImageWidth"), item.number("ImageLength"))
         return .success(Self(
@@ -162,6 +163,7 @@ extension LCPProfile.SubProfile {
             sensorFormatFactor: item.number("SensorFormatFactor"),
             imageSize: width.flatMap { width in length.map { SIMD2(width, $0) } },
             isRaw: item.string("CameraRawProfile")?.lowercased() != "false",
+            isFisheye: fisheye != nil,
             distortion: distortion,
             chromatic: chromatic,
             vignette: vignette,
