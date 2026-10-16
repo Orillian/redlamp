@@ -83,7 +83,7 @@ extension FileOperations {
                     }
                     guard var back = step.step.puttingBack(places: step.places, presence: step.presence, gone: &gone)
                     else { continue }
-                    back.removed = back.removed.filter { listedIDs.contains(id($0.photo.id)) }
+                    back.removed = back.removed.keepingFiles { listedIDs.contains(id($0.photo.id)) }
                     steps.append(back)
                 }
             }

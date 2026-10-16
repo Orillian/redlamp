@@ -196,13 +196,13 @@ final class FileSandbox: @unchecked Sendable {
         }
     }
 
-    /// Each photo's ID by its path below the root, as the index has it.
+    /// Each photo's ID by its path below the root, as the index has it: its file's own row, not a version's.
     func rows() async throws -> [String: Int64] {
         let rootPath = rootPath
         return try await index.read { reader in
             var rows: [String: Int64] = [:]
             let statement = try reader.database.prepare("""
-            SELECT p.id, f.path, p.name FROM photos p JOIN folders f ON f.id = p.folder
+            SELECT p.id, f.path, p.name FROM photos p JOIN folders f ON f.id = p.folder WHERE p.version = ''
             """)
             try statement.forEachRow { row in
                 let path = (row.string(at: 1) ?? "") + "/" + (row.string(at: 2) ?? "")

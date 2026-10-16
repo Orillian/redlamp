@@ -190,7 +190,7 @@ extension FileOperations {
                 return (id, file?.fileIdentifier, sidecar?.modified)
             }
         }
-        let written = try await index.write { writer -> (restored: [Int64], stale: [Int64], folders: Set<String>) in
+        let written = try await index.write { writer in
             var folders = Set<String>()
             for folder in changes.restoredFolders {
                 try writer.restoreFolder(folder)
@@ -216,8 +216,10 @@ extension FileOperations {
             }
             for copy in changes.copiedPhotos {
                 guard let folder = try writer.folderID(forPath: copy.folder) else { continue }
-                // A row holding the copy's place is of a file that's gone: its collections aren't the copy's.
-                if let holder = try writer.photo(folder: folder, name: copy.photo.name), holder.id != copy.photo.id {
+                // A row holding the copy's place is of a file that's gone: its collections aren't the copy's. A copy's
+                // version goes beside the copy's own row, which comes before it.
+                if copy.photo.version == nil, let holder = try writer.photo(folder: folder, name: copy.photo.name),
+                   holder.id != copy.photo.id {
                     try writer.deletePhotos([holder.id])
                     stale.append(holder.id)
                 }
@@ -246,14 +248,20 @@ extension FileOperations {
             for path in changes.emptiedFolders.reversed() where try writer.removeFolderIfEmpty(path) {
                 folders.insert(path)
             }
-            return (restored, stale, folders)
+            // The versions whose rows went where their files did (LIB-48).
+            var versions: [Int64] = []
+            for id in Set(changes.placed.keys).union(changes.refreshed.keys).sorted() {
+                guard let row = try writer.photo(id: id), row.version == nil else { continue }
+                versions += try writer.versions(folder: row.folder, name: row.name).map(\.id)
+            }
+            return (restored: restored, stale: stale, folders: folders, versions: versions)
         }
         if !written.stale.isEmpty {
             try await removeUnrestorableNow(gone: Set(written.stale))
         }
         guard let live else { return }
         let changed = Set(changes.placed.keys).union(changes.refreshed.keys)
-            .union(changes.unlinkedPhotos.map(\.photo.id))
+            .union(changes.unlinkedPhotos.map(\.photo.id)).union(written.versions)
         live.photosChanged(Array(changed))
         if !changes.removedPhotos.isEmpty || !changes.leftPhotos.isEmpty || !written.stale.isEmpty {
             live.receive(.photosRemoved(changes.removedPhotos + changes.leftPhotos.map(\.id) + written.stale))
@@ -283,11 +291,22 @@ extension FileOperations {
             let holder = try writer.photo(folder: folder, name: photo.photo.name)
             return holder == nil || holder?.id == photo.photo.id ? folder : nil
         }
-        for photo in changes.unlinkedPhotos {
+        /// A version's row goes back with its file's, which removing the file's row took (LIB-48).
+        func restoreVersions(of files: Set<String>, from rows: [RemovedPhoto]) throws {
+            for row in rows where row.photo.version != nil && files.contains(row.folder + "/" + row.photo.name) {
+                guard try writer.photo(id: row.photo.id) == nil, let folder = try writer.folderID(forPath: row.folder)
+                else { continue }
+                try restored.append(writer.restorePhoto(row, inFolder: folder, name: row.photo.name))
+            }
+        }
+        var unlinked = Set<String>()
+        for photo in changes.unlinkedPhotos where photo.photo.version == nil {
             guard try writer.photo(id: photo.photo.id) != nil, let folder = try isFree(photo) else { continue }
             try writer.deletePhotos([photo.photo.id])
             try restored.append(writer.restorePhoto(photo, inFolder: folder, name: photo.photo.name))
+            unlinked.insert(photo.folder + "/" + photo.photo.name)
         }
+        try restoreVersions(of: unlinked, from: changes.unlinkedPhotos)
         for relink in changes.relinkedPhotos {
             let (folderPath, name) = FilePlanner.split(relink.path)
             guard let folder = try writer.folderID(forPath: folderPath) else { continue }
@@ -296,10 +315,13 @@ extension FileOperations {
                 modified: relink.file.modified,
             )
         }
-        for photo in changes.returnedPhotos {
+        var returned = Set<String>()
+        for photo in changes.returnedPhotos where photo.photo.version == nil {
             guard try writer.photo(id: photo.photo.id) == nil, let folder = try isFree(photo) else { continue }
             try restored.append(writer.restorePhoto(photo, inFolder: folder, name: photo.photo.name))
+            returned.insert(photo.folder + "/" + photo.photo.name)
         }
+        try restoreVersions(of: returned, from: changes.returnedPhotos)
         return (restored, stale)
     }
 }

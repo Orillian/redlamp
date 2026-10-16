@@ -8,7 +8,8 @@ public extension FileOperations {
     /// none of its original's collections and not in its stack. A copy whose name is held in `folder` gets a
     /// number, as the Finder numbers a copy it keeps beside another (`IMG_0001 2.JPG`), its pair and sidecars with
     /// it, and its original's name as its original name unless it has one. The index gets each copy's row from its
-    /// original's, so no photo is read, and the store's thumbnails serve both. Undo moves the copies to the Trash.
+    /// original's, so no photo is read, and the store's thumbnails serve both; the versions of its edit (LIB-48), which
+    /// its sidecar holds, get rows of their own from the original's versions'. Undo moves the copies to the Trash.
     func planCopy(photos ids: [Int64], to folder: URL) async throws -> FileBatch {
         let destination = try await indexedPath(LibraryIndexer.path(folder))
         guard try await index.read({ try $0.root(containing: destination) }) != nil else {
@@ -17,14 +18,22 @@ public extension FileOperations {
         let ids = try await withPairs(ids)
         let originals = try await index.read { reader in
             try reader.photosWithPaths(ids).map { photo, folder in
-                try (photo: photo, folder: folder, keywords: reader.keywords(forPhoto: photo.id))
+                try (
+                    photo: photo, folder: folder, keywords: reader.keywords(forPhoto: photo.id),
+                    versions: reader.versions(folder: photo.folder, name: photo.name).map { version in
+                        try (photo: version, keywords: reader.keywords(forPhoto: version.id))
+                    },
+                )
             }
         }
         let count = originals.count
         let title = "Copy \(count) photo\(count == 1 ? "" : "s") to \(folder.lastPathComponent)"
         guard !originals.isEmpty else { return FileBatch(kind: .copy, title: title, steps: []) }
         // Given now, so the journal holds them: a batch a forced quit cut short gives the same rows again.
-        let copyIDs = try await index.write { writer in try originals.map { _ in try writer.newID(of: .photos) } }
+        let copyIDs = try await index.write { writer in
+            try originals
+                .map { original in try (0 ... original.versions.count).map { _ in try writer.newID(of: .photos) } }
+        }
         var groups: [(folder: String, stem: String, members: [Int])] = []
         var byStem: [String: Int] = [:]
         for (number, original) in originals.enumerated() {
@@ -54,19 +63,21 @@ public extension FileOperations {
                     let original = originals[member]
                     let name = stem + (ext.isEmpty ? "" : "." + ext)
                     moves.append(PhotoMove(
-                        id: copyIDs[member], from: group.folder + "/" + original.photo.name,
+                        id: copyIDs[member][0], from: group.folder + "/" + original.photo.name,
                         to: destination + "/" + name,
                     ))
-                    var row = IndexedPhoto(original.photo)
-                    row.id = copyIDs[member]
-                    row.name = name
-                    row.fileID = nil
-                    row.stack = nil
-                    row.stackTop = false
-                    row.stackPosition = nil
-                    rows.append(RemovedPhoto(
-                        photo: row, folder: destination, keywords: original.keywords, copyOf: original.photo.id,
-                    ))
+                    let sources = [(original.photo, original.keywords)] + original.versions
+                        .map { ($0.photo, $0.keywords) }
+                    for ((photo, keywords), id) in zip(sources, copyIDs[member]) {
+                        var row = IndexedPhoto(photo)
+                        row.id = id
+                        row.name = name
+                        row.fileID = nil
+                        row.stack = nil
+                        row.stackTop = false
+                        row.stackPosition = nil
+                        rows.append(RemovedPhoto(photo: row, folder: destination, keywords: keywords, copyOf: photo.id))
+                    }
                 }
                 return (moves, rows)
             }

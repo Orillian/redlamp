@@ -14,20 +14,26 @@ public struct PhotoRelink: Sendable, Hashable {
 
 public extension FileOperations {
     /// The batch that takes missing photos `ids` out of the library (DEC-59) with nothing moved, their rows as they are
-    /// kept in the journal for Undo; those that aren't missing are left out.
+    /// kept in the journal for Undo; those that aren't missing are left out. A version of a photo's edit stands for its
+    /// file (LIB-48), which goes with its versions' rows, all in one step.
     func planRemoval(ofMissing ids: [Int64]) async throws -> FileBatch {
-        let removed = try await index.read { reader in
-            try reader.photosWithPaths(ids).filter { $0.photo.state.contains(.missing) }.map { photo, folder in
-                try Self.removed(photo, folder: folder, reader)
+        let files = try await index.read { reader in
+            try reader.photosWithPaths(reader.fileRows(of: ids)).filter { $0.photo.state.contains(.missing) }
+                .map { photo, folder in
+                    try ([photo] + reader.versions(folder: photo.folder, name: photo.name)).map { row in
+                        try Self.removed(row, folder: folder, reader)
+                    }
+                }
+        }
+        var steps: [FileStep] = []
+        for rows in files {
+            if let last = steps.last, last.removed.count + rows.count <= Self.removalStep {
+                steps[steps.count - 1].removed += rows
+            } else {
+                steps.append(FileStep(kind: .removeFromLibrary, removed: rows))
             }
         }
-        let steps = stride(from: 0, to: removed.count, by: Self.removalStep).map { start in
-            FileStep(
-                kind: .removeFromLibrary,
-                removed: Array(removed[start ..< min(start + Self.removalStep, removed.count)]),
-            )
-        }
-        let count = removed.count
+        let count = files.count
         return FileBatch(kind: .remove, title: "Remove \(count) missing photo\(count == 1 ? "" : "s")", steps: steps)
     }
 
@@ -40,20 +46,25 @@ public extension FileOperations {
     /// for one file are left out.
     func planRelink(_ relinks: [PhotoRelink]) async throws -> FileBatch {
         let found = try await index.read { reader in
-            var found: [(relink: PhotoRelink, photo: RemovedPhoto, holder: RemovedPhoto?)] = []
+            var found: [(relink: PhotoRelink, photo: [RemovedPhoto], holder: [RemovedPhoto])] = []
             var files = Set<String>()
+            func removed(_ photo: PhotoRecord, folder: String) throws -> [RemovedPhoto] {
+                try ([photo] + reader.versions(folder: photo.folder, name: photo.name)).map { row in
+                    try Self.removed(row, folder: folder, reader)
+                }
+            }
             for relink in relinks {
                 let path = relink.path
                 guard try reader.root(containing: path) != nil, files.insert(NamingJob.fold(path)).inserted,
-                      let (photo, folder) = try reader.photosWithPaths([relink.id]).first,
-                      photo.state.contains(.missing)
+                      let id = try reader.fileRow(of: relink.id),
+                      let (photo, folder) = try reader.photosWithPaths([id]).first, photo.state.contains(.missing)
                 else { continue }
-                var holder: RemovedPhoto?
+                var holder: [RemovedPhoto] = []
                 if let held = try reader.photo(path: path), held.id != photo.id {
                     guard !held.state.contains(.missing) else { continue }
-                    holder = try Self.removed(held, folder: FilePlanner.split(path).folder, reader)
+                    holder = try removed(held, folder: FilePlanner.split(path).folder)
                 }
-                try found.append((relink, Self.removed(photo, folder: folder, reader), holder))
+                try found.append((relink, removed(photo, folder: folder), holder))
             }
             return found
         }
@@ -63,12 +74,13 @@ public extension FileOperations {
             let planner = FilePlanner(fileSystem: fileSystem, locator: locator)
             var holders: [RemovedPhoto] = []
             var relinked: [FileStep] = []
-            for (relink, photo, holder) in found {
+            for (relink, rows, holder) in found {
                 guard let file = planner.entry(relink.path), !file.isDirectory else { continue }
+                let photo = rows[0]
                 let was = photo.folder + "/" + photo.photo.name
                 var step = FileStep(
                     kind: .relink, items: [Self.item(.photo, relink.path, to: nil, file)],
-                    photos: [PhotoMove(id: photo.photo.id, from: was, to: relink.path)], removed: [photo],
+                    photos: [PhotoMove(id: photo.photo.id, from: was, to: relink.path)], removed: rows,
                 )
                 let (at, from) = (URL(fileURLWithPath: relink.path), URL(fileURLWithPath: was))
                 let beside = SidecarLocator.besidePhoto(at).path
@@ -84,7 +96,7 @@ public extension FileOperations {
                         step.writesDecisions = photo.photo.sidecarModified != nil
                     }
                 }
-                holders += holder.map { [$0] } ?? []
+                holders += holder
                 relinked.append(step)
             }
             return (holders.isEmpty ? [] : [FileStep(kind: .removeFromLibrary, removed: holders)]) + relinked

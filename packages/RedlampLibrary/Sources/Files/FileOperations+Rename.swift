@@ -75,9 +75,17 @@ public extension FileOperations {
     /// The batch that gives each photo of `renames` its new name in its folder, with its sidecars and
     /// other apps', titled `title` or by how many photos it renames, and records the name a photo had
     /// in its sidecar the first time it's renamed. Names that swap or go round are moved through
-    /// temporary names; planning moves nothing.
+    /// temporary names; planning moves nothing. A file is renamed once, by its own row, with its versions
+    /// (LIB-48): a version's rename stands for its file's, and the first of a file's renames is the one made.
     func planRename(_ renames: [PhotoRename], title: String? = nil) async throws -> FileBatch {
-        let moves = renames.map(\.move)
+        let files = try await index.read { reader in try renames.map { try reader.fileRow(of: $0.id) ?? $0.id } }
+        var seen = Set<Int64>()
+        let moves = zip(renames, files).compactMap { rename, file -> PhotoMove? in
+            guard seen.insert(file).inserted else { return nil }
+            var move = rename.move
+            move.id = file
+            return move
+        }
         let steps = try await moveSteps(moves)
         let count = Set(moves.map(\.id)).count
         return FileBatch(
@@ -87,14 +95,16 @@ public extension FileOperations {
     }
 
     /// `ids` with the photos that share a folder and a name but for the extension with one of them, each
-    /// after the first of its pair.
+    /// after the first of its pair: files' own rows, each once, a version of a photo's edit standing for its file
+    /// (LIB-48), whose versions go where it goes.
     func withPairs(_ ids: [Int64]) async throws -> [Int64] {
         try await index.read { reader in
             var byFolder: [Int64: [String: [Int64]]] = [:]
             var result: [Int64] = []
             var seen = Set<Int64>()
-            for id in ids {
-                guard let photo = try reader.photo(id: id), seen.insert(id).inserted else { continue }
+            for given in ids {
+                guard let id = try reader.fileRow(of: given), let photo = try reader.photo(id: id),
+                      seen.insert(id).inserted else { continue }
                 result.append(id)
                 if byFolder[photo.folder] == nil {
                     var stems: [String: [Int64]] = [:]

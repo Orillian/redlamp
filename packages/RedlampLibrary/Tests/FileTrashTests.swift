@@ -212,7 +212,6 @@ struct FileTrashTests {
         row.widestAperture = 2.8
         row.focal35 = 105
         row.customLabelColor = .orange
-        row.version = UUID()
         return row
     }
 
@@ -234,10 +233,11 @@ struct FileTrashTests {
     }
 
     @Test func `every field of a photo's row is carried through the journal and back`() throws {
-        let row = Self.filled(PhotoRecord(
+        var row = Self.filled(PhotoRecord(
             id: 9, folder: 3, name: "IMG_0009.ARW", kind: .raw, size: 25_000_000, modified: FileSandbox.date(6),
             fileID: 77, contentKey: Data(repeating: 5, count: 16),
         ))
+        row.version = UUID()
         let unset = PhotoRecord(folder: 0, name: "")
         let defaults = Dictionary(uniqueKeysWithValues: Mirror(reflecting: unset).children.map {
             ($0.label ?? "", String(describing: $0.value))

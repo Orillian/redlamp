@@ -19,7 +19,8 @@ public extension FileOperations {
     /// The batch that moves photos `ids` to the Trash, each with its `.redlamp` sidecars and the other
     /// apps' sidecars named after it, and takes them out of the index. Undo puts them back while
     /// they're still in the Trash, rows, keywords and collections as they were. Photos the index no
-    /// longer has are left out, in `notInIndex`.
+    /// longer has are left out, in `notInIndex`. A version of a photo's edit stands for its file (LIB-48),
+    /// each file going once, with its versions' rows.
     func planTrash(photos ids: [Int64]) async throws -> FileBatch {
         try await planTrash(ids.map { PhotoFiles(id: $0) })
     }
@@ -27,19 +28,24 @@ public extension FileOperations {
     /// The batch that moves each photo's files to the Trash, as `planTrash(photos:)` does.
     func planTrash(_ photos: [PhotoFiles]) async throws -> FileBatch {
         let (found, notInIndex) = try await index.read { reader in
-            var found: [(PhotoFiles, RemovedPhoto)] = []
+            var found: [(PhotoFiles, [RemovedPhoto])] = []
             var notInIndex: [Int64] = []
+            var seen = Set<Int64>()
             for request in photos {
-                guard let photo = try reader.photo(id: request.id),
+                guard let id = try reader.fileRow(of: request.id), let photo = try reader.photo(id: id),
                       let folder = try reader.folder(id: photo.folder)?.path
                 else {
                     notInIndex.append(request.id)
                     continue
                 }
-                try found.append((request, RemovedPhoto(
-                    photo: IndexedPhoto(photo), folder: folder, keywords: reader.keywords(forPhoto: photo.id),
-                    collections: reader.collectionPlaces(ofPhoto: photo.id),
-                )))
+                guard seen.insert(id).inserted else { continue }
+                let rows = try [photo] + reader.versions(folder: photo.folder, name: photo.name)
+                try found.append((request, rows.map { row in
+                    try RemovedPhoto(
+                        photo: IndexedPhoto(row), folder: folder, keywords: reader.keywords(forPhoto: row.id),
+                        collections: reader.collectionPlaces(ofPhoto: row.id),
+                    )
+                }))
             }
             return (found, notInIndex)
         }
@@ -49,7 +55,7 @@ public extension FileOperations {
             let planner = FilePlanner(fileSystem: fileSystem, locator: locator)
             var trashedNames: [String: Set<String>] = [:]
             for (request, removed) in found {
-                for file in Self.files(of: request, removed) {
+                for file in Self.files(of: request, removed[0]) {
                     let (folder, name) = FilePlanner.split(file)
                     trashedNames[folder, default: []].insert(NamingJob.fold(name))
                 }
@@ -57,7 +63,7 @@ public extension FileOperations {
             var taken = Set<String>()
             return found.map { request, removed in
                 var items: [FileItem] = []
-                for file in Self.files(of: request, removed) where taken.insert(file).inserted {
+                for file in Self.files(of: request, removed[0]) where taken.insert(file).inserted {
                     let entry = planner.entry(file)
                     let isPhoto = entry.map(FolderWalk.isPhoto) ?? true
                     items.append(Self.item(isPhoto ? .photo : .otherApp, file, entry))
@@ -67,7 +73,7 @@ public extension FileOperations {
                         items.append(companion)
                     }
                 }
-                return FileStep(kind: .trash, items: items, removed: [removed])
+                return FileStep(kind: .trash, items: items, removed: removed)
             }
         }
         let count = found.count

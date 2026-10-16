@@ -47,7 +47,16 @@ public struct FileBatch: Sendable, Hashable, Identifiable {
 
     /// The photos the batch renames, moves or removes, or the copies it makes.
     public var photoCount: Int {
-        Set(steps.flatMap { $0.photos.map(\.id) + $0.removed.map(\.photo.id) }).count
+        Set(steps.flatMap { $0.photos.map(\.id) + $0.removed.filter { $0.photo.version == nil }.map(\.photo.id) })
+            .count
+    }
+}
+
+extension [RemovedPhoto] {
+    /// The files' rows `keeps` keeps, each with its versions' rows (LIB-48), which go where their file goes.
+    func keepingFiles(_ keeps: (RemovedPhoto) -> Bool) -> [RemovedPhoto] {
+        let files = Set(filter { $0.photo.version == nil && keeps($0) }.map { $0.folder + "/" + $0.photo.name })
+        return filter { files.contains($0.folder + "/" + $0.photo.name) }
     }
 }
 

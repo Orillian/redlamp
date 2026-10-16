@@ -171,14 +171,15 @@ struct TrashSurvey {
     }
 
     /// The photos of a folder that went to the Trash whole that are still in it, each the file its
-    /// row was of.
+    /// row was of; a file's versions (LIB-48) go back with it, and aren't listed.
     private func photos(inFolder step: Step, of entry: FileJournal.Entry) -> [TrashedPhoto] {
         guard step.presence.first == .inTrash, let place = step.places.first ?? nil,
               let folder = step.step.items.first?.source
         else { return [] }
         return step.step.removed.compactMap { removed in
             let original = removed.folder + "/" + removed.photo.name
-            guard NamingJob.fold(original).hasPrefix(NamingJob.fold(folder) + "/") else { return nil }
+            guard removed.photo.version == nil, NamingJob.fold(original).hasPrefix(NamingJob.fold(folder) + "/")
+            else { return nil }
             let inside = place + original.dropFirst(folder.count)
             let recorded = FileItem(
                 role: .photo, source: original, destination: nil, fileID: removed.photo.fileID,
