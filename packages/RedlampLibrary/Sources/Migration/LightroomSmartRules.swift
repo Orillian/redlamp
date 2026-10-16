@@ -160,10 +160,10 @@ private struct RuleMapper {
     /// What Redlamp keeps nothing of, by the criteria Lightroom names it with.
     private static let missing: [String: String] = [
         "touchtime": "Redlamp keeps no edit dates",
-        "hasadjustments": "Lightroom's edits stay in Lightroom",
-        "developpreset": "Lightroom's edits stay in Lightroom",
-        "treatment": "Lightroom's edits stay in Lightroom",
-        "processversion": "Lightroom's edits stay in Lightroom",
+        "hasadjustments": "the edits come across, but a rule on whether a photo is edited isn't brought yet",
+        "developpreset": "Redlamp doesn't keep which Develop preset Lightroom applied",
+        "treatment": "Redlamp has no search by treatment",
+        "processversion": "Redlamp doesn't keep Lightroom's process versions",
         "importdate": "Redlamp keeps no import dates to search by",
         "copyname": "virtual copies stay in Lightroom",
         "virtualcopy": "virtual copies stay in Lightroom",
