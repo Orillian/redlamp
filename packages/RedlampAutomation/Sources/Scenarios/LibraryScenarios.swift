@@ -860,7 +860,7 @@
                     .main { model in BaseLookPreviews.choice(id: ektar.id, model: model).map { model.previewLook($0) } }
             }
             try app.main { $0.previewLook(nil) }
-            try app.click(.identifier("baseLooks.look.\(ektar.id)"))
+            try app.clickControl("baseLooks.look.\(ektar.id)")
             try app.wait("\(ektar.name) chosen") { $0.baseLook.id == ektar.id }
             try app.expect(
                 try app.main { $0.value(.vignetteAmount) } == -30,
