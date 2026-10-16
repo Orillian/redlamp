@@ -69,7 +69,16 @@ public struct CameraProfileLook: Sendable, Hashable, Identifiable {
 /// name, as the Lightroom edits design maps Lightroom's profiles: each Adobe Raw look to Redlamp's
 /// of that name, Adobe Standard to Color, and other profiles by the words in their names.
 public enum AdobeProfileStandIn {
+    /// Adobe's six Adobe Raw looks, each with Redlamp's look of the same name.
+    public static let adobeRawLooks: [String: BuiltInBaseLook] = [
+        "Adobe Color": .color, "Adobe Vivid": .vivid, "Adobe Portrait": .portrait, "Adobe Landscape": .landscape,
+        "Adobe Neutral": .neutral, "Adobe Monochrome": .monochrome,
+    ]
+
     public static func look(forProfileNamed name: String) -> BuiltInBaseLook {
+        if let look = adobeRawLooks[name] {
+            return look
+        }
         let words = name.lowercased()
         let kinds: [(BuiltInBaseLook, [String])] = [
             (.monochrome, ["monochrome", "b&w", "black", "acros", "grayscale", "greyscale"]),

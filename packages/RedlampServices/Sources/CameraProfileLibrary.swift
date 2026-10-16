@@ -1,5 +1,6 @@
 import Foundation
 import os
+import RedlampEngineAPI
 import Synchronization
 
 /// The Adobe camera profiles on this Mac (TON-51, TON-52), each read where it is and never copied
@@ -76,9 +77,7 @@ public final class CameraProfileLibrary: Sendable {
     }
 
     /// The names of Adobe's six Adobe Raw looks.
-    public static let adobeRawLooks: Set<String> = [
-        "Adobe Color", "Adobe Portrait", "Adobe Landscape", "Adobe Neutral", "Adobe Vivid", "Adobe Monochrome",
-    ]
+    public static let adobeRawLooks = Set(AdobeProfileStandIn.adobeRawLooks.keys)
 
     /// The photographer's profiles, which photos open with.
     public static let user = CameraProfileLibrary(locations: .standard)

@@ -111,12 +111,6 @@ extension LightroomPhoto {
         var note: String?
     }
 
-    /// Adobe's six Adobe Raw profiles, and the Base Looks named as they are.
-    static let adobeLooks: [String: BuiltInBaseLook] = [
-        "Adobe Color": .color, "Adobe Vivid": .vivid, "Adobe Portrait": .portrait, "Adobe Landscape": .landscape,
-        "Adobe Neutral": .neutral, "Adobe Monochrome": .monochrome,
-    ]
-
     /// Words of camera makers' styles in Camera Matching profiles' names (`Camera Neutral`), each with the
     /// Base Look nearest it; the first that a name holds is taken.
     static let styleLooks: [(word: String, look: BuiltInBaseLook)] = [
@@ -128,7 +122,7 @@ extension LightroomPhoto {
     /// Lightroom's profile `name` at `amount` percent as a Base Look, the camera's own profiles going to the
     /// look the file embeds where it embeds one.
     static func profile(_ name: String, amount: Double, photo: LightroomPhotoContext) -> Profile {
-        if let look = adobeLooks[name] {
+        if let look = AdobeProfileStandIn.adobeRawLooks[name] {
             return Profile(look: look.reference.withAmount(amount), outcome: .mapped)
         }
         let style = name.hasPrefix("Camera ") ? name.dropFirst("Camera ".count) : nil
