@@ -31,19 +31,21 @@ final class SourcesSandbox {
     }
 
     /// Small JPEGs at `paths` below the root (or below `under`), each its own colour, so each has its own
-    /// content key.
-    func photos(_ paths: [String], under: URL? = nil, from first: Int = 0) throws {
+    /// content key, and from `camera` where it's given.
+    func photos(
+        _ paths: [String], under: URL? = nil, from first: Int = 0, camera: (make: String, model: String)? = nil,
+    ) throws {
         for (offset, path) in paths.enumerated() {
             let url = (under ?? root).appending(path: path, directoryHint: .notDirectory)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
             )
-            try Self.jpeg(number: first + offset).write(to: url)
+            try Self.jpeg(number: first + offset, camera: camera).write(to: url)
         }
     }
 
-    static func jpeg(number: Int) throws -> Data {
+    static func jpeg(number: Int, camera: (make: String, model: String)? = nil) throws -> Data {
         let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
         let context = try #require(CGContext(
             data: nil, width: 64, height: 48, bitsPerComponent: 8, bytesPerRow: 0, space: space,
@@ -60,7 +62,12 @@ final class SourcesSandbox {
             1,
             nil,
         ))
-        try CGImageDestinationAddImage(destination, #require(context.makeImage()), nil)
+        let properties = camera.map { camera in
+            [kCGImagePropertyTIFFDictionary: [
+                kCGImagePropertyTIFFMake: camera.make, kCGImagePropertyTIFFModel: camera.model,
+            ]] as CFDictionary
+        }
+        try CGImageDestinationAddImage(destination, #require(context.makeImage()), properties)
         #expect(CGImageDestinationFinalize(destination))
         return data as Data
     }

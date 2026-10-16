@@ -1,4 +1,5 @@
 import AppKit
+import RedlampEngineAPI
 import RedlampLibrary
 import Synchronization
 
@@ -48,6 +49,12 @@ final class LightroomImportModel {
 
     private var core: LibraryCore? {
         editor?.library.service?.core
+    }
+
+    /// The Adobe profiles on this Mac for a camera, as the engine lists them, which raws' edits name (EDT-33).
+    private var adobeProfiles: (@Sendable (String, String) async -> [CameraProfileLook])? {
+        guard let engine = editor?.engine else { return nil }
+        return { await engine.cameraProfileLooks(make: $0, model: $1) }
     }
 
     /// Whether a catalog is read, the import is running or taken back: the window's buttons wait.
@@ -102,13 +109,16 @@ final class LightroomImportModel {
         }
         let moved = moved
         let known = catalog?.url == url ? catalog : nil
+        let profiles = adobeProfiles
         work = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<
                 (LightroomCatalog, LightroomPlan), any Error,
             > in
                 do {
                     let catalog = try known ?? LightroomCatalog.read(url)
-                    let plan = try await LightroomPlan.make(catalog, index: core.index, paths: core.paths, moved: moved)
+                    let plan = try await LightroomPlan.make(
+                        catalog, index: core.index, paths: core.paths, moved: moved, adobeProfiles: profiles,
+                    )
                     return .success((catalog, plan))
                 } catch {
                     return .failure(error)
@@ -249,8 +259,11 @@ final class LightroomImportModel {
     private func replanForImport() async {
         guard let catalog, let core else { return }
         let moved = moved
+        let profiles = adobeProfiles
         if let plan = try? await Task.detached(priority: .userInitiated, operation: {
-            try await LightroomPlan.make(catalog, index: core.index, paths: core.paths, moved: moved)
+            try await LightroomPlan.make(
+                catalog, index: core.index, paths: core.paths, moved: moved, adobeProfiles: profiles,
+            )
         }).value {
             self.plan = plan
         }

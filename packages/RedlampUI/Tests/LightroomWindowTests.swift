@@ -1,7 +1,9 @@
 import AppKit
 import Foundation
 import RedlampDocument
+import RedlampEngineAPI
 import RedlampLibrary
+import Synchronization
 import Testing
 @_spi(Harness) @testable import RedlampUI
 
@@ -84,6 +86,51 @@ struct LightroomWindowTests {
         if let root = model.library.root(containing: other) {
             await model.library.remove(root)?.value
         }
+    }
+
+    @Test func `the report counts the raws in the photographer's Adobe profile, the engine asked once a camera`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["C.DNG", "D.DNG"], camera: (make: "Redlamp", model: "Testcam One"))
+        let catalog = sandbox.base.appending(path: "Catalog/Lightroom Catalog.lrcat")
+        try FileManager.default.createDirectory(
+            at: catalog.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        let root = sandbox.root.standardizedFileURL.path.replacingOccurrences(of: "'", with: "''") + "/"
+        let settings = #"'s = { ProcessVersion = "11.0", Exposure2012 = 0.5, CameraProfile = "Adobe Standard" }'"#
+        try SQLiteDatabase(path: catalog.path).execute("""
+        CREATE TABLE AgLibraryRootFolder (id_local INTEGER PRIMARY KEY, absolutePath, name);
+        CREATE TABLE AgLibraryFolder (id_local INTEGER PRIMARY KEY, pathFromRoot, rootFolder);
+        CREATE TABLE AgLibraryFile (id_local INTEGER PRIMARY KEY, folder, idx_filename, sidecarExtensions);
+        CREATE TABLE Adobe_images (id_local INTEGER PRIMARY KEY, colorLabels NOT NULL DEFAULT '', masterImage,
+          copyName, pick NOT NULL DEFAULT 0, rating, rootFile);
+        CREATE TABLE Adobe_imageDevelopSettings (id_local INTEGER PRIMARY KEY, image, text);
+        INSERT INTO AgLibraryRootFolder VALUES (1, '\(root)', 'Photos');
+        INSERT INTO AgLibraryFolder VALUES (2, '', 1);
+        INSERT INTO AgLibraryFile VALUES (3, 2, 'C.DNG', NULL), (4, 2, 'D.DNG', NULL);
+        INSERT INTO Adobe_images VALUES (5, '', NULL, NULL, 0, NULL, 3), (6, '', NULL, NULL, 0, NULL, 4);
+        INSERT INTO Adobe_imageDevelopSettings VALUES (7, 5, \(settings)), (8, 6, \(settings));
+        """)
+        let model = try await sandbox.open()
+        let engine = try #require(model.engine as? StubEngine)
+        engine.cameraProfiles = [CameraProfileLook(
+            reference: BaseLookReference(
+                id: BaseLookReference.adobeIDPrefix + "0123456789abcdef",
+                name: "Adobe Standard",
+            ),
+            group: .adobeRaw, summary: "Adobe Standard, for the test",
+        )]
+
+        LightroomWindowController.show(editor: model)
+        let window = try #require(LightroomWindowController.current)
+        defer { window.close() }
+        window.choose(catalog: catalog)
+        try await sandbox.eventually { window.isReported }
+        let edits = try #require(window.report).edits
+        #expect(edits.photos == 2 && edits.ownProfiles == 2 && edits.standIns.isEmpty)
+        #expect(engine.profiledCameras.withLock { $0 } == ["Redlamp Testcam One"])
     }
 
     @Test func `a root folder Redlamp can't read asks for access, and once allowed it's added and imported`(
