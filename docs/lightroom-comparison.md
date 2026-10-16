@@ -173,7 +173,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | Camera recipe cards | No | Done | | | | Fujifilm-style recipes, typed in as the card lists them |
 | Each look in one place, with its icon | No (profiles in Basic, presets in the left panel) | Done | | | UX-45 | Each look listed once in the Base Looks panel, film stocks with their icons; Basic's Base Look menu keeps Redlamp's own looks and shows a film stock or LUT only while it's the photo's look |
 | Profiles apart from presets | Yes (profiles in Basic's Profile Browser, presets in the left panel) | In progress | | P2 | UX-54 | A Base Looks panel before Recipes lists every look, film stock and LUT in folders, with its own search and favourites; Recipes keeps the presets, and a recipe that sets a look shows it; a film stock brings its own grain, halation and bloom and leaves the rest of the edit |
-| Show presets in Finder, delete them, hide preset groups | Yes (Manage Presets hides groups) | In progress | | P2 | UX-55 | Your own recipes and imported looks shown in Finder or moved to the Trash, and built-in folders hidden in either panel |
+| Show presets in Finder, delete them, hide preset groups | Yes (Manage Presets hides groups) | In progress | | P2 | UX-55 | Show in Finder and Move to Trash for your own and installed recipes and imported looks, without changing the photos edited with them, and Remove from Base Looks for an installed look no recipe uses; built-in folders hidden from either panel, its search and ⌘K, and shown again from the panel header's right-click menu |
 | Premium and recommended presets | Yes (cloud) | Out of scope | | | | Redlamp has no cloud service |
 
 ## Working on many photos
