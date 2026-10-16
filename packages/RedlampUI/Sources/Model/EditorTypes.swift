@@ -78,7 +78,7 @@ public struct LibraryItem: Identifiable, Hashable, Sendable {
 
 /// The Develop panels, in Lightroom's order.
 public enum PanelID: String, CaseIterable, Identifiable, Sendable {
-    case basic, toneCurve, colorMixer, colorGrading, detail, lens, transform, effects, border, calibration
+    case basic, toneCurve, colorMixer, colorGrading, detail, lens, transform, effects, calibration, border
 
     public var id: String {
         rawValue

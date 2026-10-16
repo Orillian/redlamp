@@ -33,8 +33,8 @@ final class InspectorPanelsView: PanelColumnScrollView {
                 ReferencePanelViews.lens(model: model),
                 ReferencePanelViews.transform(model: model),
                 ReferencePanelViews.effects(model: model),
-                ReferencePanelViews.border(model: model),
                 ReferencePanelViews.calibration(model: model),
+                ReferencePanelViews.border(model: model),
             ]
         case .masking:
             [MasksPanelView(model: model)]

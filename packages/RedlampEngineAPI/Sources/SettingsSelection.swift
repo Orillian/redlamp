@@ -152,16 +152,16 @@ public struct SettingsGroup: Sendable, Hashable, Identifiable {
                 .dynamicRange, .colorChrome, .colorChromeBlue, .wbShiftRed, .wbShiftBlue,
             ]),
         ]),
-        SettingsGroup(id: "border", name: "Border", items: [
-            // A border is chosen for where the photo goes, so syncing a look doesn't spread it.
-            SettingsItem("border", "Border", EditRecipe.borderParameters, selectedByDefault: false),
-        ]),
         SettingsGroup(id: "calibration", name: "Calibration", items: [
             SettingsItem("calibration", "Calibration", [
                 .calibrationShadowsTint, .calibrationRedHue, .calibrationRedSaturation, .calibrationGreenHue,
                 .calibrationGreenSaturation, .calibrationBlueHue, .calibrationBlueSaturation,
             ]),
             SettingsItem("calibration.processVersion", "Process Version", fields: [.processVersion]),
+        ]),
+        SettingsGroup(id: "border", name: "Border", items: [
+            // A border is chosen for where the photo goes, so syncing a look doesn't spread it.
+            SettingsItem("border", "Border", EditRecipe.borderParameters, selectedByDefault: false),
         ]),
         SettingsGroup(id: "remove", name: "Remove", items: [
             SettingsItem("remove.spots", "Heal and Clone", fields: [.spots], selectedByDefault: false),

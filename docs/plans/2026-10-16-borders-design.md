@@ -40,7 +40,7 @@ Film and instant styles take their format's proportions around the photo, follow
 
 ## The Border panel
 
-In Develop's right column, after Effects (Calibration stays last, as in Lightroom), symbol `photo.artframe`, with the on/off switch every panel has. The switch also takes the border away while judging tone, since a white mat makes a photo look darker and a black one lighter.
+In Develop's right column, the last panel, after Calibration (the owner's choice, 2026-10-16: the border is the last thing the photo gets), symbol `photo.artframe`, with the on/off switch every panel has. The switch also takes the border away while judging tone, since a white mat makes a photo look darker and a black one lighter.
 
 - **Style** menu.
 - **Shape** menu and **Orientation** (Plain), with the Custom ratio's two fields.
@@ -108,9 +108,9 @@ TON-25's over-the-photo frames keep rendering in the edits that have them. Effec
 - RedlampUI: the Border panel, the Copy Settings item, pointer mapping, the crop tool without the border.
 - Scenarios `develop.border` and `export.border`, and a Report a Bug feature for Border.
 
-## Open questions (on the wireframes)
+## Answered on the wireframes (the owner, 2026-10-16)
 
-1. Where the panel sits: after Effects (the lean) or last, after Calibration.
-2. What Size is measured against: the photo's long side (the lean, so a border reads the same on portrait and landscape photos of a set) or its short side.
-3. The moods that lose their frames keep their names (the lean), or Contact Sheet and Slide Show are renamed.
-4. Edge print: the film look's name (the lean) or frame numbers only.
+1. The panel sits last, after Calibration.
+2. Size is measured against the photo's long side, so a border reads the same on portrait and landscape photos of a set.
+3. The moods that lost their frames keep their names.
+4. Edge print carries the frame number and the film look's name, never a maker's name or logo.

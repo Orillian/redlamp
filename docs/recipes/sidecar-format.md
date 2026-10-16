@@ -269,13 +269,13 @@ A border goes around the developed photo, and the canvas grows to hold it: every
 
 ### Panel switches
 
-`panelsOff` lists the Develop panels switched off with the eye on their headers, as in Lightroom: any of `toneCurve`, `colorMixer`, `colorGrading`, `detail`, `lens`, `transform`, `effects`, `border` and `calibration`, in that order. Basic has no eye and can't be switched off. A panel that's off keeps its settings and renders as though each of them left the photo alone:
+`panelsOff` lists the Develop panels switched off with the eye on their headers, as in Lightroom: any of `toneCurve`, `colorMixer`, `colorGrading`, `detail`, `lens`, `transform`, `effects`, `calibration` and `border`, in that order. Basic has no eye and can't be switched off. A panel that's off keeps its settings and renders as though each of them left the photo alone:
 
 - **Detail:** no sharpening and no noise reduction, though `detail.sharpen.amount` and `detail.noise.color` have defaults that act.
 - **Lens Corrections:** none of its corrections: not the lens correction the photo's file carries (whatever `lens.profile` says), the manual Distortion and Vignetting, Remove Chromatic Aberration or Defringe.
 - **Tone Curve:** neither the parametric sliders nor the point curves, `pointCurve` and red's, green's and blue's own.
 - **Color Mixer:** neither its bands nor the edit's `pointColor` swatches, which the panel shows. A mask's own swatches still apply.
-- **Color Grading, Transform, Effects** (the camera-recipe settings `basic.dynamicRange`, `effects.colorChrome`, `effects.colorChromeBlue` and `wb.shift.…` included), **Border and Calibration:** none of their settings.
+- **Color Grading, Transform, Effects** (the camera-recipe settings `basic.dynamicRange`, `effects.colorChrome`, `effects.colorChromeBlue` and `wb.shift.…` included), **Calibration and Border:** none of their settings.
 
 Masks, Basic, the crop, orientation and spots, and the Base Look are never switched off. Changing a setting of a panel that's off turns the panel back on. Without the key every panel is on, so every edit made before it renders as it did. A panel name a newer Redlamp wrote is kept and written back. A Redlamp from before panel switches (0.2.8 and earlier) keeps `panelsOff` as an unknown key and writes it back, but renders every panel on.
 

@@ -408,8 +408,8 @@ struct ProcessVersion: View {
             LensPanel()
             TransformPanel()
             EffectsPanel()
-            BorderPanel()
             CalibrationPanel()
+            BorderPanel()
         }
         .padding(.horizontal, Theme.panelCardMargin)
         .padding(.top, Theme.panelCardGap)
