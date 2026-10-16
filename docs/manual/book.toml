@@ -87,6 +87,7 @@ sections = [
   { id = "looks.recipes", title = "Applying recipes" },
   { id = "looks.making", title = "Making and sharing recipes" },
   { id = "looks.importing", title = "Importing presets and LUTs" },
+  { id = "looks.removing", title = "Removing and hiding recipes and looks" },
 ]
 
 [[part]]
