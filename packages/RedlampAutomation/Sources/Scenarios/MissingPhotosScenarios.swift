@@ -73,8 +73,17 @@
                 model.select(scratch.photo("C.jpg"))
                 EditorModel.answerLocate(with: found.appending(path: "C.jpg"), relinkingOthers: true)
             }
-            try app.wait("Locate… offered for C, its finding read", timeout: 20) { model in
-                model.canPerform(.locateMissingPhoto) && model.healthProposals.marked == 3
+            do {
+                try app.wait("Locate… offered for C, its finding read", timeout: 20) { model in
+                    model.canPerform(.locateMissingPhoto) && model.healthProposals.marked == 3
+                }
+            } catch {
+                let state = try app.main { model in
+                    "Locate… \(model.canPerform(.locateMissingPhoto) ? "offered" : "not offered"), "
+                        + "\(model.healthProposals.marked) marked, reading \(model.healthProposals.isReading), "
+                        + "selection \(model.selection?.lastPathComponent ?? "none"), shown \(shown())"
+                }
+                throw ScenarioFailure("\(error) (\(state))")
             }
             try app.choose(.locateMissingPhoto)
             try app.wait("C and D relinked, B still missing", timeout: 30) { _ in shown() == ["B.jpg"] }

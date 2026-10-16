@@ -76,10 +76,15 @@
             }
             try app.main { _ in SourceSummaryPopover.close() }
             try app.rightClickSourceRow("folders." + scratch.folder.standardizedFileURL.path, choosing: "Show Summary…")
-            try app.wait("the folder's summary", timeout: 20) { _ in
-                let lines = SourceSummaryPopover.shownLines
-                return lines.first == scratch.folder.lastPathComponent && lines.count > 2
-                    && lines.last == "No pairs or stacks"
+            do {
+                try app.wait("the folder's summary", timeout: 20) { _ in
+                    let lines = SourceSummaryPopover.shownLines
+                    return lines.first == scratch.folder.lastPathComponent && lines.count > 2
+                        && lines.last == "No pairs or stacks"
+                }
+            } catch {
+                let lines = try app.main { _ in SourceSummaryPopover.shownLines }
+                throw ScenarioFailure("\(error) (\(lines.isEmpty ? "no summary shown" : "it shows \(lines)"))")
             }
             try app.main { _ in SourceSummaryPopover.close() }
 
@@ -271,25 +276,32 @@
         /// its source as it's pressed. A list in a window that isn't key takes the press as the click after
         /// activation would.
         func clickSourceRow(_ identifier: String) throws {
-            let location = try main { _ -> NSPoint in
-                guard let window = Views.editorWindow, let root = window.contentView?.superview,
-                      let row = Views.all(NSView.self, in: root).first(where: {
-                          $0.accessibilityIdentifier() == identifier && !$0.isHiddenOrHasHiddenAncestor
-                      })
-                else { throw ScenarioFailure("\(identifier) isn't on screen") }
+            @MainActor func row() -> NSView? {
+                guard let root = Views.editorWindow?.contentView?.superview else { return nil }
+                return Views.all(NSView.self, in: root).first {
+                    $0.accessibilityIdentifier() == identifier && !$0.isHiddenOrHasHiddenAncestor
+                }
+            }
+            // A row just added, or scrolled to, may still be moving into its place: pressed where it was a moment
+            // before, the press lands on the row beside it.
+            let place = PlaceBox()
+            try wait("\(identifier) on screen, in its place") { _ in
+                guard let row = row() else { return false }
                 row.scrollToVisible(row.bounds)
+                Views.editorWindow?.contentView?.layoutSubtreeIfNeeded()
                 let frame = row.convert(row.bounds, to: nil)
-                return NSPoint(x: frame.midX, y: frame.midY)
+                defer { place.last = frame }
+                return frame == place.last
             }
             post { _ in
-                guard let window = Views.editorWindow, let root = window.contentView?.superview,
-                      let row = Views.all(NSView.self, in: root)
-                      .first(where: { $0.accessibilityIdentifier() == identifier }),
-                      let press = NSEvent.mouseEvent(
-                          with: .leftMouseDown, location: location, modifierFlags: [],
-                          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                          context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
-                      )
+                guard let window = Views.editorWindow, let row = row() else { return }
+                let frame = row.convert(row.bounds, to: nil)
+                let location = NSPoint(x: frame.midX, y: frame.midY)
+                guard let press = NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
+                )
                 else { return }
                 var list = row.superview
                 while let view = list, !(view is NSOutlineView) {
@@ -365,8 +377,8 @@
                 }
                 throw ScenarioFailure("\(error) (\(state))")
             }
-            try main { _ in
-                guard let menu = opened.menu else { return }
+            let chosen = try main { _ -> (menu: MenuBox, index: Int)? in
+                guard let menu = opened.menu else { return nil }
                 defer { menu.cancelTracking() }
                 var current = menu
                 for (depth, title) in path.enumerated() {
@@ -377,13 +389,21 @@
                         )
                     }
                     if depth == path.count - 1 {
-                        current.performActionForItem(at: index)
+                        guard let box = MenuBox(current) else { return nil }
+                        return (menu: box, index: index)
                     } else if let submenu = current.items[index].submenu {
                         current = submenu
                     }
                 }
+                return nil
             }
             try wait("\(identifier)'s context menu to close") { _ in opened.closed }
+            // Run once the menu has closed, as a click on the item runs it: a transient popover it shows while the menu
+            // still tracks closes with the menu.
+            if let chosen {
+                post { _ in chosen.menu.menu.performActionForItem(at: chosen.index) }
+                pause(0.05)
+            }
         }
 
         /// What VoiceOver says of the Library or Collections section's row carrying `identifier`: its name and
