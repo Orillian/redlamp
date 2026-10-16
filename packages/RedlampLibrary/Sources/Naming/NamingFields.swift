@@ -45,6 +45,8 @@ public struct NamingFields: Sendable, Hashable {
     public var location: CaptureMetadata.Location?
     /// Each keyword by its path: "Places/Portugal/Lisbon".
     public var keywords: [String]
+    /// The name of the version named, as a version's export is (EDT-09); nil for the photo's own edit.
+    public var version: String?
 
     public init(
         name: String, folder: String, originalName: String? = nil, captured: Date? = nil, capturedOffset: Int? = nil,
@@ -52,7 +54,7 @@ public struct NamingFields: Sendable, Hashable {
         iso: Double? = nil, aperture: Double? = nil, shutter: Double? = nil, focalLength: Double? = nil,
         width: Int? = nil, height: Int? = nil, rating: Int = 0, flag: PhotoFlag? = nil, label: String? = nil,
         title: String? = nil, caption: String? = nil, creator: String? = nil, copyright: String? = nil,
-        location: CaptureMetadata.Location? = nil, keywords: [String] = [],
+        location: CaptureMetadata.Location? = nil, keywords: [String] = [], version: String? = nil,
     ) {
         self.name = name
         self.folder = folder
@@ -79,6 +81,7 @@ public struct NamingFields: Sendable, Hashable {
         self.copyright = copyright
         self.location = location
         self.keywords = keywords
+        self.version = version
     }
 
     /// A photo's fields from what its file says.

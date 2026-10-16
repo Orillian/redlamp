@@ -193,6 +193,22 @@ struct EditorVersionTests {
         #expect(editor.saved?.recipe[.exposure] == 0, "the photo's own edit is as it was")
     }
 
+    @Test func `a version's export is named with the version's name, and the photo's own edit's without one`(
+    ) async throws {
+        let (editor, cleanup) = try await openEditor()
+        defer { cleanup() }
+        let model = editor.model
+        model.createVersion()
+        let version = try #require(model.openVersion)
+        model.renameVersion(version, to: "Black and white")
+        let named = ExportActions.reader(for: SelectedPhotos([editor.photo]), model: model)
+        #expect(await named().map(\.fields.version) == ["Black and white"])
+
+        model.showVersion(nil)
+        let own = ExportActions.reader(for: SelectedPhotos([editor.photo]), model: model)
+        #expect(await own().map(\.fields.version) == [nil])
+    }
+
     @Test func `another writer's removal of the version open opens the photo's own edit`() async throws {
         let (editor, cleanup) = try await openEditor()
         defer { cleanup() }

@@ -68,6 +68,7 @@ struct NamingTemplateTests {
             ("{extension}", Self.token(.ext)),
             ("{folder}", Self.token(.folder)),
             ("{folder:2}", Self.token(.folder, ["2"])),
+            ("{version}", Self.token(.version)),
             ("{sequence}", Self.token(.sequence)),
             ("{sequence:4}", Self.token(.sequence, ["4"])),
             ("{seq:3:folder}", Self.token(.sequence, ["3", "folder"])),
@@ -207,6 +208,7 @@ struct NamingTemplateTests {
             ("{-}", 1 ..< 2, "a token's name is a word, such as camera"),
             ("{camera x}", 8 ..< 9, "after camera comes :, | or }"),
             ("{camera:x}", 7 ..< 9, "{camera} takes no value"),
+            ("{version:2}", 8 ..< 10, "{version} takes no value"),
             ("{sequence:0}", 10 ..< 11, "the digits are a number from 1 to 12, as in {sequence:4} for 0001"),
             (
                 "{sequence:4:month}",

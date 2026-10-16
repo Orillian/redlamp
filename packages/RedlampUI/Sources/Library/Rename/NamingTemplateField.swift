@@ -313,7 +313,7 @@ final class NamingTemplateField: NSObject, NSTextFieldDelegate {
         case .title, .caption, .creator, .copyright, .city, .state, .country, .sublocation, .keywords, .rating, .label,
              .flag:
             metadataTitle(of: field)
-        case .name, .original, .number, .ext, .folder, .sequence, .total, .counter, .text:
+        case .name, .original, .number, .ext, .folder, .version, .sequence, .total, .counter, .text:
             fileTitle(of: field)
         }
     }
@@ -362,6 +362,7 @@ final class NamingTemplateField: NSObject, NSTextFieldDelegate {
         case .number: "Original Number Suffix"
         case .ext: "Extension"
         case .folder: "Folder Name"
+        case .version: "Version Name"
         case .sequence: "Sequence"
         case .total: "Total"
         case .counter: "Counter"

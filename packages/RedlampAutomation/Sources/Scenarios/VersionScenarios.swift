@@ -78,12 +78,12 @@
             try app.choose(.deselectOtherPhotos)
         }
 
-        /// Exports the version open, and finds its edit in the file.
+        /// Exports the version open, named by its name, and finds its edit in the file.
         private static func exportsVersion(_ app: RunningApp) throws {
             let settings = try app.host.map { host in try app.main { _ in host.exports.initialSettings } }
                 ?? ExportSettings()
             let folder = settings.destinationFolder ?? app.photos
-            let file = folder.appending(path: "Version-export.\(settings.format.fileExtension)")
+            let file = folder.appending(path: "Version-Contrast.\(settings.format.fileExtension)")
             try? FileManager.default.removeItem(at: file)
             defer { try? FileManager.default.removeItem(at: file) }
             try app.choose(Menus.title(of: .export))
@@ -91,7 +91,7 @@
             app.pause(0.5)
             try app.clickInSheet("export.naming")
             try app.selectSheetField()
-            try app.typeInAttachedSheet("Version-export")
+            try app.typeInAttachedSheet("Version-{version}")
             app.pause(0.5)
             try app.expect(
                 try app.pressInSheet(KeyCombo(.character("\r"))),

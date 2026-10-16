@@ -260,15 +260,25 @@ public enum ExportActions {
     }
 
     /// Reads what `photos`' names are made from, off the main thread: the index's fields for those it has, the
-    /// fields their files and sidecars hold for the others. The version open has its own metadata (EDT-09).
+    /// fields their files and sidecars hold for the others. The version open has its own name and metadata (EDT-09).
     static func reader(
         for photos: SelectedPhotos, model: EditorModel,
     ) -> @Sendable () async -> [ExportNames.Photo] {
         let core = model.library.service?.core
         let sidecars = model.library.sidecars
-        let version = model.openPhoto.flatMap { $0.version == nil ? nil : (url: $0.url, metadata: model.photoMetadata) }
+        let version = model.openPhoto.flatMap {
+            $0.version == nil ? nil : (url: $0.url, name: model.openEditName, metadata: model.photoMetadata)
+        }
         return {
             let urls = await photos.all()
+            func photo(_ url: URL, _ fields: NamingFields) -> ExportNames.Photo {
+                var fields = fields
+                if let version, version.url == url {
+                    fields.apply(version.metadata)
+                    fields.version = version.name
+                }
+                return ExportNames.Photo(url: url, fields: fields)
+            }
             var indexed: [URL: NamingFields] = [:]
             if let core {
                 let ids = await LibraryService.indexIDs(of: urls, in: core.index)
@@ -281,11 +291,8 @@ public enum ExportActions {
                 }
             }
             return urls.map { url in
-                if var fields = indexed[url] {
-                    if let version, version.url == url {
-                        fields.apply(version.metadata)
-                    }
-                    return ExportNames.Photo(url: url, fields: fields)
+                if let fields = indexed[url] {
+                    return photo(url, fields)
                 }
                 let name = url.lastPathComponent, folder = url.deletingLastPathComponent().path
                 var fields = PhotoMetadataReader.read(url: url).map { NamingFields(
@@ -297,10 +304,7 @@ public enum ExportActions {
                 if let metadata = sidecars.store(for: url).load(for: url)?.metadata {
                     fields.apply(metadata)
                 }
-                if let version, version.url == url {
-                    fields.apply(version.metadata)
-                }
-                return ExportNames.Photo(url: url, fields: fields)
+                return photo(url, fields)
             }
         }
     }

@@ -206,6 +206,8 @@ public enum NamingField: String, Sendable, Hashable, CaseIterable {
     case ext
     /// The name of the photo's folder, or of the folder a number of levels above it.
     case folder
+    /// The name of the version of the photo exported, "Copy 1" (EDT-09); empty for the photo's own edit.
+    case version
     /// The photo's number in the job, in its folder or among the photos with its extension (`seq`).
     case sequence
     /// How many photos the job names.
@@ -239,7 +241,7 @@ public enum NamingField: String, Sendable, Hashable, CaseIterable {
         case .camera, .make, .model, .lens, .iso, .aperture, .shutter, .focal, .width, .height: .camera
         case .title, .caption, .creator, .copyright, .city, .state, .country, .sublocation, .keywords, .rating, .label,
              .flag: .metadata
-        case .name, .original, .number, .ext, .folder: .file
+        case .name, .original, .number, .ext, .folder, .version: .file
         case .sequence, .total, .counter: .numbers
         case .text: .text
         }

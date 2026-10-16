@@ -57,6 +57,8 @@ struct NamingEvaluationTests {
         renamed.originalName = "IMG_1234.NEF"
         var band = Self.photo
         band.keywords = ["Music/AC%2FDC"]
+        var version = Self.photo
+        version.version = "Black and white"
         let cases: [(String, NamingFields, String)] = [
             ("{date}", Self.photo, "20261005"),
             ("{camera}", Self.photo, "Nikon Z 6"),
@@ -81,6 +83,8 @@ struct NamingEvaluationTests {
             ),
             ("{name} {original} {number}", renamed, "DSC_0042 IMG_1234 1234"),
             ("{folder} {folder:2} {folder:3}", Self.photo, "2026-10-05 Wedding 2026 Photos"),
+            ("{name} {version}", version, "DSC_0042 Black and white"),
+            ("{name}{version|before:\"-\"}", Self.photo, "DSC_0042"),
             ("{sequence} {sequence:4} {total} {total:3}", Self.photo, "1 0001 1 001"),
             ("{text} in {text:shoot}", Self.photo, "Smith Wedding in Lisbon"),
             ("{now:yyyyMMdd-HHmm} {now:HHmm:utc}", Self.photo, "20261005-1731 2131"),
