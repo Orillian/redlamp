@@ -176,10 +176,13 @@ final class LightroomSetupScreen: NSObject {
         find()
     }
 
-    /// What the report's model says of the catalog shown here while it reads, imports or takes an import back.
-    private func reportStatus(of catalog: LightroomSetup.Catalog?) -> String? {
-        guard let model = controller?.model, let catalog, model.catalogURL == catalog.url else { return nil }
-        return model.phase == .reported || model.phase == .choosing && model.problem == nil ? nil : model.status
+    /// What the report's model says of the catalog shown here while it reads, imports or takes an import back, and
+    /// whether it's a problem.
+    private func reportStatus(of catalog: LightroomSetup.Catalog?) -> (text: String, isProblem: Bool)? {
+        guard let model = controller?.model, let catalog, model.catalogURL == catalog.url,
+              model.phase != .reported, model.phase != .choosing || model.problem != nil
+        else { return nil }
+        return (model.status, model.problem != nil)
     }
 
     /// Shows what was found and what's going on.
@@ -297,7 +300,9 @@ final class LightroomSetupScreen: NSObject {
 
     // MARK: - Words
 
-    static func catalogLines(_ catalog: LightroomSetup.Catalog?, looking: Bool, status: String?) -> Lines {
+    static func catalogLines(
+        _ catalog: LightroomSetup.Catalog?, looking: Bool, status: (text: String, isProblem: Bool)?,
+    ) -> Lines {
         guard let catalog else {
             return Lines(found: looking ? "Looking…" : "No catalog found in Lightroom Classic's preferences or in "
                 + "Pictures › Lightroom")
@@ -314,7 +319,9 @@ final class LightroomSetupScreen: NSObject {
             + [catalog.modified.map { "changed \($0.formatted(date: .abbreviated, time: .omitted))" }]
             .compactMap(\.self)
         if let status {
-            return Lines(found: found, place: place.joined(separator: " · "), state: status)
+            return Lines(
+                found: found, place: place.joined(separator: " · "), state: status.text, isProblem: status.isProblem,
+            )
         }
         if catalog.isOpenInLightroom {
             let why = LightroomCatalogError.openInLightroom(catalog.url.path).description
