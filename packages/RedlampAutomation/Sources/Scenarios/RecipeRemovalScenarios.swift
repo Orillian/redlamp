@@ -62,9 +62,7 @@
             try app.click(.identifier("recipes.search"))
             try app.type(recipe.name)
             let row = Target.identifier("recipes.recipe.\(recipe.id)")
-            try app.wait("the recipe found by Recipes' search") { _ in
-                Views.editorWindow.flatMap { Views.find(row.identifier, in: $0) } != nil
-            }
+            try app.waitUntilClickable(row.identifier)
             let items = try app.rightClick(row, choosing: "Show in Finder").map(\.title)
             try app.expect(
                 !items.contains("Delete Recipe") && items.suffix(2) == ["Show in Finder", "Move to Trash"],
@@ -114,9 +112,7 @@
             try app.click(.identifier("baseLooks.search"))
             try app.type("regression teal \(token)")
             let lookRow = Target.identifier("baseLooks.look.\(look.id)")
-            try app.wait("the LUT found by Base Looks' search") { _ in
-                Views.editorWindow.flatMap { Views.find(lookRow.identifier, in: $0) } != nil
-            }
+            try app.waitUntilClickable(lookRow.identifier)
             let lutFile = try app.main { model in model.recipes.file(of: lut) }
             try app.main { _ in RevealedRecipeFiles.files = [] }
             try app.rightClick(lookRow, choosing: "Show in Finder")
@@ -174,6 +170,7 @@
             try app.wait("Portra 400 chosen") { $0.baseLook.id == look.id }
 
             let folder = Target.identifier("baseLooks.folder.\(FilmLookCatalog.group)")
+            try app.waitUntilClickable(folder.identifier)
             let items = try app.rightClick(folder, choosing: "Hide “Film Stocks”").map(\.title)
             try app.expect(items == ["Open Film Looks", "Hide “Film Stocks”"], "Film Stocks' menu is \(items)")
             try app.wait("Film Stocks hidden") { model in
@@ -198,6 +195,7 @@
             app.covered([.section(.baseLooks), .feature("recipes.base-looks")], via: .mouse)
 
             try app.main { $0.expandedSidebarSections = [.recipes] }
+            try app.waitUntilClickable("recipes.folder.Essentials")
             try app.rightClick(.identifier("recipes.folder.Essentials"), choosing: "Hide “Essentials”")
             try app.wait("Essentials hidden") { model in
                 !model.recipes.sections.contains { $0.name == "Essentials" }
@@ -208,6 +206,21 @@
                 .wait("Essentials shown again") { model in model.recipes.sections.contains { $0.name == "Essentials" } }
             try app.choose(.resetAll)
             app.covered([.section(.recipes), .feature("workspace.panels")], via: .mouse)
+        }
+    }
+
+    extension RunningApp {
+        /// Waits until a click at the middle of the left panel's row carrying `identifier` lands on that row: the
+        /// panels open and close with an animation, and a list lists its rows again as what it shows changes, so a
+        /// row found a moment ago may not be where it was.
+        func waitUntilClickable(_ identifier: String) throws {
+            pause(0.4)
+            try wait("\(identifier) where a click lands on it") { _ in
+                guard let window = Views.editorWindow, let frame = Views.find(identifier, in: window),
+                      let hit = window.contentView?.superview?.hitTest(NSPoint(x: frame.midX, y: frame.midY))
+                else { return false }
+                return sequence(first: hit) { $0.superview }.contains { $0.accessibilityIdentifier() == identifier }
+            }
         }
     }
 
