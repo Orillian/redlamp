@@ -149,6 +149,14 @@ extension LightroomCatalogReader {
         let height: Int?
     }
 
+    /// Each image's rotation code in `Adobe_images`, by its ID; none when the catalog has no codes.
+    func orientationCodes() throws -> [Int64: String] {
+        guard try columns("Adobe_images").contains("orientation") else { return [:] }
+        let rows = try database.prepare("SELECT id_local, orientation FROM Adobe_images WHERE orientation IS NOT NULL")
+            .map { row in (row.int64(at: 0), row.string(at: 1).flatMap(Self.text)) }
+        return rows.reduce(into: [:]) { codes, row in codes[row.0] = row.1 }
+    }
+
     /// Each photo and virtual copy with a file, as `photos` reads them, and what `Adobe_images` holds for its
     /// edit.
     private func developImages(notes: inout [String]) throws -> [DevelopImage] {

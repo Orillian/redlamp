@@ -205,4 +205,65 @@ struct LightroomEditsTests {
         #expect(context.catalogSize == PixelSize(width: 6000, height: 4000))
         #expect(context.cameraOrientation == ImageOrientation(quarterTurns: 1) && context.isRaw)
     }
+
+    @Test func `the rotation most photos held the same way have is no turn, and another is a turn made in Lightroom`(
+    ) async throws {
+        func target(_ id: Int64, exif: Int) -> LightroomEditReading.Target {
+            var row = PhotoRecord(id: id, folder: 1, name: "IMG_\(id).CR3", size: 1, modified: Date())
+            row.orientation = exif
+            return LightroomEditReading.Target(row: row, pairs: 0)
+        }
+        let exif: [Int64: Int] = [1: 1, 2: 1, 3: 1, 4: 6, 5: 6, 6: 6]
+        let codes: [Int64: String] = [1: "AB", 2: "AB", 3: "DA", 4: "DA", 5: "DA", 6: "AB"]
+        let targets = exif.mapValues { _ in 0 }.reduce(into: [Int64: LightroomEditReading.Target]()) { found, entry in
+            found[entry.key] = target(entry.key, exif: exif[entry.key] ?? 1)
+        }
+        let unturned = LightroomEditReading.unturnedCodes(codes, targets: targets)
+        #expect(unturned == [1: "AB", 6: "DA"], "whichever frame Lightroom's codes use")
+        let given = (1 ... 6).map { (id: Int64) in
+            var develop = LightroomCatalog.Develop(image: id)
+            develop.orientation = codes[id]
+            return LightroomEditReading.context(targets[id]!.row, develop, slotLooks: [:], unturned: unturned)
+                .orientationCode
+        }
+        #expect(given == [nil, nil, "DA", nil, nil, "AB"], "only the turned photos keep their codes, to be reported")
+
+        let sandbox = try await KeywordSandbox.make()
+        defer { sandbox.remove() }
+        let names = (1 ... 6).map { "Turns/IMG_000\($0).CR3" }
+        for name in names {
+            try sandbox.photo(name)
+        }
+        try await sandbox.indexAll()
+        for (place, name) in names.enumerated() {
+            let id = try await sandbox.id(name)
+            try await sandbox.index.write { writer in
+                var row = try #require(try writer.photo(id: id))
+                row.orientation = exif[Int64(place + 1)]
+                try writer.upsertPhotos([row])
+            }
+        }
+        let folder = try TemporaryFolder()
+        let maker = try LightroomCatalogMaker(at: folder.url.appending(path: "Turns.lrcat"))
+        let turns = try maker.folder(maker.root(sandbox.root.path + "/"), "Turns/")
+        for (place, name) in names.enumerated() {
+            let image = try maker.photo(
+                turns, (name as NSString).lastPathComponent, orientation: codes[Int64(place + 1)],
+                size: (width: 6000, height: 4000),
+            )
+            try maker.develop(image, LightroomSettingsText.text(["Exposure2012": "0.5"]))
+        }
+        maker.close()
+        let plan = try await LightroomPlan.make(
+            LightroomCatalog.read(maker.url),
+            index: sandbox.index,
+            paths: sandbox.paths,
+        )
+        #expect(plan.report.edits.photos == 6 && plan.report.edits.turned == 2)
+        let checked = plan.report.edits.reasons.first { $0.settings.contains("orientation") }
+        #expect(checked?.photos == 2)
+        #expect(plan.report.lines().contains { $0.contains("photos turned in Lightroom: 2, which come across as") })
+        #expect(plan.edits.values.filter { $0.photo.recipe.provenance?.leftOut.contains("orientation") == true }
+            .count == 2)
+    }
 }

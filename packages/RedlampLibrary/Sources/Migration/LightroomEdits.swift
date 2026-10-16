@@ -25,6 +25,9 @@ public extension LightroomReport {
         public var reasons: [LeftOut] = []
         /// The photos whose edits come across by Lightroom's process (`Process 2012` for 2012 and later).
         public var processes: [String: Int] = [:]
+        /// Of them, those turned in Lightroom, whose turn stays behind: their rotation code differs from the one
+        /// most of the photos found with the same EXIF orientation have.
+        public var turned = 0
         /// Their snapshots, which come across beside their edits, and the steps of their histories, which don't.
         public var snapshots = 0
         public var historySteps = 0
@@ -88,9 +91,13 @@ struct LightroomEditReading: Sendable {
         guard !targets.isEmpty else { return LightroomEditReading() }
         let written = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
         let parts = try LightroomCatalog.opened(url) { reader in
+            let unturned = try unturnedCodes(reader.orientationCodes(), targets: targets)
             var notes: [String] = []
             return try reader.develop(partSize: partSize, notes: &notes) { records in
-                convert(records, targets: targets, catalog: url, written: written, slotLooks: slotLooks, date: date)
+                convert(
+                    records, targets: targets, unturned: unturned, catalog: url, written: written,
+                    slotLooks: slotLooks, date: date,
+                )
             }
         }
         var reading = LightroomEditReading()
@@ -122,9 +129,20 @@ struct LightroomEditReading: Sendable {
         return reading
     }
 
+    /// For each EXIF orientation of the photos found, the rotation code most of them have in the catalog, none
+    /// when most have none: the code of a photo Lightroom didn't turn, whichever frame its codes use. A photo with
+    /// another code was turned in Lightroom.
+    static func unturnedCodes(_ codes: [Int64: String], targets: [Int64: Target]) -> [Int: String] {
+        var counts: [Int: [String: Int]] = [:]
+        for (image, target) in targets {
+            counts[target.row.orientation ?? 1, default: [:]][codes[image] ?? "", default: 0] += 1
+        }
+        return counts.mapValues { tally in tally.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key ?? "" }
+    }
+
     private static func convert(
-        _ records: [LightroomCatalog.Develop], targets: [Int64: Target], catalog: URL, written: Date?,
-        slotLooks: [FilmSlot: BaseLookReference], date: Date,
+        _ records: [LightroomCatalog.Develop], targets: [Int64: Target], unturned: [Int: String], catalog: URL,
+        written: Date?, slotLooks: [FilmSlot: BaseLookReference], date: Date,
     ) -> Part {
         var part = Part()
         for develop in records {
@@ -143,7 +161,7 @@ struct LightroomEditReading: Sendable {
                 part.kept.append(target.row.id)
                 continue
             }
-            let photo = context(target.row, develop, slotLooks: slotLooks)
+            let photo = context(target.row, develop, slotLooks: slotLooks, unturned: unturned)
             let source = LightroomProvenance.Source.catalog(catalog, photo: develop.image, digest: develop.digest)
             var converted = LightroomPhoto.convert(settings, photo: photo, source: source, date: date)
             let report = converted.report
@@ -167,6 +185,7 @@ struct LightroomEditReading: Sendable {
                 default: 0,
             ] += 1
             part.report.snapshots += snapshots.count
+            part.report.turned += photo.orientationCode == nil ? 0 : 1
             part.report.historySteps += develop.historySteps
             part.report.pairs += target.pairs
             if let xmp = target.row.xmpModified, let written, xmp > written {
@@ -186,11 +205,15 @@ struct LightroomEditReading: Sendable {
         return part
     }
 
-    /// What converting a photo's settings needs of it, from its row in the index and the catalog's record.
+    /// What converting a photo's settings needs of it, from its row in the index and the catalog's record. Its
+    /// rotation code is given only when it differs from `unturned`'s for its EXIF orientation, Lightroom having
+    /// turned it.
     static func context(
         _ row: PhotoRecord, _ develop: LightroomCatalog.Develop, slotLooks: [FilmSlot: BaseLookReference],
+        unturned: [Int: String] = [:],
     ) -> LightroomPhotoContext {
         let exif = row.orientation ?? 1
+        let code = develop.orientation.flatMap { $0.isEmpty || $0 == unturned[exif] ? nil : $0 }
         let catalogSize = develop.fileWidth.flatMap { width in
             develop.fileHeight.map { PixelSize(width: width, height: $0) }
         }
@@ -201,7 +224,7 @@ struct LightroomEditReading: Sendable {
         }
         return LightroomPhotoContext(
             size: size, cameraOrientation: orientation(exif: exif), isRaw: row.kind == .raw,
-            orientationCode: develop.orientation, catalogSize: catalogSize, slotLooks: slotLooks,
+            orientationCode: code, catalogSize: catalogSize, slotLooks: slotLooks,
         )
     }
 
@@ -227,6 +250,7 @@ extension LightroomReport.Edits {
         approximated += other.approximated
         leftOut += other.leftOut
         processes.merge(other.processes, uniquingKeysWith: +)
+        turned += other.turned
         snapshots += other.snapshots
         historySteps += other.historySteps
         kept += other.kept
@@ -240,8 +264,8 @@ extension LightroomReport.Edits {
     static func why(_ reason: LightroomImportReport.Reason) -> String {
         switch reason {
         case .notYetChecked:
-            "not yet checked against Lightroom: where masks and spots sit, Upright, panel switches, the catalog's "
-                + "rotation codes and Point Color wait on files Lightroom made"
+            "not yet checked against Lightroom: where masks and spots sit, Upright, panel switches, turns made in "
+                + "Lightroom and Point Color wait on files Lightroom made"
         case .earlierProcess:
             "Process 2003's and 2010's tone, which EDT-31 is to convert as Lightroom's Update to Current Process "
                 + "does: until then these photos keep Redlamp's default tone"
@@ -267,6 +291,13 @@ extension LightroomReport.Edits {
             ) }
             lines
                 .append("      by process: " + byProcess.map { "\($0.key) \(count($0.value))" }.joined(separator: ", "))
+            if turned > 0 {
+                lines.append(
+                    "      photos turned in Lightroom: \(count(turned)), which come across as the camera held them: a "
+                        + "photo counts as turned when its rotation in the catalog isn't the one most of the photos the "
+                        + "camera held the same way have",
+                )
+            }
         }
         for reason in reasons {
             let shown = reason.settings.prefix(6).joined(separator: ", ")
