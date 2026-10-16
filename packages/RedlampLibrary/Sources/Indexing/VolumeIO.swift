@@ -56,8 +56,9 @@ public final class VolumeIO: Sendable {
     private let watchdog = DispatchQueue(label: "app.redlamp.library.volume-io", qos: .utility)
 
     /// Readers for `volume` with the width its kind starts at: a network volume's 4, an internal
-    /// disk's performance cores, an external disk's 2, a disk that spins 1; adapting within 1 to the
-    /// performance cores, but on a disk that spins, whose one head another reader would only queue behind.
+    /// disk's performance cores, an external solid-state disk's 2, a disk that may spin 1; adapting
+    /// within 1 to the performance cores, but on a disk that may spin, whose one head another reader
+    /// would only queue behind.
     public init(
         volume: VolumeInfo, fileSystem: any LibraryFileSystem, probe: URL, timeout: Duration = .seconds(10),
         probeIntervals: ClosedRange<Duration> = .seconds(1) ... .seconds(30),
@@ -70,7 +71,7 @@ public final class VolumeIO: Sendable {
         self.timeout = timeout
         self.probeIntervals = probeIntervals
         self.clock = clock
-        let maximum = volume.isRotational == true ? 1 : max(maximumWidth, 1)
+        let maximum = Self.maySpin(volume) ? 1 : max(maximumWidth, 1)
         state = Mutex(State(
             concurrency: VolumeConcurrency(initial: Self.initialWidth(for: volume), range: 1 ... maximum),
             probeDelay: probeIntervals.lowerBound,
@@ -80,8 +81,14 @@ public final class VolumeIO: Sendable {
     /// The width a volume's readers start at, by what it is.
     public static func initialWidth(for volume: VolumeInfo) -> Int {
         guard volume.isLocal else { return 4 }
-        guard volume.isRotational != true else { return 1 }
+        guard !maySpin(volume) else { return 1 }
         return volume.isInternal ? CoreCounts.performance : 2
+    }
+
+    /// Whether `volume`'s disk spins, or may: its device says it does, or it's an external disk whose
+    /// device doesn't say, as some USB bridges don't (LIB-53).
+    static func maySpin(_ volume: VolumeInfo) -> Bool {
+        volume.isLocal && (volume.isRotational ?? !volume.isInternal)
     }
 
     /// Operations the volume is asked to serve at once.

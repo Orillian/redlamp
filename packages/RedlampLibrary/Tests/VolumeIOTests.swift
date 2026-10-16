@@ -61,7 +61,7 @@ struct VolumeIOTests {
     @Test func `readers start at the width their kind of volume serves`() {
         let network = VolumeInfo(uuid: "N", name: nil, isLocal: false, isInternal: false)
         let onBoard = VolumeInfo(uuid: "I", name: nil, isLocal: true, isInternal: true)
-        let external = VolumeInfo(uuid: "E", name: nil, isLocal: true, isInternal: false)
+        let external = VolumeInfo(uuid: "E", name: nil, isLocal: true, isInternal: false, isRotational: false)
         #expect(VolumeIO.initialWidth(for: network) == 4)
         #expect(VolumeIO.initialWidth(for: onBoard) == CoreCounts.performance)
         #expect(VolumeIO.initialWidth(for: external) == 2)

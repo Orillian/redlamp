@@ -54,6 +54,49 @@ struct SpinningDiskTests {
         #expect(io.statistics.operations == 300 && io.width == 1)
     }
 
+    @Test func `an external disk that doesn't say whether it spins is read as one that does, and recorded as unknown`(
+    ) async throws {
+        #expect(VolumeIO.initialWidth(for: VolumeInfo(uuid: "U", name: nil, isLocal: true, isInternal: false)) == 1)
+        #expect(VolumeIO.initialWidth(for: VolumeInfo(uuid: "I", name: nil, isLocal: true, isInternal: true))
+            == CoreCounts.performance)
+        let sandbox = try await IndexerSandbox.make(.init(photos: 60, seed: 34, shapes: []))
+        defer { sandbox.remove() }
+        let indexer = LibraryIndexer(
+            index: sandbox.index,
+            fileSystem: SimulatedFileSystem(base: UnsaidFileSystem(), profile: VolumeProfile(
+                name: "unsaid", isInternal: false,
+            )),
+            configuration: .testing(),
+        )
+        let run = await IndexerRun.collect(indexer.index([sandbox.root]))
+        #expect(run.failures.isEmpty && run.summary?.photosInserted == 60)
+        let volumes = try await sandbox.index.read { try $0.volumes() }
+        #expect(volumes.map(\.kind) == [.unknown])
+        #expect(indexer.volumes.all.map(\.width) == [1])
+    }
+
+    /// The Mac's file system, whose volumes' devices don't say whether they spin.
+    struct UnsaidFileSystem: LibraryFileSystem {
+        let base = LocalFileSystem()
+
+        func contentsOfDirectory(at url: URL) throws -> [FileEntry] {
+            try base.contentsOfDirectory(at: url)
+        }
+
+        func attributes(of url: URL) throws -> FileEntry {
+            try base.attributes(of: url)
+        }
+
+        func read(_ url: URL, range: Range<Int>) throws -> Data {
+            try base.read(url, range: range)
+        }
+
+        func volume(of url: URL) throws -> VolumeInfo {
+            let info = try base.volume(of: url)
+            return VolumeInfo(uuid: info.uuid, name: info.name, isLocal: info.isLocal, isInternal: info.isInternal)
+        }
+    }
+
     @Test func `the index records a volume that spins as spinning, and indexes it through one reader`() async throws {
         let sandbox = try await IndexerSandbox.make(.init(photos: 60, seed: 33, shapes: []))
         defer { sandbox.remove() }
