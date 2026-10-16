@@ -1,6 +1,7 @@
 import Foundation
 import RedlampDocument
 import RedlampEngineAPI
+import RedlampRecipes
 import Synchronization
 import Testing
 @testable import RedlampLibrary
@@ -339,5 +340,42 @@ struct LightroomEditsTests {
         #expect(standIn.baseLook.name == AdobeProfileStandIn.look(forProfileNamed: "Adobe Standard").name)
         #expect(!standIn.baseLook.isAdobeProfile && standIn[.exposure] == 0.5)
         #expect(sandbox.sidecar("Shoot/IMG_0003.JPG")?.recipe.baseLook.isAdobeProfile == false)
+    }
+
+    @Test func `a Fujifilm simulation takes the look filling its slot on this Mac, else Redlamp's film look`(
+    ) async throws {
+        let sandbox = try await KeywordSandbox.make()
+        defer { sandbox.remove() }
+        let profiles = [("DSCF0001.RAF", "Camera CLASSIC CHROME"), ("DSCF0002.RAF", "Camera Velvia/Vivid")]
+        for (name, _) in profiles {
+            try sandbox.photo("Shoot/\(name)")
+        }
+        try await sandbox.indexAll()
+        let folder = try TemporaryFolder()
+        let maker = try LightroomCatalogMaker(at: folder.url.appending(path: "Lightroom Catalog.lrcat"))
+        let shoot = try maker.folder(maker.root(sandbox.root.path + "/"), "Shoot/")
+        for (name, profile) in profiles {
+            let image = try maker.photo(shoot, name, size: (width: 6240, height: 4160))
+            try maker.develop(image, LightroomSettingsText.text([
+                "CameraProfile": "\"\(profile)\"", "Look": "{}", "Exposure2012": "0.5",
+            ]))
+        }
+        maker.close()
+        let lut = BaseLookReference(id: BaseLookReference.makerIDPrefix + "chrome", name: "Classic Chrome LUT")
+        let plan = try await LightroomPlan.make(
+            LightroomCatalog.read(maker.url), index: sandbox.index, paths: sandbox.paths, slotLooks: [.chrome: lut],
+        )
+
+        let chrome = try #require(try await plan.edits[sandbox.id("Shoot/DSCF0001.RAF")]).photo.recipe
+        let velvia = try #require(try await plan.edits[sandbox.id("Shoot/DSCF0002.RAF")]).photo.recipe
+        #expect(chrome.baseLook == lut)
+        #expect(velvia.baseLook == FilmSlot.vividSlide.baseLook)
+        for recipe in [chrome, velvia] {
+            #expect(recipe.provenance?.approximated.contains("CameraProfile") == true)
+        }
+        let outcome = try await LightroomImport(index: sandbox.index, paths: sandbox.paths).run(plan)
+        #expect(outcome.written == 2)
+        #expect(sandbox.sidecar("Shoot/DSCF0001.RAF")?.recipe.baseLook == lut)
+        #expect(sandbox.sidecar("Shoot/DSCF0002.RAF")?.recipe.baseLook == FilmSlot.vividSlide.baseLook)
     }
 }

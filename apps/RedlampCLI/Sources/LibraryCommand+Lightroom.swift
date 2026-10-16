@@ -2,6 +2,7 @@ import Foundation
 import RedlampEngine
 import RedlampEngineAPI
 import RedlampLibrary
+import RedlampRecipes
 import RedlampServices
 import Synchronization
 
@@ -21,7 +22,8 @@ extension LibraryCommand {
                collections whose rules the query language can say, and the photos' edits with their snapshots,
                converted: a raw's names the photographer's own copy of the Adobe profile Lightroom used where
                Camera Raw's folders on this Mac hold it, Redlamp's look standing in where they don't (the profiles
-               chosen in the app's settings aren't seen here); then what doesn't come across and why: virtual
+               chosen in the app's settings aren't seen here), and a Fujifilm simulation takes the Fujifilm LUT the
+               photographer imported where it fills its slot; then what doesn't come across and why: virtual
                copies, the steps of edits' histories, stacks and rules with no counterpart. --root says where a
                root folder that moved is now, by the path the report shows for it. --apply adds the root folders
                the library doesn't have and indexes them, then imports as the library's journaled batches,
@@ -103,7 +105,10 @@ extension LibraryCommand {
         let clock = ContinuousClock()
         let started = clock.now
         let profiles = adobeProfiles()
-        var plan = try await LightroomPlan.make(catalog, index: index, moved: moved, adobeProfiles: profiles)
+        let slots = RecipeLibrary().filledSlots
+        var plan = try await LightroomPlan.make(
+            catalog, index: index, moved: moved, slotLooks: slots, adobeProfiles: profiles,
+        )
         let planned = clock.now - started
         guard apply else {
             if json {
@@ -116,7 +121,9 @@ extension LibraryCommand {
         }
         if !plan.foldersToAdd.isEmpty {
             try await addFolders(plan.foldersToAdd, to: index)
-            plan = try await LightroomPlan.make(catalog, index: index, moved: moved, adobeProfiles: profiles)
+            plan = try await LightroomPlan.make(
+                catalog, index: index, moved: moved, slotLooks: slots, adobeProfiles: profiles,
+            )
         }
         let reported = Mutex(ContinuousClock.now)
         let importer = LightroomImport(index: index)
