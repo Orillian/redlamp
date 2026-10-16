@@ -45,7 +45,7 @@
                 sidecars.load(for: photos[0]) == nil && sidecars.load(for: photos[3]) == nil,
                 "the report wrote nothing",
             )
-            try app.expect(try app.pressInSheet(KeyCombo(.return)), "Convert took Return")
+            try app.expect(try app.pressInSheet(KeyCombo(.character("\r"))), "Convert took Return")
             try app.wait("the conversion", timeout: 120) { model in
                 if case .done? = model.lightroomConversion?.stage {
                     true
@@ -59,7 +59,7 @@
                 "the converted edits: \(String(describing: provenance))",
             )
             try app.expect(sidecars.load(for: photos[1])?.recipe == edited, "the photo edited in Redlamp kept its edit")
-            try app.expect(try app.pressInSheet(KeyCombo(.return)), "Done took Return")
+            try app.expect(try app.pressInSheet(KeyCombo(.character("\r"))), "Done took Return")
             try app.wait("the sheet closed", timeout: 10) { $0.lightroomConversion == nil }
 
             try app.choose(.undoSync)
