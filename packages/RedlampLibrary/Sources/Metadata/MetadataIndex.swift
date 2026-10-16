@@ -72,7 +72,12 @@ extension IndexQueries {
         for id in ids {
             guard let row = try photo(id: id) else { continue }
             let collections = keys.contains("collections") ? try collections(ofPhoto: id).map(\.text) : []
-            found[id] = (PhotoMetadata(shown: row, collections: collections).values(keys), row.otherFields)
+            var values = PhotoMetadata(shown: row, collections: collections).values(keys)
+            if keys.contains("keywords") {
+                let keywords = try keywords(forPhoto: id)
+                values["keywords"] = keywords.isEmpty ? .null : .array(keywords.map(JSONValue.string))
+            }
+            found[id] = (values, row.otherFields)
         }
         return found
     }
@@ -148,6 +153,7 @@ extension LibraryIndex.Writer {
             case "location": row.location = XMPFields.place(metadata.location)
             case "stack": row.stack = metadata.stack.flatMap { $0.id == nil && !$0.top ? nil : $0 }
             case "collections": try setCollections(metadata.collections, forPhoto: photo)
+            case "keywords": try setKeywords(metadata.keywords ?? [], forPhoto: photo)
             default: break
             }
             if let field = PhotoMetadata.xmpField(key) {

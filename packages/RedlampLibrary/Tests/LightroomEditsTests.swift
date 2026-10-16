@@ -1,6 +1,7 @@
 import Foundation
 import RedlampDocument
 import RedlampEngineAPI
+import Synchronization
 import Testing
 @testable import RedlampLibrary
 
@@ -16,6 +17,16 @@ struct LightroomEditsTests {
 
         func plan() async throws -> LightroomPlan {
             try await LightroomPlan.make(LightroomCatalog.read(catalog), index: sandbox.index, paths: sandbox.paths)
+        }
+
+        func importer(editor: LightroomEditor? = nil) -> LightroomImport {
+            LightroomImport(index: sandbox.index, paths: sandbox.paths, editor: editor)
+        }
+
+        /// Whether the index shows the photo at `path` as edited.
+        func edited(_ path: String) async throws -> Bool {
+            let id = try await sandbox.id(path)
+            return try #require(try await sandbox.index.read { try $0.photo(id: id) }).edited
         }
 
         func remove() {
@@ -102,6 +113,83 @@ struct LightroomEditsTests {
         #expect(made.recipe.provenance?.photo == library.images["IMG_0001.CR3"])
         #expect(made.recipe.provenance?.digest == "D1" && made.recipe.provenance?.path == library.catalog.path)
         #expect(made.snapshots.map(\.name) == ["Brighter"] && made.snapshots.first?.recipe[.exposure] == 1.5)
+    }
+
+    @Test func `the import writes each photo's edit and snapshots with its fields, and Undo takes them back`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let importer = library.importer()
+        let plan = try await library.plan()
+        try library.sandbox.sidecar("2024/June/IMG_0002.CR3", PhotoMetadata(rating: 2))
+        let outcome = try await importer.run(plan)
+        #expect(outcome.record.batches.map(\.journal) == [.metadata])
+        #expect(outcome.written == 3, "IMG_0001, IMG_0006 and IMG_0002, which kept its sidecar as it was")
+        let raw = try #require(library.sandbox.sidecar("2024/June/IMG_0001.CR3"))
+        #expect(raw.recipe[.exposure] == 0.5 && raw.recipe.provenance?.digest == "D1")
+        #expect(raw.snapshots.map(\.name) == ["Brighter"] && raw.snapshots.first?.recipe[.exposure] == 1.5)
+        #expect(try await library.edited("2024/June/IMG_0001.CR3"))
+        #expect(try await library.edited("2024/July/IMG_0006.CR3"))
+        #expect(library.sandbox.sidecar("2024/June/IMG_0001.JPG") == nil, "the raw takes the pair's edit")
+        let meanwhile = try #require(library.sandbox.sidecar("2024/June/IMG_0002.CR3"))
+        #expect(meanwhile.recipe[.exposure] == 0.35 && meanwhile.recipe.provenance == nil, "edited since the plan")
+        #expect(library.sandbox.sidecar("2024/July/IMG_0004.JPG")?.recipe.provenance == nil, "Redlamp's edit stays")
+
+        try await importer.undo()
+        #expect(library.sandbox.sidecar("2024/June/IMG_0001.CR3") == nil, "nothing is left in it")
+        #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3") == nil)
+        #expect(try await !library.edited("2024/June/IMG_0001.CR3"))
+        #expect(library.sandbox.sidecar("2024/June/IMG_0002.CR3")?.recipe[.exposure] == 0.35)
+    }
+
+    @Test func `Undo keeps an imported edit changed since, and takes off only the snapshots the import added`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let importer = library.importer()
+        try await importer.run(library.plan())
+        let store = SidecarStore()
+        var changed = try #require(library.sandbox.sidecar("2024/June/IMG_0001.CR3"))
+        changed.recipe[.contrast] = 20
+        changed.snapshots.append(Snapshot(name: "Mine", recipe: changed.recipe))
+        try store.save(changed, for: library.sandbox.url("2024/June/IMG_0001.CR3"))
+
+        try await importer.undo()
+        let kept = try #require(library.sandbox.sidecar("2024/June/IMG_0001.CR3"))
+        #expect(kept.recipe[.contrast] == 20 && kept.recipe[.exposure] == 0.5, "edited since: the edit stays")
+        #expect(kept.snapshots.map(\.name) == ["Mine"])
+    }
+
+    @Test func `the photo open in the editor takes its edit there, and Undo Import takes it back there`(
+    ) async throws {
+        let library = try await Self.library()
+        defer { library.remove() }
+        let open = LibraryIndexer.path(library.sandbox.url("2024/July/IMG_0006.CR3"))
+        let calls = Mutex<[(recipe: EditRecipe, over: EditRecipe?, adding: [Snapshot], removing: Set<UUID>)]>([])
+        let isOpen = Mutex(true)
+        let editor = LightroomEditor(open: { open }) { path, recipe, over, adding, removing in
+            guard path == open, isOpen.withLock({ $0 }) else { return .notOpen }
+            calls.withLock { $0.append((recipe, over, adding, removing)) }
+            return .changed(EditRecipe(), [], recipe)
+        }
+        let importer = library.importer(editor: editor)
+        let outcome = try await importer.run(library.plan())
+        #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3") == nil, "the editor saves it")
+        let made = try #require(calls.withLock { $0.first })
+        #expect(made.recipe.provenance?.photo == library.images["IMG_0006.CR3"] && made.over == nil)
+        #expect(outcome.record.inEditor?.count == 1 && outcome.record.photos == 3)
+        #expect(library.sandbox.sidecar("2024/June/IMG_0001.CR3")?.recipe[.exposure] == 0.5)
+
+        try await importer.undo()
+        let undone = try #require(calls.withLock { $0.last })
+        #expect(calls.withLock { $0.count } == 2 && undone.recipe == EditRecipe() && undone.over == made.recipe)
+
+        isOpen.withLock { $0 = false }
+        let closed = try await importer.run(library.plan())
+        #expect(closed.record.inEditor == nil && closed.record.batches.count == 2, "closed meanwhile: its own batch")
+        #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3")?.recipe.provenance != nil)
+        try await importer.undo()
+        #expect(library.sandbox.sidecar("2024/July/IMG_0006.CR3") == nil)
     }
 
     @Test func `EXIF's orientations are a mirror then clockwise quarter turns, and the size is the stored one`() {

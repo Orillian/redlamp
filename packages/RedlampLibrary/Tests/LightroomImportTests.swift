@@ -127,6 +127,7 @@ struct LightroomImportTests {
         let outcome = try await importer.run(library.plan())
         #expect(outcome.record.batches.map(\.journal) == [.keywords, .metadata])
         #expect(outcome.record.photos == 5 && !outcome.record.stopped)
+        #expect(outcome.written == 5, "each photo's sidecar written once, its keywords with its fields")
 
         let raw = try await library.row("2024/June/IMG_0001.CR3")
         #expect(raw.rating == 5 && raw.flag == .pick && raw.label == .red && raw.title == "Line 28")

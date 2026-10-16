@@ -120,8 +120,9 @@ extension [String: FieldEdit] {
 }
 
 /// `current` with what a batch made of `before` to give `after` taken back, field by field: a field it
-/// holds as the batch left it goes back; a list that changed since loses what the batch added and gets
-/// back what it took off; any other field that changed since stays as it is.
+/// holds as the batch left it goes back; a list that changed since (of paths, or snapshots by their IDs)
+/// loses what the batch added and gets back what it took off; any other field that changed since stays as
+/// it is, an edit among them.
 func undone(_ current: MetadataValues, before: MetadataValues, after: MetadataValues) -> MetadataValues {
     var result = current
     for key in Set(before.keys).union(after.keys) {
@@ -137,6 +138,14 @@ func undone(_ current: MetadataValues, before: MetadataValues, after: MetadataVa
                 list.append(item)
             }
             result[key] = .array(list.map(JSONValue.string))
+        } else if case let .array(items) = now, key == "snapshots" {
+            let id = { (item: JSONValue) in item.objectValue?["id"] }
+            let added = Set(made.arrayValue?.map(id) ?? []).subtracting(was.arrayValue?.map(id) ?? [])
+            var list = items.filter { !added.contains(id($0)) }
+            let kept = Set(list.map(id))
+            let given = Set(made.arrayValue?.map(id) ?? [])
+            list += (was.arrayValue ?? []).filter { !given.contains(id($0)) && !kept.contains(id($0)) }
+            result[key] = .array(list)
         }
     }
     return result
@@ -180,7 +189,66 @@ extension PhotoMetadata {
     }
 }
 
+extension Sidecar {
+    /// What it holds of `keys`, `.null` for each field it doesn't: its metadata's fields, and its edit and
+    /// snapshots (`recipe`, `snapshots`) as it writes them.
+    func values(_ keys: some Sequence<String>) -> MetadataValues {
+        let keys = Set(keys)
+        var values = PhotoMetadata.canonical(
+            (metadata ?? PhotoMetadata()).values(keys.subtracting(MetadataBatch.developKeys)),
+        )
+        if keys.contains("recipe") {
+            values["recipe"] = JSONValue(sidecar: recipe) ?? .null
+        }
+        if keys.contains("snapshots") {
+            values["snapshots"] = JSONValue(sidecar: snapshots) ?? .null
+        }
+        return values
+    }
+
+    /// The sidecar with `values` in place of its own; nil when they aren't what it can hold.
+    func setting(_ values: MetadataValues) -> Sidecar? {
+        var sidecar = self
+        let fields = values.filter { !MetadataBatch.developKeys.contains($0.key) }
+        if !fields.isEmpty {
+            guard let changed = (metadata ?? PhotoMetadata()).setting(fields) else { return nil }
+            sidecar.metadata = changed.isEmpty ? nil : changed
+        }
+        if let recipe = values["recipe"] {
+            guard let edit = recipe == .null ? EditRecipe() : recipe.decoded(as: EditRecipe.self) else { return nil }
+            sidecar.recipe = edit
+        }
+        if let snapshots = values["snapshots"] {
+            guard let list = snapshots == .null ? [] : snapshots.decoded(as: [Snapshot].self) else { return nil }
+            sidecar.snapshots = list
+        }
+        return sidecar
+    }
+}
+
 extension JSONValue {
+    /// `value` as a sidecar writes it.
+    init?(sidecar value: some Encodable) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(value), let json = try? JSONDecoder().decode(JSONValue.self, from: data)
+        else { return nil }
+        self = json
+    }
+
+    /// The value it holds as a sidecar writes it; nil when it isn't one.
+    func decoded<Value: Decodable>(as _: Value.Type) -> Value? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return try? decoder.decode(Value.self, from: data)
+    }
+
+    /// Whether it's an edit that changes the photo, as the index's `edited` says; nil when it isn't an edit.
+    var isEdit: Bool? {
+        decoded(as: EditRecipe.self).map { !$0.isPristine }
+    }
+
     /// The items of a list of texts; none for anything else.
     var items: [String] {
         guard case let .array(values) = self else { return [] }
@@ -190,6 +258,13 @@ extension JSONValue {
     var objectValue: [String: JSONValue]? {
         if case let .object(object) = self {
             return object
+        }
+        return nil
+    }
+
+    var arrayValue: [JSONValue]? {
+        if case let .array(array) = self {
+            return array
         }
         return nil
     }

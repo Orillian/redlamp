@@ -139,23 +139,29 @@ public extension LibraryMetadata {
         let places = logged.written.sorted { $0.key < $1.key }.compactMap { place, change in
             change.before == change.after ? nil : paths[batch.photos[place].id].map { (place, change, path: $0) }
         }
+        let edited = Mutex<[Int64: Bool]>([:])
         try await LibraryIndex.offCaller {
             store.change(places.map { URL(fileURLWithPath: $0.path) }) { number, sidecar in
-                guard var sidecar else { return .keep }
-                let (_, change, _) = places[number]
-                let metadata = sidecar.metadata ?? PhotoMetadata()
-                let current = PhotoMetadata.canonical(metadata.values(change.after.keys))
+                guard let sidecar else { return .keep }
+                let (place, change, _) = places[number]
+                let current = sidecar.values(change.after.keys)
                 let target = undone(current, before: change.before, after: change.after)
-                guard target != current, let restored = metadata.setting(target) else { return .keep }
-                sidecar.metadata = restored.isEmpty ? nil : restored
-                sidecar.modified = Date()
-                return .saveOrRemove(sidecar)
+                guard target != current, var restored = sidecar.setting(target) else { return .keep }
+                if target["recipe"] != current["recipe"] {
+                    edited.withLock { $0[batch.photos[place].id] = !restored.recipe.isPristine }
+                }
+                restored.modified = Date()
+                return .saveOrRemove(restored)
             } done: { _ in }
         }
+        let editedNow = edited.withLock { $0 }
         let existing = try await index.write { writer -> [Int64] in
             var found: [Int64] = []
             for photo in batch.photos where try writer.photo(id: photo.id) != nil {
                 try writer.setMetadata(photo.index, forPhoto: photo.id, others: photo.others)
+                if let edited = editedNow[photo.id] {
+                    try writer.setEdited(edited, forPhoto: photo.id)
+                }
                 found.append(photo.id)
             }
             return found

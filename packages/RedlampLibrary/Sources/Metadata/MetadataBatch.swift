@@ -22,7 +22,29 @@ struct MetadataBatch: JournalBatch, Hashable {
         var edits: [String: FieldEdit]?
         /// For an undo: the photo's fields before and after the batch it undoes.
         var undo: Undo?
+        /// An edit the batch brings the photo (EDT-23), which its sidecar takes while its recipe is unedited.
+        var develop: Develop?
     }
+
+    /// An edit and its snapshots, as the sidecar writes them (`recipe` and items of `snapshots`). They're carried
+    /// among the photo's values under the sidecar's own keys, so the log and Undo take them as they take fields.
+    struct Develop: Sendable, Hashable, Codable {
+        var recipe: JSONValue
+        var snapshots: [JSONValue]
+
+        /// The sidecar's `recipe` and `snapshots` once the batch is done, from `current`'s: the edit, and the
+        /// snapshots after those it has, while `unedited`; as they are otherwise, a photo edited in Redlamp
+        /// keeping its edit.
+        func applied(to current: MetadataValues, unedited: Bool) -> MetadataValues {
+            let recipe = current["recipe"] ?? .null
+            let snapshots = current["snapshots"] ?? .null
+            guard unedited else { return ["recipe": recipe, "snapshots": snapshots] }
+            return ["recipe": self.recipe, "snapshots": .array((snapshots.arrayValue ?? []) + self.snapshots)]
+        }
+    }
+
+    /// The sidecar's keys an edit takes, beside the metadata's.
+    static let developKeys: Set = ["recipe", "snapshots"]
 
     struct Undo: Sendable, Hashable, Codable {
         var sidecarBefore: MetadataValues
@@ -74,7 +96,8 @@ struct MetadataBatch: JournalBatch, Hashable {
         if let undo = photo.undo {
             return Set(undo.sidecarAfter.keys).union(undo.indexAfter.keys)
         }
-        return (photo.edits ?? edit).touched
+        let touched = (photo.edits ?? edit).touched
+        return photo.develop == nil ? touched : touched.union(Self.developKeys)
     }
 
     /// Of the photo's fields in the index once the batch is done (`after`), those whose values are other
@@ -95,12 +118,18 @@ struct MetadataBatch: JournalBatch, Hashable {
     }
 
     /// What the photo's sidecar holds of the fields once the batch is done, from what it holds now;
-    /// `fallback` is what the index shows, for a field the sidecar holds none of.
-    func sidecarAfter(_ photo: Photo, current: MetadataValues, fallback: MetadataValues) -> MetadataValues {
+    /// `fallback` is what the index shows, for a field the sidecar holds none of, and `unedited` whether
+    /// its recipe holds no edit.
+    func sidecarAfter(
+        _ photo: Photo, current: MetadataValues, fallback: MetadataValues, unedited: Bool = true,
+    ) -> MetadataValues {
         if let undo = photo.undo {
             return undone(current, before: undo.sidecarBefore, after: undo.sidecarAfter)
         }
-        return PhotoMetadata.canonical((photo.edits ?? edit).applied(to: current, fallback: fallback))
+        let fields = current.filter { !Self.developKeys.contains($0.key) }
+        let after = PhotoMetadata.canonical((photo.edits ?? edit).applied(to: fields, fallback: fallback))
+        guard let develop = photo.develop else { return after }
+        return after.merging(develop.applied(to: current, unedited: unedited)) { $1 }
     }
 }
 

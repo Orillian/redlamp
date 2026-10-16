@@ -19,8 +19,9 @@ struct LightroomValues: Sendable, Hashable {
     var keywords: [KeywordPath] = []
     var collections: [CollectionPath] = []
 
-    /// What it does to the photo's sidecar fields, keywords aside, which a keyword batch gives: Lightroom's
-    /// value replaces the photo's where Lightroom has one, and its collections join the photo's.
+    /// What it does to the photo's sidecar fields, keywords aside, which the import adds to those the index
+    /// shows: Lightroom's value replaces the photo's where Lightroom has one, and its collections join the
+    /// photo's.
     var edits: [String: FieldEdit] {
         var fields: [MetadataField] = []
         if rating > 0 {

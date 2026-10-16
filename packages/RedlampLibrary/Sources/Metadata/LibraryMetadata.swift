@@ -165,6 +165,17 @@ public final class LibraryMetadata: Sendable {
             let within = left.compactMap(CollectionPath.init)
             try await index.write { try $0.removeUnusedCollections(within: within) }
         }
+        var cleared = Set<String>()
+        for photo in photos {
+            guard let undo = photo.undo, undo.indexAfter.keys.contains("keywords") else { continue }
+            cleared.formUnion(Set(undo.indexAfter["keywords"]?.items ?? []).subtracting(
+                undo.indexBefore["keywords"]?.items ?? [],
+            ))
+        }
+        if !cleared.isEmpty {
+            let within = KeywordPath.paths(Array(cleared))
+            try await index.write { try $0.removeUnusedKeywords(within: within) }
+        }
         return changed
     }
 
@@ -196,12 +207,16 @@ public final class LibraryMetadata: Sendable {
                 }
             }
             var dates: [(Int64, Date?)] = []
+            var edits: [(Int64, Bool)] = []
             var restored: [(Int64, MetadataValues, Set<XMPField>)] = []
             for result in results {
                 switch result.outcome {
-                case let .written(date):
+                case let .written(date, edited):
                     written += 1
                     dates.append((result.photo, date))
+                    if let edited {
+                        edits.append((result.photo, edited))
+                    }
                 case .kept:
                     written += 1
                 case let .skipped(path, reason, values, others):
@@ -211,16 +226,19 @@ public final class LibraryMetadata: Sendable {
                     break
                 }
             }
-            let (stamped, putBack) = (dates, restored)
+            let (stamped, edited, putBack) = (dates, edits, restored)
             try await index.write { writer in
                 for (photo, date) in stamped {
                     try writer.setSidecarModified(date, forPhoto: photo)
+                }
+                for (photo, edited) in edited {
+                    try writer.setEdited(edited, forPhoto: photo)
                 }
                 for (photo, values, others) in putBack {
                     try writer.setMetadata(values, forPhoto: photo, others: others)
                 }
             }
-            live?.photosChanged(putBack.map(\.0))
+            live?.photosChanged(edited.map(\.0) + putBack.map(\.0))
             if let stop, done.value >= stop {
                 throw ForcedQuit()
             }
@@ -230,8 +248,8 @@ public final class LibraryMetadata: Sendable {
 
     struct SidecarResult: Sendable {
         enum Outcome: Sendable {
-            /// Written, and the sidecar's date.
-            case written(Date?)
+            /// Written, the sidecar's date, and whether the photo is edited now when the batch changed its edit.
+            case written(Date?, edited: Bool?)
             /// Already as the batch leaves it, so nothing was written and the date the index has for it
             /// stands.
             case kept
@@ -261,15 +279,11 @@ public final class LibraryMetadata: Sendable {
             failure.withLock { $0 != nil } || stop.map { done.value >= $0 } ?? false
         }) { number, sidecar in
             let photo = batch.photos[present[number].place]
-            var sidecar = sidecar ?? Sidecar(recipe: EditRecipe())
-            let metadata = sidecar.metadata ?? PhotoMetadata()
-            let keys = batch.keys(of: photo)
-            let before = PhotoMetadata.canonical(metadata.values(keys))
-            let after = batch.sidecarAfter(photo, current: before, fallback: photo.index)
-            guard after != before, let changed = metadata.setting(after) else { return .keep }
-            sidecar.metadata = changed.isEmpty ? nil : changed
-            sidecar.modified = Date()
-            return .saveOrRemove(sidecar)
+            let (before, after) = changes(photo, of: batch, from: sidecar)
+            guard after != before, var changed = (sidecar ?? Sidecar(recipe: EditRecipe())).setting(after)
+            else { return .keep }
+            changed.modified = Date()
+            return .saveOrRemove(changed)
         } done: { result in
             let (place, path) = present[result.index]
             let photo = batch.photos[place]
@@ -287,15 +301,26 @@ public final class LibraryMetadata: Sendable {
         return results.withLock { $0 }
     }
 
+    /// What `photo`'s sidecar holds of the batch's keys, from `sidecar` (nil: there's none), and what it holds
+    /// once the batch is done.
+    private static func changes(
+        _ photo: MetadataBatch.Photo, of batch: MetadataBatch, from sidecar: Sidecar?,
+    ) -> (before: MetadataValues, after: MetadataValues) {
+        let sidecar = sidecar ?? Sidecar(recipe: EditRecipe())
+        let before = sidecar.values(batch.keys(of: photo))
+        let after = batch.sidecarAfter(
+            photo, current: before, fallback: photo.index, unedited: sidecar.recipe.isPristine,
+        )
+        return (before, after)
+    }
+
     /// Logs what the batch did with one photo's sidecar: written as the batch leaves it, keeping
     /// everything else in it, or left as it is.
     private static func logged(
         _ result: SidecarBatchResult, _ photo: MetadataBatch.Photo, place: Int, of batch: MetadataBatch,
         at path: String, store: SidecarStore, log: MetadataJournal.Log,
     ) throws -> SidecarResult.Outcome {
-        let keys = batch.keys(of: photo)
-        let before = PhotoMetadata.canonical((result.sidecar?.metadata ?? PhotoMetadata()).values(keys))
-        let after = batch.sidecarAfter(photo, current: before, fallback: photo.index)
+        let (before, after) = changes(photo, of: batch, from: result.sidecar)
         switch result.outcome {
         case .kept:
             try log.written(place, before: before, after: after)
@@ -303,7 +328,8 @@ public final class LibraryMetadata: Sendable {
         case .saved:
             try log.written(place, before: before, after: after)
             let date = try? LocalFileSystem().attributes(of: store.locator.readURL(for: result.image)).modified
-            return .written(date)
+            let edited = after["recipe"].flatMap { $0 == before["recipe"] ? nil : $0.isEdit }
+            return .written(date, edited: edited)
         case let .failed(error):
             let reason = LibraryKeywords.describe(error)
             try log.skipped(place, reason)
@@ -320,9 +346,10 @@ public final class LibraryMetadata: Sendable {
     }
 
     /// `photos(_:edit:)`, a photo of `edits` getting its own edit in place of `edit`; with `keepingUnchanged`,
-    /// those whose rows already show what they're given too.
+    /// those whose rows already show what they're given too, as are those of `keeping`.
     func photos(
         _ ids: [Int64], edits: [Int64: [String: FieldEdit]], edit: [String: FieldEdit], keepingUnchanged: Bool,
+        keeping: Set<Int64> = [],
     ) async throws -> [MetadataBatch.Photo] {
         let ids = Array(Set(ids)).sorted()
         let keys = edits.values.reduce(edit.touched) { $0.union($1.touched) }
@@ -336,7 +363,8 @@ public final class LibraryMetadata: Sendable {
                 let current = PhotoMetadata.canonical(shown.values.filter { touched.contains($0.key) })
                 let after = PhotoMetadata.canonical((own ?? edit).applied(to: current, fallback: current))
                 let others = shown.others.intersection(Self.fields(after))
-                guard after != current || !others.isEmpty || keepingUnchanged else { return nil }
+                guard after != current || !others.isEmpty || keepingUnchanged || keeping.contains(id)
+                else { return nil }
                 return MetadataBatch.Photo(id: id, path: path, index: current, others: others, edits: own)
             }
         }

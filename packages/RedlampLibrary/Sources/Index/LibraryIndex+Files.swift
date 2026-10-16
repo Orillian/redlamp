@@ -115,6 +115,14 @@ public extension LibraryIndex.Writer {
         try statement.run()
     }
 
+    /// Whether `photo`'s sidecar holds an edit, as written by a batch that changed it.
+    func setEdited(_ edited: Bool, forPhoto photo: Int64) throws {
+        let statement = try database.cached("UPDATE photos SET edited = ? WHERE id = ?")
+        try statement.bind(edited ? 1 : 0, at: 1)
+        try statement.bind(photo, at: 2)
+        try statement.run()
+    }
+
     /// Puts back a photo's row as it was, in `folder` and named `name`, with its keywords and its
     /// places in the collections still there, found by path: under its own ID, unless another photo has
     /// taken it since. A camera or lens the index doesn't have was another index's, which this one
