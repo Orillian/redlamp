@@ -317,7 +317,7 @@ extension FolderLibrary {
             paths.merge(rows.paths)
         } else {
             for (id, item) in fresh {
-                paths.insert(id, folder: item.folderPath, name: item.name)
+                paths.insert(id, folder: item.folderPath, name: item.name, version: item.version)
             }
         }
         fromLibrary.sourcePaths = paths
@@ -361,7 +361,7 @@ extension FolderLibrary {
             var paths = fromLibrary.sourcePaths ?? PhotoPaths()
             for id in leaving {
                 if let item = read[id] {
-                    paths.remove(at: item.url)
+                    paths.remove(at: item.address)
                 }
                 fromLibrary.sourceKeys[id] = nil
             }
@@ -377,7 +377,7 @@ extension FolderLibrary {
             guard let item = read[id] else { continue }
             rows[id] = item
             keys[id] = fromLibrary.sourceKeys[id]
-            paths.insert(id, folder: item.folderPath, name: item.name)
+            paths.insert(id, folder: item.folderPath, name: item.name, version: item.version)
         }
         let freed = (items, fromLibrary.sourceKeys, fromLibrary.sourcePaths)
         items = LibraryItems(ids: photoIDs, read: rows)

@@ -248,6 +248,19 @@ public final class FolderLibrary {
         photoList.index(of: id).flatMap { items.row($0)?.url }
     }
 
+    /// The row of the photo `address` names: its file's own, as `index(of:)` finds it by URL, or one of its versions
+    /// (LIB-48), which only the library's sources list.
+    public func index(of address: PhotoAddress) -> Int? {
+        guard address.version != nil else { return index(of: address.url) }
+        return fromLibrary.sourcePaths?.id(of: address).flatMap(photoList.index(of:))
+    }
+
+    /// The file and the edit photo `id` is: its URL and its version; nil for a large source's photo whose row isn't
+    /// read.
+    public func address(ofPhoto id: Int64) -> PhotoAddress? {
+        photoList.index(of: id).flatMap { items.row($0)?.address }
+    }
+
     /// How far above the index's IDs those given here start: a session would have to index more photos than this
     /// before one of them met an ID given here, while bits over IDs (`PhotoList`) stay small.
     static let ownIDMargin: Int64 = 1 << 21

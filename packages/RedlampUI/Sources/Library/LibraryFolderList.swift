@@ -451,9 +451,11 @@ extension LibraryFolderList {
             )
         }
 
-        /// The photo of `row` as Folders shows it, under the folder's URL; nil for a photo outside it.
+        /// The photo of `row` as Folders shows it, under the folder's URL; nil for a photo outside it, and for a
+        /// version of a file's edit (LIB-48), which only the library's sources list until a folder's photos are
+        /// told apart by more than their URLs.
         func item(_ row: PhotoRecord) -> LibraryItem? {
-            guard let directory = folders[row.folder] else { return nil }
+            guard row.version == nil, let directory = folders[row.folder] else { return nil }
             let relative: String
             if directory == path {
                 relative = row.name
@@ -484,6 +486,8 @@ extension LibraryFolderList {
             if hasSidecar {
                 item.hasEdits = row.edited
             }
+            item.version = row.version
+            item.versionName = row.versionName
             item.metadata = metadata(
                 rating: row.rating, flag: row.flag, label: row.label, customLabel: row.customLabel, marked: row.marked,
                 otherFields: row.otherFields, hasSidecar: hasSidecar,

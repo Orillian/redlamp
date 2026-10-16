@@ -24,6 +24,10 @@ public struct LibraryItem: Identifiable, Hashable, Sendable {
     public var isSettling = false
     /// The folder it's in, which orders it among subfolders' photos.
     public let folderPath: String
+    /// The version of its file's edit it is (LIB-48), as Lightroom Classic's virtual copy, and its name; nil for the
+    /// file's own photo.
+    public var version: UUID?
+    public var versionName: String?
 
     public init(url: URL, hasEdits: Bool = false, metadata: PhotoMetadata = PhotoMetadata()) {
         self.url = url
@@ -67,8 +71,13 @@ public struct LibraryItem: Identifiable, Hashable, Sendable {
         return left.count < right.count
     }
 
-    public var id: URL {
-        url
+    /// The file and the edit of it: a version shares its file's URL.
+    public var id: PhotoAddress {
+        address
+    }
+
+    public var address: PhotoAddress {
+        PhotoAddress(url: url, version: version)
     }
 
     public var name: String {

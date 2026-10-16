@@ -117,8 +117,8 @@ extension FolderLibrary {
         var paths = fromLibrary.sourcePaths ?? PhotoPaths()
         var keys = fromLibrary.sourceKeys
         var leaving: [Int64] = []
-        for (id, item) in kept where !list.contains(id) || read[id].map({ $0.url != item.url }) == true {
-            paths.remove(at: item.url)
+        for (id, item) in kept where !list.contains(id) || read[id].map({ $0.address != item.address }) == true {
+            paths.remove(at: item.address)
             if read[id] == nil {
                 leaving.append(id)
                 keys[id] = nil

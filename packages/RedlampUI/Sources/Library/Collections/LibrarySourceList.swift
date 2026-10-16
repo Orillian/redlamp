@@ -328,7 +328,7 @@ extension LibrarySourceList {
             }
             for id in leaving {
                 guard let item = items.removeValue(forKey: id) else { continue }
-                forget(id, at: item.url)
+                forget(id, at: item.address)
                 touched.insert(id)
             }
             unread = count == reading.count ? [] : reading.filter { items[$0] == nil }
@@ -383,12 +383,12 @@ extension LibrarySourceList {
                 keys[photo.id] = photo.key
                 return
             }
-            let old = items[photo.id]?.url
-            if old != photo.item.url {
+            let old = items[photo.id]?.address
+            if old != photo.item.address {
                 if let old {
                     paths.remove(at: old)
                 }
-                paths.insert(photo.id, folder: photo.item.folderPath, name: photo.name)
+                paths.insert(photo.id, folder: photo.item.folderPath, name: photo.name, version: photo.item.version)
             }
             if items[photo.id] != photo.item {
                 items[photo.id] = photo.item
@@ -400,9 +400,9 @@ extension LibrarySourceList {
             }
         }
 
-        private mutating func forget(_ id: Int64, at url: URL) {
+        private mutating func forget(_ id: Int64, at address: PhotoAddress) {
             keys.removeValue(forKey: id)
-            paths.remove(at: url)
+            paths.remove(at: address)
         }
 
         /// The change handing over the photos `ids` names, in its order, as `source`'s list, against those handed
@@ -517,19 +517,37 @@ extension LibrarySourceList {
 }
 
 /// The photos of a source by their folders and names, to find one from its URL: a table keyed by every photo's URL
-/// took seconds to make at a million photos, where this hashes a folder's path once for each run of its photos.
+/// took seconds to make at a million photos, where this hashes a folder's path once for each run of its photos. The
+/// versions of photos' edits (LIB-48), which share their files' URLs, are in a table of their own.
 struct PhotoPaths: Sendable {
-    /// Each folder's photos by name, by the folder's path as the index keeps it.
+    /// Each folder's photos by name, by the folder's path as the index keeps it: the files' own rows.
     private var folders: [String: [String: Int64]] = [:]
+    /// The versions' rows, by their files' folders and names (`versionKey`) and their versions.
+    private var versions: [String: [UUID: Int64]] = [:]
 
-    /// The photo at `url`, as the source's list makes its URL from its folder and its name.
+    /// The file's own photo at `url`, as the source's list makes its URL from its folder and its name.
     func id(of url: URL) -> Int64? {
         let (folder, name) = Self.split(url.path)
         return folders[folder]?[name]
     }
 
-    mutating func insert(_ id: Int64, folder: String, name: String) {
-        folders[folder, default: [:]][name] = id
+    /// The photo `address` names: its file's own, or one of its versions.
+    func id(of address: PhotoAddress) -> Int64? {
+        guard let version = address.version else { return id(of: address.url) }
+        let (folder, name) = Self.split(address.url.path)
+        return versions[Self.versionKey(folder: folder, name: name)]?[version]
+    }
+
+    mutating func insert(_ id: Int64, folder: String, name: String, version: UUID? = nil) {
+        guard let version else {
+            folders[folder, default: [:]][name] = id
+            return
+        }
+        versions[Self.versionKey(folder: folder, name: name), default: [:]][version] = id
+    }
+
+    private static func versionKey(folder: String, name: String) -> String {
+        folder + "\u{0}" + name
     }
 
     /// Adds `photos`, read a run of one folder's at a time.
@@ -537,6 +555,13 @@ struct PhotoPaths: Sendable {
         var folder: String?
         var names: [String: Int64] = [:]
         for photo in photos {
+            if let version = photo.item.version {
+                versions[
+                    Self.versionKey(folder: photo.item.folderPath, name: photo.name),
+                    default: [:],
+                ][version] = photo.id
+                continue
+            }
             if photo.item.folderPath != folder {
                 if let folder {
                     folders[folder] = names
@@ -551,8 +576,14 @@ struct PhotoPaths: Sendable {
         }
     }
 
-    mutating func remove(at url: URL) {
-        let (folder, name) = Self.split(url.path)
+    mutating func remove(at address: PhotoAddress) {
+        let (folder, name) = Self.split(address.url.path)
+        if let version = address.version {
+            let key = Self.versionKey(folder: folder, name: name)
+            guard versions[key]?.removeValue(forKey: version) != nil, versions[key]?.isEmpty == true else { return }
+            versions[key] = nil
+            return
+        }
         guard folders[folder]?.removeValue(forKey: name) != nil, folders[folder]?.isEmpty == true else { return }
         folders[folder] = nil
     }
@@ -562,11 +593,14 @@ struct PhotoPaths: Sendable {
         for (folder, names) in other.folders {
             folders[folder, default: [:]].merge(names) { _, new in new }
         }
+        for (path, rows) in other.versions {
+            versions[path, default: [:]].merge(rows) { _, new in new }
+        }
     }
 
     /// Whether it holds no photo.
     var isEmpty: Bool {
-        folders.isEmpty
+        folders.isEmpty && versions.isEmpty
     }
 
     /// A photo's path as its folder's and its name; `/` for a photo at the top of its disk.
@@ -582,7 +616,7 @@ extension LibrarySourceList.Mapping {
     /// name and content key, in the order `read(_:folder:)` reads them.
     static let shown = """
     id, folder, name, size, modified, sidecar_modified, edited, rating, flag, label, custom_label, marked, \
-    other_fields, content_key
+    other_fields, content_key, version, version_name
     """
 
     /// Photos are read in one pass over their IDs' range from this many, while the range holds at most `spread`
@@ -688,7 +722,7 @@ extension LibrarySourceList.Mapping {
 
     /// The photo of `row`, read with `shown`'s columns, as the grid shows it in the folder at `folder`.
     private static func read(_ row: SQLiteStatement, folder: String) -> LibrarySourceList.Read {
-        let photo = PhotoRecord(
+        var photo = PhotoRecord(
             id: row.int64(at: 0), folder: row.int64(at: 1), name: row.string(at: 2) ?? "", size: row.int64(at: 3),
             modified: Date(timeIntervalSince1970: row.double(at: 4)), contentKey: row.data(at: 13),
             rating: row.int(at: 7), flag: PhotoRecord.flag(code: row.int(at: 8)),
@@ -696,6 +730,8 @@ extension LibrarySourceList.Mapping {
             sidecarModified: row.optionalDouble(at: 5).map(Date.init(timeIntervalSince1970:)),
             customLabel: row.string(at: 10), otherFields: PhotoRecord.fields(code: row.int(at: 12)),
         )
+        photo.version = PhotoRecord.version(code: row.string(at: 14))
+        photo.versionName = row.string(at: 15)
         let url = URL(fileURLWithPath: (folder == "/" ? "" : folder) + "/" + photo.name, isDirectory: false)
         return LibrarySourceList.Read(
             id: photo.id, item: LibraryFolderList.Mapping.item(photo, url: url, folder: folder), name: photo.name,

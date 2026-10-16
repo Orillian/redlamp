@@ -343,7 +343,7 @@ final class PanelPhotoIDs: Sendable {
         let folders = Set(missing.map(\.folder))
         let read = await (try? index.read { reader -> [String: [String: Int64]] in
             var read: [String: [String: Int64]] = [:]
-            let statement = try reader.database.cached("SELECT id, name FROM photos WHERE folder = ?")
+            let statement = try reader.database.cached("SELECT id, name FROM photos WHERE folder = ? AND version = ''")
             for path in folders {
                 guard let folder = try LibraryService.folder(at: path, in: reader) else { continue }
                 try statement.bind(folder.id, at: 1)

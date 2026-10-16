@@ -144,6 +144,47 @@ struct LibrarySourceListTests {
         #expect(few.map(\.item) == Array(items.prefix(10)))
     }
 
+    @Test func `a file and each of its versions are photos of their own, read either way and found by their addresses`()
+        async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "source-list-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (index, ids, items, _) = try await photosIndex(in: folder)
+        let (first, second) = (UUID(), UUID())
+        let versions = try await index.write { writer -> [Int64] in
+            let file = try #require(try writer.photo(id: ids[4]))
+            let copies = [(first, "Copy 1", 5), (second, "Copy 2", 1)].map { version, name, rating in
+                var copy = file
+                copy.version = version
+                copy.versionName = name
+                copy.rating = rating
+                return copy
+            }
+            return try writer.upsertPhotos(copies)
+        }
+        let few = try await LibrarySourceList.Mapping.read([ids[4]] + versions, folders: [:], index: index).parts
+            .joined()
+        let pass = try await LibrarySourceList.Mapping.read(ids + versions, folders: [:], index: index, part: 100).parts
+            .joined().filter { $0.item.url == items[4].url }.sorted { $0.id < $1.id }
+        await index.close()
+        let url = items[4].url
+        for read in [Array(few), pass] {
+            #expect(read.map(\.id) == [ids[4]] + versions)
+            #expect(read.map(\.item.address) == [
+                PhotoAddress(url: url), PhotoAddress(url: url, version: first), PhotoAddress(url: url, version: second),
+            ])
+            #expect(read.map(\.item.versionName) == [nil, "Copy 1", "Copy 2"])
+            #expect(read.map(\.item.metadata.rating) == [items[4].metadata.rating, 5, 1])
+        }
+        var paths = PhotoPaths()
+        paths.insert(pass)
+        #expect(paths.id(of: url) == ids[4])
+        #expect(paths.id(of: PhotoAddress(url: url, version: first)) == versions[0])
+        paths.remove(at: PhotoAddress(url: url, version: first))
+        #expect(paths.id(of: PhotoAddress(url: url, version: first)) == nil)
+        #expect(paths.id(of: PhotoAddress(url: url, version: second)) == versions[1])
+        #expect(paths.id(of: PhotoAddress(url: url)) == ids[4])
+    }
+
     @Test func `the URLs and badges read for photos whose rows aren't read are what their rows show`() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "source-list-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
