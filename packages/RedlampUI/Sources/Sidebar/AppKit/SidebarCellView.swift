@@ -147,6 +147,8 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 }
             } else if let image = LookIconImage.image(for: recipe, points: Layout.lookIconSize) {
                 showLookIcon(image)
+            } else if recipe.isBorderOnly {
+                symbol = PanelID.border.symbol
             }
             if model.recipes.isFavorite(recipe) {
                 trailing = SymbolImageView("star.fill", pointSize: 9, color: Palette.secondaryLabel.nsColor)

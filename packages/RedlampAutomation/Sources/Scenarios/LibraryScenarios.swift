@@ -429,7 +429,53 @@
     }
 
     enum ExportScenarios {
-        static let all: [Scenario] = [formats, sizes, metadata, previous, shortWindow, chooseFolder, jpegXL, batch]
+        static let all: [Scenario] = [
+            formats, sizes, metadata, previous, shortWindow, chooseFolder, jpegXL, batch, border,
+        ]
+
+        /// EDT-35 (#473): a Borders recipe on every photo exported, its long edge the file's; None
+        /// leaves the photo's own border out.
+        static let border = Scenario(
+            "export.border",
+            "Export with White 4:5 at a 1350 long edge writes 1080 × 1350; None leaves the photo's own border out",
+            claims: [.feature("export.dialog")],
+        ) { app in
+            try app.openWorking()
+            try app.choose(.resetAll)
+            try app.main { $0.setBorderStyle(.film35) }
+            guard let recipe = BuiltInRecipes.recipe(id: "redlamp/border/white-4x5") else {
+                throw ScenarioFailure("No White 4:5 border recipe")
+            }
+            var settings = ExportSettings()
+            settings.sizing = ExportSizing(mode: .longEdge)
+            settings.sizing.longEdge = 1350
+            settings.border = ExportBorder(recipeID: recipe.id, name: recipe.name, values: recipe.settings.values)
+            let folder = FileManager.default.temporaryDirectory
+                .appending(path: "redlamp-export-border-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            func size(_ name: String, _ settings: ExportSettings) throws -> (Int, Int) {
+                let url = folder.appending(path: name)
+                try app.run("Export \(name)") { model in try? await model.export(settings, to: url) }
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                      let height = properties[kCGImagePropertyPixelHeight] as? Int
+                else { throw ScenarioFailure("No file exported as \(name)") }
+                return (width, height)
+            }
+            let bordered = try size("white.jpg", settings)
+            try app.expect(bordered == (1080, 1350), "White 4:5 at 1350 wrote \(bordered.0) × \(bordered.1)")
+            settings.border = .none
+            let plain = try size("none.jpg", settings)
+            let photo = try app.main { model in model.recipe.developedSize(imageSize: model.info?.pixelSize ?? .zero) }
+            try app.expect(
+                abs(Double(plain.0) / Double(plain.1) - photo.aspectRatio) < 0.01,
+                "None kept a border: \(plain.0) × \(plain.1) for a \(photo.width) × \(photo.height) photo",
+            )
+            try app.choose(.resetAll)
+            app.covered(.feature("export.dialog"), via: .model)
+        }
 
         /// EDT-16 (#78): the photos selected with Select All Photos export at once from Export…, named by a template
         /// typed in the dialog, in the background, with the filmstrip saying how far it's got.

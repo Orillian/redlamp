@@ -63,6 +63,43 @@ struct BorderEditorTests {
         #expect(model.framePoint(forCanvas: CGPoint(x: 0.01, y: 0.5)) != nil)
     }
 
+    @Test func `Move to Border takes the frame off the photo and puts the nearest border around it`() async throws {
+        let model = try await openModel()
+        model.setValue(.frameStyle, Double(FrameStyle.filmRebate.rawValue))
+        #expect(model.hasFrameOverPhoto)
+        model.moveFrameToBorder()
+        #expect(!model.hasFrameOverPhoto)
+        #expect(model.borderStyle == .film35)
+        #expect(model.history.last?.name == "Move Frame to Border")
+        model.setValue(.frameStyle, Double(FrameStyle.printBorder.rawValue))
+        model.moveFrameToBorder()
+        #expect(model.borderStyle == .plain)
+        #expect(model.value(.borderSize) == 3.5)
+    }
+
+    @Test func `Crop to Format crops to the frame's shape, turned with the photo`() async throws {
+        let model = try await openModel()
+        model.setBorderStyle(.instantSquare)
+        model.cropToBorderFormat()
+        #expect(abs(model.pixelAspect(of: model.recipe.crop) - 1) < 1e-6)
+        model.setBorderStyle(.film35)
+        model.cropToBorderFormat()
+        #expect(abs(model.pixelAspect(of: model.recipe.crop) - 1.5) < 1e-6, "landscape 3:2 on a landscape photo")
+        model.setBorderStyle(.instantMini)
+        model.cropToBorderFormat()
+        #expect(abs(model.pixelAspect(of: model.recipe.crop) - 46.0 / 62) < 1e-6, "the mini's window stays upright")
+    }
+
+    @Test func `a style and a colour are each one step, and the plastic mount starts dark`() async throws {
+        let model = try await openModel()
+        model.setBorderStyle(.slideMountPlastic)
+        #expect(model.history.last?.name == "Border: Slide Mount (Plastic)")
+        #expect(model.borderColor(keyline: false) == .plastic)
+        model.setBorderColor(.paper, keyline: false)
+        #expect(model.history.last?.name == "Border Color")
+        #expect(model.borderColor(keyline: false) == .paper)
+    }
+
     @Test func `the Before view carries the After's border, so both panes are the same size`() {
         var after = EditRecipe()
         after[.borderStyle] = Double(BorderStyle.plain.rawValue)
