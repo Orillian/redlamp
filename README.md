@@ -915,6 +915,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [x] The filmstrip hidden automatically or kept up, from its pin or a setting, with the photo fitted above it <!-- tracker: UX-19, UX-43 -->
 - [x] The filmstrip: a scroll bar, thumbnails you can resize, Home and End for the first and last photo, and its line of text made optional <!-- tracker: UX-42 -->
 - [x] Looks in one place: each film stock once, in the Recipes panel with its icon, a short Base Look menu, and recipe search that finds Base Looks too <!-- tracker: UX-45 -->
+- [ ] A Base Looks panel before Recipes: every look, film stock and LUT in one searchable panel, Recipes as presets, and your own recipes and imported looks shown in Finder or moved to the Trash, with built-in folders hidden <!-- tracker: UX-54, UX-55 -->
 - [x] The pixel under the pointer under the histogram: its RGB percentages or L\*a\*b\* values <!-- tracker: UX-32 -->
 - [x] Panel on/off switches, as Lightroom's, and a value on every control that has one, to type (with arithmetic) or scrub <!-- tracker: UX-30, UX-01, UX-28, UX-29 -->
 - [x] Sensor clipping, which marks the photosites the camera clipped, and a colour-assessment view <!-- tracker: UX-05 -->
