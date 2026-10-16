@@ -460,13 +460,10 @@ final class LightroomSetupScreen: NSObject {
     private func section(_ part: Part) -> NSView {
         let heading = NSTextField(labelWithString: part.title)
         heading.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-        let found = Self.label(NSFont.systemFontSize, .labelColor)
+        let found = Self.wrappingLabel(NSFont.systemFontSize)
         let place = Self.label(NSFont.smallSystemFontSize, .secondaryLabelColor)
         place.lineBreakMode = .byTruncatingMiddle
-        let state = NSTextField(wrappingLabelWithString: "")
-        state.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        state.maximumNumberOfLines = 2
-        state.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let state = Self.wrappingLabel(NSFont.smallSystemFontSize)
         for (label, line) in [(found, "found"), (place, "place"), (state, "state")] {
             label.setAccessibilityIdentifier("lightroom.setup.\(part.rawValue).\(line)")
         }
@@ -533,6 +530,15 @@ final class LightroomSetupScreen: NSObject {
         row.setAccessibilityIdentifier("lightroom.setup.\(part.rawValue)")
         sections[part] = Section(found: found, place: place, state: state, buttons: buttons)
         return row
+    }
+
+    /// A label of up to two lines.
+    private static func wrappingLabel(_ size: CGFloat) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: size)
+        label.maximumNumberOfLines = 2
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
     }
 
     private static func label(_ size: CGFloat, _ color: NSColor) -> NSTextField {
