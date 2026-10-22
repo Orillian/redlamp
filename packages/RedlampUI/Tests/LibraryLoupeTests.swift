@@ -17,8 +17,12 @@ struct LibraryLoupeTests {
 
     /// A photo `size` pixels high and two thirds as wide, as the engine decodes a portrait photo, upright.
     private nonisolated static func portrait(_ size: Int) -> CGImage? {
+        blank(width: size * 2 / 3, height: size)
+    }
+
+    private nonisolated static func blank(width: Int, height: Int) -> CGImage? {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
-            data: nil, width: size * 2 / 3, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
         ) else { return nil }
         return context.makeImage()
@@ -156,6 +160,40 @@ struct LibraryLoupeTests {
             abs(actual.width - 800 / scale) < 0.5 && abs(actual.height - 1200 / scale) < 0.5,
             "at 1:1, one of its pixels to one of the screen's, upright: \(actual)",
         )
+    }
+
+    @Test func `a photo is laid out at its size, or in the shape of an image an edit crops or turns, at its long edge`(
+    ) throws {
+        let photo = CGSize(width: 1200, height: 800)
+        func laidOut(_ width: Int, _ height: Int) throws -> CGSize? {
+            let image = try #require(Self.blank(width: width, height: height))
+            return LibraryLoupeView.laidOut(photo, image: image)
+        }
+        #expect(try laidOut(300, 200) == photo, "an image of its shape")
+        #expect(try laidOut(1203, 800) == photo, "within a hundredth of it")
+        #expect(try laidOut(200, 300) == CGSize(width: 800, height: 1200), "a quarter turn")
+        #expect(try laidOut(500, 500) == CGSize(width: 1200, height: 1200), "a square crop")
+        #expect(try laidOut(400, 100) == CGSize(width: 1200, height: 300), "a panoramic crop")
+        let image = try #require(Self.blank(width: 200, height: 300))
+        #expect(LibraryLoupeView.laidOut(nil, image: image) == CGSize(width: 200, height: 300), "the image's own size")
+        #expect(LibraryLoupeView.laidOut(photo, image: nil) == photo, "the photo's, with no image yet")
+    }
+
+    @Test func `an image of another shape, as an edit's crop or turn makes it, keeps its own shape in the loupe`(
+    ) async throws {
+        let fixture = ModuleFixture()
+        defer { fixture.cleanUp() }
+        fixture.engine.decodedThumbnail = { _, size in Self.blank(width: min(size, 800), height: min(size, 800)) }
+        _ = try await open(fixture, width: 1200, height: 800, orientation: 1)
+        let modules = fixture.showModules()
+        let loupe = modules.content.library.loupe
+        fixture.model.showLibrary(.loupe)
+        try await fixture.settle()
+        loupe.layoutSubtreeIfNeeded()
+        try await fixture.eventually { loupe.showsPreview && loupe.pixelSize != nil }
+        #expect(loupe.pixelSize == CGSize(width: 1200, height: 800), "its size from its header")
+        let fitted = loupe.photoFrame
+        #expect(abs(fitted.width / fitted.height - 1) < 0.01, "fitted, it keeps the image's shape: \(fitted.size)")
     }
 
     @Test func `the caption shows the date and settings in whole fields, as many as its width does, never part of one`(

@@ -345,7 +345,7 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
             x: Self.inset, y: Self.captionHeight, width: max(bounds.width - Self.inset * 2, 1),
             height: max(bounds.height - Self.captionHeight - Self.inset, 1),
         )
-        let size = pixelSize ?? image.map { CGSize(width: $0.width, height: $0.height) } ?? area.size
+        let size = Self.laidOut(pixelSize, image: image) ?? area.size
         guard size.width > 0, size.height > 0 else { return }
         let frame: CGRect
         if zoom == .actual {
@@ -372,6 +372,20 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         updateMark()
         judging.show(shown, edit: shownEdit, pixelSize: pixelSize)
         judging.place(JudgingPlacement(photoFrame: frame, bounds: bounds, scale: window?.backingScaleFactor ?? 2))
+    }
+
+    /// The size a photo is laid out at, Compare's and Survey's too: its size in pixels, unless the image shown is
+    /// another shape, as an edit's crop or turn makes it, then the image's shape at the photo's long edge; the image's
+    /// own size while the photo's isn't known.
+    static func laidOut(_ pixelSize: CGSize?, image: CGImage?) -> CGSize? {
+        guard let image, image.width > 0, image.height > 0 else { return pixelSize }
+        let shape = CGFloat(image.width) / CGFloat(image.height)
+        guard let pixelSize, pixelSize.width > 0, pixelSize.height > 0 else {
+            return CGSize(width: image.width, height: image.height)
+        }
+        guard abs(pixelSize.width / pixelSize.height / shape - 1) > 0.01 else { return pixelSize }
+        let edge = max(pixelSize.width, pixelSize.height)
+        return shape < 1 ? CGSize(width: edge * shape, height: edge) : CGSize(width: edge, height: edge / shape)
     }
 
     /// Where a side `length` long goes in `extent` with the point `focus` along it in the middle: centred

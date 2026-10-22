@@ -190,9 +190,9 @@ final class LibrarySurveyView: NSView {
         }
     }
 
-    /// A photo's shape: from its size in pixels, else from the image shown, else 3:2.
+    /// A photo's shape as it's laid out (`LibraryLoupeView.laidOut`), else 3:2.
     private func aspect(of cell: SurveyCell) -> CGFloat {
-        let size = cell.photo.pixelSize ?? cell.photo.image.map { CGSize(width: $0.width, height: $0.height) }
+        let size = LibraryLoupeView.laidOut(cell.photo.pixelSize, image: cell.photo.image)
         guard let size, size.width > 0, size.height > 0 else { return 1.5 }
         return size.width / size.height
     }

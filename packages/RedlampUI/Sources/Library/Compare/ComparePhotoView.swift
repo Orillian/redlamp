@@ -305,9 +305,11 @@ final class ComparePhotoView: NSView {
     }
 
     private func setImage(_ image: CGImage?, edge: Int, edit: EditDigest?) {
-        let shape = { (image: CGImage?) in image.map { CGFloat($0.width) / CGFloat(max($0.height, 1)) } }
+        let shape = { [pixelSize] (image: CGImage?) in
+            LibraryLoupeView.laidOut(pixelSize, image: image).map { $0.width / max($0.height, 1) }
+        }
         let (old, new) = (shape(self.image), shape(image))
-        let reshaped = if pixelSize == nil, let new {
+        let reshaped = if let new {
             old.map { abs($0 - new) > 0.01 } ?? true
         } else {
             false
@@ -326,7 +328,7 @@ final class ComparePhotoView: NSView {
 
     /// The photo fitted in the view: the size its image is decoded at.
     private var fitted: CGSize {
-        let size = pixelSize ?? image.map { CGSize(width: $0.width, height: $0.height) } ?? bounds.size
+        let size = LibraryLoupeView.laidOut(pixelSize, image: image) ?? bounds.size
         guard size.width > 0, size.height > 0 else { return .zero }
         let fit = min(bounds.width / size.width, bounds.height / size.height)
         return CGSize(width: size.width * fit, height: size.height * fit)
@@ -360,7 +362,7 @@ final class ComparePhotoView: NSView {
     /// The photo's frame: fitted and centred, or at 1:1 with `focus` in the middle, kept covering the view where
     /// it's larger.
     private func layoutPhoto() {
-        let size = pixelSize ?? image.map { CGSize(width: $0.width, height: $0.height) }
+        let size = LibraryLoupeView.laidOut(pixelSize, image: image)
         let frame: CGRect
         if let size, size.width > 0, size.height > 0, zoom == .actual {
             let scale = window?.backingScaleFactor ?? 2
