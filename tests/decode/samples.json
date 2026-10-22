@@ -3,7 +3,6 @@
   "description": "The camera coverage set: one CC0 sample per main camera maker and format from raw.pixls.us, beside the development samples in tests/fixtures/raw. `mise run fixtures` downloads them into tests/fixtures/cameras (never committed) and checks each file's SHA-256; the decode regression suite and the camera colour goldens check every one.",
   "gaps": [
     "Nikon's High Efficiency NEFs (HE and HE*) decode through Redlamp's LibRaw (CAM-12, CAM-30), whose bench checks all 28 CC0 files of the six bodies that write them. The Z5 II's and Z50 II's are here for their decoding and as colour references, but LibRaw has no colour matrix for either body, so their colours can't be right yet (CAM-21). Bodies without a verified sample, such as the ZR, are refused.",
-    "Sony's 15-bit YCbCr ARWs (the A1 II's, the RX1R III's, the FX2's) render with a magenta cast (CAM-21).",
     "No CC0 samples of the Leica M11, SL3 or Q3, or of iPhones after the 12 Pro.",
     "Sigma's Foveon X3F files, GoPro's GPR and JPEG XL mosaic DNGs aren't supported."
   ],
