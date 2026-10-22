@@ -163,10 +163,12 @@ public extension DecodedImage {
         var dngProfile: DNGProfile?
         var lensCorrection: LensCorrection?
         var banding: BandingCorrection?
+        var balancedInCamera: Bool
 
         /// What the app relies on before it touches the samples: one per pixel and channel, a
         /// colour filter pattern that indexes itself, a black level per position the kernels
-        /// read, 3 x 3 matrices, finite numbers, and tables it can index and apply.
+        /// read, 3 x 3 matrices, finite numbers, tables it can index and apply, and as-shot
+        /// multipliers it can divide by when the camera applied them.
         var isValid: Bool {
             let channels: Int
             let blackCount: Int?
@@ -192,6 +194,9 @@ public extension DecodedImage {
                 width: width,
                 height: height,
             )
+            if balancedInCamera {
+                guard case .linearRGB = layout, asShotMultipliers.min() > 0 else { return false }
+            }
             return blackCount.map { blackLevels.count == $0 } ?? true && blackLevels.allSatisfy(\.isFinite)
                 && whiteLevel.isFinite && (asShotMultipliers * 0).sum() == 0 && baselineExposure.isFinite
                 && Self.isMatrix(cameraToSRGB) && xyzToCamera.map(Self.isMatrix) ?? true
@@ -215,7 +220,7 @@ public extension DecodedImage {
             whiteLevel: whiteLevel, asShotMultipliers: asShotMultipliers, cameraToSRGB: cameraToSRGB,
             xyzToCamera: xyzToCamera, orientation: orientation, baselineExposure: baselineExposure, info: info,
             noiseProfile: noiseProfile, gainMaps: gainMaps, dngColor: dngColor, dngProfile: dngProfile,
-            lensCorrection: lensCorrection, banding: banding,
+            lensCorrection: lensCorrection, banding: banding, balancedInCamera: balancedInCamera,
         ))
         var data = Data(capacity: 8 + header.count + samples.count * 2)
         withUnsafeBytes(of: UInt64(header.count).littleEndian) { data.append(contentsOf: $0) }
@@ -263,6 +268,7 @@ public extension DecodedImage {
         dngProfile = header.dngProfile
         lensCorrection = header.lensCorrection
         banding = header.banding
+        balancedInCamera = header.balancedInCamera
     }
 }
 

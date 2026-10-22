@@ -183,6 +183,9 @@ enum RawDecoder {
             )
         }
         decoded.banding = banding
+        if case .linearRGB = layout, asShot.min() > 0 {
+            decoded.balancedInCamera = raw.pointee.color.as_shot_wb_applied & Int32(LIBRAW_ASWB_APPLIED.rawValue) != 0
+        }
         return decoded
     }
 

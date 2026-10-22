@@ -79,6 +79,9 @@ public struct DecodedImage: Sendable {
     public var lensCorrection: LensCorrection?
     /// Row and column offsets from the optical-black margins, when they show banding.
     public var banding: BandingCorrection?
+    /// Linear samples the camera has already multiplied by the as-shot white balance, as LibRaw
+    /// says of Sony's YCbCr ARWs and Nikon's small raws (`as_shot_wb_applied`).
+    public var balancedInCamera = false
 
     public init(
         width: Int,
@@ -108,8 +111,8 @@ public struct DecodedImage: Sendable {
         self.info = info
     }
 
-    /// Sensor noise in normalised units: the file's own profile, else its camera's calibrated one
-    /// at its ISO, else measured from the image (DN-01).
+    /// Sensor noise in normalised units, before white balance: the file's own profile, else its
+    /// camera's calibrated one at its ISO, else measured from the image (DN-01).
     public var noise: NoiseModel {
         noise(profiles: .bundled)
     }
@@ -121,7 +124,9 @@ public struct DecodedImage: Sendable {
         if let noiseProfile {
             return noiseProfile
         }
-        let measured = NoiseEstimator.estimate(self)
+        let measured = NoiseEstimator.estimate(self).map {
+            balancedInCamera ? $0.scaled(by: SIMD3<Float>(1 / asShotMultipliers)) : $0
+        }
         if let profiled = profiles.model(for: info) {
             if let measured, measured.a.y < profiled.a.y * 0.4 {
                 return measured
