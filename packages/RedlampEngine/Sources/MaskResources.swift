@@ -63,7 +63,11 @@ extension MaskShape {
 final class MaskResources {
     static let rasterLongEdge = 4096
     static let guideLongEdge = 2048
-    static let maximumSlices = 32
+    /// A slice for each component an edit holds, any of which may be a brush or an AI mask.
+    static let maximumSlices = MaskLayer.maximumComponents
+    /// The slices the array doubles up to as renders need them; past them it grows to what a
+    /// render needs, in eights, since a slice is up to 32 MB.
+    static let doublingSlices = 32
     /// Segments per stroke dispatch; their points go in a small constant buffer.
     static let segmentsPerDispatch = 16
     /// What one photo kept aside may hold (five 4096 px slices, or three and a guide), and what
@@ -744,6 +748,13 @@ final class MaskResources {
         analysisGuide: (any MTLTexture)?,
         commands: any MTLCommandBuffer,
     ) throws -> [UUID: Int] {
+        if components.count > Self.doublingSlices {
+            let needed = Set(components.compactMap { Self.key(for: $0.shape, process: process) }).count
+            let count = min((needed + 7) / 8 * 8, Self.maximumSlices)
+            if needed > Self.doublingSlices, count > keys.count {
+                try grow(to: count, commands: commands)
+            }
+        }
         var result: [UUID: Int] = [:]
         var used = Set<Int>()
         for component in components {

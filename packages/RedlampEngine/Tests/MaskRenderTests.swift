@@ -85,6 +85,25 @@ struct MaskRenderTests {
         #expect(abs(brushed[untouched].y - plain[untouched].y) < 1e-3)
     }
 
+    /// A photo's brush and AI masks past the 32nd are drawn too (#478): an Objects mask of 33
+    /// parts, then a Brush. Past 32 slices the array grows to what the render needs, in eights.
+    @Test func `a brush past thirty-two brush and AI masks covers what it's painted on`() throws {
+        let session = try makeSession(width: 320, height: 200) { _, _ in SIMD3(repeating: 0.18) }
+        let objects = try MaskLayer(
+            name: "Objects", components: (0 ..< 33).map { try MaskInterleavingTests.bitmapComponent(seed: $0) },
+        )
+        let brush = MaskLayer(name: "Brush", components: [MaskComponent(shape: .brush(BrushMask(strokes: [
+            BrushStroke(points: [ImagePoint(x: 0.1, y: 0.5), ImagePoint(x: 0.4, y: 0.5)], size: 0.1, feather: 0),
+        ])))])
+        var recipe = EditRecipe()
+        recipe.masks = [objects, brush]
+        let engine = try RedlampEngine()
+        let overlay = try render(recipe, session: session, engine: engine, overlay: brush.id, style: .blackAndWhite)
+        let (painted, untouched) = (100 * 320 + 80, 100 * 320 + 300)
+        #expect(overlay[painted].y > 0.9 && overlay[untouched].y < 0.1, "\(overlay[painted]) \(overlay[untouched])")
+        #expect(engine.renderQueue.sync { engine.masks.rasters?.arrayLength } == 40)
+    }
+
     // MARK: - Ranges
 
     /// A dark left half and a bright right half: a range over the bright tones selects the right.
