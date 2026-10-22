@@ -28,6 +28,7 @@ struct ExportLocationSection: View {
                 Divider()
                 Text("Choose…").tag(Choice.choose)
             }
+            .automationIdentifier("export.destination")
             LabeledContent("File name") {
                 ExportNamingField(store: namingPresets, naming: $settings.naming, problem: plan.problem)
             }

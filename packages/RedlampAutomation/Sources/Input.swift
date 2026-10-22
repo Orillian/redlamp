@@ -432,14 +432,15 @@
         /// so this doesn't wait for what it does; the menu returned says when it stopped tracking,
         /// until `stop()`. `section` names the section the item is in, where another section has an
         /// item of the same title.
-        func choose(_ title: String, inSection section: String? = nil, inPopUpButtonShowing shown: String) throws
-            -> OpenedMenu {
+        func choose(
+            _ title: String, inSection section: String? = nil, inPopUpButtonShowing shown: String,
+            marked identifier: String? = nil,
+        ) throws -> OpenedMenu {
             let location = try main { _ -> NSPoint in
-                guard let button = Views.popUpButton(showing: shown) else {
-                    throw ScenarioFailure("No pop-up button in the sheet shows \(shown)")
+                guard let location = Views.picker(showing: shown, marked: identifier) else {
+                    throw ScenarioFailure("No picker in the sheet shows \(shown)")
                 }
-                let frame = button.convert(button.bounds, to: nil)
-                return NSPoint(x: frame.midX, y: frame.midY)
+                return location
             }
             let opened = OpenedMenu()
             try main { _ in
@@ -861,6 +862,21 @@
         static func popUpButton(showing shown: String) -> NSPopUpButton? {
             guard let root = editorWindow?.attachedSheet?.contentView else { return nil }
             return all(NSPopUpButton.self, in: root).first { !$0.pullsDown && $0.title == shown }
+        }
+
+        /// Where in the sheet in front to click the picker showing `shown`: its pop-up button's middle, or where
+        /// macOS 27's SwiftUI draws a grouped form's pickers itself, with no AppKit control under them (UX-44), the
+        /// trailing end of the row `identifier` marks (`automationIdentifier`), where the picker shows its value.
+        static func picker(showing shown: String, marked identifier: String?) -> NSPoint? {
+            if let button = popUpButton(showing: shown) {
+                let frame = button.convert(button.bounds, to: nil)
+                return NSPoint(x: frame.midX, y: frame.midY)
+            }
+            guard let identifier, let sheet = editorWindow?.attachedSheet,
+                  let marker = Self.shown(identifier, in: sheet)
+            else { return nil }
+            let frame = marker.convert(marker.bounds, to: nil)
+            return NSPoint(x: frame.maxX - 24, y: frame.midY)
         }
 
         /// The control carrying `identifier`, found through the window's accessibility: SwiftUI gives

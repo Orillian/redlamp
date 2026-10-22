@@ -677,7 +677,6 @@
             claims: [.feature("export.dialog")],
             needsFocus: true,
         ) { app in
-            try choosesFromMenus()
             try app.openWorking()
             try app.focus()
             try app.choose(Menus.title(of: .export))
@@ -685,7 +684,9 @@
             app.pause(0.5)
             defer { try? app.main { _ in (NSApp.modalWindow as? NSOpenPanel)?.cancel(nil) } }
             let original = "Same Folder as Original"
-            let menu = try app.choose("Choose…", inPopUpButtonShowing: original)
+            // On macOS 27 SwiftUI draws the picker, with no pop-up button to read its value from (UX-44).
+            let readable = try app.main { _ in Views.popUpButton(showing: original) != nil }
+            let menu = try app.choose("Choose…", inPopUpButtonShowing: original, marked: "export.destination")
             defer { try? app.main { _ in menu.stop() } }
             // A launch's first panel waits to connect to AppKit's panel service.
             try app.wait("the folder panel", timeout: 60) { _ in NSApp.modalWindow is NSOpenPanel }
@@ -696,7 +697,7 @@
             try app.main { _ in (NSApp.modalWindow as? NSOpenPanel)?.cancel(nil) }
             try app.wait("the folder panel to close") { _ in !(NSApp.modalWindow is NSOpenPanel) }
             try app.expect(
-                try app.main { _ in Views.popUpButton(showing: original) != nil },
+                try !readable || app.main { _ in Views.popUpButton(showing: original) != nil },
                 "Cancel in the folder panel changed Export to",
             )
             try app.expect(try app.pressInSheet(KeyCombo(.escape)), "The Export dialog didn't close on Escape")
