@@ -230,6 +230,25 @@ struct DecodeServiceTests {
         }
     }
 
+    @Test func `an archive keeps that the camera balanced a linear raw, where the app can take it out`() throws {
+        func balanced(_ image: DecodedImage) -> DecodedImage {
+            var balanced = image
+            balanced.balancedInCamera = true
+            return balanced
+        }
+        func linear(_ multipliers: SIMD3<Double>) -> DecodedImage {
+            balanced(image(layout: .linearRGB, samples: 24, blackLevels: [0, 0, 0], multipliers: multipliers))
+        }
+        #expect(try DecodedImage(archive: linear(SIMD3(2.4, 1, 1.8)).archived()).balancedInCamera)
+        #expect(try !DecodedImage(archive: image().archived()).balancedInCamera)
+        #expect(throws: EngineError.self, "a mosaic balanced in camera") {
+            try DecodedImage(archive: balanced(image(multipliers: SIMD3(2.4, 1, 1.8))).archived())
+        }
+        #expect(throws: EngineError.self, "a camera's balance without a multiplier for red") {
+            try DecodedImage(archive: linear(SIMD3(0, 1, 1.8)).archived())
+        }
+    }
+
     /// A call that waits for the service on the main thread would hang the app on a file the
     /// service is stuck on.
     @Test(.enabled(if: !DecodeServiceTests.isSandboxed))

@@ -49,6 +49,16 @@ struct NoiseEstimateTests {
         expectClose(model)
     }
 
+    /// Sony's YCbCr ARWs and Nikon's small raws come white-balanced, which scales each channel's
+    /// noise with its multiplier. Their noise is in the units of every other raw's (#480).
+    @Test func `recovers the noise before a white balance the camera applied`() throws {
+        var image = synthetic(.linearRGB, channels: 3, balance: SIMD3(2, 1, 1.5))
+        let balanced = try #require(NoiseEstimator.estimate(image))
+        #expect(balanced.a.x > Self.a * 1.4, "the samples' noise is balanced: a = \(balanced.a)")
+        image.balancedInCamera = true
+        expectClose(image.noise(profiles: NoiseProfileCatalog(profiles: [])))
+    }
+
     /// Every sample camera gets a plausible estimate; a DNG with its own profile also checks the
     /// blind estimate against it.
     @Test(.enabled(if: !DecodeRegressionTests.fixtures.isEmpty), arguments: DecodeRegressionTests.fixtures)
@@ -89,10 +99,12 @@ struct NoiseEstimateTests {
     }
 
     /// Flat 16×16 patches of random brightness, a band of strong texture that the estimate must
-    /// ignore, and Poisson–Gaussian noise with known `a` and `b`.
+    /// ignore, and Poisson–Gaussian noise with known `a` and `b`. With `balance`, the patches are
+    /// grey after a white balance the camera applied, noise and all.
     private func synthetic(
         _ layout: DecodedImage.Layout,
         channels: Int,
+        balance: SIMD3<Float> = SIMD3(1, 1, 1),
         scene: ((Int, Int) -> Float)? = nil,
     ) -> DecodedImage {
         let width = 1536
@@ -109,8 +121,9 @@ struct NoiseEstimateTests {
                     if scene == nil, y < 128 {
                         signal = 0.4 + 0.35 * sin(Float(x) * 0.7) * cos(Float(y) * 0.9)
                     }
+                    signal /= balance[channel]
                     let sigma = (Self.a * signal + Self.b).squareRoot()
-                    let value = signal + sigma * random.gaussian()
+                    let value = (signal + sigma * random.gaussian()) * balance[channel]
                     let raw = black + value * (white - black)
                     samples[(y * width + x) * channels + channel] = UInt16(min(max(raw, 0), 65535).rounded())
                 }
@@ -119,7 +132,7 @@ struct NoiseEstimateTests {
         let blacks = [Float](repeating: black, count: channels == 1 ? 4 : 3)
         return DecodedImage(
             width: width, height: height, layout: layout, samples: samples,
-            blackLevels: blacks, whiteLevel: white, asShotMultipliers: SIMD3(1, 1, 1),
+            blackLevels: blacks, whiteLevel: white, asShotMultipliers: SIMD3<Double>(balance),
             cameraToSRGB: [1, 0, 0, 0, 1, 0, 0, 0, 1], xyzToCamera: nil, orientation: 0, baselineExposure: 0,
             info: ImageInfo(
                 url: URL(fileURLWithPath: "/synthetic.dng"), pixelSize: PixelSize(width: width, height: height),
