@@ -6,7 +6,7 @@ import RedlampDocument
 import RedlampLibrary
 
 /// What an expanded cell and the loupe say about a photo besides its name: when it was taken and the
-/// camera's settings, and its size in pixels, which the loupe's 1:1 needs.
+/// camera's settings, and its size in pixels upright, which the loupe's 1:1 needs.
 struct PhotoDetails: Sendable, Equatable {
     var captured: Date?
     /// Seconds.
@@ -31,7 +31,8 @@ struct PhotoDetails: Sendable, Equatable {
         height = record.height
     }
 
-    /// From the photo's own header, for a photo the library hasn't indexed.
+    /// From the photo's own header, for a photo the library hasn't indexed: its size turned by its EXIF
+    /// orientation, as the index has it, since ImageIO gives the size as stored.
     init?(reading url: URL) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
@@ -43,6 +44,9 @@ struct PhotoDetails: Sendable, Equatable {
         focal = exif[kCGImagePropertyExifFocalLength] as? Double
         width = properties[kCGImagePropertyPixelWidth] as? Int
         height = properties[kCGImagePropertyPixelHeight] as? Int
+        if (5 ... 8).contains(properties[kCGImagePropertyOrientation] as? Int ?? 1) {
+            swap(&width, &height)
+        }
         if let original = exif[kCGImagePropertyExifDateTimeOriginal] as? String {
             captured = try? Date(original, strategy: Self.exifDate)
         }

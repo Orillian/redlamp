@@ -42,7 +42,7 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
     /// The edit the image shows, nil for the photo's embedded preview or the photo itself.
     private(set) var shownEdit: EditDigest?
     /// The photo's size in pixels, from the index or its header, else from the image shown.
-    private var pixelSize: CGSize?
+    private(set) var pixelSize: CGSize?
     /// At 1:1, the point of the photo at the view's middle, 0 ... 1 across and down.
     private(set) var focus = CGPoint(x: 0.5, y: 0.5)
     private var drag: (start: CGPoint, focus: CGPoint, moved: Bool)?

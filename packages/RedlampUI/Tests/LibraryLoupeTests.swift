@@ -1,7 +1,9 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 @testable import RedlampUI
 
 /// The Library loupe's zoom (LIB-14): fit and 1:1, by Z and by a click, from the preview and then the
@@ -11,6 +13,46 @@ struct LibraryLoupeTests {
     /// Photos 1200 by 800 pixels: their previews at most 2048, so the same.
     private nonisolated static func photo(_ size: Int) -> CGImage? {
         ModuleFixture.image(min(size, 1200))
+    }
+
+    /// A photo `size` pixels high and two thirds as wide, as the engine decodes a portrait photo, upright.
+    private nonisolated static func portrait(_ size: Int) -> CGImage? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
+            data: nil, width: size * 2 / 3, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
+        ) else { return nil }
+        return context.makeImage()
+    }
+
+    /// A JPEG `width` by `height` pixels as stored, which its EXIF `orientation` turns.
+    private nonisolated static func writeJPEG(_ url: URL, width: Int, height: Int, orientation: Int) throws {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
+        ))
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(
+            data,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil,
+        ))
+        let properties = [kCGImagePropertyOrientation: orientation] as CFDictionary
+        try CGImageDestinationAddImage(destination, #require(context.makeImage()), properties)
+        #expect(CGImageDestinationFinalize(destination))
+        try (data as Data).write(to: url)
+    }
+
+    /// Opens a folder of one JPEG, `width` by `height` pixels as stored and turned by `orientation`, listed from the
+    /// disk, so the loupe reads its size from its header.
+    private func open(_ fixture: ModuleFixture, width: Int, height: Int, orientation: Int) async throws -> URL {
+        try FileManager.default.createDirectory(at: fixture.folder, withIntermediateDirectories: true)
+        let photo = fixture.folder.appending(path: "IMG_00001.JPG")
+        try Self.writeJPEG(photo, width: width, height: height, orientation: orientation)
+        fixture.model.open([fixture.folder])
+        try await fixture.eventually { fixture.model.library.count == 1 && fixture.model.info?.url == photo }
+        return photo
     }
 
     private func click(_ loupe: LibraryLoupeView, at point: CGPoint) throws {
@@ -75,6 +117,45 @@ struct LibraryLoupeTests {
         #expect(!model.canPerform(.toggleZoom) && !model.perform(.toggleZoom), "Space and Z go on to the grid")
         model.showModule(.develop)
         #expect(model.perform(.toggleZoom) && model.libraryViews.loupeZoom == .actual, "Develop's Z zooms its canvas")
+    }
+
+    @Test func `a photo read from its header has its size upright, turned by its EXIF orientation`() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "loupe-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for (orientation, width, height) in [(1, 120, 80), (3, 120, 80), (6, 80, 120), (8, 80, 120)] {
+            let url = folder.appending(path: "\(orientation).jpg")
+            try Self.writeJPEG(url, width: 120, height: 80, orientation: orientation)
+            let details = try #require(PhotoDetails(reading: url))
+            #expect(details.width == width && details.height == height, "orientation \(orientation)")
+        }
+    }
+
+    @Test func `a portrait photo turned by its EXIF orientation keeps its shape in the loupe, fitted and at 1:1`(
+    ) async throws {
+        let fixture = ModuleFixture()
+        defer { fixture.cleanUp() }
+        fixture.engine.decodedThumbnail = { _, size in Self.portrait(min(size, 1200)) }
+        _ = try await open(fixture, width: 1200, height: 800, orientation: 6)
+        let modules = fixture.showModules()
+        let model = fixture.model
+        let loupe = modules.content.library.loupe
+        model.showLibrary(.loupe)
+        try await fixture.settle()
+        loupe.layoutSubtreeIfNeeded()
+        try await fixture.eventually { loupe.showsPreview && loupe.pixelSize != nil }
+        #expect(loupe.pixelSize == CGSize(width: 800, height: 1200), "its size from its header, upright")
+        let fitted = loupe.photoFrame
+        #expect(abs(fitted.width / fitted.height - 2.0 / 3) < 0.01, "fitted, it keeps its shape: \(fitted.size)")
+
+        #expect(model.perform(.toggleZoom))
+        try await fixture.eventually { loupe.showsFullPhoto }
+        let scale = loupe.window?.backingScaleFactor ?? 2
+        let actual = loupe.photoFrame.size
+        #expect(
+            abs(actual.width - 800 / scale) < 0.5 && abs(actual.height - 1200 / scale) < 0.5,
+            "at 1:1, one of its pixels to one of the screen's, upright: \(actual)",
+        )
     }
 
     @Test func `the caption shows the date and settings in whole fields, as many as its width does, never part of one`(
