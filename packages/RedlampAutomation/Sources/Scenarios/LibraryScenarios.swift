@@ -668,9 +668,9 @@
             ((view as? NSTextField).map { $0.isEditable ? [$0] : [] } ?? []) + view.subviews.flatMap(fields)
         }
 
-        /// #356: Choose… in Export to ran the folder panel from the picker's selection, which SwiftUI
-        /// sets while the menu still tracks the mouse; on macOS 27 the panel didn't come up there, and
-        /// it took choosing Choose… a second time.
+        /// #356: Choose… in Export to ran the folder panel modal from a run loop block, which holds back
+        /// the blocks queued with it; on macOS 27 the panel's modal session ran with the panel never on
+        /// screen, and the Export dialog took a click to get back.
         static let chooseFolder = Scenario(
             "export.choose-folder",
             "Choose… in Export to opens the folder panel once its menu has closed, and Cancel leaves the folder as it was",
@@ -682,20 +682,28 @@
             try app.choose(Menus.title(of: .export))
             try app.waitForSheet("the Export dialog")
             app.pause(0.5)
-            defer { try? app.main { _ in (NSApp.modalWindow as? NSOpenPanel)?.cancel(nil) } }
+            let panel: @MainActor () -> NSOpenPanel? = {
+                NSApp.windows.first { $0 is NSOpenPanel && $0.isVisible } as? NSOpenPanel
+            }
+            defer { try? app.main { _ in panel()?.cancel(nil) } }
             let original = "Same Folder as Original"
             // On macOS 27 SwiftUI draws the picker, with no pop-up button to read its value from (UX-44).
             let readable = try app.main { _ in Views.popUpButton(showing: original) != nil }
             let menu = try app.choose("Choose…", inPopUpButtonShowing: original, marked: "export.destination")
             defer { try? app.main { _ in menu.stop() } }
             // A launch's first panel waits to connect to AppKit's panel service.
-            try app.wait("the folder panel", timeout: 60) { _ in NSApp.modalWindow is NSOpenPanel }
+            try app.wait("the folder panel on screen", timeout: 60) { _ in
+                panel()?.occlusionState.contains(.visible) == true
+            }
             try app.expect(
                 try app.main { _ in menu.closed },
-                "The folder panel came up while Export to's menu still tracked the mouse, where macOS 27 doesn't show it",
+                "The folder panel came up while Export to's menu still tracked the mouse",
             )
-            try app.main { _ in (NSApp.modalWindow as? NSOpenPanel)?.cancel(nil) }
-            try app.wait("the folder panel to close") { _ in !(NSApp.modalWindow is NSOpenPanel) }
+            try app.main { _ in panel()?.cancel(nil) }
+            try app.wait("the folder panel to close") { _ in panel() == nil }
+            try app.wait("the Export dialog to have the keyboard again") { _ in
+                Views.editorWindow?.attachedSheet?.isKeyWindow == true
+            }
             try app.expect(
                 try !readable || app.main { _ in Views.popUpButton(showing: original) != nil },
                 "Cancel in the folder panel changed Export to",

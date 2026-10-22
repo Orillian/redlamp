@@ -80,9 +80,8 @@ struct ExportLocationSection: View {
                 case let .folder(url):
                     settings.destinationFolder = url
                 case .choose:
-                    // The picker sets its selection while its menu still tracks the mouse, and a
-                    // panel made inside that tracking may not come up: macOS 27 doesn't show the
-                    // first one. Neither of these modes runs while a menu tracks.
+                    // The picker sets its selection while its menu still tracks the mouse; the panel
+                    // waits for the menu to close, as neither of these modes runs while a menu tracks.
                     RunLoop.main.perform(inModes: [.default, .modalPanel]) {
                         MainActor.assumeIsolated { chooseFolder() }
                     }
@@ -99,9 +98,17 @@ struct ExportLocationSection: View {
         panel.prompt = "Choose"
         panel.message = "Choose the folder exports go to."
         panel.directoryURL = settings.destinationFolder ?? plan.folder
-        if panel.runModal() == .OK, let url = panel.url {
+        let chosen: @MainActor (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
             chosenFolder = url
             settings.destinationFolder = url
+        }
+        // Not run modal: from a run loop block, a modal loop holds back the blocks queued with it
+        // until it ends, and on macOS 27 the panel doesn't come up then.
+        if let window = NSApp.modalWindow ?? NSApp.keyWindow {
+            panel.beginSheetModal(for: window) { response in MainActor.assumeIsolated { chosen(response) } }
+        } else {
+            panel.begin { response in MainActor.assumeIsolated { chosen(response) } }
         }
     }
 }
