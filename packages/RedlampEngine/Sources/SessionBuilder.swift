@@ -243,7 +243,8 @@ struct SessionBuilder {
     }
 
     /// As-shot white balance with the smallest channel at 1: what normalisation multiplies by, so
-    /// highlight reconstruction and demosaicing see neutral colours.
+    /// highlight reconstruction and demosaicing see neutral colours. Samples the camera balanced
+    /// already are multiplied only by what the as-shot multipliers leave of it.
     static func balance(_ decoded: DecodedImage) -> SIMD3<Double> {
         let minimum = decoded.asShotMultipliers.min()
         return minimum > 0 ? decoded.asShotMultipliers / minimum : SIMD3(1, 1, 1)
@@ -312,7 +313,10 @@ struct SessionBuilder {
                 into: texture, commands: commands,
             )
         case .linearRGB:
-            try encodeLinearRGB(decoded, multipliers: multipliers, into: texture, commands: commands)
+            let balance = decoded.balancedInCamera ? balance / decoded.asShotMultipliers : balance
+            try encodeLinearRGB(
+                decoded, multipliers: SIMD4<Float>(SIMD3<Float>(balance), 1), into: texture, commands: commands,
+            )
         case .linearSRGBHalf, .balancedCameraHalf:
             try encodeHalves(decoded, into: texture, commands: commands)
         }
