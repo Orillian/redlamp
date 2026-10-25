@@ -263,6 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         FocusRings.removeEverywhere()
+        MenuPresses.releaseAfterMenus()
         editor = Self.launch?()
         let welcomeOpens = Welcome.opensAtLaunch(arguments: LaunchArguments.all)
         if welcomeOpens {
