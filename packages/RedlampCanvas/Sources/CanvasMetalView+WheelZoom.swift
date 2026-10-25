@@ -3,10 +3,16 @@ import QuartzCore
 
 /// Where a mouse-wheel zoom is heading; a display link eases the scale towards it.
 struct WheelZoom {
+    /// How long the wheel rests, in seconds, before its hold at Fit starts again.
+    static let rest: TimeInterval = 1
+
     var target: Double?
     var anchor = CGPoint.zero
     var link: CADisplayLink?
     var lastTick: CFTimeInterval?
+    /// The hold at Fit, and when the wheel last turned: they outlast each notch's easing.
+    var hold = FitHold.wheel
+    var lastNotch: TimeInterval?
 }
 
 extension CanvasMetalView {
@@ -36,9 +42,13 @@ extension CanvasMetalView {
         }
         let notches = Self.notches(of: event)
         guard notches != 0 else { return }
+        if let last = wheelZoom.lastNotch, event.timestamp - last > WheelZoom.rest {
+            wheelZoom.hold.restart()
+        }
+        wheelZoom.lastNotch = event.timestamp
         let from = wheelZoom.target ?? controller.pixelScale
         // Four notches double or halve the zoom.
-        wheelZoom.target = controller.clampedScale(from * pow(2, notches / 4))
+        wheelZoom.target = controller.zoomedScale(from: from, byNotches: notches, holding: &wheelZoom.hold)
         wheelZoom.anchor = convert(event.locationInWindow, from: nil)
         if wheelZoom.link == nil {
             let link = displayLink(target: self, selector: #selector(stepWheelZoom))
@@ -70,6 +80,6 @@ extension CanvasMetalView {
 
     func stopWheelZoom() {
         wheelZoom.link?.invalidate()
-        wheelZoom = WheelZoom()
+        wheelZoom = WheelZoom(hold: wheelZoom.hold, lastNotch: wheelZoom.lastNotch)
     }
 }

@@ -94,6 +94,8 @@ public final class CanvasMetalView: NSView {
     private var dragOrigin: CGPoint?
     private var didDrag = false
     var wheelZoom = WheelZoom()
+    /// A pinch's hold at Fit, which starts again with each pinch.
+    var pinchHold = FitHold.pinch
 
     init(controller: CanvasController) {
         self.controller = controller
@@ -367,7 +369,12 @@ public final class CanvasMetalView: NSView {
     override public func magnify(with event: NSEvent) {
         guard interactive else { return }
         stopWheelZoom()
-        controller.magnify(by: 1 + event.magnification, at: convert(event.locationInWindow, from: nil))
+        if event.phase == .began {
+            pinchHold.restart()
+        }
+        controller.magnify(
+            by: 1 + event.magnification, at: convert(event.locationInWindow, from: nil), holding: &pinchHold,
+        )
     }
 }
 

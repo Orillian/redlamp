@@ -81,12 +81,165 @@ struct CanvasControllerTests {
         #expect(region.x <= controller.visibleImageRect.minX)
     }
 
-    @Test func `zoom is limited to Fit and 11:1`() {
+    @Test func `zoom is limited to a quarter of Fit and 11:1`() {
         let controller = makeController()
         controller.zoom(toScale: 50, anchoredAt: CGPoint(x: 500, y: 400))
         #expect(controller.pixelScale == 11)
         controller.zoom(toScale: 0.01, anchoredAt: CGPoint(x: 500, y: 400))
+        #expect(controller.pixelScale == controller.fitScale / 4)
+    }
+
+    /// Where each of `notches` leaves the zoom, from `scale`, as a fraction of Fit.
+    private func steps(
+        _ controller: CanvasController, from scale: Double, _ notches: [Double], holding hold: inout FitHold,
+    ) -> [Double] {
+        var scale = scale
+        return notches.map { notches in
+            scale = controller.zoomedScale(from: scale, byNotches: notches, holding: &hold)
+            return scale / controller.fitScale
+        }
+    }
+
+    private func expectClose(
+        _ actual: [Double],
+        _ expected: [Double],
+        sourceLocation: SourceLocation = #_sourceLocation,
+    ) {
+        #expect(actual.count == expected.count, sourceLocation: sourceLocation)
+        for (actual, expected) in zip(actual, expected) {
+            #expect(abs(actual - expected) < 1e-9, "\(actual) isn't \(expected)", sourceLocation: sourceLocation)
+        }
+    }
+
+    @Test func `zooming out holds at Fit for three notches of the wheel, then goes on from Fit`() {
+        let controller = makeController()
+        var hold = FitHold.wheel
+        let scales = steps(
+            controller,
+            from: controller.fitScale * pow(2, 0.5),
+            Array(repeating: -1, count: 7),
+            holding: &hold,
+        )
+        // Two notches reach Fit, the next three hold there, and the sixth goes on a notch below it.
+        expectClose(scales, [pow(2, 0.25), 1, 1, 1, 1, pow(2, -0.25), pow(2, -0.5)])
+    }
+
+    @Test func `a wheel spun hard turns through the hold a notch at a time`() {
+        let controller = makeController()
+        var hold = FitHold.wheel
+        let scales = steps(controller, from: controller.fitScale, Array(repeating: -4, count: 5), holding: &hold)
+        expectClose(scales, [1, 1, 1, pow(2, -0.25), pow(2, -1.25)])
+    }
+
+    @Test func `zooming in passes Fit, and the hold starts again for the next zoom out`() {
+        let controller = makeController()
+        var hold = FitHold.wheel
+        // From a quarter of Fit, nine notches in end a notch above it, with no hold on the way.
+        let inward = steps(controller, from: controller.minScale, Array(repeating: 1, count: 9), holding: &hold)
+        expectClose(Array(inward.suffix(2)), [1, pow(2, 0.25)])
+        // Two notches into the hold, a notch in leaves it, and zooming out meets all of it again.
+        let wiggle = steps(controller, from: controller.fitScale, [-1, -1, 1, -1, -1, -1, -1, -1], holding: &hold)
+        expectClose(wiggle, [1, 1, pow(2, 0.25), 1, 1, 1, 1, pow(2, -0.25)])
+    }
+
+    @Test func `zooming out stops at a quarter of Fit`() {
+        let controller = makeController()
+        var hold = FitHold.wheel
+        let scales = steps(controller, from: controller.fitScale, Array(repeating: -1, count: 14), holding: &hold)
+        expectClose(Array(scales.suffix(4)), [0.25, 0.25, 0.25, 0.25])
+    }
+
+    @Test func `a pinch counts its scale in notches and holds at Fit for one`() {
+        let controller = makeController()
+        var hold = FitHold.pinch
+        let middle = CGPoint(x: 500, y: 400)
+        // Each 5% pinch is about 0.3 of a notch (four times log2 of 1 / 0.95).
+        for _ in 0 ..< 3 {
+            controller.magnify(by: 0.95, at: middle, holding: &hold)
+        }
         #expect(controller.zoom == .fit)
+        controller.magnify(by: 0.95, at: middle, holding: &hold)
+        let spent: Double = 4 * 4 * log2(1 / 0.95)
+        let below = controller.fitScale * pow(2, -(spent - 1) / 4)
+        #expect(abs(controller.pixelScale - below) < 1e-12)
+        // Pinching in passes Fit at once.
+        controller.magnify(by: 1.2, at: middle, holding: &hold)
+        #expect(controller.isZoomedIn)
+    }
+
+    @Test func `from a ratio below a quarter of Fit, zooming out goes no further and zooming in doesn't jump`() {
+        let controller = makeController()
+        var hold = FitHold.wheel
+        let ratio = 1.0 / 16
+        controller.zoom = .scale(ratio)
+        let outward = controller.zoomedScale(from: ratio, byNotches: -1, holding: &hold)
+        #expect(outward == ratio)
+        let inward = controller.zoomedScale(from: ratio, byNotches: 1, holding: &hold)
+        let notchIn = ratio * pow(2, 0.25)
+        #expect(abs(inward - notchIn) < 1e-12)
+    }
+
+    private func isClose(_ rect: CGRect, _ other: CGRect) -> Bool {
+        abs(rect.minX - other.minX) < 1e-9 && abs(rect.minY - other.minY) < 1e-9
+            && abs(rect.width - other.width) < 1e-9 && abs(rect.height - other.height) < 1e-9
+    }
+
+    private func isClose(_ point: CGPoint, _ x: Double, _ y: Double) -> Bool {
+        abs(point.x - x) < 1e-9 && abs(point.y - y) < 1e-9
+    }
+
+    private func isCentred(_ rect: CGRect, in area: CGRect) -> Bool {
+        isClose(CGPoint(x: rect.midX, y: rect.midY), area.midX, area.midY)
+    }
+
+    @Test func `below Fit the photo stays centred on the stage, at its own shape, and the tools land on it`() throws {
+        let controller = makeController()
+        controller.stageInsets = StageInsets(leading: 100, trailing: 40, top: 52, bottom: 20)
+        let fit = controller.imageRect(in: controller.viewSize)
+        // Where an earlier zoom left the view's centre.
+        controller.center = CGPoint(x: 0.9, y: 0.1)
+        controller.zoom(toScale: controller.minScale, anchoredAt: CGPoint(x: 900, y: 100))
+        let stage = controller.stage(in: controller.viewSize)
+        let photo = controller.imageRect(in: controller.viewSize)
+        #expect(isCentred(photo, in: stage))
+        let quarter = CGSize(width: fit.width / 4, height: fit.height / 4)
+        #expect(isClose(photo, CGRect(origin: photo.origin, size: quarter)))
+        #expect(!controller.isZoomedIn)
+
+        let inside = CGPoint(x: photo.minX + photo.width * 0.25, y: photo.minY + photo.height * 0.75)
+        let point = try #require(controller.imagePoint(for: inside))
+        #expect(isClose(point, 0.25, 0.75))
+        #expect(controller.imagePoint(for: CGPoint(x: photo.minX - 2, y: photo.midY)) == nil)
+
+        // The Navigator sees all of it; the engine renders it whole, at the size it shows.
+        #expect(isClose(controller.visibleImageRect, CGRect(x: 0, y: 0, width: 1, height: 1)))
+        #expect(controller.renderTarget.region == nil)
+        #expect(controller.renderTarget.size == controller.renderSize)
+        let shown = Double(photo.width) * 2
+        #expect(abs(Double(controller.renderSize.width) - shown) <= 1)
+    }
+
+    @Test func `below Fit, Before and After's panes and split follow the smaller photo`() throws {
+        let controller = makeController()
+        controller.comparison = .sideBySide
+        controller.zoom(toScale: controller.minScale, anchoredAt: .zero)
+        let afterPane = controller.stage(in: controller.viewSize)
+        let beforePane = try #require(controller.comparisonStage(in: controller.viewSize))
+        let after = controller.imageRect(in: controller.viewSize)
+        let before = try #require(controller.comparisonImageRect(in: controller.viewSize))
+        #expect(isCentred(after, in: afterPane))
+        #expect(isCentred(before, in: beforePane))
+        let inBefore = CGPoint(x: before.minX + before.width * 0.3, y: before.minY + before.height * 0.6)
+        let fromBefore = try #require(controller.imagePoint(for: inBefore))
+        #expect(isClose(fromBefore, 0.3, 0.6))
+
+        controller.comparison = .split(position: 0.5)
+        let photo = controller.imageRect(in: controller.viewSize)
+        let frame = controller.visibleImageFrame(in: controller.viewSize)
+        #expect(isClose(frame, photo))
+        let line = try #require(controller.splitLine(in: controller.viewSize))
+        #expect(line.start == CGPoint(x: frame.maxX, y: frame.minY))
+        #expect(line.end == CGPoint(x: frame.minX, y: frame.maxY))
     }
 
     @Test func `zoom in steps through Lightroom's ratios`() {
@@ -98,6 +251,22 @@ struct CanvasControllerTests {
             scales.append(controller.pixelScale)
         }
         #expect(scales == [0.5, 1, 2, 3, 4, 8, 11])
+    }
+
+    @Test func `zoom out steps past Fit to a half and a quarter of it, and zoom in comes back to Fit`() {
+        let controller = makeController()
+        controller.zoom = .oneToOne
+        var scales: [Double] = []
+        while true {
+            controller.zoomOut()
+            guard scales.last != controller.pixelScale else { break }
+            scales.append(controller.pixelScale)
+        }
+        let expected: [Double] = [0.5, 1.0 / 3, 1.0 / 6, 1.0 / 12]
+        #expect(scales == expected)
+        controller.zoomIn()
+        controller.zoomIn()
+        #expect(controller.zoom == .fit)
     }
 
     @Test func `centering on a point stays inside the photo`() {

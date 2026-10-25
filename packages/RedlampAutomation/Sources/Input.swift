@@ -1,5 +1,6 @@
 #if DEBUG || REDLAMP_PROFILING
     import AppKit
+    import RedlampCanvas
     import RedlampDesign
     import RedlampEngineAPI
     @_spi(Harness) import RedlampUI
@@ -228,6 +229,40 @@
             }
         }
 
+        /// Turns the mouse wheel over `target`'s middle a notch at a time, `interval` apart, as a person turns it:
+        /// positive notches roll it away from you, which zooms the canvas in, whatever the scrolling direction setting.
+        func turnWheel(_ target: Target, notches: Int, interval: Double = 0.1) throws {
+            let location = try Self.location(CGPoint(x: 0.5, y: 0.5), in: frame(of: target))
+            for _ in 0 ..< abs(notches) {
+                try main { _ in
+                    guard let window = Views.editorWindow, let view = window.contentView?.superview?.hitTest(location)
+                    else { throw ScenarioFailure("Nothing takes the wheel over \(target)") }
+                    try view.scrollWheel(with: Wheel.notch(
+                        away: notches > 0,
+                        at: window.convertPoint(toScreen: location),
+                    ))
+                }
+                pause(interval)
+            }
+        }
+
+        /// Pinches on the trackpad over `target`'s middle: one gesture whose events change the scale by each of
+        /// `magnifications` in turn (negative brings the fingers together, which zooms the canvas out), `interval`
+        /// apart, as the trackpad sends them.
+        func pinch(_ target: Target, by magnifications: [Double], interval: Double = 1.0 / 60) throws {
+            let location = try Self.location(CGPoint(x: 0.5, y: 0.5), in: frame(of: target))
+            let steps = magnifications.indices.map { (magnifications[$0], $0 == 0 ? Trackpad.Phase.began : .changed) }
+            for (magnification, phase) in steps + [(0, .ended)] {
+                try main { _ in
+                    guard let window = Views.editorWindow, let view = window.contentView?.superview?.hitTest(location)
+                    else { throw ScenarioFailure("Nothing takes a pinch over \(target)") }
+                    let screen = window.convertPoint(toScreen: location)
+                    try view.magnify(with: Trackpad.pinch(magnification, phase: phase, at: screen))
+                }
+                pause(interval)
+            }
+        }
+
         /// Moves the pointer over `target` to `point` (0...1 across and down its frame), as the
         /// tracking area under it reports a move to the view carrying the target's identifier.
         func hover(_ target: Target, at point: CGPoint = CGPoint(x: 0.5, y: 0.5)) throws {
@@ -372,6 +407,52 @@
         /// From AppKit's screen space (origin bottom left) to Quartz's (origin top left).
         var flippedOnScreen: CGPoint {
             CGPoint(x: x, y: (NSScreen.screens.first?.frame.height ?? 0) - y)
+        }
+    }
+
+    /// A mouse wheel's events, as a wheel with notches makes them.
+    @MainActor
+    enum Wheel {
+        /// A notch rolled away from you or towards you, as the canvas reads it (`CanvasMetalView.notches(of:)`), at
+        /// `location` on the screen (AppKit's).
+        static func notch(away: Bool, at location: NSPoint) throws -> NSEvent {
+            for lines: Int32 in [1, -1] {
+                guard let cgEvent = CGEvent(
+                    scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0,
+                ) else { break }
+                cgEvent.flags = []
+                cgEvent.location = location.flippedOnScreen
+                if let event = NSEvent(cgEvent: cgEvent), (CanvasMetalView.notches(of: event) > 0) == away {
+                    return event
+                }
+            }
+            throw ScenarioFailure("Couldn't make a notch of the wheel")
+        }
+    }
+
+    /// A trackpad's pinch, made as the trackpad makes one. AppKit has no way to make a magnify event, but makes one
+    /// of a Quartz event of the gesture type (29) whose field 110 names its kind (8, a magnify gesture), with its
+    /// change in scale in field 113 and its phase in field 132.
+    @MainActor
+    enum Trackpad {
+        enum Phase: Int64 {
+            case began = 1, changed = 2, ended = 4
+        }
+
+        static func pinch(_ magnification: Double, phase: Phase, at location: NSPoint) throws -> NSEvent {
+            guard let cgEvent = CGEvent(source: nil), let gesture = CGEventType(rawValue: 29),
+                  let kind = CGEventField(rawValue: 110), let scale = CGEventField(rawValue: 113),
+                  let phaseField = CGEventField(rawValue: 132)
+            else { throw ScenarioFailure("Couldn't make a pinch") }
+            cgEvent.type = gesture
+            cgEvent.location = location.flippedOnScreen
+            cgEvent.setIntegerValueField(kind, value: 8)
+            cgEvent.setDoubleValueField(scale, value: magnification)
+            cgEvent.setIntegerValueField(phaseField, value: phase.rawValue)
+            guard let event = NSEvent(cgEvent: cgEvent), event.type == .magnify else {
+                throw ScenarioFailure("A magnify gesture's Quartz event didn't make a magnify event")
+            }
+            return event
         }
     }
 

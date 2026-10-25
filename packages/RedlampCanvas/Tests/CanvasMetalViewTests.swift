@@ -61,6 +61,87 @@ struct CanvasMetalViewTests {
         #expect(view.textures.isEmpty)
     }
 
+    /// A 6000×4000 photo at Fit in a 1000×800 pt view.
+    private func fittedView() -> (CanvasMetalView, CanvasController) {
+        let controller = CanvasController()
+        controller.imageSize = PixelSize(width: 6000, height: 4000)
+        let view = CanvasMetalView(controller: controller)
+        view.setFrameSize(NSSize(width: 1000, height: 800))
+        return (view, controller)
+    }
+
+    /// A notch of a mouse wheel, rolled away from you or towards you, whatever the scrolling
+    /// direction setting, at least `rest` seconds after now.
+    private func notch(away: Bool, restingFor rest: Double = 0) throws -> NSEvent {
+        func event(_ lines: Int32) throws -> NSEvent {
+            let cgEvent = try #require(CGEvent(
+                scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0,
+            ))
+            cgEvent.flags = []
+            cgEvent.timestamp += UInt64(rest * 1e9)
+            return try #require(NSEvent(cgEvent: cgEvent))
+        }
+        let rolled = try event(1)
+        return try (CanvasMetalView.notches(of: rolled) > 0) == away ? rolled : event(-1)
+    }
+
+    /// A trackpad pinch's event as the trackpad makes one: a gesture (type 29) of the magnify kind
+    /// (8, in field 110), `magnification` in field 113, and its phase in field 132 (1 began, 2
+    /// changed, 4 ended).
+    private func pinch(_ magnification: Double, phase: Int64) throws -> NSEvent {
+        let cgEvent = try #require(CGEvent(source: nil))
+        cgEvent.type = try #require(CGEventType(rawValue: 29))
+        try cgEvent.setIntegerValueField(#require(CGEventField(rawValue: 110)), value: 8)
+        try cgEvent.setDoubleValueField(#require(CGEventField(rawValue: 113)), value: magnification)
+        try cgEvent.setIntegerValueField(#require(CGEventField(rawValue: 132)), value: phase)
+        let event = try #require(NSEvent(cgEvent: cgEvent))
+        try #require(event.type == .magnify)
+        return event
+    }
+
+    @Test func `the wheel holds at Fit for three notches, through each notch's easing, until it rests`() throws {
+        let (view, controller) = fittedView()
+        defer { view.stopWheelZoom() }
+        let fit = controller.fitScale
+        for _ in 0 ..< 3 {
+            try view.scrollWheel(with: notch(away: false))
+            #expect(view.wheelZoom.target == fit)
+            // At Fit, each notch's easing ends at once.
+            view.stopWheelZoom()
+        }
+        // After a rest the hold starts again: this is its first notch.
+        try view.scrollWheel(with: notch(away: false, restingFor: 10))
+        #expect(view.wheelZoom.target == fit)
+        view.stopWheelZoom()
+        for _ in 0 ..< 2 {
+            try view.scrollWheel(with: notch(away: false))
+            view.stopWheelZoom()
+        }
+        try view.scrollWheel(with: notch(away: false))
+        let target = try #require(view.wheelZoom.target)
+        let notchBelow = fit * pow(2, -0.25)
+        #expect(abs(target - notchBelow) < 1e-12)
+    }
+
+    @Test func `each pinch meets the hold at Fit again, and pinching in passes Fit`() throws {
+        let (view, controller) = fittedView()
+        // Each 5% step spends about 0.3 of the pinch's one notch.
+        for phase: Int64 in [1, 2, 2] {
+            try view.magnify(with: pinch(-0.05, phase: phase))
+        }
+        try view.magnify(with: pinch(0, phase: 4))
+        #expect(controller.zoom == .fit)
+        try view.magnify(with: pinch(-0.05, phase: 1))
+        #expect(controller.zoom == .fit, "a new pinch starts the hold again")
+        for _ in 0 ..< 3 {
+            try view.magnify(with: pinch(-0.05, phase: 2))
+        }
+        #expect(controller.pixelScale < controller.fitScale)
+        try view.magnify(with: pinch(0.3, phase: 2))
+        #expect(controller.isZoomedIn)
+        try view.magnify(with: pinch(0, phase: 4))
+    }
+
     @Test func `panning a zoomed-in canvas redraws it without a SwiftUI update`() async throws {
         let controller = CanvasController()
         controller.imageSize = PixelSize(width: 6000, height: 4000)

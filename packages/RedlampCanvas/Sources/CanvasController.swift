@@ -19,6 +19,31 @@ public struct StageInsets: Hashable, Sendable {
     public static let zero = StageInsets()
 }
 
+/// Zooming out onto Fit holds there for a few notches before going on below it, as a detent does:
+/// it's easy to stop at Fit, and going on takes only more of the same gesture. Zooming in passes
+/// Fit. Each event spends a notch of the hold at most, so a wheel spun hard still holds for as many
+/// of its events.
+public struct FitHold: Hashable, Sendable {
+    /// Notches it holds for.
+    public let notches: Double
+    /// Notches spent at Fit since it last started.
+    public internal(set) var spent = 0.0
+
+    public init(notches: Double) {
+        self.notches = notches
+    }
+
+    /// The mouse wheel's: three notches.
+    public static let wheel = FitHold(notches: 3)
+    /// A pinch's: as far as one notch of the wheel zooms. A pinch's scale changes continuously,
+    /// and three notches would be half a light pinch spent standing still.
+    public static let pinch = FitHold(notches: 1)
+
+    public mutating func restart() {
+        spent = 0
+    }
+}
+
 /// Zoom and pan state for an image canvas, in Lightroom's terms.
 ///
 /// Geometry is computed against the *stage*: the view minus `stageInsets`. The canvas
@@ -41,6 +66,9 @@ public final class CanvasController {
     public static let zoomRatios: [Double] = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4, 8, 11]
     /// 11:1, Lightroom Classic's closest zoom.
     public static let maxScale = 11.0
+    /// How far zooming out goes past Fit: the photo a quarter of its size at Fit, to see how it
+    /// looks from a distance or on a small screen.
+    public static let smallestFit = 0.25
 
     /// "1:4", "1:1", "11:1"…
     public static func ratioLabel(_ scale: Double) -> String {
@@ -140,6 +168,11 @@ public final class CanvasController {
             Double(viewPixels.width) / Double(size.width),
             Double(viewPixels.height) / Double(size.height),
         )
+    }
+
+    /// The smallest zoom the wheel, a pinch and ⌘- reach: a quarter of Fit.
+    public var minScale: Double {
+        fitScale * Self.smallestFit
     }
 
     public var fillScale: Double {
@@ -262,28 +295,51 @@ public final class CanvasController {
         }
     }
 
-    /// Zoom steps for ⌘= / ⌘-: Fit, then Lightroom's ratios up to 11:1.
+    /// Zoom steps for ⌘= / ⌘-: a quarter and a half of Fit, Fit, then Lightroom's ratios up to 11:1.
     private var zoomSteps: [Double] {
-        ([fitScale] + Self.zoomRatios.filter { $0 > fitScale + 1e-3 }).sorted()
+        ([minScale, fitScale / 2, fitScale] + Self.zoomRatios.filter { $0 > fitScale * (1 + 1e-3) }).sorted()
     }
 
-    /// `scale` limited to the range the wheel and pinch zoom through: Fit to 11:1.
+    /// `scale` limited to the range the wheel, a pinch and ⌘- zoom through: a quarter of Fit to
+    /// 11:1. From a ratio below that, which the Navigator's menu can choose, zooming out goes no
+    /// further rather than jumping in.
     public func clampedScale(_ scale: Double) -> Double {
-        min(max(scale, fitScale), Self.maxScale)
+        min(max(scale, min(minScale, pixelScale)), Self.maxScale)
+    }
+
+    /// The zoom `notches` from `scale` (four double it; negative zooms out), limited as
+    /// `clampedScale` does. Zooming out onto Fit spends `hold` there first; once it's spent, the
+    /// rest of the gesture goes on from Fit, until it zooms in or is above Fit again.
+    public func zoomedScale(from scale: Double, byNotches notches: Double, holding hold: inout FitHold) -> Double {
+        let wanted = scale * pow(2, notches / 4)
+        let fit = fitScale
+        if notches > 0 || scale > fit * (1 + 1e-6) {
+            hold.restart()
+        }
+        guard notches < 0, scale > fit * (1 - 1e-6), wanted < fit else { return clampedScale(wanted) }
+        hold.spent += min(4 * log2(fit / wanted), 1)
+        // A zoom that lands on Fit from above leaves rounding behind, not a step.
+        guard hold.spent > hold.notches + 1e-6 else { return fit }
+        return clampedScale(fit * pow(2, -(hold.spent - hold.notches) / 4))
     }
 
     public func zoomIn() {
-        guard let next = zoomSteps.first(where: { $0 > pixelScale + 1e-3 }) else { return }
-        zoom = .scale(next)
+        guard let next = zoomSteps.first(where: { $0 > pixelScale * (1 + 1e-3) }) else { return }
+        zoom(toStep: next)
     }
 
     public func zoomOut() {
-        guard let previous = zoomSteps.last(where: { $0 < pixelScale - 1e-3 }) else { return }
-        if abs(previous - fitScale) < 1e-3 {
+        guard let previous = zoomSteps.last(where: { $0 < pixelScale * (1 - 1e-3) }) else { return }
+        zoom(toStep: previous)
+    }
+
+    /// Fit is `.fit`, centred, so it follows the window as it resizes.
+    private func zoom(toStep scale: Double) {
+        if abs(scale - fitScale) < fitScale * 1e-3 {
             zoom = .fit
             center = CGPoint(x: 0.5, y: 0.5)
         } else {
-            zoom = .scale(previous)
+            zoom = .scale(scale)
         }
     }
 
@@ -298,11 +354,16 @@ public final class CanvasController {
         center = CGPoint(x: current.x - delta.width / rect.width, y: current.y - delta.height / rect.height)
     }
 
-    public func magnify(by factor: Double, at viewPoint: CGPoint) {
-        zoom(toScale: pixelScale * factor, anchoredAt: viewPoint)
+    /// A pinch's step, which counts its scale in the wheel's notches against `hold`.
+    public func magnify(by factor: Double, at viewPoint: CGPoint, holding hold: inout FitHold) {
+        guard factor > 0 else { return }
+        zoom(
+            toScale: zoomedScale(from: pixelScale, byNotches: 4 * log2(factor), holding: &hold),
+            anchoredAt: viewPoint,
+        )
     }
 
-    /// Zooms to `scale` (Fit to 11:1), keeping the image point under `viewPoint` where it is.
+    /// Zooms to `scale` (a quarter of Fit to 11:1), keeping the image point under `viewPoint` where it is.
     public func zoom(toScale scale: Double, anchoredAt viewPoint: CGPoint) {
         let viewPoint = primaryPoint(for: viewPoint)
         let before = imageRect(in: viewSize)

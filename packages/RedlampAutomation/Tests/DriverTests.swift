@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import RedlampCanvas
 import RedlampEngineAPI
 import SwiftUI
 import Testing
@@ -32,6 +33,21 @@ struct DriverTests {
         #expect(try Keyboard.event(KeyCombo(.tab)).keyCode == 48)
         #expect(try Keyboard.event(KeyCombo(.left)).keyCode == 123)
         #expect(try Keyboard.event(KeyCombo(.function(6))).keyCode == 97)
+    }
+
+    @Test func `a pinch's events are magnify events, with their change in scale and their phase`() throws {
+        let phases: [(Trackpad.Phase, NSEvent.Phase)] = [(.began, .began), (.changed, .changed), (.ended, .ended)]
+        for (phase, expected) in phases {
+            let event = try Trackpad.pinch(-0.05, phase: phase, at: .zero)
+            #expect(event.type == .magnify)
+            #expect(abs(event.magnification + 0.05) < 1e-6)
+            #expect(event.phase == expected)
+        }
+    }
+
+    @Test func `a notch of the wheel rolls away from you or towards you, as the canvas reads it`() throws {
+        #expect(try CanvasMetalView.notches(of: Wheel.notch(away: true, at: .zero)) == 1)
+        #expect(try CanvasMetalView.notches(of: Wheel.notch(away: false, at: .zero)) == -1)
     }
 
     @Test func `targets name the identifiers the views carry`() {

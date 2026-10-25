@@ -696,7 +696,7 @@
     }
 
     enum ViewingScenarios {
-        static let all: [Scenario] = [zoomAndNavigator, beforeAfter, overlays, display]
+        static let all: [Scenario] = [zoomAndNavigator, zoomPastFit, beforeAfter, overlays, display]
 
         static let zoomAndNavigator = Scenario(
             "viewing.zoom-and-navigator", "Zoom by keys and menu, and the Navigator moves the view at 1:1",
@@ -714,6 +714,62 @@
             try app.press(.toggleZoom)
             try app.wait("Fit") { $0.canvas.zoom == .fit }
             app.covered([.feature("viewing.zoom"), .feature("viewing.navigator"), .section(.navigator)], via: .mouse)
+        }
+
+        /// UX-57: zooming out past Fit, to see the photo as from a distance or on a small screen.
+        static let zoomPastFit = Scenario(
+            "viewing.zoom-past-fit",
+            "The wheel and a pinch hold at Fit for a few steps, then zoom out to a quarter of it, and back in past it",
+            claims: [.feature("viewing.zoom")],
+        ) { app in
+            try app.openWorking()
+            try app.wait("Fit") { $0.canvas.zoom == .fit }
+            /// Whether the zoom has come to `fraction` of Fit.
+            func settles(at fraction: Double) -> @MainActor (EditorModel) -> Bool {
+                { abs($0.canvas.pixelScale / $0.canvas.fitScale - fraction) < 1e-3 }
+            }
+            // Three notches out hold at Fit, and the fourth goes on a notch below it.
+            try app.turnWheel(.canvas, notches: -4)
+            try app.wait("four notches out to end a notch below Fit", until: settles(at: pow(2, -0.25)))
+            try app.turnWheel(.canvas, notches: -10)
+            try app.wait("the wheel to stop at a quarter of Fit", until: settles(at: 0.25))
+            let centred = try app.main { model -> Bool in
+                let stage = model.canvas.stage(in: model.canvas.viewSize)
+                let photo = model.canvas.imageRect(in: model.canvas.viewSize)
+                return abs(photo.midX - stage.midX) < 0.5 && abs(photo.midY - stage.midY) < 0.5
+            }
+            try app.expect(centred, "A quarter of Fit isn't centred on the stage")
+            // The engine fits the photo in the size asked for, to the pixel.
+            try app.wait("a frame the size the photo shows") { model in
+                guard let frame = model.frames.current?.size else { return false }
+                let asked = model.canvas.renderSize
+                return abs(frame.width - asked.width) <= 1 && abs(frame.height - asked.height) <= 1
+            }
+            // Zooming in passes Fit without the hold: nine notches end a notch above it.
+            try app.turnWheel(.canvas, notches: 9)
+            try app.wait("nine notches in to end a notch above Fit", until: settles(at: pow(2, 0.25)))
+            try app.press(.toggleZoom)
+            try app.wait("Fit") { $0.canvas.zoom == .fit }
+            // A pinch holds for as far as a notch zooms: eight steps of 5% end 1.37 notches below Fit.
+            try app.pinch(.canvas, by: Array(repeating: -0.05, count: 8))
+            let pinched = pow(2, -(8 * 4 * log2(1 / 0.95) - 1) / 4)
+            try app.wait("a pinch past the hold to zoom out below Fit", until: settles(at: pinched))
+            try app.pinch(.canvas, by: Array(repeating: 0.1, count: 5))
+            try app.wait("pinching in to pass Fit") { $0.canvas.isZoomedIn }
+            // ⌘- steps past Fit to a half and a quarter of it, and ⌘= comes back; Z still goes to 1:1 and Fit.
+            try app.press(.toggleZoom)
+            try app.wait("Fit") { $0.canvas.zoom == .fit }
+            try app.press(.zoomOut)
+            try app.wait("⌘- to go to half of Fit", until: settles(at: 0.5))
+            try app.press(.zoomOut)
+            try app.wait("⌘- to go to a quarter of Fit", until: settles(at: 0.25))
+            try app.press(.zoomIn)
+            try app.wait("⌘= to come back to half of Fit", until: settles(at: 0.5))
+            try app.press(.toggleZoom)
+            try app.wait("1:1") { $0.canvas.zoom == .oneToOne }
+            try app.press(.toggleZoom)
+            try app.wait("Fit") { $0.canvas.zoom == .fit }
+            app.covered(.feature("viewing.zoom"), via: .mouse)
         }
 
         static let beforeAfter = Scenario(
