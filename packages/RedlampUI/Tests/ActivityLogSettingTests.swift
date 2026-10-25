@@ -150,7 +150,8 @@ struct ActivityLogSettingTests {
         #expect(try #require(PreviousSession.read(current.url)).events.isEmpty)
         #expect(history.incidents.map(\.activity) == [[]])
         #expect(history.incidents.first?.photos == named.photos)
-        let reread = FeedbackHistory(directory: folder.appending(path: "history"), defaults: defaults)
+        // Read back as of when the hang was found: a history leaves out incidents found 30 days or more before.
+        let reread = FeedbackHistory(directory: folder.appending(path: "history"), defaults: defaults) { pending.found }
         #expect(reread.incidents.map(\.activity) == [[]])
         withExtendedLifetime(recorder) {}
     }
