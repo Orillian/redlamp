@@ -71,7 +71,9 @@ enum SimulatedCard {
                 try data.write(to: file)
             }
             try FileManager.default.setAttributes(
-                [.modificationDate: shot.captured.addingTimeInterval(-Double(TimeZone.current.secondsFromGMT()))],
+                [.modificationDate: shot.captured.addingTimeInterval(
+                    -Double(TimeZone.current.secondsFromGMT(for: shot.captured)),
+                )],
                 ofItemAtPath: file.path,
             )
             for (name, contents) in shot.sidecars {
