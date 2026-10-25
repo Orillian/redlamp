@@ -507,7 +507,7 @@
     }
 
     extension RunningApp {
-        /// Clicks the pop-up button showing `shown` in the sheet in front, through the sheet as the
+        /// Clicks the pop-up button showing `shown` in the sheet in front, through the app as the
         /// mouse does, and chooses `title` in the menu that opens with the keyboard, which ends the
         /// menu's tracking with the item chosen, as a click on it does. The item may open a dialog,
         /// so this doesn't wait for what it does; the menu returned says when it stopped tracking,
@@ -544,7 +544,8 @@
                 if let hit, !sheet.isKeyWindow, !hit.acceptsFirstMouse(for: events[0]) {
                     hit.mouseDown(with: events[0])
                 } else {
-                    sheet.sendEvent(events[0])
+                    // Through the app, as the mouse's press comes: what handles it may read it as the current event.
+                    NSApp.sendEvent(events[0])
                 }
             }
             pause(0.2)

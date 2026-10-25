@@ -127,6 +127,7 @@ struct ExportFileSection: View {
                     ForEach(ExportFormat.lossless, id: \.self) { Text($0.name).tag($0) }
                 }
             }
+            .automationIdentifier("export.format")
             if settings.format.isLossless {
                 if settings.format == .tiff {
                     Picker("Compression", selection: $settings.tiffCompression) {

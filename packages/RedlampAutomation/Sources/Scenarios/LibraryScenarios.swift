@@ -430,7 +430,7 @@
 
     enum ExportScenarios {
         static let all: [Scenario] = [
-            formats, sizes, metadata, previous, shortWindow, chooseFolder, jpegXL, batch, border,
+            formats, sizes, metadata, previous, shortWindow, chooseFolder, clickAfterMenu, jpegXL, batch, border,
         ]
 
         /// EDT-35 (#473): a Borders recipe on every photo exported, its long edge the file's; None
@@ -710,6 +710,66 @@
             )
             try app.expect(try app.pressInSheet(KeyCombo(.escape)), "The Export dialog didn't close on Escape")
             app.covered(.feature("export.dialog"), via: .mouse)
+        }
+
+        /// #486: on macOS 27 the press that opens one of the dialog's menus begins SwiftUI's own gesture
+        /// recognizers, and the menu took its release, so they held the press and took the dialog's next click
+        /// as part of it: Cancel took two clicks.
+        static let clickAfterMenu = Scenario(
+            "export.click-after-menu",
+            "After a choice from Export to, Format or Preset, one click on Cancel closes the Export dialog",
+            claims: [.feature("export.dialog")],
+            needsFocus: true,
+        ) { app in
+            try app.openWorking()
+            guard try app.focus() else {
+                throw ScenarioSkip("a click reaches the dialog as a person's does only with the app in front (--focus)")
+            }
+            let menus: [(menu: String, item: String, shown: String, marker: String)] = [
+                ("Export to", "Same Folder as Original", "Same Folder as Original", "export.destination"),
+                ("Format", "JPEG", "JPEG", "export.format"),
+                ("Preset", "Web, 2048 px", ExportPreset.builtIns[0].name, "export.preset"),
+            ]
+            for (menu, item, shown, marker) in menus {
+                try app.choose(Menus.title(of: .export))
+                try app.waitForSheet("the Export dialog")
+                app.pause(0.5)
+                let opened = try app.choose(item, inPopUpButtonShowing: shown, marked: marker)
+                try app.wait("the \(menu) menu to close") { _ in opened.closed }
+                try app.main { _ in opened.stop() }
+                app.pause(0.3)
+                try click("export.cancel", inSheetOf: app)
+                let closed = (try? app.waitForNoSheet("the Export dialog", timeout: 1.5)) != nil
+                if !closed {
+                    _ = try? app.pressInSheet(KeyCombo(.escape))
+                }
+                try app.expect(closed, "One click on Cancel didn't close the Export dialog after a choice from \(menu)")
+            }
+            app.covered(.feature("export.dialog"), via: .mouse)
+        }
+
+        /// Clicks the control `identifier` marks (`automationIdentifier`) in the sheet in front, its press and its
+        /// release through the app's queue a moment apart, as the mouse's come.
+        private static func click(_ identifier: String, inSheetOf app: RunningApp) throws {
+            let location = try app.main { _ -> NSPoint in
+                guard let sheet = Views.editorWindow?.attachedSheet, let marker = Views.shown(identifier, in: sheet)
+                else { throw ScenarioFailure("\(identifier) isn't in the sheet") }
+                let frame = marker.convert(marker.bounds, to: nil)
+                return NSPoint(x: frame.midX, y: frame.midY)
+            }
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                try app.main { _ in
+                    guard let sheet = Views.editorWindow?.attachedSheet,
+                          let event = NSEvent.mouseEvent(
+                              with: type, location: location, modifierFlags: [],
+                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: sheet.windowNumber,
+                              context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1,
+                          )
+                    else { return }
+                    NSApp.postEvent(event, atStart: false)
+                }
+                app.pause(0.08)
+            }
         }
 
         static let formats = Scenario(

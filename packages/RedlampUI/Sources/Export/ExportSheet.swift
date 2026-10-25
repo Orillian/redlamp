@@ -103,6 +103,7 @@ public struct ExportSheet: View {
                 }
                 Spacer()
                 Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
+                    .automationIdentifier("export.cancel")
                 Button(count > 1 ? Self.title(count) : "Export", action: export)
                     .keyboardShortcut(.defaultAction)
                     .disabled(problem != nil)
@@ -293,6 +294,7 @@ private struct PresetMenu: View {
                 }
             }
             .fixedSize()
+            .automationIdentifier("export.preset")
         }
     }
 
