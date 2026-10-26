@@ -102,6 +102,9 @@ public extension EditorModel {
         if diff.reset || !diff.removed.isEmpty || !diff.inserted.isEmpty {
             keepSelectionShown()
         }
+        if diff.reset || !diff.inserted.isEmpty {
+            activateArrivedEdit()
+        }
         if diff.reset {
             refreshCustomLabels()
         }
@@ -117,6 +120,15 @@ public extension EditorModel {
         } else if let last = selectionIndex, !diff.removed.isEmpty, !items.isEmpty {
             selectRow(min(last, items.count - 1))
         }
+    }
+
+    /// The edit Develop has open got its row after Develop matched its edit to another of its file's (a version just
+    /// made, LIB-48): that row is made the active one, unless another has been made active since.
+    private func activateArrivedEdit() {
+        guard let open = openPhoto, let matched = matchedPhoto, matched != open,
+              activeID.flatMap(library.address(ofPhoto:)) == matched, library.photoID(of: open) != nil
+        else { return }
+        activateOpenEdit()
     }
 
     /// Selects row `row`'s photo: at once, or, for a large source's row not read yet, once it's read.
