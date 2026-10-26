@@ -84,8 +84,7 @@ struct LibraryVersionsTests {
         #expect(model.selectedIDs == [copyID])
     }
 
-    @Test(.disabled("4 Stars from the menu leaves Copy 1 at 1 star, with two versions in an open pair: to diagnose"))
-    func `the filmstrip's menu culls the version of its cell`() async throws {
+    @Test func `the filmstrip's menu culls the version of its cell`() async throws {
         let (sandbox, model, photo) = try await open()
         defer { sandbox.remove() }
         let own = PhotoAddress(url: photo)
@@ -94,16 +93,20 @@ struct LibraryVersionsTests {
         model.clickInGrid(own)
         let menu = try #require(FilmstripMenu.menu(for: copy, model: model, culling: true))
         let ratings = try #require(menu.items.first { $0.title == "Set Rating" }?.submenu)
-        let four = try #require(ratings.items.firstIndex { $0.title.hasPrefix("4 Stars") })
-        ratings.performActionForItem(at: four)
+        let four = try #require(ratings.items.first { $0.title.hasPrefix("4 Stars") })
+        // `performActionForItem(at:)` sends nothing while `NSApp` is nil, as it is until something makes
+        // `NSApplication.shared`: this suite opens no window.
+        try NSApplication.shared.sendAction(#require(four.action), to: four.target, from: four)
         let rating = { (photo: PhotoAddress) in
             model.library.index(of: photo).flatMap { model.library.items.row($0) }?.metadata.rating
         }
         #expect(rating(copy) == 4 && rating(own) == 0, "the version's row, not its file's")
+        #expect(rating(PhotoAddress(url: photo, version: second)) == 2, "the file's other version as it was")
         try await sandbox.eventually { !model.isWritingCulling }
         await sandbox.service?.settled()
         let sidecar = SidecarStore().load(for: photo)
         #expect(sidecar?.version(first)?.metadata?.rating == 4 && (sidecar?.metadata?.rating ?? 0) == 0)
+        #expect(sidecar?.version(second)?.metadata?.rating == 2)
     }
 
     @Test func `Develop opens the version chosen in Library, and the file's own edit for its own row`() async throws {
