@@ -122,7 +122,7 @@
     }
 
     enum RawScenarios {
-        static let all: [Scenario] = [damaged, balancedInCamera]
+        static let all: [Scenario] = [damaged, balancedInCamera, dRange]
 
         static let damaged = Scenario(
             "raw.damaged", "A damaged raw shows why it won't open, and the editor carries on",
@@ -222,6 +222,80 @@
                         && (verdict(older) == .fail || shot.cast == nil),
                     "At process 17 \(name) isn't balanced twice, as 0.3.3 rendered it: \(earlier), against \(opened) "
                         + "at \(current)",
+                )
+                try app.choose(.resetAll)
+            }
+            try app.main { $0.open([app.photos]) }
+            try app.wait("the photos folder again", timeout: 30) {
+                $0.folder?.standardizedFileURL == app.photos.standardizedFileURL
+            }
+            try app.openWorking()
+        }
+
+        /// A Fujifilm raw shot at DR200 is a stop darker than at DR100, which its camera's JPEG brightens back: from
+        /// process 19 every look adds the stops the file records, and the Exposure slider stays at 0; an edit at 18
+        /// renders it a stop darker, as 0.3.3 did, until it's moved to the current version. Judged as the camera bench
+        /// judges exposure: the midtones of the edit's still against the camera's own JPEG, within half the recorded
+        /// stops of it at 19 and nearer than at 18. The rest is the look's and the camera's exposure anchor, not the
+        /// D-Range: the X-E5's sample opens 0.43 stops brighter than its JPEG, the GFX100 II's 0.12.
+        static let dRange = Scenario(
+            "raw.d-range",
+            "A Fujifilm raw shot at DR200 opens as bright as its camera's JPEG with Exposure at 0; an edit moved to "
+                + "process 18 renders it a stop darker, as 0.3.3 did, until it's moved to the current version",
+            claims: [.feature("develop.calibration")],
+        ) { app in
+            let folder = app.photos.appending(path: "D-Range")
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+                .filter { SupportedFormats.isRaw(folder.appending(path: $0)) }.sorted()
+            guard !names.isEmpty else {
+                throw ScenarioSkip("The run has no raws shot at DR200: `mise run fixtures` fetches them")
+            }
+            try app.main { $0.open([folder]) }
+            try app.wait("the folder of raws shot at DR200, with its photos", timeout: 30) { model in
+                model.folder?.standardizedFileURL == folder.standardizedFileURL
+                    && Set(model.items.map(\.url.lastPathComponent)).isSuperset(of: names)
+            }
+            let current = EditRecipe.currentProcessVersion
+            for name in names {
+                try app.open(name)
+                try app.settle(timeout: 120)
+                try app.wait("\(name) at process 19 or later") { $0.recipe.processVersion >= 19 }
+                let (shift, slider) = try app.main { ($0.info?.exposureShift ?? 0, $0.value(.exposure)) }
+                let preview = try cameraPreview(of: folder.appending(path: name), app: app)
+                let opened = try compare(app, against: preview)
+                try app.expectRenders("\(name)'s edit moved to process 18") {
+                    try app.main { $0.setProcessVersion(18) }
+                }
+                let older = try compare(app, against: preview)
+                app.covered(.feature("develop.calibration"), via: .model)
+                try app.expectRenders("\(name)'s edit moved to Version \(current)") {
+                    try app.main { $0.setProcessVersion(current) }
+                }
+                let back = try compare(app, against: preview)
+                let (now, then, again) = (opened.exposure ?? .nan, older.exposure ?? .nan, back.exposure ?? .nan)
+                app.recorder.write("note", [
+                    name: String(
+                        format: "%.0f stops recorded; against the camera's JPEG %+.2f stops, at 18 %+.2f, at "
+                            + "\(current) again %+.2f",
+                        shift, now, then, again,
+                    ),
+                ])
+                try app.expect(shift >= 1, "\(name) records no D-Range shift (\(shift)): it isn't a DR200 sample")
+                try app.expect(
+                    slider == 0,
+                    "\(name) opens with Exposure at \(slider), where the shift isn't the slider's",
+                )
+                try app.expect(
+                    abs(now) < shift / 2 && abs(now) < abs(then) && now - then >= shift / 2,
+                    String(
+                        format: "\(name) isn't brought within half its D-Range of the camera's JPEG at \(current): "
+                            + "%+.2f stops from it, and %+.2f at 18",
+                        now, then,
+                    ),
+                )
+                try app.expect(
+                    abs(again - now) < 0.05,
+                    String(format: "\(name) moved back to \(current) renders %+.2f stops, not %+.2f", again, now),
                 )
                 try app.choose(.resetAll)
             }

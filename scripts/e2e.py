@@ -251,6 +251,9 @@ def make_test_copy(built: Path, destination: Path) -> Path:
 # The camera coverage set's raws the camera white-balanced (#480), in the run's photos where `mise run fixtures`
 # has fetched them.
 BALANCED_IN_CAMERA = ("Sony_ILCE-7M4_M-lossless.ARW", "Nikon_D810_sRAW.NEF")
+# Its Fujifilm raws shot at DR200, a stop darker than at DR100 (CAM-35): the GFX100 II's maker note says so, and the
+# X-E5's raw exposure bias.
+D_RANGE = ("Fujifilm_X-E5.RAF", "Fujifilm_GFX100-II.RAF")
 
 
 def prepare_photos(photos: Path) -> list[str]:
@@ -285,6 +288,11 @@ def prepare_photos(photos: Path) -> list[str]:
         (photos / "Balanced in Camera").mkdir()
         for path in balanced:
             run(["cp", "-c", str(path), str(photos / "Balanced in Camera" / path.name)])
+    d_range = [cameras / name for name in D_RANGE if (cameras / name).is_file()]
+    if d_range:
+        (photos / "D-Range").mkdir()
+        for path in d_range:
+            run(["cp", "-c", str(path), str(photos / "D-Range" / path.name)])
     return names
 
 
