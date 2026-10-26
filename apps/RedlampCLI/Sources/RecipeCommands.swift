@@ -12,9 +12,10 @@ enum RecipeCommands {
 
     commands:
       list [--query <text>] [--json]           every recipe; the query takes Lightroom words too
-      show <recipe>                            print a recipe as JSON
+      show <recipe>                            print a recipe as JSON; with REDLAMP_FIRMWARE_MODEL, a firmware
+                                               look's id (local/firmware/…) is the model's recipe at its settings
       lint <recipe|all> [--json]               check recipes against the lint chart (exit 1 on failure)
-      render <image> --recipe <recipe> -o <out> [--size <px>] [--amount <0-200>]
+      render <image> --recipe <recipe> -o <out> [--size <px>] [--amount <0-200>] [--16bit]
       contact-sheet -o <sheet.png> [--recipes <list>] [--images <file>…] [--lookdev] [--chart]
                     [--original] [--tile <px>]
       hald-identity [-o <identity.png>] [--level <2-16>]
@@ -146,8 +147,22 @@ enum RecipeCommands {
 
     static func show(_ context: Context) throws {
         guard let spec = context.arguments.positional.first else { throw CLIError(description: "show needs a recipe") }
-        let recipe = try context.library.exportable(context.library.resolve(spec))
+        let recipe = try firmwareLookRecipe(spec, context) ?? context.library.exportable(context.library.resolve(spec))
         try print(String(decoding: RecipeFile.encode(recipe), as: UTF8.self))
+    }
+
+    /// A firmware look's id (`local/firmware/acros/dr200_…`), while the model is on, as the model's own
+    /// recipe for its simulation baked at the settings the id spells out, the look in it: it stays on
+    /// this Mac, so it isn't exportable.
+    static func firmwareLookRecipe(_ spec: String, _ context: Context) throws -> Recipe? {
+        guard let model = context.library.firmwareModel,
+              let settings = FirmwareLook.settings(for: BaseLookReference(id: spec, name: spec)) else { return nil }
+        let look = try FirmwareLook.package(settings, model: model)
+        return Recipe(
+            id: RecipeLibrary.firmwareIDPrefix + settings.simulation.rawValue, name: look.name,
+            group: RecipeLibrary.firmwareGroup, includes: [.baseLook, .treatment],
+            settings: RecipeSettings(treatment: .color), baseLook: look.reference, embeddedBaseLooks: [look],
+        )
     }
 
     static func lint(_ context: Context) async throws {
@@ -193,7 +208,7 @@ enum RecipeCommands {
         let recipe = try context.library.resolvingCard(context.library.resolve(spec))
         let rendered = try await context.renderer().render(
             recipe, image: URL(fileURLWithPath: image), maxLongEdge: arguments.int("--size"),
-            amount: arguments.double("--amount") ?? 100,
+            amount: arguments.double("--amount") ?? 100, sixteenBit: arguments.has("--16bit"),
         )
         try ImageFile.write(rendered, to: URL(fileURLWithPath: output), protecting: [URL(fileURLWithPath: image)])
         print("\(recipe.name) → \(output) \(rendered.width)x\(rendered.height)")
