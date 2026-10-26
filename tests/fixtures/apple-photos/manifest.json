@@ -1,0 +1,101 @@
+{
+  "format": "app.redlamp.simulated-photos",
+  "version": 1,
+  "macOS": 27,
+  "access": "authorized",
+  "collections": [
+    { "id": "album-selects", "title": "Selects", "kind": "album" },
+    { "id": "folder-trips", "title": "Trips", "kind": "folder" },
+    { "id": "album-lisbon", "title": "Lisbon", "kind": "album", "parent": "folder-trips" },
+    { "id": "album-porto", "title": "Porto", "kind": "album", "parent": "folder-trips" },
+    { "id": "smart-favourites", "title": "Favourites", "kind": "smartAlbum" },
+    { "id": "shared-family", "title": "Family", "kind": "sharedAlbum" }
+  ],
+  "assets": [
+    {
+      "id": "8A1F0001-0000-4000-8000-000000000001/L0/001",
+      "cloud": "cloud-0001",
+      "favorite": true,
+      "rating": 4,
+      "caption": "The tram climbing to Graça.",
+      "keywords": ["Tram", "Lisbon"],
+      "location": { "latitude": 38.7139, "longitude": -9.1334 },
+      "albums": ["album-lisbon", "album-porto", "smart-favourites"],
+      "resources": [{ "kind": "photo", "name": "IMG_0001.HEIC", "file": "files/IMG_0001.HEIC" }]
+    },
+    {
+      "id": "8A1F0002-0000-4000-8000-000000000002/L0/001",
+      "cloud": "cloud-0002",
+      "created": "2026-10-05T10:30:00Z",
+      "edited": true,
+      "albums": ["album-lisbon"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0002.JPG", "file": "files/IMG_0002.JPG" },
+        { "kind": "fullSizePhoto", "name": "FullSizeRender.jpeg", "file": "files/FullSizeRender.jpeg" },
+        { "kind": "other", "name": "Adjustments.plist", "type": "com.apple.property-list" }
+      ]
+    },
+    {
+      "id": "8A1F0003-0000-4000-8000-000000000003/L0/001",
+      "subtypes": ["live"],
+      "location": { "latitude": 41.1406, "longitude": -8.6110 },
+      "albums": ["album-lisbon"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0003.HEIC", "file": "files/IMG_0003.HEIC", "inCloud": true },
+        { "kind": "pairedVideo", "name": "IMG_0003.MOV" }
+      ]
+    },
+    {
+      "id": "8A1F0004-0000-4000-8000-000000000004/L0/001",
+      "cloud": "cloud-0004",
+      "favorite": true,
+      "albums": ["album-selects", "album-porto", "smart-favourites"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0004.JPG", "file": "files/IMG_0004.JPG" },
+        { "kind": "alternatePhoto", "name": "IMG_0004.NEF", "file": "../raw/DSC_0750.NEF" }
+      ]
+    },
+    {
+      "id": "8A1F0005-0000-4000-8000-000000000005/L0/001",
+      "albums": ["album-porto"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0005.DNG", "type": "com.adobe.raw-image", "file": "../raw/IMG_1361.DNG" }
+      ]
+    },
+    {
+      "id": "8A1F0010-0000-4000-8000-000000000010/L0/001",
+      "burst": { "id": "burst-1", "key": true },
+      "albums": ["album-lisbon"],
+      "resources": [{ "kind": "photo", "name": "IMG_0010.JPG", "file": "files/IMG_0010.JPG" }]
+    },
+    {
+      "id": "8A1F0011-0000-4000-8000-000000000011/L0/001",
+      "burst": { "id": "burst-1" },
+      "resources": [{ "kind": "photo", "name": "IMG_0011.JPG", "file": "files/IMG_0011.JPG" }]
+    },
+    {
+      "id": "8A1F0012-0000-4000-8000-000000000012/L0/001",
+      "burst": { "id": "burst-1", "userPick": true },
+      "resources": [{ "kind": "photo", "name": "IMG_0012.JPG", "file": "files/IMG_0012.JPG" }]
+    },
+    {
+      "id": "8A1F0020-0000-4000-8000-000000000020/L0/001",
+      "mediaType": "video",
+      "created": "2026-10-05T11:00:00Z",
+      "albums": ["album-lisbon"],
+      "resources": [{ "kind": "other", "name": "IMG_0020.MOV" }]
+    },
+    {
+      "id": "8A1F0030-0000-4000-8000-000000000030/L0/001",
+      "hidden": true,
+      "albums": ["album-lisbon"],
+      "resources": [{ "kind": "photo", "name": "IMG_0030.JPG", "file": "files/IMG_0030.JPG" }]
+    },
+    {
+      "id": "8A1F0040-0000-4000-8000-000000000040/L0/001",
+      "source": "cloudShared",
+      "albums": ["shared-family"],
+      "resources": [{ "kind": "photo", "name": "IMG_0040.JPG", "file": "files/IMG_0040.JPG" }]
+    }
+  ]
+}
