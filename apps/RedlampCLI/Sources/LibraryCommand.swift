@@ -73,6 +73,9 @@ enum LibraryCommand {
            redlamp library import --list | --roll-back <id>|last [--index <path>] [--json]
            redlamp library lightroom <catalog> [--index <path>] [--root <old>=<new>]… [--apply] [--undo] [--census]
                                      [--json]
+           redlamp library photos --albums | --census | --apply --destination <folder> | --undo
+                                  [--album <title or id>]… [--include-hidden] [--index <path>]
+                                  [--simulated <manifest>] [--json]
       fixture  makes a synthetic library in <folder>: a fifth of the photos APFS clones of the raws in
                --raw-sources (tests/fixtures/raw) with their capture dates rewritten, the rest small JPEGs
                and HEICs with varied EXIF, GPS and IPTC; sidecars on 15% and other apps' .xmp on 5%; folders
@@ -198,6 +201,8 @@ enum LibraryCommand {
                --raw-only copies raw files alone, leaving a raw's JPEG and photos that aren't raws on the
                source; --keywords adds keywords. A journal lets an import
                a forced quit cut short finish on the next run; --dry-run shows the plan.
+      photos   lists Apple Photos' albums, reports what importing them would bring, imports them with --apply
+               and takes the last import back with --undo; redlamp library photos --help says more.
     """
 }
 
@@ -234,6 +239,7 @@ extension LibraryCommand {
         case "keywords", "stacks", "groups", "metadata", "collections", "import":
             try await runOrganising(command, rest)
         case "lightroom": try await lightroom(rest)
+        case "photos": try await photos(rest)
         default: throw CLIError(description: "unknown library command \(command)\n\n\(usage)")
         }
     }

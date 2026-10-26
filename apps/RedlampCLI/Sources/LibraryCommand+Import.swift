@@ -128,7 +128,7 @@ extension LibraryCommand {
     }
 
     /// The template `text` writes, or `standard` without one; an error points at what's wrong in it.
-    private static func template(_ text: String?, or standard: NamingTemplate) throws -> NamingTemplate {
+    static func template(_ text: String?, or standard: NamingTemplate) throws -> NamingTemplate {
         guard let text else { return standard }
         do {
             return try NamingTemplate(parsing: text)
