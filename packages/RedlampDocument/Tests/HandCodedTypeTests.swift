@@ -93,9 +93,14 @@ struct HandCodedTypeTests {
         )
         metadata.captureShift = -18000
         metadata.captureOffset = -18000
+        metadata.applePhotos = ApplePhotosOrigin(
+            id: "9F983DBA-EC35-42B8-8773-B597CF782EDD/L0/001", cloud: "9F983DBA-EC35-42B8-8773-B597CF782EDD:001",
+            version: .edited,
+        )
         try check(metadata)
         try check(#require(metadata.location))
         try check(#require(metadata.stack))
+        try check(#require(metadata.applePhotos))
     }
 
     /// A swatch picked on the photo, every setting away from its default.
