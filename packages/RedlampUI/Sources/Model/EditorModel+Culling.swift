@@ -161,7 +161,7 @@ public extension EditorModel {
 
     /// The version Develop's culling reaches: the one open, or the one opening; nil for the photo's own edit.
     private var developedVersion: UUID? {
-        opening == nil ? openVersion : openingVersion
+        opening == nil && info != nil ? openVersion : openingVersion
     }
 
     /// A click on a cell's stars, flag, label or mark, or a photo's context menu: `change` on `photo`, a file's own

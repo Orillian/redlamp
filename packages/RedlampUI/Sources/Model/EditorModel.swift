@@ -922,7 +922,14 @@ public final class EditorModel {
     /// Opens `url`. Unless `keepingSelection`, it becomes the only photo selected. In the Library module it
     /// becomes the active photo without opening: Develop opens it when it's shown (`openActivePhoto`).
     public func select(_ url: URL, keepingSelection: Bool = false) {
-        openingVersion = nil
+        select(url, version: nil, keepingSelection: keepingSelection)
+    }
+
+    /// Opens `url` in its edit `version`, nil for its own (LIB-48): known before the photo starts opening, so what
+    /// shows while it opens, its thumbnail, preview and badges, is that edit's.
+    func select(_ url: URL, version: UUID?, keepingSelection: Bool) {
+        let changesVersion = openingVersion != version
+        openingVersion = version
         if url == selection, opening != nil, info?.url == url, engine.openIfReady(url) != nil {
             // Back before the next photo was read: the open one stays as it was, in a new visit,
             // since what was started on it may have read the other photo meanwhile.
@@ -941,6 +948,9 @@ public final class EditorModel {
             return
         }
         guard url != opening ?? selection else {
+            if changesVersion {
+                showOpeningEdit(of: url)
+            }
             if !keepingSelection {
                 if opening == nil {
                     selectOnly(url)
@@ -1007,14 +1017,16 @@ public final class EditorModel {
                 scheduler = library.scheduler,
                 beforeReadingSidecar,
                 engine,
+                version = openingVersion,
             ] in
             await beforeReadingSidecar(url)
             await saves.wait(for: url)
             await settingsSync.wait(for: url)
             await batchExport.wait(for: url)
             let read = try? await scheduler.run(.onScreen) { OpenedSidecar(url, in: sidecars) }
-            // Usually read while the photo still decodes, so the photo is built for its edit.
-            if let recipe = read?.sidecar?.recipe {
+            // Usually read while the photo still decodes, so the photo is built for the edit it opens in.
+            if let sidecar = read?.sidecar {
+                let recipe = version.flatMap { sidecar.version($0)?.recipe } ?? sidecar.recipe
                 engine.expect(recipe.rawRevision, for: url)
             }
             return read
@@ -1162,10 +1174,7 @@ public final class EditorModel {
         if hasUnmergedEdits {
             hasUnmergedEdits = false
         }
-        let metadata = url.flatMap(library.item(for:))?.metadata ?? PhotoMetadata()
-        if photoMetadata != metadata {
-            photoMetadata = metadata
-        }
+        showOpeningMetadata(of: url)
         openSidecar = Sidecar(recipe: EditRecipe())
         if openVersion != nil {
             openVersion = nil
@@ -1174,6 +1183,27 @@ public final class EditorModel {
             versions = []
         }
         putAwayEditTools()
+    }
+
+    /// The metadata of the edit `url` opens in, from its row, until its sidecar is read.
+    private func showOpeningMetadata(of url: URL?) {
+        let row = url.flatMap { library.index(of: PhotoAddress(url: $0, version: openingVersion)) }
+        let metadata = row.map { library.items[$0].metadata } ?? PhotoMetadata()
+        if photoMetadata != metadata {
+            photoMetadata = metadata
+        }
+    }
+
+    /// Another of the edits of `url`, which is opening, was chosen: what shows of it until it opens is that edit's.
+    private func showOpeningEdit(of url: URL) {
+        if opening == url {
+            if !hasFrame {
+                showCachedPreview(of: url)
+            }
+        } else if selection == url, isLoading, info == nil {
+            showOpeningMetadata(of: url)
+            showThumbnail(of: url)
+        }
     }
 
     /// Ends what was started on the edit open, as a photo or a version is left: eyedroppers, previews, the
@@ -1406,18 +1436,20 @@ public final class EditorModel {
         maskMessage = nil
         readOnlyReason = read.protection
         hasUnmergedEdits = read.hasUnmergedConflicts
-        var metadata = sidecar?.metadata ?? PhotoMetadata()
+        var held = sidecar ?? Sidecar(recipe: EditRecipe())
+        let version = openingVersion.flatMap { held.version($0)?.id }
+        // The changes made while it opened were the edit's it opens in, a version's own (LIB-48).
+        var metadata = held[edit: version]?.metadata ?? PhotoMetadata()
         if read.protection == nil {
             metadataChangesWhileOpening.forEach { $0(&metadata) }
         }
         // A change made after the file was read isn't in it yet: saving once open puts it there.
         let savesMetadata = !metadataChangesWhileOpening.isEmpty && read.protection == nil
         if !metadataChangesWhileOpening.isEmpty {
-            library.update(opened.url) { $0.metadata = metadata }
+            library.update(PhotoAddress(url: opened.url, version: version)) { $0.metadata = metadata }
             metadataChangesWhileOpening = []
         }
-        var held = sidecar ?? Sidecar(recipe: EditRecipe())
-        held.metadata = metadata.isEmpty ? nil : metadata
+        held.changeMetadata(of: version) { $0 = metadata }
         let converted = read.protection == nil && held.recipe.isPristine && held.versions.isEmpty
             ? read.lightroom.map {
                 Self.converting(
@@ -1430,7 +1462,6 @@ public final class EditorModel {
         }
         openSidecar = held
         // Each set only when it changes, as `leave(for:)` sets the photo's state.
-        let version = openingVersion.flatMap { held.version($0)?.id }
         if openVersion != version {
             openVersion = version
         }

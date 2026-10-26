@@ -124,17 +124,23 @@ public extension EditorModel {
     /// library addresses it (`PhotoAddress`). A version the library lists is a photo of its own, selected alone
     /// unless `keepingSelection` (LIB-48).
     func select(_ photo: PhotoAddress, keepingSelection: Bool = false) {
-        let switching = module == .develop && photo.url == selection && info?.url == photo.url && opening == nil
-        if switching {
+        let switching = developHasOpen(photo.url)
+        if !switching {
+            select(photo.url, version: photo.version, keepingSelection: keepingSelection)
+        }
+        // Back to the photo open before the next one was read, it has the edit open it had then.
+        if switching || developHasOpen(photo.url) {
             showVersion(photo.version)
-        } else {
-            select(photo.url, keepingSelection: keepingSelection)
-            openingVersion = photo.version
         }
         if !keepingSelection, photo.version != nil || switching, library.photoID(of: photo) != nil {
             selectOnly(photo)
             selectionAnchor = photo
         }
+    }
+
+    /// Whether Develop has `url` open, and no other photo opening.
+    private func developHasOpen(_ url: URL) -> Bool {
+        module == .develop && url == selection && info?.url == url && opening == nil
     }
 
     /// Makes the edit Develop has open the active photo where the library lists its row, a version's or its file's
