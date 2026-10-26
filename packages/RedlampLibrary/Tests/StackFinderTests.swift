@@ -216,6 +216,26 @@ struct StackFinderTests {
         #expect(stacks.photos(.burst).isEmpty, "a version is no frame of a burst")
     }
 
+    @Test func `a folder's missing photos, whose names the index's names leave out, are in no pair`() async throws {
+        let sandbox = try await IndexSandbox.make()
+        defer { sandbox.remove() }
+        let folder = try #require(try await sandbox.addFolders(["Shoot"])["Shoot"])
+        let ids = try await sandbox.upsert([
+            PhotoRecord(folder: folder, name: "A.JPG", kind: .jpeg),
+            PhotoRecord(folder: folder, name: "B.JPG", kind: .jpeg),
+            PhotoRecord(folder: folder, name: "C.JPG", kind: .jpeg),
+            PhotoRecord(folder: folder, name: "D.ARW", kind: .raw),
+            PhotoRecord(folder: folder, name: "D.JPG", kind: .jpeg),
+        ])
+        let gone = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = try await sandbox.index.write { try $0.markMissing(ids.prefix(3).map { ($0, folder) }, at: gone) }
+        let engine = QueryEngine(index: sandbox.index)
+        try await engine.load()
+        let store = try #require(engine.store)
+        let stacks = try await StackFinder.find(in: sandbox.index, store: store)
+        #expect(stacks.photos(.pair) == [[ids[3], ids[4]]], "each missing photo alone, the pair beside them kept")
+    }
+
     // MARK: - Manual stacks
 
     @Test func `manual stacks gather photos from any folders and keep them out of bursts`() {

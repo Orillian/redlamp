@@ -417,6 +417,8 @@ extension StackFinder {
             for (place, row) in rows.enumerated() {
                 let kind = columns.kinds[Int(row)]
                 let name = columns.name(ofRow: Int(row))
+                // A missing photo, whose name the index's names leave out (`StackNames`), is in no pair.
+                guard !name.isEmpty else { continue }
                 let (base, ext) = NamingJob.split(name)
                 // A file of another kind, or without an extension, is in a pair with its versions alone.
                 let key = StackFinder.pairable.contains(kind) && !ext.isEmpty

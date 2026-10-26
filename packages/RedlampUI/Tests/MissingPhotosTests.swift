@@ -101,4 +101,51 @@ struct MissingPhotosTests {
         try await sandbox.counts { $0.count(of: .health(.missing)) == 2 && $0.count(of: .allPhotographs) == 3 }
         #expect(try await core.index.read { try $0.photo(id: id) }?.state == [.missing], "missing again where it was")
     }
+
+    @Test func `a folder's missing photos are each a cell of their own, so Locate… relinks the one selected`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer {
+            sandbox.remove()
+            EditorModel.answerLocate(with: nil)
+        }
+        try sandbox.photos(["Shoot/A.JPG", "Shoot/B.JPG", "Shoot/C.JPG"])
+        let model = try await sandbox.open()
+        let sources = model.librarySources
+        try await sandbox.counts { $0.count(of: .allPhotographs) == 3 }
+        // Copies of B and C elsewhere in the library, then the three originals deleted.
+        try FileManager.default.createDirectory(at: sandbox.folder("Found"), withIntermediateDirectories: true)
+        for name in ["B.JPG", "C.JPG"] {
+            try FileManager.default.copyItem(at: sandbox.photo("Shoot/" + name), to: sandbox.photo("Found/" + name))
+        }
+        for name in ["A.JPG", "B.JPG", "C.JPG"] {
+            try FileManager.default.removeItem(at: sandbox.photo("Shoot/" + name))
+        }
+        try await sandbox.counts { $0.count(of: .health(.missing)) == 3 && $0.count(of: .allPhotographs) == 2 }
+
+        let stacks = model.gridStacks
+        #expect(sources.show(.health(.missing)))
+        try await sandbox.eventually {
+            !sources.isListing && model.items.count == 3 && model.healthProposals.marked == 3
+                && stacks.stackingsMade > 0 && stacks.isIdle
+        }
+        #expect(model.items.count == 3 && stacks.stackingsMade > 0 && stacks.isIdle, "the photos listed and stacked")
+        #expect(stacks.list == nil, "no stack of the photos the index has no names for")
+        let shown = try #require(model.items.first { $0.name == "B.JPG" }?.url)
+        model.select(shown)
+        // Closed stacks cover the selection on the next main-actor turn.
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.selection == shown && model.selectedCount == 1, "B alone, active")
+
+        EditorModel.answerLocate(with: sandbox.photo("Found/B.JPG"), relinkingOthers: true)
+        #expect(model.perform(.locateMissingPhoto))
+        try await sandbox.eventually { model.healthUndoCount == 1 }
+        await model.healthChangesMade()
+        try await sandbox.counts { $0.count(of: .health(.missing)) == 1 && $0.count(of: .allPhotographs) == 2 }
+        #expect(model.healthUndoCount == 1, "B relinked to its copy")
+        #expect(
+            sources.count(of: .health(.missing)) == 1 && sources.count(of: .allPhotographs) == 2,
+            "C relinked beside it, A still missing",
+        )
+    }
 }
