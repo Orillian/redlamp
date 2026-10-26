@@ -22,6 +22,7 @@ struct NamingProgram: Sendable {
         case ext
         case folder(Int)
         case version
+        case album
         case sequence(Int, NamingSequenceScope)
         case total(Int)
         /// By its place among the template's counters.
@@ -164,6 +165,7 @@ struct NamingProgram: Sendable {
         case .number: return .number(digits(0))
         case .folder: return .folder(max(Int(argument(0)) ?? 1, 1))
         case .version: return .version
+        case .album: return .album
         case .sequence: return .sequence(digits(0), NamingSequenceScope(parsing: argument(1)) ?? .job)
         case .total: return .total(digits(0))
         case .counter:
@@ -330,6 +332,7 @@ extension NamingProgram {
             let names = folders[subject.folder]
             return level <= names.count ? names[level - 1] : ""
         case .version: return fields.version ?? ""
+        case .album: return fields.album ?? ""
         case let .sequence(digits, scope):
             let place = switch scope {
             case .job: subject.sequence.job

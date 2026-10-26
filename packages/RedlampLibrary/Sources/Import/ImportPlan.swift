@@ -388,6 +388,7 @@ struct ImportPlanner {
         fields.flag = photo.choices.flag
         fields.label = photo.choices.label.map(NamingFields.labelName)
         fields.keywords = KeywordPath.texts(Self.ownKeywords(of: photo) + settings.metadata.keywords)
+        fields.album = photo.album
         return fields
     }
 

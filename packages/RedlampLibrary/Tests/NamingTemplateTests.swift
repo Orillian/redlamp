@@ -69,6 +69,7 @@ struct NamingTemplateTests {
             ("{folder}", Self.token(.folder)),
             ("{folder:2}", Self.token(.folder, ["2"])),
             ("{version}", Self.token(.version)),
+            ("{album}", Self.token(.album)),
             ("{sequence}", Self.token(.sequence)),
             ("{sequence:4}", Self.token(.sequence, ["4"])),
             ("{seq:3:folder}", Self.token(.sequence, ["3", "folder"])),

@@ -311,7 +311,7 @@ final class NamingTemplateField: NSObject, NSTextFieldDelegate {
         case .date, .modified, .now, .camera, .make, .model, .lens, .iso, .aperture, .shutter, .focal, .width, .height:
             photoTitle(of: field)
         case .title, .caption, .creator, .copyright, .city, .state, .country, .sublocation, .keywords, .rating, .label,
-             .flag:
+             .flag, .album:
             metadataTitle(of: field)
         case .name, .original, .number, .ext, .folder, .version, .sequence, .total, .counter, .text:
             fileTitle(of: field)
@@ -351,6 +351,7 @@ final class NamingTemplateField: NSObject, NSTextFieldDelegate {
         case .rating: "Rating"
         case .label: "Label"
         case .flag: "Flag"
+        case .album: "Apple Photos Album"
         default: ""
         }
     }

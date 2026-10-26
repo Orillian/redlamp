@@ -195,6 +195,9 @@ public enum NamingField: String, Sendable, Hashable, CaseIterable {
     case label
     /// "Pick" or "Reject".
     case flag
+    /// The album the photo came from: an import from Apple Photos' first album chosen (LIB-54); empty
+    /// elsewhere.
+    case album
     /// The file's name as it is now, without its extension (`filename`).
     case name
     /// The file's name before Redlamp first renamed it, without its extension; its name now if it
@@ -240,7 +243,7 @@ public enum NamingField: String, Sendable, Hashable, CaseIterable {
         case .date, .modified, .now: .dates
         case .camera, .make, .model, .lens, .iso, .aperture, .shutter, .focal, .width, .height: .camera
         case .title, .caption, .creator, .copyright, .city, .state, .country, .sublocation, .keywords, .rating, .label,
-             .flag: .metadata
+             .flag, .album: .metadata
         case .name, .original, .number, .ext, .folder, .version: .file
         case .sequence, .total, .counter: .numbers
         case .text: .text

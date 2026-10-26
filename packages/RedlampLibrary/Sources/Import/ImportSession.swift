@@ -162,6 +162,15 @@ public final class ImportSession: Sendable {
         change(ids) { $0.setLabel(label) }
     }
 
+    /// Gives the photos the album `{album}` names them by (LIB-54).
+    public func album(_ ids: [String], _ album: String?) {
+        state.withLock { state in
+            for id in ids {
+                state.photos[id]?.album = album
+            }
+        }
+    }
+
     /// Takes `photos` as their sources' only ones, listed elsewhere, as they were read and with the choices
     /// made for them: the ingest step lists the one it's given, and the import window plans together the
     /// photos it browsed in a session for each source.

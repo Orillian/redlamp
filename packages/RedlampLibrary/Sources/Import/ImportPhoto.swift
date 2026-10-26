@@ -131,11 +131,13 @@ public struct ImportPhoto: Sendable, Hashable, Identifiable {
     public var choices: ImportChoices
     /// Its files the library already has, recognised by content key, by name.
     public var imported: Set<String>
+    /// The album it comes from, which `{album}` names it by: an import from Apple Photos' (LIB-54).
+    public var album: String?
 
     public init(
         id: String, source: String, folder: String, files: [ImportFile], metadata: CaptureMetadata? = nil,
         xmp: CaptureMetadata? = nil, state: State = .listed, choices: ImportChoices = ImportChoices(),
-        imported: Set<String> = [],
+        imported: Set<String> = [], album: String? = nil,
     ) {
         self.id = id
         self.source = source
@@ -146,6 +148,7 @@ public struct ImportPhoto: Sendable, Hashable, Identifiable {
         self.state = state
         self.choices = choices
         self.imported = imported
+        self.album = album
     }
 
     public var primary: ImportFile {
