@@ -49,7 +49,8 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
     /// which can be a turn ahead, so `follow` knows every cell it has to change.
     private var selected: PhotoAddress?
     private var marked = PhotoSelection()
-    private var prefetching: [URL: UInt64] = [:]
+    /// The thumbnails read ahead, by photo: a file's own or one of its versions (LIB-48).
+    private var prefetching: [PhotoAddress: UInt64] = [:]
     /// The items waiting for a large source's rows, by row (`showRead`).
     private var unread: [Int: FilmstripItem] = [:]
     /// Shown again: it goes back to the filmstrip's place once laid out.
@@ -481,7 +482,7 @@ extension FilmstripStripView {
         else { return }
         item.cell.isSelected = photo.address == selected
         item.cell.isInSelection = photo.address != selected && marked.contains(model.library.photoIDs[row])
-        if let id = prefetching.removeValue(forKey: photo.url) {
+        if let id = prefetching.removeValue(forKey: photo.address) {
             model.thumbnailLoader.cancel(id)
         }
         requestThumbnail(for: item, photo)
@@ -518,7 +519,7 @@ extension FilmstripStripView {
             }
         }
         item.request = model.thumbnailLoader.request(photo, lane: .onScreen) { [weak item] image in
-            guard let item, item.cell.item?.url == photo.url else { return }
+            guard let item, item.cell.item?.address == photo.address else { return }
             item.request = nil
             if let image {
                 item.cell.setImage(image, edit: edit, longEdge: longEdge)
@@ -530,9 +531,9 @@ extension FilmstripStripView {
         model.library.askForRows(at: indexPaths.compactMap { row(ofItem: $0.item) })
         for indexPath in indexPaths {
             guard let row = row(ofItem: indexPath.item), let photo = model.library.items.row(row) else { continue }
-            guard prefetching[photo.url] == nil, !model.thumbnailLoader.hasThumbnail(photo) else { continue }
-            prefetching[photo.url] = model.thumbnailLoader.request(photo, lane: .lookAhead) { [weak self] _ in
-                self?.prefetching.removeValue(forKey: photo.url)
+            guard prefetching[photo.address] == nil, !model.thumbnailLoader.hasThumbnail(photo) else { continue }
+            prefetching[photo.address] = model.thumbnailLoader.request(photo, lane: .lookAhead) { [weak self] _ in
+                self?.prefetching.removeValue(forKey: photo.address)
             }
         }
     }
@@ -540,7 +541,7 @@ extension FilmstripStripView {
     func collectionView(_: NSCollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
         for indexPath in indexPaths {
             if let row = row(ofItem: indexPath.item), let photo = model.library.items.row(row),
-               let id = prefetching.removeValue(forKey: photo.url) {
+               let id = prefetching.removeValue(forKey: photo.address) {
                 model.thumbnailLoader.cancel(id)
             }
         }
@@ -592,7 +593,7 @@ extension FilmstripStripView {
         // Asking the strip for each of thousands of rows takes longer than a frame: a change to that many
         // reaches the cells it holds.
         let rows = diff.updated.count > 64 ? IndexSet(collectionView.subviews.compactMap { view in
-            (view as? FilmstripCellView)?.item.flatMap { model.library.index(of: $0.url) }
+            (view as? FilmstripCellView)?.item.flatMap { model.library.index(of: $0.address) }
         }).intersection(diff.updated) : diff.updated
         for row in rows where model.items.indices.contains(row) {
             guard let index = item(ofRow: row),

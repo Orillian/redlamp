@@ -62,17 +62,17 @@ extension LibraryGridView {
         model.library.askForRows(at: near.lazy.compactMap(row(ofItem:)))
         let items = model.items
         let edge = edge
-        var wanted = Set<URL>()
+        var wanted = Set<PhotoAddress>()
         for index in near where !shown.contains(index) {
             guard let row = row(ofItem: index), let item = items.row(row) else { continue }
-            wanted.insert(item.url)
-            guard prefetching[item.url] == nil, thumbnails.cached(item, edge: edge) == nil else { continue }
-            prefetching[item.url] = thumbnails.request(item, edge: edge, lane: .lookAhead) { [weak self] _ in
-                self?.prefetching.removeValue(forKey: item.url)
+            wanted.insert(item.id)
+            guard prefetching[item.id] == nil, thumbnails.cached(item, edge: edge) == nil else { continue }
+            prefetching[item.id] = thumbnails.request(item, edge: edge, lane: .lookAhead) { [weak self] _ in
+                self?.prefetching.removeValue(forKey: item.id)
             }
         }
-        for (url, id) in prefetching where !wanted.contains(url) {
-            prefetching.removeValue(forKey: url)
+        for (photo, id) in prefetching where !wanted.contains(photo) {
+            prefetching.removeValue(forKey: photo)
             thumbnails.cancel(id)
         }
     }

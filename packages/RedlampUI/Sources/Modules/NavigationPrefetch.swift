@@ -1,5 +1,6 @@
 import Foundation
 import RedlampDesign
+import RedlampDocument
 import RedlampLibrary
 
 /// Reading ahead of held arrow keys in the Library loupe and in Develop (LIB-16). As the active photo steps to
@@ -23,7 +24,8 @@ final class NavigationPrefetch {
 
     private let model: EditorModel
     private var tracker: Tracker?
-    private var last: URL?
+    /// The active photo as last followed: a file's own row or one of its versions' (LIB-48), each a step of its own.
+    private var last: PhotoAddress?
     private var wasShown = false
 
     init(model: EditorModel) {
@@ -32,15 +34,16 @@ final class NavigationPrefetch {
     }
 
     private func follow() {
-        let selection = model.selection
+        let active = model.activeAddress
         let shown = model.module == .develop || model.libraryView == .loupe
         let (previous, entered) = (last, shown && !wasShown)
-        last = selection
+        last = active
         wasShown = shown
-        guard shown, let selection, selection != previous || entered else { return }
+        guard shown, let active, active != previous || entered else { return }
         let library = model.library
         let order = model.gridOrder
-        guard let id = library.photoID(of: selection), let current = library.item(for: selection) else { return }
+        guard let id = library.photoID(of: active), let row = library.index(of: active) else { return }
+        let current = library.items[row]
         let step = entered ? 0 : previous.flatMap(library.photoID(of:)).flatMap(order.place(of:))
             .flatMap { from in order.place(of: id).map { $0 - from } } ?? 0
         // The photo reached stays among those read, so a decode of it still waiting isn't dropped as it's reached.

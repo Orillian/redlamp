@@ -64,7 +64,8 @@ final class LibraryGridView: NSView, NSViewToolTipOwner {
     /// The headers on screen, by item, and those waiting to be used again.
     private(set) var headers: [Int: GroupHeaderCell] = [:]
     private var headerPool: [GroupHeaderCell] = []
-    var prefetching: [URL: UInt64] = [:]
+    /// The thumbnails read ahead, by photo: a file's own or one of its versions (LIB-48).
+    var prefetching: [PhotoAddress: UInt64] = [:]
     /// The selection as last followed. Cells are drawn from these, not from the model, which can be a turn
     /// ahead.
     private var selected: PhotoAddress?
