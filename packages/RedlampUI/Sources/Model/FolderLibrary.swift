@@ -269,6 +269,16 @@ public final class FolderLibrary {
         }
     }
 
+    /// The rows of the versions of the file at `url` in a folder's photos, in their order: right after its own row
+    /// but while they're filtered or sorted.
+    func versionRows(of url: URL) -> [Int] {
+        guard !versionPositions.isEmpty else { return [] }
+        guard !isFiltered, let own = positions[url] else {
+            return versionPositions.keys.filter { $0.url == url }.compactMap(place(of:)).sorted()
+        }
+        return (own + 1 ..< items.count).prefix { items[$0].url == url && items[$0].version != nil }.map(\.self)
+    }
+
     /// The rows of `items`' versions, by address.
     static func versionPositions(of items: some Sequence<LibraryItem>) -> [PhotoAddress: Int] {
         var positions: [PhotoAddress: Int] = [:]

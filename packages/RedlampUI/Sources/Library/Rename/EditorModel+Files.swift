@@ -325,17 +325,21 @@ extension EditorModel {
                 }
                 if let to, let item = step.items[move.id] {
                     restoring.append(FolderLibrary.item(item, at: to))
+                    restoring += versions(of: move.id, in: step, at: to)
                     keys[to] = step.keys[move.id]
                     ids[to] = move.id
                 }
                 continue
             }
             saving.append(from)
+            let versionRows = library.versionRows(of: from)
             if to == nil, let id = library.photoID(of: from) {
                 leaving.insert(id)
+                leaving.formUnion(versionRows.map { library.photoIDs[$0] })
             }
             if !undoing, step.items[move.id] == nil, let item = library.item(for: from) {
                 step.items[move.id] = item
+                step.versionItems[move.id] = versionRows.map { library.items[$0] }
                 step.keys[move.id] = library.contentKey(of: from)
             }
             shown.append(LibraryMoves.Move(from: from, to: to, id: move.id))
@@ -364,6 +368,12 @@ extension EditorModel {
             selectAgain(step)
         }
         return saving
+    }
+
+    /// The versions of photo `id` that `step` took away (LIB-48), at `url`, but those shown there.
+    private func versions(of id: Int64, in step: LibraryFileStep, at url: URL) -> [LibraryItem] {
+        (step.versionItems[id] ?? []).map { FolderLibrary.item($0, at: url) }
+            .filter { library.index(of: $0.address) == nil }
     }
 
     /// The photo shown after `active` that isn't `leaving`, by the photos' IDs, else the nearest before it.
@@ -428,6 +438,7 @@ extension EditorModel {
                 corrections.append(LibraryMoves.Move(from: shown, to: actual, id: move.id))
             } else if let actual, library.index(of: actual) == nil, let item = step.items[move.id] {
                 restoring.append(FolderLibrary.item(item, at: actual))
+                restoring += versions(of: move.id, in: step, at: actual)
                 keys[actual] = step.keys[move.id]
                 ids[actual] = move.id
             }
@@ -520,6 +531,8 @@ final class LibraryFileStep {
     /// shows them again.
     var items: [Int64: LibraryItem] = [:]
     var keys: [Int64: ContentKey] = [:]
+    /// Each photo's versions (LIB-48) as the folders shown listed them before it, in their order, by its index ID.
+    var versionItems: [Int64: [LibraryItem]] = [:]
     /// The photos selected and the active one, before it.
     var selected: Set<URL> = []
     var active: URL?

@@ -68,10 +68,31 @@ struct MovesAhead {
         translated.removed = []
         translated.inserted = []
         translated.updated = []
+        // A version's row (LIB-48) is never ahead itself: one the list has where its file was is where its file is
+        // shown, or nowhere.
+        let (files, ahead) = (listed, photos)
+        let shown = { (version: PhotoAddress) -> PhotoAddress?? in
+            guard version.version != nil, let file = files[version.url], let photo = ahead[file],
+                  photo.shown != version.url
+            else { return nil }
+            return .some(photo.shown.map { PhotoAddress(url: $0, version: version.version) })
+        }
         var arrived: [Int64: (item: LibraryItem, inserted: Bool)] = [:]
         for (items, inserted) in [(change.inserted, true), (change.updated, false)] {
             for item in items {
-                if let id = change.ids[item.address], photos[id] != nil {
+                if let place = shown(item.address) {
+                    let id = translated.ids.removeValue(forKey: item.address)
+                    let key = translated.keys.removeValue(forKey: item.url)
+                    guard let place else { continue }
+                    let moved = FolderLibrary.item(item, at: place.url)
+                    translated.ids[place] = id
+                    translated.keys[place.url] = key
+                    if inserted {
+                        translated.inserted.append(moved)
+                    } else {
+                        translated.updated.append(moved)
+                    }
+                } else if let id = change.ids[item.address], photos[id] != nil {
                     arrived[id] = (item, inserted)
                 } else if inserted {
                     translated.inserted.append(item)
@@ -80,8 +101,13 @@ struct MovesAhead {
                 }
             }
         }
-        // A version's row is never ahead: its file's is.
         for removed in change.removed {
+            if let place = shown(removed) {
+                if let place {
+                    translated.removed.append(place)
+                }
+                continue
+            }
             guard removed.version == nil, let id = listed.removeValue(forKey: removed.url),
                   var photo = photos[id] else {
                 translated.removed.append(removed)
@@ -222,7 +248,8 @@ extension FolderLibrary {
             before()
             publish(moved.diff)
             var restored: [URL: Int64] = [:]
-            for (item, id) in zip(moves.restoring, restoredIDs) where positions[item.url] != nil {
+            for (item, id) in zip(moves.restoring, restoredIDs)
+                where item.version == nil && positions[item.url] != nil {
                 restored[item.url] = id
             }
             return restored
@@ -276,17 +303,26 @@ extension FolderLibrary {
                 target[row] = move.to
             }
         }
+        // A file's versions (LIB-48) go where it goes.
+        let files = Dictionary(moves.moves.map { ($0.from, $0.to) }) { first, _ in first }
+        for (row, item) in items.enumerated() where item.version != nil {
+            if let to = files[item.url] {
+                target[row] = to
+            }
+        }
         guard !filtered else {
             // In place, so the library's filtered list puts them in order and takes out those moved away.
             var items = items
             var positions = positions
             let renamed = target.compactMap { row, url in url.map { (row, $0) } }
-            for (row, _) in renamed {
+            for (row, _) in renamed where items[row].version == nil {
                 positions[items[row].url] = nil
             }
             for (row, url) in renamed {
                 items[row] = item(items[row], at: url)
-                positions[url] = row
+                if items[row].version == nil {
+                    positions[url] = row
+                }
             }
             return Moved(
                 revision: revision, items: items, photoIDs: photoIDs, positions: positions,
@@ -312,7 +348,11 @@ extension FolderLibrary {
         for (item, id) in zip(moves.restoring, restoredIDs) {
             arriving.append((item, id, -1))
         }
-        arriving.sort { LibraryItem.walkPrecedes($0.item, $1.item) }
+        // A file's versions keep their order.
+        arriving = arriving.enumerated().sorted { lhs, rhs in
+            LibraryItem.walkPrecedes(lhs.element.item, rhs.element.item)
+                || !LibraryItem.walkPrecedes(rhs.element.item, lhs.element.item) && lhs.offset < rhs.offset
+        }.map(\.element)
         var merged: [Row] = []
         merged.reserveCapacity(kept.count + arriving.count)
         var (left, right) = (0, 0)
@@ -345,11 +385,10 @@ extension FolderLibrary {
             }
         }
         let shown = merged.map(\.item)
-        // A file's versions (LIB-48) keep its old URL until the library's list brings them where it went.
-        let files = shown.enumerated().filter { $0.element.version == nil }
+        let own = shown.enumerated().filter { $0.element.version == nil }
         return Moved(
             revision: revision, items: shown, photoIDs: ContiguousArray(merged.map(\.id)),
-            positions: Dictionary(files.map { ($1.url, $0) }) { first, _ in first }, diff: diff,
+            positions: Dictionary(own.map { ($1.url, $0) }) { first, _ in first }, diff: diff,
             reordered: !leaving.isEmpty || !inOrder || !restoredIDs.isEmpty,
         )
     }
@@ -389,9 +428,11 @@ extension FolderLibrary {
         await show(LibraryMoves(moves: moves, restoring: restoring, keys: keys))
     }
 
-    /// `item` at `url`, the same photo: its badges, its file's size and date, and its sidecar's.
+    /// `item` at `url`, the same photo: its badges, its file's size and date, its sidecar's, and the version it is.
     nonisolated static func item(_ item: LibraryItem, at url: URL) -> LibraryItem {
         var moved = LibraryItem(url: url, hasEdits: item.hasEdits, metadata: item.metadata)
+        moved.version = item.version
+        moved.versionName = item.versionName
         moved.size = item.size
         moved.modified = item.modified
         moved.hasSidecar = item.hasSidecar
