@@ -234,7 +234,7 @@ public final class SettingsSync {
     /// back too.
     @discardableResult
     func run(
-        _ change: Change, on photos: [URL], title: String, step: RunStep? = nil,
+        _ change: Change, on photos: [PhotoAddress], title: String, step: RunStep? = nil,
         done: @escaping (URL, EditRecipe) -> Void,
     ) -> UUID {
         run(change, on: SelectedPhotos(photos), title: title, step: step, done: done)
@@ -262,7 +262,9 @@ public final class SettingsSync {
     }
 
     /// One Auto Sync step of `source`, onto `photos`; gathered with the steps queued just before it.
-    func autoSync(_ source: EditRecipe, step: RunStep, on photos: [URL], done: @escaping (URL, EditRecipe) -> Void) {
+    func autoSync(
+        _ source: EditRecipe, step: RunStep, on photos: [PhotoAddress], done: @escaping (URL, EditRecipe) -> Void,
+    ) {
         autoSync(source, step: step, on: SelectedPhotos(photos), done: done)
     }
 
@@ -291,7 +293,7 @@ public final class SettingsSync {
     /// The open photo moved through its history (Undo, Redo, a click) to the step whose edit is
     /// `source`, the steps after it being `undone`: each photo of the run in `photos` follows.
     func follow(
-        _ source: EditRecipe, undone: Set<UUID>, session: UUID, on photos: [URL], title: String,
+        _ source: EditRecipe, undone: Set<UUID>, session: UUID, on photos: [PhotoAddress], title: String,
         done: @escaping (URL, EditRecipe) -> Void,
     ) {
         follow(source, undone: undone, session: session, on: SelectedPhotos(photos), title: title, done: done)
@@ -304,7 +306,7 @@ public final class SettingsSync {
         done: @escaping (URL, EditRecipe) -> Void,
     ) {
         guard isAutoSyncing, let run, run.session == session, !run.photos.isEmpty else { return }
-        let members = photos.urls.map { SelectedPhotos($0.filter { run.photos[$0] != nil }) } ?? photos
+        let members = photos.addresses.map { SelectedPhotos($0.filter { run.photos[$0.url] != nil }) } ?? photos
         guard members.count > 0 else { return }
         let job = Job(
             change: .follow(source, undone), photos: members, title: title, stepTitle: title, session: session,
@@ -480,11 +482,11 @@ public final class SettingsSync {
         let inRun = job.session != nil && run?.session == job.session
         var batches = job.photos.batches(of: Self.batch)
         photos: while !Task.isCancelled, let batch = await batches.next() {
-            for url in batch {
+            for url in batch.map(\.url) {
                 guard !Task.isCancelled else { break photos }
                 defer { progress?.done += 1 }
                 // A large selection's photos aren't told from the run's before the batch reaches them.
-                if job.isFollow, job.photos.urls == nil, run?.photos[url] == nil {
+                if job.isFollow, job.photos.addresses == nil, run?.photos[url] == nil {
                     continue
                 }
                 /// The editor made the change, or left the photo as it is.

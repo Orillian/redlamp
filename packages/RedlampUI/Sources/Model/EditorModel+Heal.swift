@@ -437,7 +437,7 @@ public extension EditorModel {
         let openRecipe = recipe
         dustSearch = SettingsSync.Progress(title: "Finding Dust", done: 0, total: chosen.count)
         // A large source's photos are found by their IDs, off the main thread, their rows left unread.
-        let selected = await chosen.all()
+        let selected = await chosen.files()
         let others = selected.filter { $0 != open }
         let targets = [open] + others
         for url in others {
@@ -466,10 +466,15 @@ public extension EditorModel {
         }
         // Whichever photo is open when the batch reaches it is healed in the editor, not behind it.
         var healed: Set<URL> = []
-        settingsSync.run(.healDust(found), on: targets, title: "Remove Dust") { [weak self] url, recipe in
-            healed.insert(url)
-            self?.written(url, recipe)
-        }
+        settingsSync
+            .run(
+                .healDust(found),
+                on: targets.map { PhotoAddress(url: $0) },
+                title: "Remove Dust",
+            ) { [weak self] url, recipe in
+                healed.insert(url)
+                self?.written(url, recipe)
+            }
         dustSearch = nil
         // Still finding dust until the batch is done: it heals the open photo in the editor too.
         await settingsSync.idle()

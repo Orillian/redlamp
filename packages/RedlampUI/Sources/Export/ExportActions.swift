@@ -43,7 +43,7 @@ public enum ExportActions {
     /// What Export with Previous would do for the open photo alone, worked out off the main thread.
     public static func previousExport(model: EditorModel, store: ExportPresetStore) async -> Step {
         guard let info = model.info, let settings = store.previous else { return .needsDialog }
-        let read = reader(for: SelectedPhotos([info.url]), model: model)
+        let read = reader(for: SelectedPhotos([model.openPhoto ?? PhotoAddress(url: info.url)]), model: model)
         guard let names = await names(read, settings: settings, model: model), let target = names.targets.first
         else { return .needsDialog }
         return step(target, settings: settings)
@@ -273,7 +273,7 @@ public enum ExportActions {
             $0.version == nil ? nil : (url: $0.url, name: model.openEditName, metadata: model.photoMetadata)
         }
         return {
-            let urls = await photos.all()
+            let urls = await photos.all().map(\.url)
             func photo(_ url: URL, _ fields: NamingFields) -> ExportNames.Photo {
                 var fields = fields
                 if let version, version.url == url {

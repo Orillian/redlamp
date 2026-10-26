@@ -27,19 +27,24 @@ public extension EditorModel {
         return Array(selected.ids(in: library.photoList))
     }
 
-    /// The photos selected, for an action on them all to work through (`SelectedPhotos`): their URLs, or a large
-    /// source's IDs, the rows not read left unread. `excluding` leaves out the photo at that URL, the open one for
-    /// Sync and Paste.
-    internal func selectionForAction(excluding: URL? = nil) -> SelectedPhotos {
+    /// The photos selected, for an action on them all to work through (`SelectedPhotos`): their addresses, a version
+    /// as itself (LIB-48), or a large source's IDs, the rows not read left unread. `excluding` leaves out the photo it
+    /// names, the edit open for Sync and Paste.
+    internal func selectionForAction(excluding: PhotoAddress? = nil) -> SelectedPhotos {
         guard library.items.readsOnRequest, let source = library.rowSource else {
-            let photos = selectedPhotos
-            return SelectedPhotos(excluding.map { url in photos.filter { $0 != url } } ?? photos)
+            let selected = photoSelection
+            // The active photo alone when nothing else is: the edit of it open, when it's open.
+            let active = selection
+                .map { url in openPhoto.flatMap { $0.url == url ? $0 : nil } ?? PhotoAddress(url: url) }
+            let photos = selected.isEmpty ? active.map { [$0] } ?? [] : library.items
+                .addresses(at: selectedPlaces(selected))
+            return SelectedPhotos(excluding.map { photo in photos.filter { $0 != photo } } ?? photos)
         }
         // Every photo of a list selected is its IDs as they are, without a pass over them.
         let selected = photoSelection.isEmpty ? ContiguousArray(selectedIDs) : photoSelection.ids(in: library.photoList)
         let left = excluding.flatMap(library.photoID(of:))
         let ids = left.map { left in ContiguousArray(selected.lazy.filter { $0 != left }) } ?? selected
-        return SelectedPhotos(ids: ids, read: library.items.rowsRead.mapValues(\.url), source: source)
+        return SelectedPhotos(ids: ids, read: library.items.rowsRead.mapValues(\.address), source: source)
     }
 
     /// Whether every photo selected has its row read: always, unless they're a large source's.

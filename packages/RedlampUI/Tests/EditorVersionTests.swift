@@ -202,11 +202,13 @@ struct EditorVersionTests {
         model.createVersion()
         let version = try #require(model.openVersion)
         model.renameVersion(version, to: "Black and white")
-        let named = ExportActions.reader(for: SelectedPhotos([editor.photo]), model: model)
+        let named = ExportActions.reader(
+            for: SelectedPhotos([PhotoAddress(url: editor.photo, version: version)]), model: model,
+        )
         #expect(await named().map(\.fields.version) == ["Black and white"])
 
         model.showVersion(nil)
-        let own = ExportActions.reader(for: SelectedPhotos([editor.photo]), model: model)
+        let own = ExportActions.reader(for: SelectedPhotos([PhotoAddress(url: editor.photo)]), model: model)
         #expect(await own().map(\.fields.version) == [nil])
     }
 

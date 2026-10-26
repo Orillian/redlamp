@@ -185,20 +185,21 @@ struct LibrarySourceListTests {
         #expect(paths.id(of: PhotoAddress(url: url)) == ids[4])
     }
 
-    @Test func `the URLs and badges read for photos whose rows aren't read are what their rows show`() async throws {
+    @Test func `the addresses and badges read for photos whose rows aren't read are what their rows show`(
+    ) async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "source-list-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let (index, ids, items, _) = try await photosIndex(in: folder)
         let rows = LargeListRows(index: index, firstRead: LibrarySourceList.firstRead)
         // In one pass over their IDs' range, and a row at a time.
-        let (urls, badges) = try await (rows.urls(of: ids), rows.badges(of: ids))
+        let (addresses, badges) = try await (rows.addresses(of: ids), rows.badges(of: ids))
         let few = Array(ids.prefix(10))
-        let (fewURLs, fewBadges) = try await (rows.urls(of: few), rows.badges(of: few))
+        let (fewAddresses, fewBadges) = try await (rows.addresses(of: few), rows.badges(of: few))
         await index.close()
-        #expect(ids.map { urls[$0] } == items.map(\.url))
+        #expect(ids.map { addresses[$0] } == items.map(\.address))
         #expect(ids.map { badges[$0]?.address } == items.map(\.address))
         #expect(ids.map { badges[$0]?.values } == items.map { CullingValues($0.metadata) })
-        #expect(few.map { fewURLs[$0] } == items.prefix(10).map(\.url))
+        #expect(few.map { fewAddresses[$0] } == items.prefix(10).map(\.address))
         #expect(few.map { fewBadges[$0]?.values } == items.prefix(10).map { CullingValues($0.metadata) })
         // Photo 27 has no sidecar, and its rating and label are other apps'; photo 9's are Redlamp's.
         #expect(badges[ids[27]]?.values.rating == 0 && badges[ids[27]]?.values.customLabel == nil)

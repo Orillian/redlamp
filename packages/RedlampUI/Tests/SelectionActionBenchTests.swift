@@ -48,7 +48,7 @@ struct SelectionActionBenchTests {
             selection.selectAll(in: all)
             let ids = selection.ids(in: all)
             let taken = clock.now - start
-            // Its first batch's URLs, then every one's, each folder's path read afresh.
+            // Its first batch's addresses, then every one's, each folder's path read afresh.
             let photos = SelectedPhotos(
                 ids: ids, read: [:], source: LargeListRows(index: core.index, firstRead: LibrarySourceList.firstRead),
             )
@@ -57,16 +57,16 @@ struct SelectionActionBenchTests {
             let first = await batches.next()
             let firstBatch = clock.now - start
             start = clock.now
-            let urls = await photos.all()
-            let everyURL = clock.now - start
+            let addresses = await photos.all()
+            let everyAddress = clock.now - start
             // What culling reads of them: every one's URL and badges, each folder's path read afresh.
             start = clock.now
             let badges = try await LargeListRows(index: core.index, firstRead: LibrarySourceList.firstRead)
                 .badges(of: Array(ids))
             let everyBadge = clock.now - start
             #expect(first?.count == SettingsSync.batch)
-            #expect(urls.count == all.count)
-            #expect(urls == all.ids.compactMap { rows.items[$0]?.url }, "the rows' own URLs, in order")
+            #expect(addresses.count == all.count)
+            #expect(addresses == all.ids.compactMap { rows.items[$0]?.address }, "the rows' own addresses, in order")
             #expect(all.ids.allSatisfy { id in
                 rows.items[id]
                     .map { badges[id]?.address == $0.address && badges[id]?.values == CullingValues($0.metadata) }
@@ -75,8 +75,8 @@ struct SelectionActionBenchTests {
             print("""
             SELECTION-ACTION run \(run): \(all.count) photos selected; every row read and mapped in \
             \(Self.milliseconds(everyRow)); the selection's IDs taken in \(Self.milliseconds(taken)) on the main \
-            thread; the first \(SettingsSync.batch) photos' URLs in \(Self.milliseconds(firstBatch)), every \
-            one's in \(Self.milliseconds(everyURL)), every one's URL and badges, as culling reads them, in \
+            thread; the first \(SettingsSync.batch) photos' addresses in \(Self.milliseconds(firstBatch)), every \
+            one's in \(Self.milliseconds(everyAddress)), every one's URL and badges, as culling reads them, in \
             \(Self.milliseconds(everyBadge)); load \(Self.load)
             """)
         }

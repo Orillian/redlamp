@@ -154,22 +154,31 @@ public struct LibraryItems: RandomAccessCollection, MutableCollection, RangeRepl
 
     /// The URLs of the rows read at `places`, in order: every one's but a large source's not read yet.
     func urls(at places: some Sequence<Int>) -> [URL] {
-        var urls: [URL] = []
-        urls.reserveCapacity(places.underestimatedCount)
+        values(at: places, \.url)
+    }
+
+    /// The addresses of the photos at `places`, as `urls(at:)` gives their URLs: a version as itself (LIB-48).
+    func addresses(at places: some Sequence<Int>) -> [PhotoAddress] {
+        values(at: places, \.address)
+    }
+
+    private func values<Value>(at places: some Sequence<Int>, _ value: (LibraryItem) -> Value) -> [Value] {
+        var values: [Value] = []
+        values.reserveCapacity(places.underestimatedCount)
         guard let sparse else {
             listed.withUnsafeBufferPointer { items in
                 for place in places where items.indices.contains(place) {
-                    urls.append(items[place].url)
+                    values.append(value(items[place]))
                 }
             }
-            return urls
+            return values
         }
         for place in places where sparse.ids.indices.contains(place) {
             if let item = sparse.read[sparse.ids[place]] {
-                urls.append(item.url)
+                values.append(value(item))
             }
         }
-        return urls
+        return values
     }
 }
 

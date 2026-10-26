@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import RedlampEngineAPI
 
 /// Sync Settings, and Paste, Update AI Masks and mask presets across a selection: the active
@@ -12,7 +13,7 @@ public extension EditorModel {
     /// The selection's photos other than the open one, for a batch on them all: a large source's taken by their IDs,
     /// their URLs read as the batch reaches them (`selectionForAction`).
     internal var otherSelectedForAction: SelectedPhotos {
-        selectionForAction(excluding: selection)
+        selectionForAction(excluding: openPhoto ?? selection.map { PhotoAddress(url: $0) })
     }
 
     var canSync: Bool {

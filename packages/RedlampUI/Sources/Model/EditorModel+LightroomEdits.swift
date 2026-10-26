@@ -100,7 +100,7 @@ public extension EditorModel {
             photos = selectionForAction()
             subject = "the \(photos.count) selected photos"
         } else {
-            photos = SelectedPhotos(library.items.allRows.map(\.url))
+            photos = SelectedPhotos(library.items.allRows.map(\.address))
             let place = folder.map { " in \($0.lastPathComponent)" } ?? ""
             subject = photos.count == 1 ? "the photo\(place)" : "the \(photos.count) photos\(place)"
         }
@@ -112,7 +112,8 @@ public extension EditorModel {
         let index = library.service?.core?.index
         let slotLooks = recipes.library.filledSlots
         Task { [engine] in
-            let urls = await photos.all()
+            // A file's own edit is converted, never a version's.
+            let urls = await photos.files()
             var indexed: [URL: LightroomXMPScan.Indexed] = [:]
             if let index {
                 indexed = await (try? LightroomXMPScan.indexed(urls, in: index)) ?? [:]
@@ -141,7 +142,8 @@ public extension EditorModel {
         activity.record(.action, "Convert Lightroom Edits: \(scan.conversions.count) photos")
         saveNow()
         let batch = settingsSync.run(
-            .convertLightroom(conversions), on: scan.conversions.map(\.photo), title: Self.conversionTitle,
+            .convertLightroom(conversions), on: scan.conversions.map { PhotoAddress(url: $0.photo) },
+            title: Self.conversionTitle,
             done: written,
         )
         let id = lightroomConversion?.id

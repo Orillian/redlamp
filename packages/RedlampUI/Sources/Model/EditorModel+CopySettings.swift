@@ -118,7 +118,7 @@ public extension EditorModel {
         guard let clipboard else { return }
         settingsSync.run(
             .paste(clipboard.source, clipboard.selection),
-            on: [photo],
+            on: [PhotoAddress(url: photo)],
             title: "Paste Settings",
             done: written,
         )

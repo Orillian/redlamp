@@ -53,11 +53,14 @@ final class LargeListRows: Sendable {
         return rows
     }
 
-    /// The URLs of the photos `ids`, from their folders and names alone, for an action on photos whose rows aren't
-    /// read (`SelectedPhotos`); photos the index no longer has are left out. Many photos close together in ID are
-    /// read in one pass over their range, in parts on three of the index's readers, as their rows are.
-    func urls(of ids: [Int64]) async throws -> [Int64: URL] {
-        try await read(ids) { _, url in url }
+    /// The addresses of the photos `ids`, from their folders, names and versions alone (LIB-48), for an action on
+    /// photos whose rows aren't read (`SelectedPhotos`); photos the index no longer has are left out. Many photos close
+    /// together in ID are read in one pass over their range, in parts on three of the index's readers, as their rows
+    /// are.
+    func addresses(of ids: [Int64]) async throws -> [Int64: PhotoAddress] {
+        try await read(ids, columns: "version") { row, url in
+            PhotoAddress(url: url, version: PhotoRecord.version(code: row.string(at: 3)))
+        }
     }
 
     /// What culling reads of a photo whose row isn't read: its address, a version's included (LIB-48), and what its
