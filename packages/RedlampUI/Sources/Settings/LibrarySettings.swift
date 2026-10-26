@@ -3,7 +3,8 @@ import RedlampDesign
 import RedlampLibrary
 import SwiftUI
 
-/// Settings › Library: the library's state, and the metadata it shares with other apps (LIB-24, DEC-44).
+/// Settings › Library: the library's state, the metadata it shares with other apps (LIB-24, DEC-44), and whether the
+/// new photos in the albums imports from Apple Photos follow are imported without asking (LIB-55).
 /// Other apps' ratings, labels, keywords and captions are always read; standard `.xmp` sidecars are
 /// written beside the photos only once it's turned on, with labels in the names the chosen app reads,
 /// and kept in the library's index, where `redlamp library xmp` reads them too. Turning writing on or
@@ -11,6 +12,7 @@ import SwiftUI
 /// unless Write for All Photos is asked for.
 struct LibrarySettings: View {
     @State private var model: LibrarySettingsModel
+    @Bindable private var applePhotos = ApplePhotosPreferences.shared
 
     init(library: LibraryService) {
         _model = State(initialValue: LibrarySettingsModel(library: library))
@@ -56,6 +58,20 @@ struct LibrarySettings: View {
             } footer: {
                 Text(model.footer)
                     .formFooter()
+            }
+            Section {
+                Toggle("Import new photos from followed albums automatically", isOn: $applePhotos.importsAutomatically)
+                    .accessibilityIdentifier("settings.library.apple-photos.automatic")
+            } header: {
+                Text("Apple Photos")
+            } footer: {
+                Text(
+                    "Each import from Apple Photos follows the albums it chose, and the Library panel’s From Apple "
+                        + "Photos offers the new photos in them. Turned on, they’re imported with the last import’s "
+                        + "settings a minute after Photos last changes, while Redlamp runs. Nothing is removed from "
+                        + "Redlamp when a photo leaves Photos or an album.",
+                )
+                .formFooter()
             }
             if let failure = model.failure {
                 Section {

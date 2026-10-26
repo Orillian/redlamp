@@ -123,6 +123,7 @@ struct RedlampApp: App {
             FeedbackActions.start()
             if !Self.isMeasuringFolders {
                 ImportActions.start(model: model)
+                ApplePhotosActions.start(model: model)
             }
             Self.openInitialFolder(model: model)
             // The working set's and the library's roots get theirs as they're found again.

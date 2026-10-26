@@ -90,8 +90,9 @@ class SourceOutlineView: SidebarOutlineView {
     }
 }
 
-/// The Library section's list: All Photographs, Previous Import, Marked and Rejected, each once it holds photos,
-/// then Library Health's checks inside its group, each while it finds something.
+/// The Library section's list: All Photographs, Previous Import, Marked and Rejected, each once it holds photos, From
+/// Apple Photos while the albums followed have new photos (LIB-55), then Library Health's checks inside its group,
+/// each while it finds something.
 final class LibraryOutlineView: SourceOutlineView {
     private var healthExpanded = true
 
@@ -117,6 +118,10 @@ final class LibraryOutlineView: SourceOutlineView {
             ))]
         }
         var nodes = sources.libraryEntries.map { SidebarNode(.source(row($0))) }
+        let fromPhotos = model.applePhotosFollower.newPhotos
+        if fromPhotos > 0 {
+            nodes.append(SidebarNode(.applePhotos(count: fromPhotos)))
+        }
         let checks = sources.healthEntries
         if !checks.isEmpty {
             nodes.append(SidebarNode(.libraryHealth, children: checks.map { SidebarNode(.source(row($0))) }))

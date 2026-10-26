@@ -26,6 +26,7 @@
             + LightroomScenarios.all
             + LightroomSidecarScenarios.all
             + ApplePhotosScenarios.all
+            + ApplePhotosFollowScenarios.all
             + LibraryPanelScenarios.all
             + HealthScenarios.all
             + MissingPhotosScenarios.all

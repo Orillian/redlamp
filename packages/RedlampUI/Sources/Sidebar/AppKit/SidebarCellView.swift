@@ -217,6 +217,12 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
                 showChevron()
             }
             show(Self.healthDecoration)
+        case let .applePhotos(count):
+            setAccessibilityIdentifier("sources.apple-photos")
+            show(Self.applePhotosDecoration(count))
+            trailing = ApplePhotosOfferAccessory(count: count, rowSize: rowSize, look: look) { [model] in
+                ApplePhotosActions.importNew(model: model)
+            }
         }
         if let symbol {
             showIcon(symbol)
@@ -531,6 +537,8 @@ final class SidebarCellView: NSTableCellView, NSMenuDelegate {
             return Self.sourceMenu(row, model: model, anchor: self)
         case .libraryHealth:
             return Self.healthMenu(model: model)
+        case let .applePhotos(count):
+            return Self.applePhotosMenu(count, model: model)
         default:
             return nil
         }

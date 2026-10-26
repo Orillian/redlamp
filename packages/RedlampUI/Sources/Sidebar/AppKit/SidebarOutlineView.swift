@@ -30,6 +30,8 @@ final class SidebarNode: NSObject {
         case source(SourceRow)
         /// Library Health's checks, inside it (LIB-40).
         case libraryHealth
+        /// From Apple Photos: the new photos in the albums imports from Apple Photos follow, with Import (LIB-55).
+        case applePhotos(count: Int)
     }
 
     /// Updated in place by lists that reload one row at a time (the Folders panel).
@@ -552,6 +554,8 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
             }
         case .recentlyTrashed:
             model.showRecentlyTrashed()
+        case .applePhotos:
+            ApplePhotosActions.open(model: model)
         default:
             break
         }
