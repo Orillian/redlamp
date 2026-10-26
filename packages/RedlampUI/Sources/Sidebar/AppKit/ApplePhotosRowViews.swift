@@ -14,6 +14,11 @@ extension SidebarCellView {
         )
     }
 
+    /// From Apple Photos' Import, in its row.
+    var applePhotosImport: NSButton? {
+        subviews.lazy.compactMap { ($0 as? ApplePhotosOfferAccessory)?.button }.first
+    }
+
     static func applePhotosMenu(_ count: Int, model: EditorModel) -> NSMenu {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Import \(ProgressText.count(count, "New Photo"))") {

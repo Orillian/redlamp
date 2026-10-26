@@ -278,10 +278,17 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
     }
 
     /// A source's row shows its source as it's pressed, as the Finder's sidebar shows a place, and a set's chevron
-    /// opens or closes it; every other row is the table's, which acts as the click ends.
+    /// opens or closes it; From Apple Photos' Import imports as it's pressed; every other row is the table's, which
+    /// acts as the click ends.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let index = row(at: point)
+        if index >= 0, let node = item(atRow: index) as? SidebarNode, case .applePhotos = node.kind,
+           let button = (view(atColumn: 0, row: index, makeIfNecessary: false) as? SidebarCellView)?.applePhotosImport,
+           button.bounds.contains(button.convert(event.locationInWindow, from: nil)) {
+            button.performClick(nil)
+            return
+        }
         guard index >= 0, let node = item(atRow: index) as? SidebarNode, case let .source(source) = node.kind,
               !isOnDisclosure(point, row: index)
         else {

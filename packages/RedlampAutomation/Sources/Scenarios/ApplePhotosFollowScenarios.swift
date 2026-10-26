@@ -25,7 +25,7 @@
                 model.showLibrary(.grid)
             }
             try app.waitForSourceRowInPlace("sources.apple-photos")
-            try app.clickControl("sources.apple-photos.import")
+            try app.pressInSourceRow("sources.apple-photos.import")
             try app.waitInPhotosWindow("the new photos imported", timeout: 180) { window in
                 window.phase == "imported" && window.outcome?.imported == 2
             }
@@ -76,9 +76,37 @@
             app.covered(.feature("workspace.settings"), via: .mouse)
         }
 
-        /// From Apple Photos' count, while the Library panel shows it.
+        /// From Apple Photos' state, while the Library panel shows it: what VoiceOver reads of its row.
         @MainActor static func offered() -> String? {
             Views.editorWindow.flatMap { Views.shown("sources.apple-photos", in: $0) }?.accessibilityLabel()
+        }
+    }
+
+    extension RunningApp {
+        /// Presses the control carrying `identifier` in a row of the Library section, as the mouse does: the list takes
+        /// the press, through the window while it's key and as the click after activation would while it isn't.
+        func pressInSourceRow(_ identifier: String) throws {
+            try wait("\(identifier) on screen") { _ in Self.sourceRow(identifier) != nil }
+            post { _ in
+                guard let window = Views.editorWindow, let control = Self.sourceRow(identifier) else { return }
+                let frame = control.convert(control.bounds, to: nil)
+                guard let press = NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: NSPoint(x: frame.midX, y: frame.midY), modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
+                )
+                else { return }
+                var list = control.superview
+                while let view = list, !(view is NSOutlineView) {
+                    list = view.superview
+                }
+                if window.isKeyWindow {
+                    window.sendEvent(press)
+                } else {
+                    list?.mouseDown(with: press)
+                }
+            }
+            pause(0.2)
         }
     }
 #endif

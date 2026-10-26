@@ -186,34 +186,40 @@
             }
         }
 
-        /// Clicks the button or box carrying `identifier` in the Apple Photos window through the window, as the
-        /// mouse does.
+        /// Clicks the button or box carrying `identifier` in the Apple Photos window open now, as the mouse does. While
+        /// the app isn't active or the window isn't key, a press goes nowhere, so there the control is clicked as the
+        /// keyboard clicks it, as `click(_:inWindowTitled:)` does.
         func clickInPhotosWindow(_ identifier: String) throws {
             try waitInPhotosWindow("\(identifier) shown and enabled") { window in
                 window.control(identifier).map { $0.shown && $0.enabled } ?? false
             }
-            let location = try inPhotosWindow { controller -> NSPoint in
+            let location = try inPhotosWindow { controller -> NSPoint? in
                 guard let window = controller.window, let content = window.contentView,
-                      let control = Views.shown(identifier, in: window) ?? Views.accessible(identifier, in: window)
+                      let control = Views.shown(identifier, in: window) as? NSControl
                 else { throw ScenarioFailure("\(identifier) isn't in the Apple Photos window") }
-                window.makeKeyAndOrderFront(nil)
+                guard NSApp.isActive, window.isKeyWindow else {
+                    control.performClick(nil)
+                    return nil
+                }
                 content.layoutSubtreeIfNeeded()
                 let frame = control.convert(control.bounds, to: nil)
                 return NSPoint(x: frame.midX, y: frame.midY)
             }
-            post { _ in
-                guard let window = ApplePhotosWindowController.current?.window else { return }
-                let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
-                    NSEvent.mouseEvent(
-                        with: type, location: location, modifierFlags: [],
-                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1,
-                    )
+            if let location {
+                post { _ in
+                    guard let window = ApplePhotosWindowController.current?.window else { return }
+                    let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
+                        NSEvent.mouseEvent(
+                            with: type, location: location, modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                            context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1,
+                        )
+                    }
+                    guard events.count == 2 else { return }
+                    // The button tracks the press, and takes the release from the queue as the mouse's.
+                    NSApp.postEvent(events[1], atStart: false)
+                    window.sendEvent(events[0])
                 }
-                guard events.count == 2 else { return }
-                // The button tracks the press, and takes the release from the queue as the mouse's.
-                NSApp.postEvent(events[1], atStart: false)
-                window.sendEvent(events[0])
             }
             pause(0.2)
         }
