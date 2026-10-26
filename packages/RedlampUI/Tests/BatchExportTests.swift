@@ -55,13 +55,16 @@ struct BatchExportTests {
 
     /// Runs `targets` and returns the report once the batch is done.
     private func export(
-        _ fixture: Fixture, _ targets: [ExportNames.Target], open: (url: URL, recipe: EditRecipe)? = nil,
-        while running: () async throws -> Void = {},
+        _ fixture: Fixture, _ targets: [ExportNames.Target], photos: [PhotoAddress] = [],
+        open: (url: URL, recipe: EditRecipe)? = nil, while running: () async throws -> Void = {},
     ) async throws -> BatchExport.Report {
         var report: BatchExport.Report?
         var settings = ExportSettings()
         settings.revealInFinder = false
-        fixture.model.batchExport.run(BatchExport.Job(targets: targets, settings: settings, open: open) { report = $0 })
+        let open = open.map { BatchExport.Open(photo: PhotoAddress(url: $0.url), recipe: $0.recipe) }
+        fixture.model.batchExport.run(BatchExport.Job(
+            targets: targets, photos: photos, settings: settings, open: open,
+        ) { report = $0 })
         try await running()
         let deadline = ContinuousClock.now + .seconds(30)
         while report == nil, ContinuousClock.now < deadline {
@@ -90,6 +93,44 @@ struct BatchExportTests {
         #expect(fixture.worker.releases.withLock { $0 } == 3)
         #expect(fixture.model.batchExport.progress == nil)
         #expect(fixture.model.batchExport.summary == "Exported 3 photos")
+    }
+
+    @Test func `a file and its versions export each with its own edit and metadata, its sidecar read once`(
+    ) async throws {
+        let fixture = try fixture(2)
+        defer { fixture.cleanup() }
+        let (photo, copy) = (fixture.photos[1], UUID())
+        var recipe = EditRecipe()
+        recipe[.exposure] = 0.9
+        var sidecar = try #require(SidecarStore().load(for: photo))
+        sidecar.versions = [PhotoVersion(id: copy, name: "Copy 1", recipe: recipe, metadata: PhotoMetadata(rating: 4))]
+        try SidecarStore().save(sidecar, for: photo)
+        var version = ExportNames.Photo(url: photo)
+        version.fields.version = "Copy 1"
+        var settings = ExportSettings()
+        settings.naming = ExportNaming(template: "{name} {version}")
+        let targets = try ExportNames(
+            [ExportNames.Photo(url: fixture.photos[0]), ExportNames.Photo(url: photo), version],
+            settings: settings, reading: UnreadableFiles(),
+        ).targets
+        var fields: [PhotoMetadata?] = []
+        fixture.model.batchExport.fields = { _, metadata in
+            fields.append(metadata)
+            return nil
+        }
+
+        let report = try await export(
+            fixture, targets,
+            photos: [
+                PhotoAddress(url: fixture.photos[0]),
+                PhotoAddress(url: photo),
+                PhotoAddress(url: photo, version: copy),
+            ],
+        )
+        #expect(report.written.count == 3 && Set(report.written).count == 3)
+        #expect(report.written.last?.lastPathComponent.hasPrefix("IMG_0002 Copy 1") == true)
+        #expect(fixture.worker.stills.map { $0.recipe[.exposure] } == [0.1, 0.2, 0.9])
+        #expect(fields.map { $0?.rating } == [nil, nil, 4], "the version's own metadata, the files' the library's")
     }
 
     @Test func `each photo is built at its own edit's raw revision before it opens`() async throws {

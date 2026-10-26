@@ -44,15 +44,23 @@ public final class BatchExport {
         public var total = 0
     }
 
-    /// A batch to export: where each photo goes, and the settings.
+    /// A batch to export: where each photo goes, the edit of it each exports, and the settings.
     struct Job {
         var targets: [ExportNames.Target]
+        /// The edit each target exports, in their order: its file's own, or a version's (LIB-48); the file's own for a
+        /// target beyond them.
+        var photos: [PhotoAddress] = []
         var settings: ExportSettings
-        /// The open photo and its edit as it is on screen, when it's one of them.
-        var open: (url: URL, recipe: EditRecipe)?
-        /// The metadata of the version open, when `open`'s edit is a version's (EDT-09).
-        var openVersion: PhotoMetadata?
+        /// The edit open in the editor, when it's one of them.
+        var open: Open?
         var done: @MainActor (Report) -> Void = { _ in }
+    }
+
+    /// The edit open in the editor as it is on screen, and when it's a version's, the version's metadata (EDT-09).
+    struct Open: Sendable {
+        var photo: PhotoAddress
+        var recipe: EditRecipe
+        var metadata: PhotoMetadata?
     }
 
     /// The batch under way: its photos done and in all; nil while none runs.
@@ -70,13 +78,13 @@ public final class BatchExport {
     @ObservationIgnored var saved: @MainActor (URL) async -> Void = { _ in }
     /// A Base Look an edit uses that the engine doesn't know, from the looks installed.
     @ObservationIgnored var baseLook: @MainActor (BaseLookReference) -> BaseLookDefinition? = { _ in nil }
-    /// The library's fields for a photo, or for the version of it whose metadata is given, which go with it under the
-    /// settings' metadata policy.
+    /// The library's fields for a photo, or with a version's metadata, the version's over its file's, which go with it
+    /// under the settings' metadata policy.
     @ObservationIgnored var fields: @MainActor (URL, PhotoMetadata?) async -> ExportMetadata.Fields? = { _, _ in nil }
     /// Waited for as each photo's export starts (tests hold a photo here).
     @ObservationIgnored var beforeExporting: @MainActor (URL) async -> Void = { _ in }
 
-    /// A job and the edits it took when it was asked for.
+    /// A job, its targets to export, and the edits it took for them when it was asked for.
     private struct Queued {
         var job: Job
         var photos: [ExportNames.Target]
@@ -96,8 +104,10 @@ public final class BatchExport {
 
     /// Takes `job`'s edits now, and exports it once the batch under way, if any, is done.
     func run(_ job: Job) {
-        let photos = job.targets.filter { $0.existing != .skipped }
-        queue.append(Queued(job: job, photos: photos, edits: take(photos.map(\.photo), open: job.open)))
+        let exported = job.targets.indices.filter { job.targets[$0].existing != .skipped }
+        let edits = exported
+            .map { job.photos.indices.contains($0) ? job.photos[$0] : PhotoAddress(url: job.targets[$0].photo) }
+        queue.append(Queued(job: job, photos: exported.map { job.targets[$0] }, edits: take(edits, open: job.open)))
         guard task == nil else { return }
         task = Task { [weak self] in
             while let self, !queue.isEmpty {
@@ -138,9 +148,8 @@ public final class BatchExport {
                 guard let engine else { throw Problem("Redlamp couldn't start its export engine.") }
                 // A task of its own, which Cancel doesn't reach: the photo under way is finished.
                 let edit = edits[index]
-                let version = target.photo == job.open?.url ? job.openVersion : nil
                 try await Task {
-                    try await write(target, edit: edit, version: version, settings: job.settings, engine: engine)
+                    try await write(target, edit: edit, settings: job.settings, engine: engine)
                 }.value
                 report.written.append(target.url)
             } catch {
@@ -173,52 +182,58 @@ public final class BatchExport {
         }
     }
 
-    /// An edit as a batch took it.
+    /// An edit as a batch took it, with a version's metadata (nil for a file's own edit, whose fields the library has).
     private enum Edit: Sendable {
         /// With its masks' bitmaps.
-        case loaded(EditRecipe)
+        case loaded(EditRecipe, PhotoMetadata?)
         /// Without them: they're read from the photo's sidecar.
-        case unloaded(EditRecipe)
+        case unloaded(EditRecipe, PhotoMetadata?)
         /// Why the photo isn't exported.
         case unreadable(String)
     }
 
-    /// Each photo's edit as it is now: `open`'s as given, the others' read from their sidecars off the main thread
-    /// once their saves are on disk, without their masks' bitmaps.
-    private func take(_ photos: [URL], open: (url: URL, recipe: EditRecipe)?) -> Task<[Edit], Never> {
+    /// Each edit as it is now: `open`'s as given, the others' read from their photos' sidecars off the main thread,
+    /// once a sidecar each, once their saves are on disk, without their masks' bitmaps.
+    private func take(_ photos: [PhotoAddress], open: Open?) -> Task<[Edit], Never> {
         let id = UUID()
+        let files = SelectedPhotos.files(of: photos.filter { $0 != open?.photo })
         let task = Task { [weak self, sidecars, saved] () -> [Edit] in
             defer { self?.taking[id] = nil }
-            for url in photos where url != open?.url {
+            for url in files {
                 await saved(url)
             }
             return await Task.detached(priority: .userInitiated) {
-                photos.map { url -> Edit in
-                    if let open, open.url == url {
-                        return .loaded(open.recipe)
+                var reads: [URL: SidecarRead] = [:]
+                return photos.map { photo -> Edit in
+                    if let open, open.photo == photo {
+                        return .loaded(open.recipe, open.metadata)
                     }
-                    let read = sidecars.store(for: url).readForEditing(for: url)
+                    let url = photo.url
+                    let read = reads[url] ?? sidecars.store(for: url).readForEditing(for: url)
+                    reads[url] = read
                     guard !read.failed else { return .unreadable("Its edit couldn't be read.") }
                     if read.sidecar == nil, let protection = read.protection {
                         return .unreadable(protection == .damaged
                             ? "Its edit is damaged. Open it in Develop, where Start Over sets the edit aside."
                             : "Its edit couldn't be read: a newer Redlamp may have written it.")
                     }
-                    var recipe = read.sidecar?.recipe ?? EditRecipe()
+                    guard let edit = read.sidecar.map({ $0[edit: photo.version] })
+                        ?? (photo.version == nil ? SidecarEdit(recipe: EditRecipe()) : nil)
+                    else { return .unreadable("Its version was removed.") }
+                    var recipe = edit.recipe
                     recipe.unloadMaskBitmaps()
-                    return .unloaded(recipe)
+                    return .unloaded(recipe, photo.version == nil ? nil : edit.metadata ?? PhotoMetadata())
                 }
             }.value
         }
-        taking[id] = (Set(photos), task)
+        taking[id] = (Set(photos.map(\.url)), task)
         return task
     }
 
-    /// Opens `target`'s photo, renders it with `edit` and writes it, with the metadata of `version` when its edit is
-    /// a version's.
+    /// Opens `target`'s photo, renders it with `edit` and writes it, with a version's metadata when its edit is a
+    /// version's.
     private func write(
-        _ target: ExportNames.Target, edit: Edit, version: PhotoMetadata?, settings: ExportSettings,
-        engine: any EditingEngine,
+        _ target: ExportNames.Target, edit: Edit, settings: ExportSettings, engine: any EditingEngine,
     ) async throws {
         let url = target.photo
         await beforeExporting(url)
@@ -226,10 +241,13 @@ public final class BatchExport {
             throw Problem("It isn't there any more: it was moved, renamed or deleted while it waited.")
         }
         let recipe: EditRecipe
+        let version: PhotoMetadata?
         switch edit {
-        case let .loaded(loaded):
+        case let .loaded(loaded, metadata):
             recipe = loaded
-        case let .unloaded(unloaded):
+            version = metadata
+        case let .unloaded(unloaded, metadata):
+            version = metadata
             let store = sidecars.store(for: url)
             recipe = await Task.detached(priority: .userInitiated) {
                 var loaded = unloaded

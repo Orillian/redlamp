@@ -44,7 +44,8 @@ public enum ExportActions {
     public static func previousExport(model: EditorModel, store: ExportPresetStore) async -> Step {
         guard let info = model.info, let settings = store.previous else { return .needsDialog }
         let read = reader(for: SelectedPhotos([model.openPhoto ?? PhotoAddress(url: info.url)]), model: model)
-        guard let names = await names(read, settings: settings, model: model), let target = names.targets.first
+        guard case let (names, _)? = await names(read, settings: settings, model: model),
+              let target = names.targets.first
         else { return .needsDialog }
         return step(target, settings: settings)
     }
@@ -90,7 +91,10 @@ public enum ExportActions {
             onCancel: close,
             onExport: { [weak window] settings, presetID, targets in
                 close()
-                let job = Job(settings: settings, presetID: presetID, targets: targets, counters: plan.names?.counters)
+                let job = Job(
+                    settings: settings, presetID: presetID, targets: targets, photos: plan.photos,
+                    counters: plan.names?.counters,
+                )
                 run(job, model: model, store: store, window: window)
             },
         ).focusEffectDisabled())
@@ -111,11 +115,18 @@ public enum ExportActions {
         guard model.info != nil, let settings = store.previous else { return present(model: model, store: store) }
         let presets = namingPresets(model)
         let read = reader(for: model.selectionForAction(), model: model)
-        guard let names = await names(read, settings: settings, counters: presets?.counters, model: model) else {
-            return present(model: model, store: store)
-        }
+        guard case let (names, photos)? = await names(
+            read,
+            settings: settings,
+            counters: presets?.counters,
+            model: model,
+        )
+        else { return present(model: model, store: store) }
         let job = { (targets: [ExportNames.Target]) in
-            Job(settings: settings, presetID: store.previousPresetID, targets: targets, counters: names.counters)
+            Job(
+                settings: settings, presetID: store.previousPresetID, targets: targets, photos: photos,
+                counters: names.counters,
+            )
         }
         guard names.asked > 0 else { return run(job(names.targets), model: model, store: store, window: window) }
         guard let window else { return }
@@ -142,12 +153,13 @@ public enum ExportActions {
 
     // MARK: - Running
 
-    /// An export: the settings, the preset they started from, where each photo goes, and the named counters as
-    /// they'll be after it.
+    /// An export: the settings, the preset they started from, where each photo goes and the edit of it exported, its
+    /// file's own or a version's (LIB-48), in the targets' order, and the named counters as they'll be after it.
     private struct Job {
         let settings: ExportSettings
         let presetID: UUID?
         let targets: [ExportNames.Target]
+        let photos: [PhotoAddress]
         let counters: NamingCounters?
     }
 
@@ -156,17 +168,22 @@ public enum ExportActions {
         if let counters = job.counters {
             namingPresets(model)?.setCounters(counters)
         }
-        guard job.targets.count > 1 else {
+        // One photo is the editor's to render, unless it's another of the open photo's edits than the one open.
+        guard job.targets.count > 1 || job.photos.first.map({ $0 != model.openPhoto }) == true else {
             guard let target = job.targets.first else { return }
             return runOne(target, settings: job.settings, model: model, window: window)
         }
-        let open = model.info.flatMap { info in
-            job.targets.contains { $0.photo == info.url } ? (url: info.url, recipe: model.unobservedRecipe) : nil
+        let open = model.openPhoto.flatMap { photo in
+            job.photos.contains(photo) ? BatchExport.Open(
+                photo: photo, recipe: model.unobservedRecipe,
+                metadata: photo.version == nil ? nil : model.photoMetadata,
+            ) : nil
         }
-        let openVersion = open != nil && model.openVersion != nil ? model.photoMetadata : nil
+        // The open photo's other edits are read from its sidecar.
+        model.saveNow()
         model.activity.record(.export, "Export of \(job.targets.count) photos")
         model.batchExport.run(BatchExport.Job(
-            targets: job.targets, settings: job.settings, open: open, openVersion: openVersion,
+            targets: job.targets, photos: job.photos, settings: job.settings, open: open,
         ) { report in
             finished(report, settings: job.settings, model: model, window: window)
         })
@@ -263,67 +280,91 @@ public enum ExportActions {
     }
 
     /// Reads what `photos`' names are made from, off the main thread: the index's fields for those it has, the
-    /// fields their files and sidecars hold for the others. The version open has its own name and metadata (EDT-09).
+    /// fields their files and sidecars hold for the others. A version (LIB-48) has its own name and metadata, its
+    /// row's,
+    /// and the version open its own as they are on screen (EDT-09).
     static func reader(
         for photos: SelectedPhotos, model: EditorModel,
-    ) -> @Sendable () async -> [ExportNames.Photo] {
+    ) -> @Sendable () async -> [ExportPhoto] {
         let core = model.library.service?.core
         let sidecars = model.library.sidecars
-        let version = model.openPhoto.flatMap {
-            $0.version == nil ? nil : (url: $0.url, name: model.openEditName, metadata: model.photoMetadata)
+        let open = model.openPhoto.flatMap {
+            $0.version == nil ? nil : (photo: $0, name: model.openEditName, metadata: model.photoMetadata)
         }
         return {
-            let urls = await photos.all().map(\.url)
-            func photo(_ url: URL, _ fields: NamingFields) -> ExportNames.Photo {
-                var fields = fields
-                if let version, version.url == url {
-                    fields.apply(version.metadata)
-                    fields.keywords = version.metadata.keywords ?? fields.keywords
-                    fields.version = version.name
-                }
-                return ExportNames.Photo(url: url, fields: fields)
-            }
-            var indexed: [URL: NamingFields] = [:]
+            let addresses = await photos.all()
+            var indexed: [PhotoAddress: NamingFields] = [:]
             if let core {
-                let ids = await LibraryService.indexIDs(of: urls, in: core.index)
+                let ids = await LibraryService.indexIDs(of: addresses, in: core.index)
+                let versions = ids.filter { $0.key.version != nil }.map(\.value)
                 let found = try? await core.index.read { reader in
-                    try NamingFields.read(Array(Set(ids.values)), from: reader)
+                    try (
+                        NamingFields.read(Array(Set(ids.values)), from: reader),
+                        Dictionary(versions.compactMap { id in
+                            try reader.photo(id: id)?.versionName.map { (id, $0) }
+                        }) {
+                            first, _ in first
+                        },
+                    )
                 }
-                let byID = Dictionary((found ?? []).map { ($0.id, $0.fields) }, uniquingKeysWith: { first, _ in first })
-                for (url, id) in ids {
-                    indexed[url] = byID[id]
+                let byID = Dictionary(
+                    (found?.0 ?? []).map { ($0.id, $0.fields) },
+                    uniquingKeysWith: { first, _ in first },
+                )
+                for (photo, id) in ids {
+                    indexed[photo] = byID[id]
+                    indexed[photo]?.version = found?.1[id]
                 }
             }
-            return urls.map { url in
-                if let fields = indexed[url] {
-                    return photo(url, fields)
+            return addresses.map { photo in
+                var fields = indexed[photo] ?? Self.unindexedFields(of: photo, sidecars: sidecars)
+                if let open, open.photo == photo {
+                    fields.apply(open.metadata)
+                    fields.keywords = open.metadata.keywords ?? fields.keywords
+                    fields.version = open.name
                 }
-                let name = url.lastPathComponent, folder = url.deletingLastPathComponent().path
-                var fields = PhotoMetadataReader.read(url: url).map { NamingFields(
-                    name: name,
-                    folder: folder,
-                    metadata: $0,
-                ) }
-                    ?? NamingFields(name: name, folder: folder)
-                if let metadata = sidecars.store(for: url).load(for: url)?.metadata {
-                    fields.apply(metadata)
-                }
-                return photo(url, fields)
+                return ExportPhoto(address: photo, naming: ExportNames.Photo(url: photo.url, fields: fields))
             }
         }
     }
 
-    /// The names `settings` give the photos `read` reads, worked out off the main thread; nil when the template
-    /// doesn't read.
+    /// What a photo the index doesn't have is named from: its file's fields and its sidecar's, a version's own over
+    /// its file's.
+    private nonisolated static func unindexedFields(
+        of photo: PhotoAddress,
+        sidecars: SidecarPlacement,
+    ) -> NamingFields {
+        let url = photo.url
+        let name = url.lastPathComponent, folder = url.deletingLastPathComponent().path
+        var fields = PhotoMetadataReader.read(url: url).map { NamingFields(name: name, folder: folder, metadata: $0) }
+            ?? NamingFields(name: name, folder: folder)
+        guard let sidecar = sidecars.store(for: url).load(for: url) else { return fields }
+        if let metadata = sidecar.metadata {
+            fields.apply(metadata)
+        }
+        if let version = photo.version.flatMap(sidecar.version) {
+            let metadata = version.metadata ?? PhotoMetadata()
+            fields.apply(metadata)
+            fields.keywords = metadata.keywords ?? fields.keywords
+            fields.version = version.name
+        }
+        return fields
+    }
+
+    /// The names `settings` give the photos `read` reads, worked out off the main thread, and the edits they're for in
+    /// their order; nil when the template doesn't read.
     private static func names(
-        _ read: @escaping @Sendable () async -> [ExportNames.Photo], settings: ExportSettings,
+        _ read: @escaping @Sendable () async -> [ExportPhoto], settings: ExportSettings,
         counters: NamingCounters? = nil, model: EditorModel,
-    ) async -> ExportNames? {
+    ) async -> (ExportNames, [PhotoAddress])? {
         let files = model.engine.files
         let counters = counters ?? NamingCounters()
         return await Task.detached(priority: .userInitiated) {
             let photos = await read()
-            return try? ExportNames(photos, settings: settings, counters: counters, reading: files)
+            return try? (
+                ExportNames(photos.map(\.naming), settings: settings, counters: counters, reading: files),
+                photos.map(\.address),
+            )
         }.value
     }
 }

@@ -205,11 +205,11 @@ struct EditorVersionTests {
         let named = ExportActions.reader(
             for: SelectedPhotos([PhotoAddress(url: editor.photo, version: version)]), model: model,
         )
-        #expect(await named().map(\.fields.version) == ["Black and white"])
+        #expect(await named().map(\.naming.fields.version) == ["Black and white"])
 
         model.showVersion(nil)
         let own = ExportActions.reader(for: SelectedPhotos([PhotoAddress(url: editor.photo)]), model: model)
-        #expect(await own().map(\.fields.version) == [nil])
+        #expect(await own().map(\.naming.fields.version) == [nil])
     }
 
     @Test func `a version's export carries its own rating, label and fields, and the photo's where it holds none`() {
