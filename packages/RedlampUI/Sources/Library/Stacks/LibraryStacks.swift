@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import RedlampDesign
+import RedlampDocument
 import RedlampLibrary
 
 /// The Library's stacks (LIB-28), for the grid and the filmstrip: the source's photos with each raw and its
@@ -45,6 +46,8 @@ import RedlampLibrary
 
         struct Stack: Codable, Hashable, Sendable {
             var path: String
+            /// The top photo's version, for a stack made by hand with a version on top (LIB-48).
+            var version: UUID?
             /// A raw and its JPEG, rather than a burst or a manual stack with the same top photo.
             var pair: Bool
         }
@@ -207,7 +210,8 @@ import RedlampLibrary
     }
 
     private struct Request: Sendable {
-        /// The photos, whose URLs find their IDs in the index; nil when their IDs are the index's.
+        /// The photos, whose addresses find their IDs in the index, a version's its own row (LIB-48); nil when their
+        /// IDs are the index's.
         var items: [LibraryItem]?
         var ids: ContiguousArray<Int64>
         var list: PhotoList
@@ -241,7 +245,7 @@ import RedlampLibrary
         }
         var byOwn: [Int64: Int64] = [:]
         if let items {
-            let photos = ids.indices.map { (list: ids[$0], url: items[$0].url) }
+            let photos = ids.indices.map { (list: ids[$0], address: items[$0].address) }
             byOwn = await request.photoIDs.ids(of: photos, in: index)
         }
         guard let found = await request.finder.stacks(in: index, engine: engine) else { return nil }
@@ -345,9 +349,9 @@ import RedlampLibrary
         if let list {
             for stack in list.openness where others.count < Self.keptStacks {
                 guard stack.isOpen != Self.startsOpen(top: stack.top, pair: stack.pair, in: list.stacks, start: start),
-                      let url = model?.library.url(ofPhoto: stack.top)
+                      let top = model?.library.address(ofPhoto: stack.top)
                 else { continue }
-                others.append(Openness.Stack(path: url.path, pair: stack.pair))
+                others.append(Openness.Stack(path: top.url.path, version: top.version, pair: stack.pair))
             }
         }
         return Openness(start: start, others: others)
@@ -382,7 +386,8 @@ import RedlampLibrary
         guard let model else { return PhotoListDiff() }
         var kept = (pairs: Set<Int64>(), others: Set<Int64>())
         for stack in openness.others {
-            guard let id = model.library.photoID(of: URL(fileURLWithPath: stack.path)) else { continue }
+            let top = PhotoAddress(url: URL(fileURLWithPath: stack.path), version: stack.version)
+            guard let id = model.library.photoID(of: top) else { continue }
             if stack.pair {
                 kept.pairs.insert(id)
             } else {

@@ -297,9 +297,9 @@ import RedlampLibrary
         } else {
             let missing = ids.indices.filter { known[ids[$0]] == nil }
             if !missing.isEmpty {
-                let byURL = await LibraryService.indexIDs(of: missing.map { items[$0].url }, in: index)
+                let byAddress = await LibraryService.indexIDs(of: missing.map { items[$0].address }, in: index)
                 for place in missing {
-                    if let id = byURL[items[place].url] {
+                    if let id = byAddress[items[place].address] {
                         found[ids[place]] = id
                     }
                 }

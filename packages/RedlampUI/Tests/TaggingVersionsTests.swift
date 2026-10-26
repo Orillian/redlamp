@@ -8,7 +8,8 @@ import Testing
 
 /// Keywords dropped and painted on a version's cell, and a version put in a collection (LIB-48, LIB-21, LIB-23): each
 /// reaches the version's own row and its edit's metadata in the sidecar, never its file's, in a library source and in a
-/// folder's own list using IDs of its own, and Undo takes it back.
+/// folder's own list using IDs of its own, and Undo takes it back; that list's stacks and groups take the version as
+/// itself (LIB-28, LIB-41).
 @MainActor
 @Suite(.serialized)
 struct TaggingVersionsTests {
@@ -233,5 +234,38 @@ struct TaggingVersionsTests {
         #expect(model.perform(.undo))
         try await sandbox.made { $0.count(of: .collection(selects)) == 0 }
         try await expectCollections([[], []], of: photo, sandbox)
+    }
+
+    // MARK: - Stacks and groups in a folder's own list
+
+    @Test func `in a folder's own list a version is in its file's pair, grouped as itself and stacked by hand as itself`(
+    ) async throws {
+        let sandbox = DragSandbox()
+        defer { sandbox.close() }
+        let photo = try await open(sandbox, .ownList)
+        let model = try #require(sandbox.model)
+        let a = PhotoAddress(url: sandbox.photo("A.JPG"))
+        let copy = PhotoAddress(url: photo, version: first)
+        let ids = try [a, PhotoAddress(url: photo), copy].map { try #require(model.library.photoID(of: $0)) }
+
+        try await sandbox.eventually { model.gridStacks.list?.stacks.pair(containing: ids[2]) != nil }
+        let pair = model.gridStacks.list?.stacks.pair(containing: ids[2])
+        #expect(pair.map { Set($0.photos) } == Set([ids[1], ids[2]]), "the version in its file's pair")
+        #expect(pair?.top == ids[1], "the file on top")
+
+        model.setGroupKey(.folder)
+        try await sandbox.eventually { model.gridGroups.list?.groups.key == .folder }
+        let grouped = model.gridGroups.list?.groups.flatMap(\.photos) ?? []
+        #expect(Set(grouped) == Set(ids), "every photo in its group, the version as itself")
+        model.setGroupKey(.ungrouped)
+        try await sandbox.eventually { model.gridGroups.list == nil }
+
+        try sandbox.click(a)
+        try sandbox.click(copy, modifiers: .command)
+        #expect(model.perform(.stackPhotos))
+        try await sandbox.panelsWritten()
+        let sidecar = SidecarStore().load(for: photo)
+        #expect(sidecar?.version(first)?.metadata?.stack != nil, "the version's own edit stacked, with its file's")
+        #expect(sidecar?.metadata?.stack != nil)
     }
 }
