@@ -883,6 +883,36 @@ extension LibraryService {
         }) ?? [:]
     }
 
+    /// The index's IDs of every row of the files at `urls` it has: each file's own and its versions' (LIB-48), a
+    /// folder's rows read at a time, its names matched as `indexIDs(of:in:)` matches them.
+    nonisolated static func rows(ofFiles urls: [URL], in index: LibraryIndex) async -> [URL: [Int64]] {
+        var byFolder: [String: [URL]] = [:]
+        for url in urls {
+            byFolder[path(url.deletingLastPathComponent()), default: []].append(url)
+        }
+        let folders = byFolder
+        return await (try? index.read { reader -> [URL: [Int64]] in
+            var found: [URL: [Int64]] = [:]
+            let statement = try reader.database.cached("SELECT id, name FROM photos WHERE folder = ?")
+            for (path, photos) in folders {
+                guard let folder = try Self.folder(at: path, in: reader) else { continue }
+                try statement.bind(folder.id, at: 1)
+                var named: [String: [Int64]] = [:]
+                try statement.forEachRow { row in
+                    if let name = row.string(at: 1) {
+                        named[name.precomposedStringWithCanonicalMapping, default: []].append(row.int64(at: 0))
+                    }
+                }
+                for url in photos {
+                    if let rows = named[url.lastPathComponent.precomposedStringWithCanonicalMapping] {
+                        found[url] = rows
+                    }
+                }
+            }
+            return found
+        }) ?? [:]
+    }
+
     /// The index's IDs of the photos `photos` it has: a file's own row for its own edit, a version's row for a
     /// version's (LIB-48), a folder's photos read at a time.
     nonisolated static func indexIDs(of photos: [PhotoAddress], in index: LibraryIndex) async -> [PhotoAddress: Int64] {

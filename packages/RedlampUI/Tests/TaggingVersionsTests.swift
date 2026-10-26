@@ -9,7 +9,8 @@ import Testing
 /// Keywords dropped and painted on a version's cell, and a version put in a collection (LIB-48, LIB-21, LIB-23): each
 /// reaches the version's own row and its edit's metadata in the sidecar, never its file's, in a library source and in a
 /// folder's own list using IDs of its own, and Undo takes it back; that list's stacks and groups take the version as
-/// itself (LIB-28, LIB-41).
+/// itself (LIB-28, LIB-41). A batch on a version's row alone, with Develop's photo open and unsaved, saves Develop's
+/// photo first and keeps both changes, in a large source and a small one.
 @MainActor
 @Suite(.serialized)
 struct TaggingVersionsTests {
@@ -267,5 +268,80 @@ struct TaggingVersionsTests {
         let sidecar = SidecarStore().load(for: photo)
         #expect(sidecar?.version(first)?.metadata?.stack != nil, "the version's own edit stacked, with its file's")
         #expect(sidecar?.metadata?.stack != nil)
+    }
+
+    // MARK: - Develop's saves and a batch on a version's row
+
+    /// How All Photographs is listed: as a large source, its rows read as they're asked for, or as a small one.
+    enum Size: String, CaseIterable, Sendable, CustomTestStringConvertible {
+        case large, small
+
+        var testDescription: String {
+            "a \(rawValue) source"
+        }
+    }
+
+    @Test(arguments: Size.allCases)
+    func `a batch on a version's row alone saves Develop's unsaved change to it first, and both changes stay`(
+        _ size: Size,
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        let names = ["A.JPG", "B.JPG", "C.JPG", "D.JPG", "E.JPG"]
+        try sandbox.photos(names.map { "Shoot/\($0)" })
+        let photo = sandbox.photo("Shoot/C.JPG")
+        var sidecar = Sidecar(recipe: EditRecipe())
+        sidecar.versions = [PhotoVersion(id: first, name: "Copy 1", recipe: EditRecipe(), metadata: PhotoMetadata())]
+        try SidecarStore().saveOrRemove(sidecar, for: photo)
+        let model = try await sandbox.open()
+        if size == .large {
+            model.library.largestRead = 4
+            model.library.firstRead = 2
+        }
+        #expect(model.librarySources.show(.allPhotographs))
+        try await sandbox.eventually { !model.librarySources.isListing && model.library.count == names.count + 1 }
+        try #require(model.library.items.readsOnRequest == (size == .large), "All Photographs listed as \(size)")
+        let copy = PhotoAddress(url: photo, version: first)
+        let index = try #require(sandbox.service?.core).index
+        let row = try #require(await LibraryService.indexIDs(of: [copy], in: index)[copy])
+        await model.library.read([row])
+        model.select(copy)
+        let panels = model.libraryPanels
+        panels.follow()
+        try await sandbox.eventually { panels.selection.ids == [row] }
+        try #require(panels.selection.ids == [row], "the version's row selected alone")
+
+        model.showModule(.develop)
+        try await sandbox.eventually { model.info?.url == photo && model.opening == nil }
+        try #require(model.openVersion == first, "the version open in Develop")
+        model.setValue(.exposure, 1)
+        try #require(model.hasUnsavedChange)
+        model.showModule(.library)
+        #expect(panels.addKeywords("Tram"))
+        #expect(!model.hasUnsavedChange, "Develop's change is saved before the batch")
+        await panels.written()
+        await sandbox.service?.settled()
+        var saved = SidecarStore().load(for: photo)?.version(first)
+        #expect(saved?.recipe[.exposure] == 1, "Develop's change")
+        #expect(saved?.metadata?.keywords == ["Tram"], "the batch's")
+
+        #expect(model.perform(.undo))
+        await panels.written()
+        await model.saves.flush()
+        saved = SidecarStore().load(for: photo)?.version(first)
+        let kept = saved?.metadata?.keywords ?? []
+        #expect(kept.isEmpty, "Undo takes the batch's change back")
+        #expect(saved?.recipe[.exposure] == 1, "and leaves Develop's")
+        #expect(model.perform(.redo))
+        await panels.written()
+        await sandbox.service?.settled()
+        #expect(SidecarStore().load(for: photo)?.version(first)?.metadata?.keywords == ["Tram"], "Redo")
+
+        model.setValue(.exposure, 2)
+        model.saveNow()
+        await model.saves.flush()
+        saved = SidecarStore().load(for: photo)?.version(first)
+        #expect(saved?.recipe[.exposure] == 2, "Develop's next save")
+        #expect(saved?.metadata?.keywords == ["Tram"], "keeps the batch's change")
     }
 }

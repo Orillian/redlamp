@@ -405,17 +405,22 @@ extension LibraryPanels {
         return true
     }
 
-    /// Develop's open photo, when `step` is made on it: what it hasn't saved is saved first, and from then on
-    /// its saves count the batch's change as another writer's, so they never write it over the batch's. The
-    /// batch waits for both (`waitForSaves`).
+    /// Develop's open photo, when `step` is made on any of its file's rows, its own or a version's (LIB-48): what it
+    /// hasn't saved is saved first, and from then on its saves count the batch's change as another writer's, so they
+    /// never write it over the batch's. The batch waits for both (`waitForSaves`).
     private func saveOpenPhoto(of step: PanelStep) {
         guard let model, model.info != nil, !model.isReadOnly, let url = model.selection else { return }
-        let library = model.library
-        guard step.photos.contains(url) || step.knowsSomeByID && library.showsIndexIDs
-            && library.photoID(of: url).map(step.ids.contains) == true
+        guard step.photos.contains(url) || step.knowsSomeByID && model.library.showsIndexIDs
+            && !Set(rows(of: url, in: model)).isDisjoint(with: step.ids)
         else { return }
         model.saveNow()
         model.saves.enqueue(.track(nil, opened: model.sidecarToSave), for: url)
+    }
+
+    /// The rows of the file at `url`, Develop's open photo, that the photos shown have: its own, and its versions'.
+    private func rows(of url: URL, in model: EditorModel) -> [Int64] {
+        let versions = model.info?.url == url ? model.versions.map(\.id) : []
+        return ([nil] + versions).compactMap { model.library.photoID(of: PhotoAddress(url: url, version: $0)) }
     }
 
     /// `step` on Undo, newest; nothing left to Redo, of any kind.
@@ -515,7 +520,7 @@ extension LibraryPanels {
 
     /// Returns once the saves asked for any of `step`'s photos before the call are on disk, so a batch reads their
     /// sidecars as those saves leave them. Those known by their IDs alone are found among the photos being saved,
-    /// which are few, by those photos' IDs in the index.
+    /// which are few, by the IDs of those photos' rows in the index: each file's own and its versions' (LIB-48).
     private func waitForSaves(of step: PanelStep) async {
         guard let saves = model?.saves, !step.photos.isEmpty || !step.ids.isEmpty else { return }
         let (photos, ids) = (step.photos, step.ids)
@@ -525,9 +530,9 @@ extension LibraryPanels {
             guard let index else { return pending }
             let others = Array(Set(saves.pending()).subtracting(pending))
             guard !others.isEmpty else { return pending }
-            let found = await LibraryService.indexIDs(of: others, in: index)
+            let found = await LibraryService.rows(ofFiles: others, in: index)
             let wanted = Set(ids)
-            return pending + others.filter { found[$0].map(wanted.contains) == true }
+            return pending + others.filter { found[$0]?.contains(where: wanted.contains) == true }
         }.value
         for photo in pending {
             await saves.wait(for: photo)
