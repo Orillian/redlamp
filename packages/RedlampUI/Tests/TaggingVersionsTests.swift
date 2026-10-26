@@ -239,7 +239,7 @@ struct TaggingVersionsTests {
 
     // MARK: - Stacks and groups in a folder's own list
 
-    @Test func `in a folder's own list a version is in its file's pair, grouped as itself and stacked by hand as itself`(
+    @Test func `in a folder's own list a version is in its file's pair and grouped as itself, and ⌘G stacks it with its file`(
     ) async throws {
         let sandbox = DragSandbox()
         defer { sandbox.close() }
@@ -266,8 +266,8 @@ struct TaggingVersionsTests {
         #expect(model.perform(.stackPhotos))
         try await sandbox.panelsWritten()
         let sidecar = SidecarStore().load(for: photo)
-        #expect(sidecar?.version(first)?.metadata?.stack != nil, "the version's own edit stacked, with its file's")
-        #expect(sidecar?.metadata?.stack != nil)
+        #expect(sidecar?.version(first)?.metadata?.stack != nil, "the version's own edit stacked")
+        #expect(sidecar?.metadata?.stack != nil, "with its file's, whose pair it's in")
     }
 
     // MARK: - Develop's saves and a batch on a version's row
