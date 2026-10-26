@@ -108,8 +108,8 @@ struct SidecarReadFailureTests {
         let presenter = FailingPresenter(store.url(for: image), failures: [true])
         NSFileCoordinator.addFilePresenter(presenter)
         defer { NSFileCoordinator.removeFilePresenter(presenter) }
-        var undone: [URL] = []
-        sync.undo { url, _ in undone.append(url) }
+        var undone: [PhotoAddress] = []
+        sync.undo { photo, _ in undone.append(photo) }
         await sync.idle()
         #expect(presenter.asked.withLock { $0 } >= 1)
         #expect(undone.isEmpty)

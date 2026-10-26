@@ -102,23 +102,27 @@ public extension EditorModel {
         )
     }
 
-    internal func written(_ url: URL, _ recipe: EditRecipe) {
-        library.update(url) { $0.hasEdits = !recipe.isPristine }
-        library.sidecarSaved(url)
+    internal func written(_ photo: PhotoAddress, _ recipe: EditRecipe) {
+        library.update(photo) { $0.hasEdits = !recipe.isPristine }
+        library.sidecarSaved(photo.url)
     }
 }
 
-/// A batch reaching the open photo changes it here, as a step of its history its Undo takes back.
+/// A batch reaching the open photo changes it here: the edit open as a step of its history its Undo takes back, and
+/// another of its edits (LIB-48) in what saving writes for it, as `changeMetadata(of:)` changes its metadata.
 extension EditorModel: SyncEditor {
-    func apply(_ change: SettingsSync.EditorChange, to url: URL, title: String) async -> SettingsSync.EditorOutcome {
+    func apply(
+        _ change: SettingsSync.EditorChange, to photo: PhotoAddress, title: String,
+    ) async -> SettingsSync.EditorOutcome {
+        let url = photo.url
         await finishOpening(url)
         guard let visit = currentVisit, visit.url == url else { return isOpen(url) ? .left : .notOpen }
         guard !isReadOnly else { return .left }
+        guard photo.version == openVersion else { return applyBeside(change, to: photo.version, title: title) }
         let before = recipe
         switch change {
-        case let .edit(next, over):
-            // A batch writes a photo that isn't open in its own edit, never in a version.
-            guard openVersion == nil, recipe == over else { return .left }
+        case let .edit(next, over, _):
+            guard recipe == over else { return .left }
             commit(next, .paste, title)
         case let .change(.paste(source, selection)):
             paste(source, selection, name: title)
@@ -139,5 +143,34 @@ extension EditorModel: SyncEditor {
             commit(withPhotoAnchor(Self.asShot(imported.recipe, info), of: info, changed: true), .recipe, title)
         }
         return .applied(recipe == before ? nil : recipe)
+    }
+
+    /// `change` to the open photo's edit `version` (nil: its own) while another is open: `.edit` changes it in what
+    /// saving writes, with its session; the batch works out any other change from what this gives back of it.
+    private func applyBeside(
+        _ change: SettingsSync.EditorChange, to version: UUID?, title: String,
+    ) -> SettingsSync.EditorOutcome {
+        // A version removed meanwhile.
+        guard let held = openSidecar[edit: version]?.recipe else { return .left }
+        switch change {
+        case let .edit(next, over, session):
+            guard held == over else { return .left }
+            openSidecar[edit: version]?.recipe = next
+            let recorded = session ?? HistorySession(steps: [
+                HistoryStep(action: .open, title: "Opened", recipe: over),
+                HistoryStep(action: .paste, title: title, recipe: next),
+            ], versionID: version)
+            unsavedSessions.removeAll { $0.id == recorded.id }
+            unsavedSessions.append(recorded)
+            scheduleSave()
+            return .appliedBeside(next)
+        case .change(.follow):
+            return .left
+        case .change(.convertLightroom):
+            // Converted only where the photo has no versions.
+            return .applied(nil)
+        case .change:
+            return .otherEdit(held)
+        }
     }
 }

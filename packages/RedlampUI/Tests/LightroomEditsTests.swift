@@ -233,7 +233,7 @@ struct LightroomEditsTests {
         #expect(model.openVersion == nil && model.provenanceNotice?.canConvertAgain == true)
     }
 
-    @Test func `Undo of Convert Lightroom Edits leaves a photo as it is while one of its versions is open`(
+    @Test func `Undo of Convert Lightroom Edits puts back a photo's own edit while one of its versions is open, the version keeping its own`(
     ) async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -259,10 +259,10 @@ struct LightroomEditsTests {
         #expect(model.openVersion != nil && model.recipe[.exposure] == 0.4)
         model.undoLightroomConversion()
         await model.settingsSync.idle()
-        #expect(model.openVersion != nil && model.recipe[.exposure] == 0.4, "the batch converted the photo's own edit")
+        #expect(model.openVersion != nil && model.recipe[.exposure] == 0.4, "the version made from the converted edit")
         model.saveNow()
         try await eventually { store.load(for: photo)?.versions.count == 1 }
-        #expect(store.load(for: photo)?.recipe[.exposure] == 0.4)
+        #expect(store.load(for: photo)?.recipe[.exposure] == 0, "the photo's own edit, put back beside the version")
     }
 
     @Test func `a photo opens with its Lightroom edit converted once, and Convert Again keeps the edit it replaces`(

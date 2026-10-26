@@ -422,9 +422,11 @@ public extension EditorModel {
 
     /// Remove Dust across the selection: the specks found in the same place on the sensor in
     /// several of its photos are healed in all of them, the photo open in the editor as a step of its
-    /// own history, the others as one batch Undo can put back (`SettingsSync`).
+    /// own history, the others as one batch Undo can put back (`SettingsSync`). Dust is the sensor's, the same in each
+    /// of a file's edits (LIB-48): each file is looked at once, in the edit of it first among them, and what's found
+    /// is healed in each.
     func removeDustInSelection() async {
-        guard isMultiSelecting, let open = selection, info != nil, !isFindingDust, settingsSync.progress == nil else {
+        guard isMultiSelecting, let open = openPhoto, !isFindingDust, settingsSync.progress == nil else {
             return
         }
         let chosen = selectionForAction()
@@ -437,9 +439,10 @@ public extension EditorModel {
         let openRecipe = recipe
         dustSearch = SettingsSync.Progress(title: "Finding Dust", done: 0, total: chosen.count)
         // A large source's photos are found by their IDs, off the main thread, their rows left unread.
-        let selected = await chosen.files()
-        let others = selected.filter { $0 != open }
-        let targets = [open] + others
+        let selected = await chosen.all()
+        let targets = [open] + selected.filter { $0 != open }
+        let files = SettingsSync.byFile(targets)
+        let others = files.map(\.url).filter { $0 != open.url }
         for url in others {
             await saves.wait(for: url)
         }
@@ -449,10 +452,13 @@ public extension EditorModel {
         }.value
         // A photo whose edit can't be read is left out: its dust would be looked for in the wrong
         // edit, and the batch leaves it alone anyway.
-        let photos = selected.compactMap { url -> (url: URL, recipe: EditRecipe)? in
-            guard url != open else { return (url, openRecipe) }
-            guard case let .success(sidecar)? = reads[url] else { return nil }
-            return (url, sidecar?.recipe ?? EditRecipe())
+        let photos = files.compactMap { file -> (url: URL, recipe: EditRecipe)? in
+            guard file.url != open.url else { return (file.url, openRecipe) }
+            guard case let .success(sidecar)? = reads[file.url], let first = file.photos.first,
+                  let edit = sidecar.map({ $0[edit: first.version]?.recipe }) ?? (first.version == nil
+                      ? EditRecipe() : nil)
+            else { return nil }
+            return (file.url, edit)
         }
         dustSearch = SettingsSync.Progress(title: "Finding Dust", done: 0, total: photos.count)
         let finder = makeWorkerEngine?() ?? engine
@@ -465,16 +471,11 @@ public extension EditorModel {
             return
         }
         // Whichever photo is open when the batch reaches it is healed in the editor, not behind it.
-        var healed: Set<URL> = []
-        settingsSync
-            .run(
-                .healDust(found),
-                on: targets.map { PhotoAddress(url: $0) },
-                title: "Remove Dust",
-            ) { [weak self] url, recipe in
-                healed.insert(url)
-                self?.written(url, recipe)
-            }
+        var healed: Set<PhotoAddress> = []
+        settingsSync.run(.healDust(found), on: targets, title: "Remove Dust") { [weak self] photo, recipe in
+            healed.insert(photo)
+            self?.written(photo, recipe)
+        }
         dustSearch = nil
         // Still finding dust until the batch is done: it heals the open photo in the editor too.
         await settingsSync.idle()

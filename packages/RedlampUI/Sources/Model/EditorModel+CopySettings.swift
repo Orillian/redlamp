@@ -23,9 +23,13 @@ public struct SettingsChooser: Identifiable {
 /// made when copying, remembered for next time, and a paste takes only what was ticked
 /// (`docs/plans/2026-10-02-copy-paste-sync-design.md`).
 public extension EditorModel {
-    /// ⇧⌘C: the checklist, for the open photo's settings.
+    /// ⇧⌘C: the checklist, for the open photo's settings, or in Library for those of the edit of it active there.
     func chooseSettingsToCopy() {
         guard info != nil else { return }
+        if let active = activeEditBeside {
+            Task { await chooseSettingsToCopy(from: active) }
+            return
+        }
         settingsChooser = SettingsChooser(purpose: .copy, source: recipe, selection: copySelection.remembered)
     }
 
@@ -48,16 +52,29 @@ public extension EditorModel {
         }
     }
 
-    /// ⌥⇧⌘C: copies the open photo's settings with the last choice, without the checklist.
+    /// ⌥⇧⌘C: copies the open photo's settings with the last choice, without the checklist, or in Library those of the
+    /// edit of it active there.
     func copySettings() {
         guard info != nil else { return }
+        if let active = activeEditBeside {
+            Task { await copySettings(from: active) }
+            return
+        }
         clipboard = CopiedSettings(source: recipe, selection: copySelection, sourceURL: selection)
         hasClipboard = true
     }
 
-    /// ⇧⌘V: what was copied, onto the open photo, and onto the rest of the selection.
+    /// ⇧⌘V: what was copied, onto the open photo, and onto the rest of the selection; in Library with another of the
+    /// open photo's edits active, onto each photo selected in the background.
     func pasteSettings() {
         guard let clipboard else { return }
+        if activeEditBeside != nil {
+            settingsSync.run(
+                .paste(clipboard.source, clipboard.selection), on: selectionForAction(), title: "Paste Settings",
+                done: written,
+            )
+            return
+        }
         let step = paste(clipboard.source, clipboard.selection, name: "Paste Settings")
         if isMultiSelecting {
             sync(clipboard.source, clipboard.selection, title: "Paste Settings", step: step)
@@ -89,48 +106,85 @@ public extension EditorModel {
 
     // MARK: - A photo in the filmstrip
 
+    /// In Library, the photo active there when it's another edit of the photo open than the edit open in the editor
+    /// (LIB-48): Copy and Paste take it.
+    private var activeEditBeside: PhotoAddress? {
+        guard module == .library, let id = photoSelection.active, let active = library.address(ofPhoto: id),
+              active.url == info?.url, opening == nil, active != openPhoto
+        else { return nil }
+        return active
+    }
+
     /// The checklist for `photo`'s settings: the open photo's, or another's read from its sidecar
     /// without opening it.
     func chooseSettingsToCopy(from photo: URL) async {
-        guard photo != selection else { return chooseSettingsToCopy() }
+        await chooseSettingsToCopy(from: PhotoAddress(url: photo))
+    }
+
+    /// The checklist for the settings of the edit `photo` names: the edit open, or another read without opening it, a
+    /// version's included (LIB-48).
+    func chooseSettingsToCopy(from photo: PhotoAddress) async {
+        guard photo != openPhoto else { return chooseSettingsToCopy() }
         guard !isModalDialogOpen, let edit = await edit(of: photo), !isModalDialogOpen else { return }
         settingsChooser = SettingsChooser(
-            purpose: .copy, source: edit, selection: copySelection.remembered, sourceURL: photo,
+            purpose: .copy, source: edit, selection: copySelection.remembered, sourceURL: photo.url,
         )
     }
 
     /// `photo`'s settings with the last choice, without the checklist.
     func copySettings(from photo: URL) async {
-        guard photo != selection else { return copySettings() }
+        await copySettings(from: PhotoAddress(url: photo))
+    }
+
+    /// The settings of the edit `photo` names with the last choice, without the checklist: a version's own when it's a
+    /// version (LIB-48).
+    func copySettings(from photo: PhotoAddress) async {
+        guard photo != openPhoto else { return copySettings() }
         guard !isModalDialogOpen, let edit = await edit(of: photo) else { return }
-        clipboard = CopiedSettings(source: edit, selection: copySelection, sourceURL: photo)
+        clipboard = CopiedSettings(source: edit, selection: copySelection, sourceURL: photo.url)
         hasClipboard = true
-        activity.record(.action, "Copied settings from \(activity.alias(for: photo))")
+        let version = library.index(of: photo).flatMap { library.items.row($0)?.versionName }
+        activity.record(
+            .action,
+            "Copied settings from \(activity.alias(for: photo.url))\(version.map { " (\($0))" } ?? "")",
+        )
     }
 
     /// What was copied, onto `photo`: with the selection when it is in it, otherwise onto it
     /// alone, in the background, leaving the open photo as it is.
     func pasteSettings(onto photo: URL) {
+        pasteSettings(onto: PhotoAddress(url: photo))
+    }
+
+    /// What was copied, onto the edit `photo` names, a version's included (LIB-48): with the selection when it is in
+    /// it, otherwise onto it alone, in the background, leaving the open photo as it is.
+    func pasteSettings(onto photo: PhotoAddress) {
         guard !isModalDialogOpen else { return }
-        guard photo != selection, library.photoID(of: photo).map(photoSelection.contains) != true else {
+        guard photo != openPhoto, library.photoID(of: photo).map(photoSelection.contains) != true else {
             return pasteSettings()
         }
         guard let clipboard else { return }
         settingsSync.run(
             .paste(clipboard.source, clipboard.selection),
-            on: [PhotoAddress(url: photo)],
+            on: [photo],
             title: "Paste Settings",
             done: written,
         )
-        activity.record(.action, "Pasted settings onto \(activity.alias(for: photo))")
+        activity.record(.action, "Pasted settings onto \(activity.alias(for: photo.url))")
     }
 
-    /// A photo's edit as saved: the default edit if it has none, nil if it can't be read.
-    private func edit(of photo: URL) async -> EditRecipe? {
-        await saves.wait(for: photo)
-        let store = library.sidecars.store(for: photo)
+    /// An edit as saved, or as the editor holds it for the photo open: the default edit if the photo has none, nil if
+    /// it
+    /// can't be read or the photo has no such version.
+    private func edit(of photo: PhotoAddress) async -> EditRecipe? {
+        if photo.url == info?.url, opening == nil {
+            return photo == openPhoto ? recipe : openSidecar[edit: photo.version]?.recipe
+        }
+        await saves.wait(for: photo.url)
+        let store = library.sidecars.store(for: photo.url)
         let read = try? await library.scheduler.run(.onScreen) { () -> EditRecipe? in
-            try? store.loadThrowing(for: photo).map(\.recipe) ?? EditRecipe()
+            try? store.loadThrowing(for: photo.url).map { $0[edit: photo.version]?.recipe }
+                ?? (photo.version == nil ? EditRecipe() : nil)
         }
         return read ?? nil
     }

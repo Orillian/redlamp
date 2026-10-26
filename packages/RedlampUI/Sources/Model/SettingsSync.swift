@@ -4,14 +4,16 @@ import RedlampDocument
 import RedlampEngineAPI
 import RedlampRecipes
 
-/// The editor, to Settings Sync: a photo open in it is changed there, as a step of its history,
-/// never by writing its sidecar behind it.
+/// The editor, to Settings Sync: a photo open in it is changed there, never by writing its sidecar behind it: the edit
+/// open as a step of its history, and its other edits (LIB-48) in what saving writes for them.
 @MainActor
 protocol SyncEditor: AnyObject {
     /// Whether `url` is open in the editor, or opening there.
     func isOpen(_ url: URL) -> Bool
-    /// `change` made to `url` in the editor as a step titled `title`, once it has opened.
-    func apply(_ change: SettingsSync.EditorChange, to url: URL, title: String) async -> SettingsSync.EditorOutcome
+    /// `change` made to `photo`, one of the edits of the photo open in the editor, once it has opened: the edit open as
+    /// a step titled `title`; another only by `.edit`, `.change` giving back what the editor holds of it.
+    func apply(_ change: SettingsSync.EditorChange, to photo: PhotoAddress, title: String) async
+        -> SettingsSync.EditorOutcome
 }
 
 /// Changes photos that aren't open, one at a time in the background: Sync Settings, Paste onto a
@@ -26,6 +28,10 @@ protocol SyncEditor: AnyObject {
 /// editor instead (`SyncEditor`). Batches run one after another. Undo puts back what the last
 /// batch changed, on every photo not edited since.
 ///
+/// A version of a photo's edit is a photo of its own (LIB-48), known by its address: the edits of one file that a
+/// batch's photos read at a time hold are read and written together, one write a sidecar, each in its own edit
+/// (`sidecar[edit: version]`) with a history session of its own.
+///
 /// While Auto Sync is on, the batches that follow the open photo's steps make a run (`AutoSyncRun`):
 /// each photo keeps one history session for it, and Undo, Redo and history clicks on the open
 /// photo give each photo back its edit at that step.
@@ -39,7 +45,8 @@ public final class SettingsSync {
         case updateAIMasks
         /// A mask preset added as a new mask, its AI masks computed for each photo.
         case applyMaskPreset(MaskPreset)
-        /// Each photo's sensor dust (found across the selection) healed, a source found for each speck.
+        /// Each photo's sensor dust (found across the selection) healed, a source found for each speck: the same for
+        /// each of a file's edits.
         case healDust([URL: [DetectedSpot]])
         /// Each photo of the run as the open photo's step left it: its edit before the run, with
         /// `source` (the open photo's edit at that step) pasted for what the run's steps carried
@@ -52,20 +59,26 @@ public final class SettingsSync {
 
     /// What a batch asks of the photo open in the editor.
     enum EditorChange {
-        /// The batch's change, made to the editor's edit.
+        /// The batch's change, made to the edit open; another of the photo's edits answers `.otherEdit`.
         case change(Change)
-        /// `recipe` for the edit, if the editor's is still `over`: Undo, and following the open
-        /// photo's history.
-        case edit(EditRecipe, over: EditRecipe)
+        /// `recipe` for the edit, if the editor's is still `over`: Undo, following the open photo's history, and
+        /// what the batch made of another of the photo's edits than the one open, which `session` records.
+        case edit(EditRecipe, over: EditRecipe, session: HistorySession? = nil)
     }
 
     enum EditorOutcome {
         /// Made as a step of the photo's history; the edit it left (nil: nothing changed).
         case applied(EditRecipe?)
+        /// Made to another of the photo's edits than the one open (LIB-48), whose history the editor doesn't hold:
+        /// the batch's Undo puts it back.
+        case appliedBeside(EditRecipe)
         /// Left as it is: edited since, or read-only.
         case left
         /// It isn't open in the editor (any more): the batch saves it.
         case notOpen
+        /// Another of the photo's edits than the one open, as the editor holds it: the batch works its change out,
+        /// and hands it back as `.edit`.
+        case otherEdit(EditRecipe)
     }
 
     /// One of the open photo's steps reaching the rest of the selection while Auto Sync is on.
@@ -86,7 +99,7 @@ public final class SettingsSync {
         var session: UUID
         /// What each step carried, by the step's id.
         var steps: [UUID: SettingsSelection] = [:]
-        var photos: [URL: Member] = [:]
+        var photos: [PhotoAddress: Member] = [:]
 
         struct Member {
             /// Its edit before the run first wrote it (nil: it had no sidecar).
@@ -146,21 +159,24 @@ public final class SettingsSync {
     /// saves go through their queue too, after those asked for before them.
     @ObservationIgnored var saves: SaveQueue?
     @ObservationIgnored weak var editor: (any SyncEditor)?
-    /// Waited for before each photo's sidecar is written (tests change the photo here).
+    /// Waited for before each write of a photo's sidecar, which holds all its edits (tests change the photo here).
     @ObservationIgnored var beforeWriting: @MainActor (URL) async -> Void = { _ in }
     @ObservationIgnored private var task: Task<Void, Never>?
     /// The batch's saves on their way, by photo: the editor reads a photo it opens after them.
     @ObservationIgnored private var writing: [URL: Task<Void, Never>] = [:]
-    /// The last batch: each photo's edit before (nil: it had no sidecar) and after.
-    @ObservationIgnored private var before: [URL: EditRecipe?] = [:]
-    @ObservationIgnored private var written: [URL: Sidecar] = [:]
+    /// The last batch: each edit before (nil: its photo had no sidecar) and after, and the sidecars it made where there
+    /// were none, as read back.
+    @ObservationIgnored private var before: [PhotoAddress: EditRecipe?] = [:]
+    @ObservationIgnored private var written: [PhotoAddress: EditRecipe] = [:]
+    @ObservationIgnored private var made: [URL: Sidecar] = [:]
     @ObservationIgnored private var title = ""
     /// Batches that came while one ran, in order; Auto Sync's steps are gathered into one.
     @ObservationIgnored private var queue: [Job] = []
     @ObservationIgnored private var run: AutoSyncRun?
     /// A photo's history session for a run keeps this many steps at most, as the editor's does.
     static let maximumRunSteps = 500
-    /// The photos a batch reads the URLs of at a time, for a large source's selection.
+    /// The photos a batch reads the addresses of at a time, for a large source's selection, and whose edits of one
+    /// file it writes together.
     static let batch = 256
 
     private struct Job {
@@ -174,7 +190,7 @@ public final class SettingsSync {
         /// The run the batch belongs to, and the open photo's steps it carries.
         var session: UUID?
         var steps: [UUID] = []
-        var done: (URL, EditRecipe) -> Void
+        var done: (PhotoAddress, EditRecipe) -> Void
 
         var isFollow: Bool {
             if case .follow = change {
@@ -185,27 +201,69 @@ public final class SettingsSync {
         }
     }
 
-    /// How a batch's save of one photo went.
+    /// How a batch's save of one edit went.
     private enum Saving: Sendable {
         /// As read back.
-        case saved(Sidecar)
+        case saved(EditRecipe)
         case editedSince
         /// Protected, or it can't be read now.
         case unreadable
         case failed
     }
 
-    /// How Undo's putting back of one photo went.
+    /// A batch's save of one photo's edits, in one write of its sidecar: how each went, and the sidecar as read back.
+    private struct Saved: Sendable {
+        var edits: [PhotoAddress: Saving]
+        var sidecar: Sidecar?
+    }
+
+    /// One edit a batch writes: as it was, as it becomes, and the history session that records it.
+    private struct EditWrite: Sendable {
+        var photo: PhotoAddress
+        var original: EditRecipe
+        var next: EditRecipe
+        var session: HistorySession
+    }
+
+    /// One edit Undo puts back: as the batch left it, as it was before (nil: its photo had no sidecar), and the
+    /// history session that records it.
+    private struct PutBack: Sendable {
+        var photo: PhotoAddress
+        var after: EditRecipe
+        var previous: EditRecipe?
+        var session: HistorySession
+    }
+
+    /// How Undo's putting back of one edit went.
     private enum PuttingBack: Sendable {
         case done(EditRecipe)
         case editedSince
         case unreadable
+
+        var isDone: Bool {
+            if case .done = self {
+                true
+            } else {
+                false
+            }
+        }
     }
 
-    /// Where a photo's change landed: saved by the batch, or made by the editor.
-    private enum Landed<T> {
-        case saved(T)
-        case inEditor(EditorOutcome)
+    /// Where one photo's changes landed: what the batch saved, and what the editor made, each edit's by its address.
+    private struct Landed<T> {
+        var saved: T?
+        var inEditor: [PhotoAddress: EditorOutcome] = [:]
+    }
+
+    /// What a batch left alone, and why, for its report.
+    private struct Tally {
+        var skipped = 0
+        var editedSince = 0
+        var changedMeanwhile = 0
+        var failedMasks = 0
+        var presetsNotMade = 0
+        var presetsFull = 0
+        var editedInRedlamp = 0
     }
 
     /// A change worked out for one photo: the edit it leaves, how many of the AI masks it
@@ -235,7 +293,7 @@ public final class SettingsSync {
     @discardableResult
     func run(
         _ change: Change, on photos: [PhotoAddress], title: String, step: RunStep? = nil,
-        done: @escaping (URL, EditRecipe) -> Void,
+        done: @escaping (PhotoAddress, EditRecipe) -> Void,
     ) -> UUID {
         run(change, on: SelectedPhotos(photos), title: title, step: step, done: done)
     }
@@ -244,7 +302,7 @@ public final class SettingsSync {
     @discardableResult
     func run(
         _ change: Change, on photos: SelectedPhotos, title: String, step: RunStep? = nil,
-        done: @escaping (URL, EditRecipe) -> Void,
+        done: @escaping (PhotoAddress, EditRecipe) -> Void,
     ) -> UUID {
         var job = Job(change: change, photos: photos, title: title, stepTitle: title, done: done)
         if let step, isAutoSyncing {
@@ -263,13 +321,15 @@ public final class SettingsSync {
 
     /// One Auto Sync step of `source`, onto `photos`; gathered with the steps queued just before it.
     func autoSync(
-        _ source: EditRecipe, step: RunStep, on photos: [PhotoAddress], done: @escaping (URL, EditRecipe) -> Void,
+        _ source: EditRecipe, step: RunStep, on photos: [PhotoAddress],
+        done: @escaping (PhotoAddress, EditRecipe) -> Void,
     ) {
         autoSync(source, step: step, on: SelectedPhotos(photos), done: done)
     }
 
     func autoSync(
-        _ source: EditRecipe, step: RunStep, on photos: SelectedPhotos, done: @escaping (URL, EditRecipe) -> Void,
+        _ source: EditRecipe, step: RunStep, on photos: SelectedPhotos,
+        done: @escaping (PhotoAddress, EditRecipe) -> Void,
     ) {
         guard !step.carried.isEmpty, photos.count > 0 else { return }
         record(step)
@@ -294,19 +354,19 @@ public final class SettingsSync {
     /// `source`, the steps after it being `undone`: each photo of the run in `photos` follows.
     func follow(
         _ source: EditRecipe, undone: Set<UUID>, session: UUID, on photos: [PhotoAddress], title: String,
-        done: @escaping (URL, EditRecipe) -> Void,
+        done: @escaping (PhotoAddress, EditRecipe) -> Void,
     ) {
         follow(source, undone: undone, session: session, on: SelectedPhotos(photos), title: title, done: done)
     }
 
-    /// `follow` on a selection's photos: those a large source's aren't known by URL yet are told from the run's as the
-    /// batch reaches them.
+    /// `follow` on a selection's photos: those a large source's aren't known by address yet are told from the run's as
+    /// the batch reaches them.
     func follow(
         _ source: EditRecipe, undone: Set<UUID>, session: UUID, on photos: SelectedPhotos, title: String,
-        done: @escaping (URL, EditRecipe) -> Void,
+        done: @escaping (PhotoAddress, EditRecipe) -> Void,
     ) {
         guard isAutoSyncing, let run, run.session == session, !run.photos.isEmpty else { return }
-        let members = photos.addresses.map { SelectedPhotos($0.filter { run.photos[$0.url] != nil }) } ?? photos
+        let members = photos.addresses.map { SelectedPhotos($0.filter { run.photos[$0] != nil }) } ?? photos
         guard members.count > 0 else { return }
         let job = Job(
             change: .follow(source, undone), photos: members, title: title, stepTitle: title, session: session,
@@ -354,6 +414,7 @@ public final class SettingsSync {
         report = nil
         before = [:]
         written = [:]
+        made = [:]
         task = Task { [weak self] in
             await self?.process(job)
         }
@@ -369,70 +430,101 @@ public final class SettingsSync {
         await writing[url]?.value
     }
 
-    /// `save` run on the editor's save queue, unless `url` is open in the editor, which makes
-    /// `change` instead. Between the check and the save being registered there is no suspension,
-    /// so the editor opening it reads it after the save.
+    /// `save` run on the editor's save queue for the edits `changes` name, unless `url` is open in the editor, which
+    /// makes each change instead; those of a photo it stops having open are saved. Between the check and the save being
+    /// registered there is no suspension, so the editor opening it reads it after the save.
     private func land<T: Sendable>(
-        _ url: URL, _ change: EditorChange, title: String, _ save: @escaping @Sendable (SidecarStore) -> T,
+        _ url: URL, _ changes: [(PhotoAddress, EditorChange)], title: String,
+        _ save: @escaping @Sendable (Set<PhotoAddress>, SidecarStore) -> T,
     ) async -> Landed<T> {
-        while let editor, editor.isOpen(url) {
-            let outcome = await editor.apply(change, to: url, title: title)
-            if case .notOpen = outcome {
-                continue
+        var landed = Landed<T>()
+        var left = changes
+        while let editor, editor.isOpen(url), !left.isEmpty {
+            var notOpen: [(PhotoAddress, EditorChange)] = []
+            for (photo, change) in left {
+                let outcome = await editor.apply(change, to: photo, title: title)
+                if case .notOpen = outcome {
+                    notOpen.append((photo, change))
+                } else {
+                    landed.inEditor[photo] = outcome
+                }
             }
-            return .inEditor(outcome)
+            left = notOpen
         }
+        guard !left.isEmpty else { return landed }
+        let photos = Set(left.map(\.0))
         let (store, saves) = (store, saves)
         let saving = Task.detached {
-            guard let saves else { return save(store) }
-            return await saves.read { save(store) }
+            guard let saves else { return save(photos, store) }
+            return await saves.read { save(photos, store) }
         }
         let landing = Task { _ = await saving.value }
         writing[url] = landing
-        let result = await saving.value
+        landed.saved = await saving.value
         if writing[url] == landing {
             writing[url] = nil
         }
-        return .saved(result)
+        return landed
     }
 
-    /// Puts back every photo of the last batch not edited since, as a batch of its own: batches
+    /// Puts back every edit of the last batch not edited since, as a batch of its own: batches
     /// started meanwhile wait for it.
-    func undo(done: @escaping (URL, EditRecipe) -> Void) {
+    func undo(done: @escaping (PhotoAddress, EditRecipe) -> Void) {
         guard canUndo else { return }
-        let written = written
-        let before = before
+        let (written, before, made) = (written, before, made)
         let title = "Undo \(title)"
         self.written = [:]
         self.before = [:]
+        self.made = [:]
         progress = Progress(title: title, done: 0, total: written.count)
         report = nil
         task = Task { [weak self] in
-            await self?.putBack(written, before: before, title: title, done: done)
+            await self?.putBack(written, before: before, made: made, title: title, done: done)
         }
     }
 
     private func putBack(
-        _ written: [URL: Sidecar], before: [URL: EditRecipe?], title: String, done: (URL, EditRecipe) -> Void,
+        _ written: [PhotoAddress: EditRecipe], before: [PhotoAddress: EditRecipe?], made: [URL: Sidecar],
+        title: String, done: (PhotoAddress, EditRecipe) -> Void,
     ) async {
         var unread = 0
-        for (url, after) in written {
+        for (url, photos) in Self.byFile(Array(written.keys)) {
             guard !Task.isCancelled else { break }
-            defer { progress?.done += 1 }
-            guard let previous = before[url] else { continue }
+            defer { progress?.done += photos.count }
+            let edits = photos.compactMap { photo -> PutBack? in
+                guard let after = written[photo], let previous = before[photo] else { return nil }
+                let session = Self.session(previous ?? EditRecipe(), from: after, of: photo.version, title: title)
+                return PutBack(photo: photo, after: after, previous: previous, session: session)
+            }
             await saves?.wait(for: url)
             await beforeWriting(url)
-            let landed = await land(url, .edit(previous ?? EditRecipe(), over: after.recipe), title: title) { store in
-                Self.puttingBack(after, to: previous, title: title, for: url, in: store)
+            let changes = edits.map { (
+                $0.photo,
+                EditorChange.edit($0.previous ?? EditRecipe(), over: $0.after, session: $0.session),
+            ) }
+            let landed = await land(url, changes, title: title) { [made = made[url]] photos, store in
+                Self.puttingBack(edits.filter { photos.contains($0.photo) }, made: made, for: url, in: store)
             }
-            switch landed {
-            case let .saved(.done(recipe)), let .inEditor(.applied(recipe?)):
-                run?.photos[url] = nil
-                done(url, recipe)
-            case .saved(.unreadable):
-                unread += 1
-            case .saved(.editedSince), .inEditor:
-                continue
+            for edit in edits {
+                switch landed.inEditor[edit.photo] {
+                case let .applied(recipe?)?, let .appliedBeside(recipe)?:
+                    run?.photos[edit.photo] = nil
+                    done(edit.photo, recipe)
+                    continue
+                case .some:
+                    continue
+                case nil:
+                    break
+                }
+                switch landed.saved?[edit.photo] {
+                case let .done(recipe)?:
+                    run?.photos[edit.photo] = nil
+                    done(edit.photo, recipe)
+                case .unreadable?:
+                    unread += 1
+                case .editedSince?, nil:
+                    continue
+                }
             }
         }
         let photos = "\(unread) photo\(unread == 1 ? "" : "s")"
@@ -448,165 +540,77 @@ public final class SettingsSync {
         }
     }
 
-    /// The photo at `url` given back `previous` (nil: it had no sidecar), if its edit is still
-    /// as the batch left it, `after`. Read and written in one go on the save queue.
+    /// The edits `edits` name of the photo at `url` given back what they were, each still as the batch left it, in one
+    /// read and one write on the save queue. A sidecar the batch made, `made`, still as it made it, is removed.
     private nonisolated static func puttingBack(
-        _ after: Sidecar, to previous: EditRecipe?, title: String, for url: URL, in store: SidecarStore,
-    ) -> PuttingBack {
+        _ edits: [PutBack], made: Sidecar?, for url: URL, in store: SidecarStore,
+    ) -> [PhotoAddress: PuttingBack] {
         guard store.protection(for: url) == nil, case let .success(read) = Result(catching: {
             try store.loadThrowing(for: url)
-        }) else { return .unreadable }
-        guard let current = read, current.recipe == after.recipe else { return .editedSince }
-        if let previous {
-            try? store.save(recording(previous, in: current, from: after.recipe, title: title), for: url)
-            return .done(previous)
-        }
-        if current.hasSameContent(as: after) {
-            store.delete(for: url)
-        } else {
+        }) else { return Dictionary(edits.map { ($0.photo, .unreadable) }) { first, _ in first } }
+        guard var sidecar = read
+        else { return Dictionary(edits.map { ($0.photo, .editedSince) }) { first, _ in first } }
+        var results: [PhotoAddress: PuttingBack] = [:]
+        for edit in edits {
+            guard sidecar[edit: edit.photo.version]?.recipe == edit.after else {
+                results[edit.photo] = .editedSince
+                continue
+            }
+            if edit.previous == nil, let made, sidecar.hasSameContent(as: made) {
+                store.delete(for: url)
+                return [edit.photo: .done(EditRecipe())]
+            }
             // Rated, say, since the sync made it: only the edit goes back.
-            try? store.saveOrRemove(recording(EditRecipe(), in: current, from: after.recipe, title: title), for: url)
+            sidecar.change(edit.photo.version, to: edit.previous ?? EditRecipe(), session: edit.session)
+            results[edit.photo] = .done(edit.previous ?? EditRecipe())
         }
-        return .done(EditRecipe())
+        if results.values.contains(where: \.isDone) {
+            sidecar.modified = Date()
+            try? store.saveOrRemove(sidecar, for: url)
+        }
+        return results
+    }
+
+    /// `photos` by file, in the order of each file's first, each file's in their order: a batch reads and writes the
+    /// edits of one file together.
+    static func byFile(_ photos: [PhotoAddress]) -> [(url: URL, photos: [PhotoAddress])] {
+        var files: [URL] = []
+        var edits: [URL: [PhotoAddress]] = [:]
+        for photo in photos {
+            guard let found = edits[photo.url] else {
+                files.append(photo.url)
+                edits[photo.url] = [photo]
+                continue
+            }
+            if !found.contains(photo) {
+                edits[photo.url]?.append(photo)
+            }
+        }
+        return files.map { ($0, edits[$0] ?? []) }
     }
 
     private func process(_ job: Job) async {
         var engine: (any EditingEngine)?
-        var skipped = 0
-        var editedSince = 0
-        var changedMeanwhile = 0
-        var failedMasks = 0
-        var presetsNotMade = 0
-        var presetsFull = 0
-        var editedInRedlamp = 0
+        var tally = Tally()
         let inRun = job.session != nil && run?.session == job.session
         var batches = job.photos.batches(of: Self.batch)
         photos: while !Task.isCancelled, let batch = await batches.next() {
-            for url in batch.map(\.url) {
+            for (url, photos) in Self.byFile(batch) {
                 guard !Task.isCancelled else { break photos }
-                defer { progress?.done += 1 }
-                // A large selection's photos aren't told from the run's before the batch reaches them.
-                if job.isFollow, job.photos.addresses == nil, run?.photos[url] == nil {
-                    continue
-                }
-                /// The editor made the change, or left the photo as it is.
-                func madeInEditor(_ outcome: EditorOutcome) {
-                    run?.photos[url] = nil
-                    switch outcome {
-                    case let .applied(recipe?):
-                        job.done(url, recipe)
-                    case .left where job.isFollow:
-                        editedSince += 1
-                    case .left:
-                        skipped += 1
-                    case .applied(nil), .notOpen:
-                        break
-                    }
-                }
-                if !job.isFollow, let editor, editor.isOpen(url) {
-                    let outcome = await editor.apply(.change(job.change), to: url, title: job.stepTitle)
-                    if case .notOpen = outcome {} else {
-                        madeInEditor(outcome)
-                        continue
-                    }
-                }
-                await saves?.wait(for: url)
-                // Sidecars are read and written off the main thread: on a busy disk one write can take seconds.
-                let store = store
-                // Nil when it's protected; a failure when it's there but can't be read now.
-                let read = await Task.detached { () -> Result<Sidecar?, any Error>? in
-                    store.protection(for: url) == nil ? Result { try store.loadThrowing(for: url) } : nil
-                }.value
-                guard case let .success(existing)? = read else {
-                    skipped += 1
-                    continue
-                }
-                let original = existing?.recipe ?? EditRecipe()
-                if case .convertLightroom = job.change, !original.isPristine || existing?.versions.isEmpty == false {
-                    editedInRedlamp += 1
-                    continue
-                }
-                // The run goes on for a photo it last left as it is; otherwise it starts over from here.
-                let member = inRun ? run?.photos[url].flatMap { $0.last == original ? $0 : nil } : nil
-                var change = job.change
-                var start = original
-                if case let .follow(source, undone) = job.change {
-                    guard let run, let member else {
-                        if run?.photos[url] != nil {
-                            editedSince += 1
-                        }
-                        continue
-                    }
-                    change = .paste(source, run.carried(to: member, without: undone))
-                    start = member.base ?? EditRecipe()
-                }
-                guard let applied = await applying(change, to: start, current: original, url, &engine) else { continue }
-                let next = applied.recipe
-                failedMasks += applied.failedMasks
-                switch applied.missedPreset {
-                case .notMade: presetsNotMade += 1
-                case .full: presetsFull += 1
-                case nil: break
-                }
-                guard next != original else {
-                    if var member {
-                        member.reached.formUnion(job.steps)
-                        run?.photos[url] = member
-                    }
-                    continue
-                }
-                var session = member?.session
-                    ?? HistorySession(steps: [
-                        HistoryStep(action: .open, title: existing == nil ? "Import" : "Opened", recipe: original),
-                    ])
-                session.steps.append(HistoryStep(action: change.action, title: job.stepTitle, recipe: next))
-                if session.steps.count > Self.maximumRunSteps {
-                    session.steps.removeFirst(session.steps.count - Self.maximumRunSteps)
-                }
-                await beforeWriting(url)
-                let inEditor: EditorChange = job.isFollow ? .edit(next, over: original) : .change(job.change)
-                let saved: Sidecar
-                switch await land(url, inEditor, title: job.stepTitle, { [session] store in
-                    Self.saving(next, session: session, over: original, for: url, in: store)
-                }) {
-                case let .saved(.saved(sidecar)):
-                    saved = sidecar
-                case .saved(.unreadable):
-                    skipped += 1
-                    continue
-                case .saved(.editedSince):
-                    changedMeanwhile += 1
-                    continue
-                case .saved(.failed):
-                    continue
-                case let .inEditor(outcome):
-                    madeInEditor(outcome)
-                    continue
-                }
-                // updateValue: a photo without a sidecar keeps its nil (a subscript would drop the key).
-                before.updateValue(existing?.recipe, forKey: url)
-                written[url] = saved
-                if inRun {
-                    run?.photos[url] = AutoSyncRun.Member(
-                        base: member.map(\.base) ?? existing?.recipe, reached: (member?.reached ?? []).union(job.steps),
-                        last: saved.recipe, session: session,
-                    )
-                } else {
-                    run?.photos[url] = nil
-                }
-                job.done(url, next)
+                await process(photos, of: url, job, inRun: inRun, engine: &engine, tally: &tally)
+                progress?.done += photos.count
             }
         }
         var preset: (name: String, notMade: Int, full: Int)?
         if case let .applyMaskPreset(applied) = job.change {
-            preset = (applied.name, presetsNotMade, presetsFull)
+            preset = (applied.name, tally.presetsNotMade, tally.presetsFull)
         }
         report = Self.report(
-            skipped: skipped, editedSince: editedSince, changedMeanwhile: changedMeanwhile, failedMasks: failedMasks,
-            preset: preset, cancelled: Task.isCancelled,
+            skipped: tally.skipped, editedSince: tally.editedSince, changedMeanwhile: tally.changedMeanwhile,
+            failedMasks: tally.failedMasks, preset: preset, cancelled: Task.isCancelled,
         )
-        if editedInRedlamp > 0 {
-            let photos = "\(editedInRedlamp) photo\(editedInRedlamp == 1 ? " was" : "s were")"
+        if tally.editedInRedlamp > 0 {
+            let photos = "\(tally.editedInRedlamp) photo\(tally.editedInRedlamp == 1 ? " was" : "s were")"
             report = [report, "\(photos) left alone: edited in Redlamp since the report."].compactMap(\.self)
                 .joined(separator: " ")
         }
@@ -617,23 +621,287 @@ public final class SettingsSync {
         }
     }
 
-    /// `recipe` and `session` saved for the photo at `url` if its edit is still `original`,
-    /// keeping what else changed since (a rating, say). Read and written in one go on the save
-    /// queue, and never over a sidecar that can't be read.
-    private nonisolated static func saving(
-        _ recipe: EditRecipe, session: HistorySession, over original: EditRecipe, for url: URL, in store: SidecarStore,
-    ) -> Saving {
+    /// `job`'s change to `photos`, edits of the photo at `url`: made by the editor while it has the photo open,
+    /// otherwise read, worked out and saved in one write of its sidecar.
+    private func process(
+        _ photos: [PhotoAddress], of url: URL, _ job: Job, inRun: Bool, engine: inout (any EditingEngine)?,
+        tally: inout Tally,
+    ) async {
+        var photos = photos
+        if job.isFollow, job.photos.addresses == nil {
+            // A large selection's photos aren't told from the run's before the batch reaches them.
+            photos.removeAll { run?.photos[$0] == nil }
+        }
+        if !job.isFollow, let editor, editor.isOpen(url) {
+            var left: [PhotoAddress] = []
+            for photo in photos {
+                let outcome = await editor.apply(.change(job.change), to: photo, title: job.stepTitle)
+                switch outcome {
+                case .notOpen:
+                    left.append(photo)
+                case let .otherEdit(held):
+                    await changeBeside(photo, held: held, job, inRun: inRun, engine: &engine, tally: &tally)
+                default:
+                    madeInEditor(photo, outcome, job, &tally)
+                }
+            }
+            photos = left
+        }
+        guard !photos.isEmpty else { return }
+        await saves?.wait(for: url)
+        // Sidecars are read and written off the main thread: on a busy disk one write can take seconds.
+        let store = store
+        // Nil when it's protected; a failure when it's there but can't be read now.
+        let read = await Task.detached { () -> Result<Sidecar?, any Error>? in
+            store.protection(for: url) == nil ? Result { try store.loadThrowing(for: url) } : nil
+        }.value
+        guard case let .success(existing)? = read else {
+            tally.skipped += photos.count
+            return
+        }
+        if case .convertLightroom = job.change, existing?.recipe.isPristine == false
+            || existing?.versions.isEmpty == false {
+            tally.editedInRedlamp += photos.count
+            return
+        }
+        var writes: [EditWrite] = []
+        var members: [PhotoAddress: AutoSyncRun.Member] = [:]
+        for photo in photos {
+            // A version its sidecar no longer has was removed while the batch ran.
+            guard let original = existing.map({ $0[edit: photo.version]?.recipe }) ?? (photo.version == nil
+                ? EditRecipe() : nil)
+            else {
+                tally.changedMeanwhile += 1
+                continue
+            }
+            let worked = await work(
+                job, on: photo, original: original, opened: existing != nil, inRun: inRun, engine: &engine,
+                tally: &tally,
+            )
+            if case let (write, member)? = worked {
+                writes.append(write)
+                members[photo] = member
+            }
+        }
+        guard !writes.isEmpty else { return }
+        await beforeWriting(url)
+        let changes = writes.map { write in
+            (
+                write.photo,
+                job.isFollow
+                    ? EditorChange.edit(write.next, over: write.original, session: write.session) : .change(job.change),
+            )
+        }
+        let landed = await land(url, changes, title: job.stepTitle) { [writes] photos, store in
+            Self.saving(writes.filter { photos.contains($0.photo) }, for: url, in: store)
+        }
+        let hadSidecar = existing != nil
+        for write in writes {
+            let photo = write.photo
+            if let outcome = landed.inEditor[photo] {
+                switch outcome {
+                case let .otherEdit(held):
+                    // Opened in the editor while the batch worked it out.
+                    await changeBeside(
+                        photo, held: held, worked: (write, members[photo]), job, inRun: inRun, engine: &engine,
+                        tally: &tally,
+                    )
+                case let .appliedBeside(recipe):
+                    note(
+                        photo,
+                        before: hadSidecar ? write.original : nil,
+                        written: recipe,
+                        member: members[photo],
+                        session: write.session,
+                        job,
+                        inRun: inRun,
+                    )
+                    job.done(photo, recipe)
+                default:
+                    madeInEditor(photo, outcome, job, &tally)
+                }
+                continue
+            }
+            switch landed.saved?.edits[photo] {
+            case let .saved(recipe)?:
+                note(
+                    photo,
+                    before: hadSidecar ? write.original : nil,
+                    written: recipe,
+                    member: members[photo],
+                    session: write.session,
+                    job,
+                    inRun: inRun,
+                )
+                job.done(photo, write.next)
+            case .unreadable?:
+                tally.skipped += 1
+            case .editedSince?:
+                tally.changedMeanwhile += 1
+            case .failed?, nil:
+                continue
+            }
+        }
+        if !hadSidecar, let sidecar = landed.saved?.sidecar {
+            made[url] = sidecar
+        }
+    }
+
+    /// What `job` makes of `photo`'s edit, `original`, and its member of the run: nil when it changes nothing, or the
+    /// run has no part of it. `opened` says the photo has a sidecar.
+    private func work(
+        _ job: Job, on photo: PhotoAddress, original: EditRecipe, opened: Bool, inRun: Bool,
+        engine: inout (any EditingEngine)?, tally: inout Tally,
+    ) async -> (EditWrite, AutoSyncRun.Member?)? {
+        // The run goes on for a photo it last left as it is; otherwise it starts over from here.
+        let member = inRun ? run?.photos[photo].flatMap { $0.last == original ? $0 : nil } : nil
+        var change = job.change
+        var start = original
+        if case let .follow(source, undone) = job.change {
+            guard let run, let member else {
+                if run?.photos[photo] != nil {
+                    tally.editedSince += 1
+                }
+                return nil
+            }
+            change = .paste(source, run.carried(to: member, without: undone))
+            start = member.base ?? EditRecipe()
+        }
+        guard let applied = await applying(change, to: start, current: original, photo.url, &engine) else {
+            return nil
+        }
+        let next = applied.recipe
+        tally.failedMasks += applied.failedMasks
+        switch applied.missedPreset {
+        case .notMade: tally.presetsNotMade += 1
+        case .full: tally.presetsFull += 1
+        case nil: break
+        }
+        guard next != original else {
+            if var member {
+                member.reached.formUnion(job.steps)
+                run?.photos[photo] = member
+            }
+            return nil
+        }
+        var session = member?.session ?? HistorySession(
+            steps: [HistoryStep(action: .open, title: opened ? "Opened" : "Import", recipe: original)],
+            versionID: photo.version,
+        )
+        session.steps.append(HistoryStep(action: change.action, title: job.stepTitle, recipe: next))
+        if session.steps.count > Self.maximumRunSteps {
+            session.steps.removeFirst(session.steps.count - Self.maximumRunSteps)
+        }
+        return (EditWrite(photo: photo, original: original, next: next, session: session), member)
+    }
+
+    /// `job`'s change to `photo`, one of the edits of the photo open in the editor other than the one open there, which
+    /// holds it as `held`: worked out here, unless `worked` was made from the same, and changed in the editor.
+    private func changeBeside(
+        _ photo: PhotoAddress, held: EditRecipe, worked: (EditWrite, AutoSyncRun.Member?)? = nil, _ job: Job,
+        inRun: Bool, engine: inout (any EditingEngine)?, tally: inout Tally,
+    ) async {
+        var made = worked.flatMap { $0.0.original == held ? $0 : nil }
+        if made == nil {
+            made = await work(
+                job,
+                on: photo,
+                original: held,
+                opened: true,
+                inRun: inRun,
+                engine: &engine,
+                tally: &tally,
+            )
+        }
+        guard case let (write, member)? = made, let editor else { return }
+        let outcome = await editor.apply(
+            .edit(write.next, over: held, session: write.session), to: photo, title: job.stepTitle,
+        )
+        switch outcome {
+        case let .appliedBeside(recipe):
+            note(photo, before: held, written: recipe, member: member, session: write.session, job, inRun: inRun)
+            job.done(photo, recipe)
+        case .left:
+            tally.changedMeanwhile += 1
+        default:
+            madeInEditor(photo, outcome, job, &tally)
+        }
+    }
+
+    /// The editor made `photo`'s change, or left it as it is.
+    private func madeInEditor(_ photo: PhotoAddress, _ outcome: EditorOutcome, _ job: Job, _ tally: inout Tally) {
+        run?.photos[photo] = nil
+        switch outcome {
+        case let .applied(recipe?), let .appliedBeside(recipe):
+            job.done(photo, recipe)
+        case .left where job.isFollow:
+            tally.editedSince += 1
+        case .left:
+            tally.skipped += 1
+        case .applied(nil), .notOpen, .otherEdit:
+            break
+        }
+    }
+
+    /// What the batch wrote to `photo`, for Undo and the run: its edit before (nil: its photo had no sidecar), as
+    /// written, and its history session.
+    private func note(
+        _ photo: PhotoAddress, before original: EditRecipe?, written recipe: EditRecipe, member: AutoSyncRun.Member?,
+        session: HistorySession, _ job: Job, inRun: Bool,
+    ) {
+        if before.index(forKey: photo) == nil {
+            // updateValue: a photo without a sidecar keeps its nil (a subscript would drop the key).
+            before.updateValue(original, forKey: photo)
+        }
+        written[photo] = recipe
+        if inRun {
+            run?.photos[photo] = AutoSyncRun.Member(
+                base: member.map(\.base) ?? original, reached: (member?.reached ?? []).union(job.steps),
+                last: recipe, session: session,
+            )
+        } else {
+            run?.photos[photo] = nil
+        }
+    }
+
+    /// `writes` saved for the photo at `url` in one write of its sidecar, each edit that is still as it was, keeping
+    /// what else changed since (a rating, say). Read and written in one go on the save queue, and never over a sidecar
+    /// that can't be read.
+    private nonisolated static func saving(_ writes: [EditWrite], for url: URL, in store: SidecarStore) -> Saved {
         guard store.protection(for: url) == nil, case let .success(current) = Result(catching: {
             try store.loadThrowing(for: url)
-        }) else { return .unreadable }
-        guard (current?.recipe ?? EditRecipe()) == original else { return .editedSince }
-        var sidecar = current ?? Sidecar(recipe: recipe)
-        sidecar.recipe = recipe
+        }) else { return Saved(edits: Dictionary(writes.map { ($0.photo, .unreadable) }) { first, _ in first }) }
+        var sidecar = current ?? Sidecar(recipe: EditRecipe())
+        var edits: [PhotoAddress: Saving] = [:]
+        for write in writes {
+            guard sidecar[edit: write.photo.version]?.recipe == write.original else {
+                edits[write.photo] = .editedSince
+                continue
+            }
+            sidecar.change(write.photo.version, to: write.next, session: write.session)
+            edits[write.photo] = .saved(write.next)
+        }
+        let saved = writes.filter {
+            if case .saved = edits[$0.photo] {
+                true
+            } else {
+                false
+            }
+        }
+        guard !saved.isEmpty else { return Saved(edits: edits) }
         sidecar.modified = Date()
-        sidecar.session = session
-        guard (try? store.save(sidecar, for: url)) != nil else { return .failed }
+        guard (try? store.save(sidecar, for: url)) != nil else {
+            for write in saved {
+                edits[write.photo] = .failed
+            }
+            return Saved(edits: edits)
+        }
         // As read back, so Undo can tell the photo hasn't been edited since (dates round).
-        return .saved(store.load(for: url) ?? sidecar)
+        let back = store.load(for: url) ?? sidecar
+        for write in saved {
+            edits[write.photo] = .saved(back[edit: write.photo.version]?.recipe ?? write.next)
+        }
+        return Saved(edits: edits, sidecar: back)
     }
 
     /// `change` made to `start` for the photo at `url`, whose edit is `current`: the AI masks it
@@ -730,19 +998,15 @@ public final class SettingsSync {
         return edit.anchored(photo)
     }
 
-    /// `sidecar` with its edit changed to `recipe` from `current`, in a history session of its own,
-    /// for a change made without opening the photo.
-    private nonisolated static func recording(
-        _ recipe: EditRecipe, in sidecar: Sidecar, from current: EditRecipe, title: String,
-    ) -> Sidecar {
-        var sidecar = sidecar
-        sidecar.recipe = recipe
-        sidecar.modified = Date()
-        sidecar.session = HistorySession(steps: [
+    /// A history session of its own for a change made to edit `version` (nil: the photo's own) without opening the
+    /// photo: as it was, `current`, then `recipe`.
+    private nonisolated static func session(
+        _ recipe: EditRecipe, from current: EditRecipe, of version: UUID?, title: String,
+    ) -> HistorySession {
+        HistorySession(steps: [
             HistoryStep(action: .open, title: "Opened", recipe: current),
             HistoryStep(action: .paste, title: title, recipe: recipe),
-        ])
-        return sidecar
+        ], versionID: version)
     }
 
     private static func report(
@@ -809,6 +1073,23 @@ extension MaskShape {
         switch self {
         case .ai, .depthRange: true
         default: false
+        }
+    }
+}
+
+private extension Sidecar {
+    /// Gives edit `version` (nil: the photo's own) `recipe`, its change recorded by `session`: the first session a
+    /// write
+    /// holds is the one it saves as open, the others are written beside it.
+    mutating func change(_ version: UUID?, to recipe: EditRecipe, session: HistorySession) {
+        guard var edit = self[edit: version] else { return }
+        edit.recipe = recipe
+        self[edit: version] = edit
+        if self.session == nil || self.session?.id == session.id {
+            self.session = session
+        } else {
+            unsavedSessions.removeAll { $0.id == session.id }
+            unsavedSessions.append(session)
         }
     }
 }
