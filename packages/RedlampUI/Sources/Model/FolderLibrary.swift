@@ -523,8 +523,8 @@ public final class FolderLibrary {
         keyPrefix + "probe:\(generation):"
     }
 
-    /// Reads the badges of the photos in `rows` with a local sidecar, a batch per job, in order.
-    /// A batch is keyed by its first row, so `prioritize` can find the visible ones.
+    /// Reads the badges of the photos in `rows` with a local sidecar, a batch per job, in order; a version's
+    /// (LIB-48) come with its file's. A batch is keyed by its first row, so `prioritize` can find the visible ones.
     func probeSidecars(in rows: Range<Int>, generation: Int) {
         let sidecars = sidecars
         if generation != probedGeneration {
@@ -532,7 +532,8 @@ public final class FolderLibrary {
             probeStarts = []
         }
         for start in stride(from: rows.lowerBound, to: rows.upperBound, by: Self.probeBatch) {
-            let urls = items[start ..< min(start + Self.probeBatch, rows.upperBound)].filter(\.needsSummary).map(\.url)
+            let urls = items[start ..< min(start + Self.probeBatch, rows.upperBound)]
+                .filter { $0.version == nil && $0.needsSummary }.map(\.url)
             guard !urls.isEmpty else { continue }
             probeStarts.insert(start)
             scheduler.submit(.lookAhead, key: probeKeyPrefix(generation) + "\(start)") {
@@ -546,21 +547,88 @@ public final class FolderLibrary {
         }
     }
 
+    /// Shows the sidecars' badges, and each photo's versions as they list them (`follow(_:ofRow:into:)`).
     private func apply(_ summaries: [(URL, SidecarSummary?)]) {
-        var updated = IndexSet()
+        var changes = VersionChanges()
         for (url, summary) in summaries {
             guard let index = positions[url] else { continue }
             let summary = summary ?? SidecarSummary()
-            guard items[index].hasEdits != summary.hasEdits || items[index].metadata != summary.metadata else {
+            if items[index].hasEdits != summary.hasEdits || items[index].metadata != summary.metadata {
+                items[index].hasEdits = summary.hasEdits
+                items[index].metadata = summary.metadata
+                changes.updated.append(PhotoAddress(url: url))
+            }
+            follow(summary.versions, ofRow: index, into: &changes)
+        }
+        apply(changes)
+    }
+
+    /// Shows the versions of `url`'s edit as `sidecar`, just saved, lists them (`follow(_:ofRow:into:)`): Redlamp's
+    /// own writes don't reach FSEvents on this Mac.
+    func showVersions(in sidecar: Sidecar?, of url: URL) {
+        showVersions((sidecar?.versions ?? []).map { version in
+            VersionSummary(
+                id: version.id, name: version.name, created: version.created, hasEdits: !version.recipe.isPristine,
+                metadata: version.metadata ?? PhotoMetadata(),
+            )
+        }, of: url)
+    }
+
+    /// Shows the versions of `url`'s edit as `versions`, read from its sidecar, lists them.
+    func showVersions(_ versions: [VersionSummary], of url: URL) {
+        guard let index = positions[url] else { return }
+        var changes = VersionChanges()
+        follow(versions, ofRow: index, into: &changes)
+        apply(changes)
+    }
+
+    /// The rows of a folder's photos changed, and the versions' rows it gains and loses, as its sidecars are read.
+    private struct VersionChanges {
+        var removed = IndexSet()
+        var inserting: [LibraryItem] = []
+        var updated: [PhotoAddress] = []
+    }
+
+    /// In a folder listed from the disk, the versions (LIB-48) of the file's own row at `index` after it, as
+    /// `versions` lists them: those it gained inserted, those it lost removed, the others changed in place. A folder
+    /// shown from the library has its versions' rows from the library's list.
+    private func follow(_ versions: [VersionSummary], ofRow index: Int, into changes: inout VersionChanges) {
+        guard !isShownFromLibrary else { return }
+        let url = items[index].url
+        var shown: [UUID: Int] = [:]
+        for row in index + 1 ..< items.count {
+            guard items[row].url == url, let version = items[row].version else { break }
+            shown[version] = row
+        }
+        for version in versions {
+            let item = Self.item(version, of: items[index])
+            guard let row = shown.removeValue(forKey: version.id) else {
+                changes.inserting.append(item)
                 continue
             }
-            items[index].hasEdits = summary.hasEdits
-            items[index].metadata = summary.metadata
-            updated.insert(index)
+            if items[row] != item {
+                items[row] = item
+                changes.updated.append(item.address)
+            }
         }
-        if !updated.isEmpty {
-            publish(LibraryDiff(updated: updated))
-        }
+        changes.removed.formUnion(IndexSet(shown.values))
+    }
+
+    private func apply(_ changes: VersionChanges) {
+        guard !changes.updated.isEmpty || !changes.removed.isEmpty || !changes.inserting.isEmpty else { return }
+        apply(removed: changes.removed, inserting: changes.inserting, updated: changes.updated, probing: false)
+    }
+
+    /// Version `version` of `file`'s edit as a photo of its own (LIB-48): its name, edit and metadata, with its file's
+    /// fields.
+    nonisolated static func item(_ version: VersionSummary, of file: LibraryItem) -> LibraryItem {
+        var item = file
+        item.version = version.id
+        item.versionName = version.name
+        item.hasEdits = version.hasEdits
+        item.metadata = version.metadata
+        item.renderedEdit = nil
+        return item
     }
 
     /// Reads the badges of these rows before any others still waiting.

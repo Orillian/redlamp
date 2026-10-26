@@ -162,6 +162,7 @@ extension EditorModel {
             item.hasEdits = sidecar.map { !$0.recipe.isPristine } ?? false
             item.metadata = sidecar?.metadata ?? PhotoMetadata()
         }
+        library.showVersions(in: sidecar, of: url)
     }
 
     private func failed(_ url: URL, _ write: SaveQueue.Write, _ error: any Error) {
@@ -214,6 +215,7 @@ extension EditorModel {
                 item.hasEdits = summary.hasEdits
                 item.metadata = summary.metadata
             }
+            library.showVersions(summary.versions, of: url)
         }
     }
 

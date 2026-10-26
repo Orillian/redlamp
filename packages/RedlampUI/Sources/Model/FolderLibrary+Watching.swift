@@ -175,15 +175,22 @@ extension FolderLibrary {
         }
         var removed = IndexSet()
         var updated: [PhotoAddress] = []
+        let files = incoming
         for (index, item) in items.enumerated() {
             if item.folderPath == directory {
-                guard var new = incoming.removeValue(forKey: item.url) else {
+                // A version's row (LIB-48), which a listing never has, goes with its file or its file's sidecar, and
+                // has its file's fields.
+                let listed = item.version == nil ? incoming.removeValue(forKey: item.url)
+                    : files[item.url].flatMap { $0.hasSidecar ? $0 : nil }
+                guard var new = listed else {
                     removed.insert(index)
                     continue
                 }
                 guard new.size != item.size || new.modified != item.modified || new.isSettling != item.isSettling
                     || new.hasSidecar != item.hasSidecar || new.sidecarModified != item.sidecarModified
                 else { continue }
+                new.version = item.version
+                new.versionName = item.versionName
                 new.hasEdits = item.hasEdits
                 new.metadata = item.metadata
                 items[index] = new
@@ -289,14 +296,14 @@ extension FolderLibrary {
 
     /// Looks for focus stacks in each shown directory on the background lane, one directory at a
     /// time (detection decodes thumbnails, and warming shares the lane), reusing what was found
-    /// while a directory's listing is unchanged.
+    /// while a directory's listing is unchanged. Versions (LIB-48) are never frames of one.
     func refreshStacks() {
         let generation = generation
         let snapshot = items.allRows
         let cached = stackCache.mapValues(\.signature)
         scheduler.submit(.background, key: keyPrefix + "stacks:\(generation)") {
             var groups: [String: [LibraryItem]] = [:]
-            for item in snapshot {
+            for item in snapshot where item.version == nil {
                 groups[item.folderPath, default: []].append(item)
             }
             var stale: [(directory: String, signature: Int, urls: [URL])] = []
