@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Observation
+import RedlampDocument
 import RedlampLibrary
 
 /// Which of Compare's two photos.
@@ -120,7 +121,7 @@ public extension EditorModel {
     private func selectedCells(in order: GridOrder) -> [Int64] {
         var cells: [Int64] = []
         var seen = Set<Int64>()
-        let active = selection.flatMap(library.photoID(of:))
+        let active = selectionID
         let selected = photoSelection.isEmpty ? [] : photoSelection.ids(in: library.photoList)
         for id in selected + (active.map { [$0] } ?? []) {
             let cell = order.cell(for: id) ?? id
@@ -287,7 +288,7 @@ public extension EditorModel {
     /// among them, in the grid's order, at most `LibraryCompare.surveyLimit` of them from the active one's place.
     var surveyPhotos: [URL] {
         let order = gridOrder
-        let active = selection.flatMap(library.photoID(of:)).map { order.cell(for: $0) ?? $0 }
+        let active = selectionID.map { order.cell(for: $0) ?? $0 }
         var cells = selectedCells(in: order)
         let limit = LibraryCompare.surveyLimit
         if cells.count > limit {
@@ -342,12 +343,12 @@ public extension EditorModel {
         let next = place.flatMap { place in
             shown.indices.contains(place + 1) ? shown[place + 1] : place > 0 ? shown[place - 1] : nil
         }
-        if let active = selection.flatMap(library.photoID(of:)), removed.contains(active), let next,
+        if let active = selectionID, removed.contains(active), let next,
            let nextID = library.photoID(of: next) {
             selected.activate(nextID)
             photoSelection = selected
             select(next, keepingSelection: true)
-            selectionAnchor = next
+            selectionAnchor = PhotoAddress(url: next)
         } else {
             photoSelection = selected
         }
@@ -431,7 +432,7 @@ public extension EditorModel {
     @discardableResult
     internal func cullCompared(_ change: CullingChange, advance: Bool) -> Bool {
         let order = gridOrder
-        guard let active = selection.flatMap(library.photoID(of:)) else { return false }
+        guard let active = selectionID else { return false }
         let list = library.photoList
         let rows = photos(ofCell: order.cell(for: active) ?? active, in: order).compactMap(list.index(of:))
         guard !rows.isEmpty else { return false }

@@ -36,7 +36,7 @@ extension LibraryGridView {
         case .none: return
         case let .photo(found): row = found
         }
-        guard let url = model.library.items.row(row)?.url else { return }
+        guard let photo = model.library.items.row(row)?.address else { return }
         let frame = gridLayout.frame(forItem: index)
         let plain = event.modifierFlags.isDisjoint(with: [.command, .shift])
         let inCell = CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)
@@ -46,18 +46,18 @@ extension LibraryGridView {
         } else if event.clickCount == 1, plain, let target = gridLayout.geometry.target(at: inCell) {
             cull(target, item: index, row: row, event: event)
         } else if event.clickCount >= 2 {
-            model.openInLoupe(url)
+            model.openInLoupe(photo)
         } else if plain, model.isMultiSelecting,
-                  model.library.photoID(of: url).map(model.photoSelection.contains) == true {
+                  model.library.photoID(of: photo).map(model.photoSelection.contains) == true {
             // The selection stays for a drag; a click without one selects the photo alone as it ends.
-            photoPress = PhotoPress(point: point, url: url, item: index, selectsOnRelease: true)
+            photoPress = PhotoPress(point: point, photo: photo, item: index, selectsOnRelease: true)
         } else {
             model.clickInGrid(
-                url,
+                photo,
                 toggling: event.modifierFlags.contains(.command),
                 extending: event.modifierFlags.contains(.shift),
             )
-            photoPress = PhotoPress(point: point, url: url, item: index, selectsOnRelease: false)
+            photoPress = PhotoPress(point: point, photo: photo, item: index, selectsOnRelease: false)
         }
     }
 
@@ -175,7 +175,7 @@ extension LibraryGridView {
         switch content(ofItem: index) {
         case let .photo(row):
             guard let item = model.library.items.row(row) else { return "" }
-            return item.name + (stackDescription(ofItem: index).map { ", \($0)" } ?? "")
+            return item.title + (stackDescription(ofItem: index).map { ", \($0)" } ?? "")
                 + (proposals.mark(for: item.url).map { ": \($0.sentence)" } ?? "")
         case .header: return headers[index].map { "\($0.title) (click to open or close, ⌥-click for every group)" } ?? ""
         case .none: return ""
@@ -215,24 +215,24 @@ extension LibraryGridView {
         func frame(_ index: Int) -> CGRect {
             window.convertToScreen(content.convert(gridLayout.frame(forItem: index), to: nil))
         }
-        var elements: [URL: GridCellElement] = [:]
+        var elements: [PhotoAddress: GridCellElement] = [:]
         var headerElements: [Int: GridCellElement] = [:]
         var children: [(Int, Any)] = cells.compactMap { index, cell -> (Int, Any)? in
             guard let item = cell.item else { return nil }
-            let element = self.elements[item.url] ?? GridCellElement(grid: self)
+            let element = self.elements[item.address] ?? GridCellElement(grid: self)
             element.item = index
             element.setAccessibilityRole(.button)
             element.setAccessibilityParent(content)
             element.setAccessibilityFrame(frame(index))
-            element.setAccessibilityLabel(item.name)
+            element.setAccessibilityLabel(item.title)
             let value = [
                 cell.showsUneditedPreview ? "Unedited preview" : nil, stackDescription(ofItem: index),
                 cell.healthMark.map { "\($0.word): \($0.sentence)" },
             ].compactMap(\.self).joined(separator: "; ")
             element.setAccessibilityValue(value.isEmpty ? nil : value)
-            element.setAccessibilityIdentifier("grid.\(item.url.lastPathComponent)")
+            element.setAccessibilityIdentifier("grid.\(item.accessibilityName)")
             element.setAccessibilitySelected(cell.isActive || cell.isInSelection)
-            elements[item.url] = element
+            elements[item.address] = element
             return (index, element)
         }
         for (index, header) in headers where header.group >= 0 {
@@ -300,12 +300,12 @@ extension LibraryGridView {
               let key = GridKey(rawValue: event.keyCode) else { return false }
         let extending = flags.contains(.shift)
         if key.opensLoupe {
-            guard !extending, let selection = model.selection else { return false }
-            model.openInLoupe(selection, zoomed: key == .zoom)
+            guard !extending, let active = model.activeAddress else { return false }
+            model.openInLoupe(active, zoomed: key == .zoom)
             return true
         }
         if let sections {
-            let current = model.selection.flatMap(item(of:))
+            let current = model.activeAddress.flatMap(item(of:))
             if let target = target(of: key, from: current, in: sections), target != current,
                let row = row(ofItem: target) {
                 clickRow(row, extending: extending)
@@ -313,7 +313,7 @@ extension LibraryGridView {
             return true
         }
         let last = shownCount - 1
-        let current = model.selection.flatMap(item(of:))
+        let current = model.activeAddress.flatMap(item(of:))
         let target = current.map { self.target(of: key, from: $0, last: last) } ?? 0
         if (0 ... last).contains(target), target != current, let row = row(ofItem: target) {
             clickRow(row, extending: extending)
@@ -326,12 +326,12 @@ extension LibraryGridView {
         let library = model.library
         guard library.photoIDs.indices.contains(row) else { return }
         if let item = library.items.row(row) {
-            return model.clickInGrid(item.url, extending: extending)
+            return model.clickInGrid(item.address, extending: extending)
         }
         let id = library.photoIDs[row]
         library.whenRead([id]) { [weak self] in
-            guard let self, let url = library.url(ofPhoto: id) else { return }
-            model.clickInGrid(url, extending: extending)
+            guard let self, let photo = library.address(ofPhoto: id) else { return }
+            model.clickInGrid(photo, extending: extending)
         }
     }
 

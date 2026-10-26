@@ -23,7 +23,7 @@ public extension EditorModel {
     /// photo of the list selected is its IDs as they are, without a pass over them (`PhotoSelection.ids(in:)`).
     var selectedIDs: [Int64] {
         let selected = photoSelection
-        guard !selected.isEmpty else { return selection.flatMap(library.photoID(of:)).map { [$0] } ?? [] }
+        guard !selected.isEmpty else { return selectionID.map { [$0] } ?? [] }
         return Array(selected.ids(in: library.photoList))
     }
 
@@ -79,34 +79,73 @@ public extension EditorModel {
         photoSelection.count > 1
     }
 
+    /// The active photo's row: the selection's active one while it's a row of the active photo's file, the file's own
+    /// or one of its versions' (LIB-48), else the file's own row. The photo opening's, while one is.
+    var activeID: Int64? {
+        guard let photo = opening ?? selection else { return nil }
+        if let id = photoSelection.active, library.address(ofPhoto: id)?.url == photo {
+            return id
+        }
+        return library.photoID(of: activePlace(of: photo)) ?? library.photoID(of: photo)
+    }
+
+    /// The row of the photo `selection` names: `activeID`, but for the photo left while another is opening.
+    var selectionID: Int64? {
+        opening == nil ? activeID : selection.flatMap(library.photoID(of:))
+    }
+
+    /// The active photo as its address: its file, and the version its row is (`activeID`); without a row, the
+    /// version Develop has open or is to open.
+    var activeAddress: PhotoAddress? {
+        guard let photo = opening ?? selection else { return nil }
+        if let id = activeID, let address = library.address(ofPhoto: id), address.url == photo {
+            return address
+        }
+        return activePlace(of: photo)
+    }
+
+    /// `photo`, the active file, in the version Develop has open, or the one it's to open.
+    private func activePlace(of photo: URL) -> PhotoAddress {
+        PhotoAddress(url: photo, version: opening == nil && info?.url == photo ? openVersion : openingVersion)
+    }
+
     /// A click on a photo in the filmstrip or the grid, or an arrow key in the grid: on its own it
     /// selects only that photo; `toggling` (⌘) adds it or takes it away; `extending` (⇧) selects the
     /// range from the photo last clicked or moved to without ⇧. The clicked photo becomes the active
     /// one, unless it was just taken away.
     func click(_ url: URL, toggling: Bool = false, extending: Bool = false) {
-        guard let id = library.photoID(of: url), toggling || extending else { return select(url) }
+        click(PhotoAddress(url: url), toggling: toggling, extending: extending)
+    }
+
+    /// A click on the cell of the photo `photo` names: a file's own edit, or one of its versions, a photo of its own
+    /// in the library's lists (LIB-48).
+    func click(_ photo: PhotoAddress, toggling: Bool = false, extending: Bool = false) {
+        guard let id = library.photoID(of: photo), toggling || extending else { return select(photo) }
         let list = library.photoList
-        if extending, let anchor = extensionAnchor.flatMap(library.photoID(of:)) {
+        if extending, let anchor = anchorID {
             photoSelection.select(from: anchor, through: id, in: list)
-            select(url, keepingSelection: true)
+            select(photo, keepingSelection: true)
         } else if photoSelection.contains(id), toggling {
             guard photoSelection.count > 1 else { return }
+            let wasActive = id == activeID
             photoSelection.toggle(id, in: list)
-            if url == selection, let next = photoSelection.active.flatMap(library.url(ofPhoto:)) {
+            if wasActive, let next = photoSelection.active.flatMap(library.address(ofPhoto:)) {
                 select(next, keepingSelection: true)
                 selectionAnchor = next
             }
         } else if toggling {
             photoSelection.toggle(id, in: list)
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         } else {
-            select(url)
+            select(photo)
         }
     }
 
-    private var extensionAnchor: URL? {
-        [selectionAnchor, selection].compactMap(\.self).first { library.index(of: $0) != nil }
+    /// The row ⇧ extends the selection from: the photo last clicked or moved to without ⇧, else the active one, while
+    /// it's shown.
+    internal var anchorID: Int64? {
+        [selectionAnchor, activeAddress].lazy.compactMap { $0.flatMap(self.library.photoID(of:)) }.first
     }
 
     /// ⌘A: every photo in the filmstrip, the active one staying active.
@@ -117,8 +156,9 @@ public extension EditorModel {
 
     /// ⌘D: only the active photo.
     func deselectOtherPhotos() {
-        selectOnly(selection)
-        selectionAnchor = selection
+        let active = activeAddress
+        selectOnly(active)
+        selectionAnchor = active
     }
 
     /// Selects `url` alone, if it's shown.
@@ -126,10 +166,11 @@ public extension EditorModel {
         selectOnly(url.map { PhotoAddress(url: $0) })
     }
 
-    /// Selects the photo `photo` names alone, a file's own edit or one of its versions (LIB-48), if it's shown.
+    /// Selects the photo `photo` names alone, a file's own edit or one of its versions (LIB-48), if it's shown; for a
+    /// version not shown, its file's own row.
     internal func selectOnly(_ photo: PhotoAddress?) {
         var only = PhotoSelection()
-        if let id = photo.flatMap(library.photoID(of:)) {
+        if let photo, let id = library.photoID(of: photo) ?? library.photoID(of: photo.url) {
             only.select(id, in: library.photoList)
         }
         photoSelection = only
@@ -139,8 +180,8 @@ public extension EditorModel {
     /// again when nothing else is, as when a folder is listed afresh.
     internal func keepSelectionShown() {
         photoSelection.keep(in: library.photoList)
-        if photoSelection.isEmpty, let selection, library.photoID(of: selection) != nil {
-            selectOnly(selection)
+        if photoSelection.isEmpty, let active = activeAddress, library.photoID(of: active.url) != nil {
+            selectOnly(active)
         }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 
 /// The Library grid's and loupe's actions (LIB-14): the thumbnail size, the cell style, the loupe's zoom,
@@ -31,7 +32,13 @@ public extension EditorModel {
     /// `url` large in the loupe: active, among the selection if it's in it, else alone; `zoomed` shows
     /// it at 1:1 (Z from the grid) and nil keeps the loupe's zoom.
     func openInLoupe(_ url: URL, zoomed: Bool? = nil) {
-        makeActive(url)
+        openInLoupe(PhotoAddress(url: url), zoomed: zoomed)
+    }
+
+    /// The photo `photo` names large in the loupe, a file's own edit or one of its versions (LIB-48), as `openInLoupe`
+    /// shows a file.
+    func openInLoupe(_ photo: PhotoAddress, zoomed: Bool? = nil) {
+        makeActive(photo)
         if let zoomed {
             libraryViews.setLoupeZoom(zoomed ? .actual : .fit)
         }
@@ -40,7 +47,12 @@ public extension EditorModel {
 
     /// `url` in Develop, on the Edit tool, as D does.
     func openInDevelop(_ url: URL) {
-        makeActive(url)
+        openInDevelop(PhotoAddress(url: url))
+    }
+
+    /// The photo `photo` names in Develop, a file's own edit or one of its versions (LIB-48).
+    func openInDevelop(_ photo: PhotoAddress) {
+        makeActive(photo)
         perform(.editTool)
     }
 
@@ -76,13 +88,17 @@ public extension EditorModel {
 
     /// Makes `url` the active photo, keeping the selection when it's in it.
     private func makeActive(_ url: URL) {
-        guard url != selection else { return }
-        if let id = library.photoID(of: url), photoSelection.contains(id) {
+        makeActive(PhotoAddress(url: url))
+    }
+
+    private func makeActive(_ photo: PhotoAddress) {
+        guard photo != activeAddress else { return }
+        if let id = library.photoID(of: photo), photoSelection.contains(id) {
             photoSelection.activate(id)
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         } else {
-            select(url)
+            select(photo)
         }
     }
 
@@ -92,7 +108,7 @@ public extension EditorModel {
     internal func selectInBand(_ rows: [Int], adding base: PhotoSelection?) {
         let list = library.photoList
         let ids = library.photoIDs
-        let activeID = selection.flatMap(library.photoID(of:))
+        let activeID = selectionID
         var band = PhotoSelection()
         band.select(rows.lazy.filter(ids.indices.contains).map { ids[$0] }, active: activeID, in: list)
         var next = base ?? band
@@ -107,7 +123,7 @@ public extension EditorModel {
         }
         guard next != photoSelection else { return }
         photoSelection = next
-        if let active = next.active.flatMap(library.url(ofPhoto:)), active != selection {
+        if let active = next.active.flatMap(library.address(ofPhoto:)), active != activeAddress {
             select(active, keepingSelection: true)
             selectionAnchor = active
         }

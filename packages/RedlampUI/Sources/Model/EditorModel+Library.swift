@@ -123,12 +123,12 @@ public extension EditorModel {
     internal func selectRow(_ row: Int, keepingSelection: Bool = false) {
         guard items.indices.contains(row) else { return }
         if let item = items.row(row) {
-            return select(item.url, keepingSelection: keepingSelection)
+            return select(item.address, keepingSelection: keepingSelection)
         }
         let id = library.photoIDs[row]
         library.whenRead([id]) { [weak self] in
-            guard let self, let url = library.url(ofPhoto: id) else { return }
-            select(url, keepingSelection: keepingSelection)
+            guard let self, let photo = library.address(ofPhoto: id) else { return }
+            select(photo, keepingSelection: keepingSelection)
         }
     }
 
@@ -141,7 +141,7 @@ public extension EditorModel {
     }
 
     private func step(by offset: Int) {
-        guard let from = opening ?? selection, let index = library.index(of: from) else { return }
+        guard let index = activeID.flatMap(library.photoList.index(of:)) else { return }
         let next = index + offset
         guard items.indices.contains(next) else { return }
         selectRow(next)
@@ -158,15 +158,15 @@ public extension EditorModel {
         }
         let cells = order.cells
         guard let id = last ? cells.last : cells.first else { return false }
-        guard let url = library.url(ofPhoto: id) else {
+        guard let photo = library.address(ofPhoto: id) else {
             library.whenRead([id]) { [weak self] in
-                guard let self, let url = library.url(ofPhoto: id) else { return }
-                select(url)
+                guard let self, let photo = library.address(ofPhoto: id) else { return }
+                select(photo)
                 coverClosedStacks()
             }
             return true
         }
-        select(url)
+        select(photo)
         coverClosedStacks()
         return true
     }

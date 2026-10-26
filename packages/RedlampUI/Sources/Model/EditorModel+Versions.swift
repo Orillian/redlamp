@@ -82,17 +82,55 @@ public extension EditorModel {
 
     /// Opens `url` in the version `version`, or in its own edit when it has no such version: a version as the
     /// library addresses it (`PhotoAddress`). A version the library lists is a photo of its own, selected alone
-    /// (LIB-48).
-    func select(_ photo: PhotoAddress) {
-        if module == .develop, photo.url == selection, info?.url == photo.url, opening == nil {
+    /// unless `keepingSelection` (LIB-48).
+    func select(_ photo: PhotoAddress, keepingSelection: Bool = false) {
+        let switching = module == .develop && photo.url == selection && info?.url == photo.url && opening == nil
+        if switching {
             showVersion(photo.version)
         } else {
-            select(photo.url)
+            select(photo.url, keepingSelection: keepingSelection)
             openingVersion = photo.version
         }
-        if photo.version != nil, library.photoID(of: photo) != nil {
+        if !keepingSelection, photo.version != nil || switching, library.photoID(of: photo) != nil {
             selectOnly(photo)
+            selectionAnchor = photo
         }
+    }
+
+    /// Makes the edit Develop has open the active photo where the library lists its row, a version's or its file's
+    /// own (LIB-48), as its filmstrip marks it; that row is then the one Develop matched its edit to.
+    internal func activateOpenEdit() {
+        guard let info, opening == nil, info.url == selection else { return }
+        let open = PhotoAddress(url: info.url, version: openVersion)
+        if let id = library.photoID(of: open), let active = activeID, active != id {
+            let list = library.photoList
+            if photoSelection.count > 1 {
+                if !photoSelection.contains(id) {
+                    photoSelection.toggle(id, in: list)
+                }
+                photoSelection.activate(id)
+                if photoSelection.contains(active), library.address(ofPhoto: active)?.url == info.url {
+                    photoSelection.toggle(active, in: list)
+                }
+            } else {
+                selectOnly(open)
+            }
+            selectionAnchor = open
+        }
+        matchedPhoto = activeID.flatMap(library.address(ofPhoto:))
+    }
+
+    /// Develop is shown with the active photo's file open: when another of the file's rows was made active since
+    /// Develop matched its edit to one (`activateOpenEdit`), the edit that row names opens in its place.
+    internal func openChosenEdit() {
+        guard let info, let chosen = activeID.flatMap(library.address(ofPhoto:)), chosen != matchedPhoto,
+              chosen.url == info.url
+        else { return }
+        guard chosen.version != openVersion else {
+            matchedPhoto = chosen
+            return
+        }
+        showVersion(chosen.version)
     }
 
     // MARK: - Asking

@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 
 /// Group By in the Library grid (LIB-41): the key and moments' Tighter–Looser setting, kept with each
@@ -51,11 +52,11 @@ public extension EditorModel {
     @discardableResult
     func moveToGroup(by offset: Int) -> Bool {
         guard let target = groupBeside(by: offset), let list = gridGroups.list,
-              let first = list.groups.photos(ofGroup: target).first, let url = library.url(ofPhoto: first)
+              let first = list.groups.photos(ofGroup: target).first, let photo = library.address(ofPhoto: first)
         else { return false }
         gridGroups.open(target)
-        select(url)
-        selectionAnchor = url
+        select(photo)
+        selectionAnchor = photo
         return true
     }
 }
@@ -73,7 +74,7 @@ extension EditorModel {
 
     /// The group of the active photo, or the one opening.
     var activeGroup: Int? {
-        (opening ?? selection).flatMap(library.photoID(of:)).flatMap(gridGroups.group(of:))
+        activeID.flatMap(gridGroups.group(of:))
     }
 
     /// Whether the active photo is in a closed group: every group was closed, so no photo is on show.
@@ -91,10 +92,10 @@ extension EditorModel {
 
     /// ← and → while grouped: the photo on show after or before the active one, alone, or a closed stack's photos.
     private func stepInGroups(by offset: Int) {
-        guard let from = opening ?? selection, let id = library.photoID(of: from),
-              let next = gridGroups.shownPhoto(offset, from: id), let url = library.url(ofPhoto: next)
+        guard let id = activeID,
+              let next = gridGroups.shownPhoto(offset, from: id), let photo = library.address(ofPhoto: next)
         else { return }
-        select(url)
+        select(photo)
         coverClosedStacks()
     }
 
@@ -102,23 +103,27 @@ extension EditorModel {
     /// to without ⇧ through `url`, in the grid's order, `url` active, with every photo of the closed stacks
     /// among them. Ungrouped among stacks, `clickInStacks`'s; other clicks are `click`'s.
     func clickInGrid(_ url: URL, toggling: Bool = false, extending: Bool = false) {
+        clickInGrid(PhotoAddress(url: url), toggling: toggling, extending: extending)
+    }
+
+    /// A click on the cell of the photo `photo` names, a file's own edit or one of its versions (LIB-48).
+    func clickInGrid(_ photo: PhotoAddress, toggling: Bool = false, extending: Bool = false) {
         let groups = gridGroups
         guard groups.list != nil || libraryViews.stacks?.list == nil else {
-            return clickInStacks(url, toggling: toggling, extending: extending)
+            return clickInStacks(photo, toggling: toggling, extending: extending)
         }
         defer { coverClosedStacks() }
-        guard extending, !toggling, groups.list != nil, let id = library.photoID(of: url) else {
+        guard extending, !toggling, groups.list != nil, let id = library.photoID(of: photo) else {
             if toggling, !extending, groups.list != nil, libraryViews.stacks?.list != nil {
-                return clickInStacks(url, toggling: true)
+                return clickInStacks(photo, toggling: true)
             }
-            return click(url, toggling: toggling, extending: extending)
+            return click(photo, toggling: toggling, extending: extending)
         }
-        let anchor = [selectionAnchor, selection].compactMap(\.self).first { library.index(of: $0) != nil }
-        guard let anchorID = anchor.flatMap(library.photoID(of:)), groups.list?.isVisible(anchorID) == true else {
-            return select(url)
+        guard let anchorID, groups.list?.isVisible(anchorID) == true else {
+            return select(photo)
         }
         photoSelection.select(groups.shownPhotos(from: anchorID, through: id), active: id, in: library.photoList)
-        select(url, keepingSelection: true)
+        select(photo, keepingSelection: true)
     }
 
     // MARK: - Closed groups leave the selection
@@ -151,7 +156,7 @@ extension EditorModel {
                 }
             }
         }
-        guard let active = selection.flatMap(library.photoID(of:)), let group = list.groups.index(of: active),
+        guard let active = selectionID, let group = list.groups.index(of: active),
               !list.isOpen(group)
         else {
             if selected != photoSelection {
@@ -160,15 +165,15 @@ extension EditorModel {
             return
         }
         if let next = Self.nearest(to: group, in: list, where: selected.contains),
-           let url = library.url(ofPhoto: next) {
+           let photo = library.address(ofPhoto: next) {
             selected.activate(next)
             photoSelection = selected
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         } else if let next = Self.nearest(to: group, in: list, where: { _ in true }),
-                  let url = library.url(ofPhoto: next) {
-            select(url)
-            selectionAnchor = url
+                  let photo = library.address(ofPhoto: next) {
+            select(photo)
+            selectionAnchor = photo
         } else {
             photoSelection = PhotoSelection()
         }
@@ -239,7 +244,7 @@ extension EditorModel {
     /// another in which they find the same is the same to the menus.
     func groupChecks() -> [Int] {
         guard let list = gridGroups.list else { return [] }
-        let id = (opening ?? selection).flatMap(library.photoID(of:))
+        let id = activeID
         let found = [
             activeGroup != nil, activePhotoIsClosed, groupBeside(by: 1) != nil, groupBeside(by: -1) != nil,
             id.flatMap { gridGroups.shownPhoto(1, from: $0) } != nil,
@@ -269,7 +274,7 @@ extension EditorModel {
         case .previousGroup, .nextGroup: return groupBeside(by: action == .nextGroup ? 1 : -1) != nil
         case .previousPhoto, .nextPhoto:
             guard list != nil else { return nil }
-            guard let id = (opening ?? selection).flatMap(library.photoID(of:)) else { return false }
+            guard let id = activeID else { return false }
             return groups.shownPhoto(action == .nextPhoto ? 1 : -1, from: id) != nil
         case .selectAllPhotos:
             guard let list, outline.someClosed else { return nil }
@@ -287,12 +292,12 @@ extension EditorModel {
     private func selectShownPhotos() {
         let shown = gridGroups.shownPhotos
         guard selection != nil, let first = shown.first else { return }
-        let active = selection.flatMap(library.photoID(of:))
+        let active = selectionID
             .flatMap { gridGroups.list?.isVisible($0) == true ? $0 : nil }
         photoSelection.select(shown, active: active ?? first, in: library.photoList)
-        if active == nil, let url = library.url(ofPhoto: first) {
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+        if active == nil, let photo = library.address(ofPhoto: first) {
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         }
     }
 }

@@ -76,7 +76,7 @@ public extension EditorModel {
     /// those below it becoming one with it on top, both open, as one change with Undo.
     @discardableResult
     func splitStack() -> Bool {
-        guard canSplitStack, let own = selection.flatMap(library.photoID(of:)), let id = gridStacks.indexID(of: own),
+        guard canSplitStack, let own = selectionID, let id = gridStacks.indexID(of: own),
               let stacked = libraryViews.stacks?.list, let open = openStack(of: own, in: stacked)
         else { return false }
         let members = stacked.stacks.allPhotos(of: open.stack)
@@ -90,7 +90,7 @@ public extension EditorModel {
     /// shown, as one change with Undo; the photo first in the stack is shown for it, and the stack keeps its order.
     @discardableResult
     func moveInStack(by offset: Int) -> Bool {
-        guard canMoveInStack(by: offset), let own = selection.flatMap(library.photoID(of:)),
+        guard canMoveInStack(by: offset), let own = selectionID,
               let id = gridStacks.indexID(of: own), let stacked = libraryViews.stacks?.list,
               let open = openStack(of: own, in: stacked)
         else { return false }
@@ -130,7 +130,7 @@ public extension EditorModel {
         guard library.service?.isReady == true, let stacked = libraryViews.stacks?.list else { return false }
         let selected = photoSelection
         guard !selected.isEmpty else {
-            return selection.flatMap(library.photoID(of:)).map { openStack(of: $0, in: stacked) != nil } ?? false
+            return selectionID.map { openStack(of: $0, in: stacked) != nil } ?? false
         }
         return stacked.anyOpenStack(holds: selected.contains)
     }
@@ -145,7 +145,7 @@ public extension EditorModel {
     /// with a photo shown above it, or below it.
     func canMoveInStack(by offset: Int) -> Bool {
         guard library.service?.isReady == true, let stacked = libraryViews.stacks?.list,
-              let id = selection.flatMap(library.photoID(of:)), let open = openStack(of: id, in: stacked),
+              let id = selectionID, let open = openStack(of: id, in: stacked),
               let place = open.frames.firstIndex(of: stacked.stacks.pair(containing: id)?.top ?? id)
         else { return false }
         return open.frames.indices.contains(place + offset)

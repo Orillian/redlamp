@@ -17,7 +17,7 @@ import RedlampLibrary
 public extension EditorModel {
     /// Whether the active photo is in a stack shown as one, open or closed, for S.
     var canToggleStack: Bool {
-        guard let stacked = libraryViews.stacks?.list, let id = (opening ?? selection).flatMap(library.photoID(of:)),
+        guard let stacked = libraryViews.stacks?.list, let id = activeID,
               let cell = stacked.cell(for: id)
         else { return false }
         return !stacked.shownStacks(of: cell).isEmpty
@@ -28,7 +28,7 @@ public extension EditorModel {
     func stackSelectedPhotos() -> Bool {
         guard canStackSelection else { return false }
         let photos = selectedForStacks
-        let top = selection.flatMap(library.photoID(of:)).flatMap(gridStacks.indexID(of:))
+        let top = selectionID.flatMap(gridStacks.indexID(of:))
         return makeStackChange(
             .stack(photos.ids, top: top), title: "Stack \(LibraryPanels.count(photos.ids.count))", photos: photos,
         )
@@ -54,7 +54,7 @@ public extension EditorModel {
     /// ⇧S: the active photo shown for its burst or stack made by hand, as one change with Undo.
     @discardableResult
     func moveToTopOfStack() -> Bool {
-        guard canMoveToTopOfStack, let url = selection, let own = library.photoID(of: url),
+        guard canMoveToTopOfStack, let url = selection, let own = selectionID,
               let id = gridStacks.indexID(of: own), let stacks = libraryViews.stacks?.list?.stacks,
               let stack = stacks.stack(containing: own)
         else { return false }
@@ -94,7 +94,7 @@ public extension EditorModel {
     var canUnstackSelection: Bool {
         guard library.service?.isReady == true, let stacks = libraryViews.stacks?.list?.stacks else { return false }
         guard photoSelection.count > 1 else {
-            return selection.flatMap(library.photoID(of:)).flatMap(stacks.stackIndex(containing:)) != nil
+            return selectionID.flatMap(stacks.stackIndex(containing:)) != nil
         }
         return selectedOwnIDs.contains { stacks.stackIndex(containing: $0) != nil }
     }
@@ -102,7 +102,7 @@ public extension EditorModel {
     /// Whether ⇧S would change a stack's top: the active photo is in a burst or a stack made by hand, not on top.
     var canMoveToTopOfStack: Bool {
         guard library.service?.isReady == true, let stacks = libraryViews.stacks?.list?.stacks,
-              let id = selection.flatMap(library.photoID(of:)), let stack = stacks.stack(containing: id)
+              let id = selectionID, let stack = stacks.stack(containing: id)
         else { return false }
         return (stacks.pair(containing: id)?.top ?? id) != stack.top
     }
@@ -162,32 +162,32 @@ public extension EditorModel {
     /// selected whole, as stacks just closed are.
     func coverClosedStacks(anyPhotoSelecting: Bool = false) {
         guard let stacked = libraryViews.stacks?.list else { return }
-        let active = selection.flatMap(library.photoID(of:))
+        let active = selectionID
         if let covered = photoSelection.covering(stacked, active: active, anyPhoto: anyPhotoSelecting) {
             photoSelection = covered
         }
         if let active, !stacked.isShown(active), let cell = stacked.cell(for: active),
-           let url = library.url(ofPhoto: cell) {
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+           let photo = library.address(ofPhoto: cell) {
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         }
     }
 
     /// `photos`, a stack just closed whose first cell is `cell`: all of them selected when any was, `cell` active
     /// when the active photo was one of them.
     internal func keepSelected(_ photos: [Int64], standingFor cell: Int64) {
-        let active = selection.flatMap(library.photoID(of:))
+        let active = selectionID
         guard let active, photos.contains(active) || photos.contains(where: photoSelection.contains) else { return }
         var kept = photoSelection
         let list = library.photoList
         for photo in photos where !kept.contains(photo) {
             kept.toggle(photo, in: list)
         }
-        if photos.contains(active), let url = library.url(ofPhoto: cell) {
+        if photos.contains(active), let photo = library.address(ofPhoto: cell) {
             kept.activate(cell)
             photoSelection = kept
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         } else {
             kept.activate(active)
             photoSelection = kept
@@ -198,26 +198,30 @@ public extension EditorModel {
     /// a closed stack whole, ⇧ selects the cells from the photo last clicked or moved to without ⇧ through `url`,
     /// every photo of the closed stacks among them. Other clicks are `click`'s.
     func clickInStacks(_ url: URL, toggling: Bool = false, extending: Bool = false) {
+        clickInStacks(PhotoAddress(url: url), toggling: toggling, extending: extending)
+    }
+
+    /// A click on the cell of the photo `photo` names, a file's own edit or one of its versions (LIB-48).
+    func clickInStacks(_ photo: PhotoAddress, toggling: Bool = false, extending: Bool = false) {
         defer { coverClosedStacks() }
-        guard let stacked = libraryViews.stacks?.list, let id = library.photoID(of: url), toggling || extending,
+        guard let stacked = libraryViews.stacks?.list, let id = library.photoID(of: photo), toggling || extending,
               let target = stacked.index(of: id)
-        else { return click(url, toggling: toggling, extending: extending) }
+        else { return click(photo, toggling: toggling, extending: extending) }
         let list = library.photoList
         if extending, !toggling {
-            let anchor = [selectionAnchor, selection].compactMap(\.self).first { library.index(of: $0) != nil }
-            guard let from = anchor.flatMap(library.photoID(of:)).flatMap(stacked.cell(for:))
+            guard let from = anchorID.flatMap(stacked.cell(for:))
                 .flatMap(stacked.index(of:))
-            else { return select(url) }
+            else { return select(photo) }
             var photos: [Int64] = []
             for index in min(from, target) ... max(from, target) {
                 photos += stacked.photos(of: stacked[index])
             }
             photoSelection.select(photos, active: id, in: list)
-            select(url, keepingSelection: true)
+            select(photo, keepingSelection: true)
             return
         }
         let photos = stacked.photos(of: id)
-        guard toggling, photos.count > 1 else { return click(url, toggling: toggling, extending: extending) }
+        guard toggling, photos.count > 1 else { return click(photo, toggling: toggling, extending: extending) }
         var next = photoSelection
         if next.contains(id) {
             guard next.count > photos.count else { return }
@@ -225,8 +229,8 @@ public extension EditorModel {
                 next.toggle(photo, in: list)
             }
             photoSelection = next
-            if let active = selection.flatMap(library.photoID(of:)), photos.contains(active),
-               let other = next.active.flatMap(library.url(ofPhoto:)) {
+            if let active = selectionID, photos.contains(active),
+               let other = next.active.flatMap(library.address(ofPhoto:)) {
                 select(other, keepingSelection: true)
                 selectionAnchor = other
             }
@@ -236,8 +240,8 @@ public extension EditorModel {
             }
             next.activate(id)
             photoSelection = next
-            select(url, keepingSelection: true)
-            selectionAnchor = url
+            select(photo, keepingSelection: true)
+            selectionAnchor = photo
         }
     }
 
@@ -294,7 +298,7 @@ public extension EditorModel {
         }
         switch action {
         case .toggleStack:
-            guard canToggleStack, let id = (opening ?? selection).flatMap(library.photoID(of:)) else { return false }
+            guard canToggleStack, let id = activeID else { return false }
             gridStacks.toggle(id)
         case .openAllStacks:
             guard canPerformStackShortcut(action) == true else { return false }
@@ -331,7 +335,7 @@ public extension EditorModel {
             return cell(after: action == .nextPhoto ? 1 : -1, in: stacked) != nil
         case .deselectOtherPhotos:
             guard let stacked = libraryViews.stacks?.list else { return nil }
-            let active = selection.flatMap(library.photoID(of:))
+            let active = selectionID
             return photoSelection.count > (active.map { stacked.photos(of: stacked.cell(for: $0) ?? $0).count } ?? 1)
         default: return nil
         }
@@ -353,7 +357,7 @@ public extension EditorModel {
 
     /// The cell `offset` (1 or -1) from the active photo's.
     private func cell(after offset: Int, in stacked: StackedList) -> Int64? {
-        guard let id = (opening ?? selection).flatMap(library.photoID(of:)), let cell = stacked.cell(for: id),
+        guard let id = activeID, let cell = stacked.cell(for: id),
               let index = stacked.index(of: cell), stacked.indices.contains(index + offset)
         else { return nil }
         return stacked[index + offset]
@@ -361,8 +365,9 @@ public extension EditorModel {
 
     /// ← and → while ungrouped: the cell after or before the active photo's, alone.
     private func step(by offset: Int, in stacked: StackedList) -> Bool {
-        guard let next = cell(after: offset, in: stacked), let url = library.url(ofPhoto: next) else { return false }
-        select(url)
+        guard let next = cell(after: offset, in: stacked),
+              let photo = library.address(ofPhoto: next) else { return false }
+        select(photo)
         coverClosedStacks()
         return true
     }
@@ -373,7 +378,7 @@ public extension EditorModel {
     /// read once: the menus ask for this after every change they follow, and each read is an observed access.
     internal var selectedOwnIDs: [Int64] {
         let selected = photoSelection
-        guard !selected.isEmpty else { return selection.flatMap(library.photoID(of:)).map { [$0] } ?? [] }
+        guard !selected.isEmpty else { return selectionID.map { [$0] } ?? [] }
         return Array(selected.ids(in: library.photoList))
     }
 

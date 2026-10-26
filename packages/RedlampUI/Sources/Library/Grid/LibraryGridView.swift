@@ -67,7 +67,7 @@ final class LibraryGridView: NSView, NSViewToolTipOwner {
     var prefetching: [URL: UInt64] = [:]
     /// The selection as last followed. Cells are drawn from these, not from the model, which can be a turn
     /// ahead.
-    private var selected: URL?
+    private var selected: PhotoAddress?
     private var marked = PhotoSelection()
     /// The photos the grid has: the library's count when it last reloaded or changed.
     private(set) var shownCount = 0
@@ -102,7 +102,7 @@ final class LibraryGridView: NSView, NSViewToolTipOwner {
     /// The frames of the focus stacks the app suggests merging (`EditorModel.stackSuggestions`), as last followed.
     var suggestedFrames: Set<URL> = []
     /// The cells' accessibility elements, by photo, and the headers', by group, as last asked for.
-    var elements: [URL: GridCellElement] = [:]
+    var elements: [PhotoAddress: GridCellElement] = [:]
     var headerElements: [Int: GridCellElement] = [:]
 
     struct Band {
@@ -187,7 +187,7 @@ final class LibraryGridView: NSView, NSViewToolTipOwner {
         trackers = [
             Tracker { [weak self] in
                 guard let self else { return }
-                let (selection, photos, _) = (model.selection, model.photoSelection, model.module)
+                let (selection, photos, _) = (model.activeAddress, model.photoSelection, model.module)
                 guard isShown else {
                     wasShown = false
                     return
@@ -302,7 +302,7 @@ extension LibraryGridView {
             staleRows = []
         }
         tile()
-        follow(model.selection, marking: model.photoSelection, revealing: !restorePlace())
+        follow(model.activeAddress, marking: model.photoSelection, revealing: !restorePlace())
     }
 
     private func reload() {
@@ -428,10 +428,10 @@ extension LibraryGridView {
         switch change {
         case .regrouped:
             refill(keeping: screenAnchor())
-            follow(model.selection, marking: model.photoSelection)
+            follow(model.activeAddress, marking: model.photoSelection)
         case let .items(diff):
             follow(diff, keeping: screenAnchor())
-            follow(model.selection, marking: model.photoSelection)
+            follow(model.activeAddress, marking: model.photoSelection)
         case let .headers(groups):
             for (item, header) in headers where groups.contains(header.group) {
                 place(header: item, header)
@@ -450,7 +450,7 @@ extension LibraryGridView {
         case .restacked: refill(keeping: screenAnchor())
         case let .items(diff): follow(diff, keeping: screenAnchor())
         }
-        follow(model.selection, marking: model.photoSelection)
+        follow(model.activeAddress, marking: model.photoSelection)
     }
 
     /// Scrolls to where the source's grid was left, once, after its view is restored; false when there's
@@ -528,11 +528,15 @@ extension LibraryGridView {
         model.library.index(of: url).flatMap(item(ofRow:))
     }
 
+    func item(of photo: PhotoAddress) -> Int? {
+        model.library.index(of: photo).flatMap(item(ofRow:))
+    }
+
     /// What stays where it is on screen as the grid lays out again: the active photo when it's on screen,
     /// else the first item on screen, and how far below the top it is.
     private struct ScreenAnchor {
         enum Target {
-            case photo(URL)
+            case photo(PhotoAddress)
             case header(Int)
         }
 
@@ -552,7 +556,7 @@ extension LibraryGridView {
         let offset = gridLayout.frame(forItem: first).minY - visible.minY
         switch content(ofItem: first) {
         case let .photo(row):
-            return model.library.items.row(row).map { ScreenAnchor(target: .photo($0.url), offset: offset) }
+            return model.library.items.row(row).map { ScreenAnchor(target: .photo($0.address), offset: offset) }
         case let .header(group): return ScreenAnchor(target: .header(group), offset: offset)
         case .none: return nil
         }
@@ -560,7 +564,7 @@ extension LibraryGridView {
 
     private func item(of anchor: ScreenAnchor) -> Int? {
         switch anchor.target {
-        case let .photo(url): item(of: url)
+        case let .photo(photo): item(of: photo)
         case let .header(group): shownGroups
             .flatMap { $0.groups.indices.contains(group) ? $0.index(ofHeader: group) : nil }
         }
@@ -817,8 +821,8 @@ extension LibraryGridView {
         }
         let ids = model.library.photoIDs
         cell.select(
-            active: item.url == selected,
-            inSelection: item.url != selected && ids.indices.contains(row) && marked.contains(ids[row]),
+            active: item.address == selected,
+            inSelection: item.address != selected && ids.indices.contains(row) && marked.contains(ids[row]),
         )
         cell.stackBadges = cellStacks.flatMap { stacks in
             photoID(ofItem: index).map { model.stackBadges(of: $0, in: stacks) }
@@ -867,17 +871,17 @@ extension LibraryGridView {
         }
         if diff.reset, shownGroups != nil || model.gridGroups.list != nil || shownStacks != nil {
             refill()
-            follow(model.selection, marking: model.photoSelection)
+            follow(model.activeAddress, marking: model.photoSelection)
             return
         }
         if diff.reset, model.library.isFiltered {
             refill()
-            follow(model.selection, marking: model.photoSelection)
+            follow(model.activeAddress, marking: model.photoSelection)
             return
         }
         guard !diff.reset else {
             reload()
-            follow(model.selection, marking: model.photoSelection, revealing: !restorePlace())
+            follow(model.activeAddress, marking: model.photoSelection, revealing: !restorePlace())
             return
         }
         if moves, model.library.isFiltered {
@@ -910,11 +914,11 @@ extension LibraryGridView {
 
     // MARK: - Selection
 
-    private func follow(_ selection: URL?, marking photos: PhotoSelection, revealing: Bool = false) {
+    private func follow(_ selection: PhotoAddress?, marking photos: PhotoSelection, revealing: Bool = false) {
         let ids = model.library.photoIDs
         for cell in cells.values where ids.indices.contains(cell.row) {
-            let url = cell.item?.url
-            cell.select(active: url == selection, inSelection: url != selection && photos.contains(ids[cell.row]))
+            let photo = cell.item?.address
+            cell.select(active: photo == selection, inSelection: photo != selection && photos.contains(ids[cell.row]))
         }
         marked = photos
         let moved = selected != selection

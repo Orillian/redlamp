@@ -255,7 +255,7 @@ public extension EditorModel {
         case .toggleAutoSync: return true
         case .deselectOtherPhotos: return isMultiSelecting
         case .previousPhoto, .nextPhoto:
-            guard let from = opening ?? selection, let index = library.index(of: from) else { return false }
+            guard let index = activeID.flatMap(library.photoList.index(of:)) else { return false }
             return items.indices.contains(index + (action == .nextPhoto ? 1 : -1))
         // As far as ← and → go, grouped and stacked as they are.
         case .firstPhoto: return canPerform(.previousPhoto)

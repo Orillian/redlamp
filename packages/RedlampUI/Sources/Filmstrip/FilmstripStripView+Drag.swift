@@ -1,11 +1,12 @@
 import AppKit
+import RedlampDocument
 import RedlampLibrary
 
 /// A press on a photo in the filmstrip, which a drag takes along.
 struct FilmstripPress {
     /// Where it was pressed, in the strip.
     let point: CGPoint
-    let url: URL
+    let photo: PhotoAddress
     /// Released without a drag, it selects the photo alone.
     let selectsOnRelease: Bool
 }
@@ -18,23 +19,23 @@ struct FilmstripPress {
 extension FilmstripStripView: NSDraggingSource, LibraryDragSource {
     /// A press on `url`'s cell: a click, unless it's on a photo of several selected, whose selection stays for a drag
     /// and which a release without one selects alone.
-    func pressed(_ event: NSEvent, on url: URL) {
+    func pressed(_ event: NSEvent, on photo: PhotoAddress) {
         press = nil
         let point = convert(event.locationInWindow, from: nil)
         let flags = event.modifierFlags
         if flags.isDisjoint(with: [.command, .shift]), model.isMultiSelecting,
-           model.library.photoID(of: url).map(model.photoSelection.contains) == true {
-            press = FilmstripPress(point: point, url: url, selectsOnRelease: true)
+           model.library.photoID(of: photo).map(model.photoSelection.contains) == true {
+            press = FilmstripPress(point: point, photo: photo, selectsOnRelease: true)
         } else {
-            click(url, holding: flags)
-            press = FilmstripPress(point: point, url: url, selectsOnRelease: false)
+            click(photo, holding: flags)
+            press = FilmstripPress(point: point, photo: photo, selectsOnRelease: false)
         }
     }
 
     /// A click on `url`'s cell holding `modifiers`, as the grid takes one: ⌘ adds or removes the photo, ⇧ extends the
     /// selection to it in the grid's order.
-    func click(_ url: URL, holding modifiers: NSEvent.ModifierFlags) {
-        model.clickInGrid(url, toggling: modifiers.contains(.command), extending: modifiers.contains(.shift))
+    func click(_ photo: PhotoAddress, holding modifiers: NSEvent.ModifierFlags) {
+        model.clickInGrid(photo, toggling: modifiers.contains(.command), extending: modifiers.contains(.shift))
     }
 
     /// The press moved: past the grid's drag distance, its drag begins.
@@ -51,7 +52,7 @@ extension FilmstripStripView: NSDraggingSource, LibraryDragSource {
         guard !LibraryDrags.follow(event), let press else { return }
         self.press = nil
         if press.selectsOnRelease {
-            model.clickInGrid(press.url)
+            model.clickInGrid(press.photo)
         }
     }
 
@@ -59,16 +60,16 @@ extension FilmstripStripView: NSDraggingSource, LibraryDragSource {
         let library = model.library
         let selection = model.photoSelection
         let fromLibrary = library.service?.isReady == true && !library.showsRecentlyTrashed && !model.showsMissingPhotos
-        let photos = selection.count > 1 && library.photoID(of: press.url).map(selection.contains) == true
+        let photos = selection.count > 1 && library.photoID(of: press.photo).map(selection.contains) == true
             ? DraggedPhotos(
                 selection: selection, items: library.items, ids: library.photoIDs, source: library.rowSource,
                 fromLibrary: fromLibrary,
             )
-            : DraggedPhotos(photo: press.url, fromLibrary: fromLibrary)
+            : DraggedPhotos(photo: press.photo.url, fromLibrary: fromLibrary)
         let pasteboard = NSPasteboardItem()
         pasteboard.setString(photos.token, forType: LibraryDrags.photos)
         let item = NSDraggingItem(pasteboardWriter: pasteboard)
-        let cell = cell(showing: press.url)
+        let cell = cell(showing: press.photo.url)
         let frame = cell.map { convert($0.bounds, from: $0) }
             ?? CGRect(origin: press.point, size: FilmstripCellView.size)
         item.setDraggingFrame(frame, contents: LibraryDrags.image(cell?.image, size: frame.size, count: photos.count))

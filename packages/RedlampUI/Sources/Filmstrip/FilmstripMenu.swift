@@ -12,17 +12,25 @@ import RedlampDocument
 @MainActor
 enum FilmstripMenu {
     static func menu(for photo: URL, model: EditorModel, culling: Bool = false) -> NSMenu? {
+        menu(for: PhotoAddress(url: photo), model: model, culling: culling)
+    }
+
+    /// `address` is the cell's photo, a file's own edit or one of its versions (LIB-48): culling reaches it, and what
+    /// acts on files reaches its file.
+    static func menu(for address: PhotoAddress, model: EditorModel, culling: Bool = false) -> NSMenu? {
+        let photo = address.url
         if let trashed = TrashMenu.menu(for: photo, model: model) {
             return trashed
         }
         let menu = NSMenu()
         if culling {
-            add(LibraryGridMenu.culling(for: PhotoAddress(url: photo), model: model), to: menu)
+            add(LibraryGridMenu.culling(for: address, model: model), to: menu)
             if model.module == .library, !model.isModalDialogOpen {
                 add([LibraryGridMenu.stacking(for: photo, model: model)], to: menu)
             }
         }
-        if photo == model.selection || model.library.photoID(of: photo).map(model.photoSelection.contains) == true {
+        if address == model.activeAddress || model.library.photoID(of: address)
+            .map(model.photoSelection.contains) == true {
             let groups: [[ShortcutAction]] = [
                 [.copySettings, .copySettingsAgain, .pasteSettings, .pastePrevious],
                 [.syncSettings, .syncSettingsAgain, .undoSync, .toggleAutoSync],

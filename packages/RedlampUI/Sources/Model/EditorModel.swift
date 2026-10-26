@@ -49,7 +49,7 @@ public final class EditorModel {
     /// one (`selection`, the active photo) and any others selected with it (`selectedPhotos`).
     public internal(set) var photoSelection = PhotoSelection()
     /// Where ⇧ extends the selection from: the photo last clicked or moved to without ⇧.
-    @ObservationIgnored var selectionAnchor: URL?
+    @ObservationIgnored var selectionAnchor: PhotoAddress?
     /// Focus stacks found in the folder that have no stack document yet.
     public internal(set) var stackSuggestions: [StackSuggestion] = []
     /// The Stack workspace, when open over the editor.
@@ -290,6 +290,10 @@ public final class EditorModel {
     @ObservationIgnored var openSidecar = Sidecar(recipe: EditRecipe())
     /// The version the photo opening opens in, rather than its own edit.
     @ObservationIgnored var openingVersion: UUID?
+    /// The library's active row as Develop last matched its edit to it (`activateOpenEdit`), by its address: Develop
+    /// opens
+    /// another of the file's edits as it's shown only for another row made active since (LIB-48).
+    @ObservationIgnored var matchedPhoto: PhotoAddress?
     /// Frames go straight to the canvases; views only observe whether there is one.
     @ObservationIgnored public let frames = FrameFeed()
     public private(set) var hasFrame = false
@@ -928,7 +932,7 @@ public final class EditorModel {
             metadataChangesWhileOpening = []
             if !keepingSelection {
                 selectOnly(url)
-                selectionAnchor = url
+                selectionAnchor = PhotoAddress(url: url)
             }
             requestRender()
             if let adoption {
@@ -940,7 +944,7 @@ public final class EditorModel {
             if !keepingSelection {
                 if opening == nil {
                     selectOnly(url)
-                    selectionAnchor = url
+                    selectionAnchor = PhotoAddress(url: url)
                 } else {
                     openingKeepsSelection = false
                 }
@@ -975,7 +979,8 @@ public final class EditorModel {
     /// Develop is shown: the active photo opens there unless it's open, or opening, already, shown from its
     /// preview until its render lands.
     func openActivePhoto() {
-        guard let selection, info?.url != selection, !isLoading, opening == nil else { return }
+        guard let selection, !isLoading, opening == nil else { return }
+        guard info?.url != selection else { return openChosenEdit() }
         open(selection, keepingSelection: true)
         if !hasFrame {
             showPreview(of: selection)
@@ -1115,8 +1120,9 @@ public final class EditorModel {
     /// then). Unless `url` is `ready` to show now, no photo is open until it is.
     private func leave(for url: URL?, keepingSelection: Bool, ready: Bool) {
         if !keepingSelection {
-            selectOnly(url)
-            selectionAnchor = url
+            let photo = url.map { PhotoAddress(url: $0, version: openingVersion) }
+            selectOnly(photo)
+            selectionAnchor = photo
         }
         sidecarReadRetry?.cancel()
         unsavedSessions = []
@@ -1460,6 +1466,7 @@ public final class EditorModel {
         if read.failed {
             readSidecarAgain(opened.url, after: sidecarReadRetryDelay)
         }
+        activateOpenEdit()
     }
 
     /// What the edit just opened starts with: its crop, and none of what was found or made on the one before.
@@ -1504,6 +1511,7 @@ public final class EditorModel {
             pendingCanvas = (frameSize, generation &+ 1)
         }
         requestRender()
+        activateOpenEdit()
     }
 
     /// The edit open, with its snapshots and metadata, as saving writes it.

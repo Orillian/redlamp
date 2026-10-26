@@ -1,10 +1,11 @@
 import AppKit
+import RedlampDocument
 import RedlampLibrary
 
 /// A press on a photo in the grid, which a drag takes along.
 struct PhotoPress {
     let point: CGPoint
-    let url: URL
+    let photo: PhotoAddress
     /// The item pressed, for its thumbnail.
     let item: Int
     /// Released without a drag, it selects the photo alone.
@@ -41,7 +42,7 @@ extension LibraryGridView {
         guard let press = photoPress else { return }
         photoPress = nil
         if press.selectsOnRelease {
-            model.clickInGrid(press.url)
+            model.clickInGrid(press.photo)
         }
     }
 
@@ -49,12 +50,12 @@ extension LibraryGridView {
         let library = model.library
         let selection = model.photoSelection
         let fromLibrary = library.service?.isReady == true && !library.showsRecentlyTrashed && !model.showsMissingPhotos
-        let photos = selection.count > 1 && library.photoID(of: press.url).map(selection.contains) == true
+        let photos = selection.count > 1 && library.photoID(of: press.photo).map(selection.contains) == true
             ? DraggedPhotos(
                 selection: selection, items: library.items, ids: library.photoIDs, source: library.rowSource,
                 fromLibrary: fromLibrary,
             )
-            : DraggedPhotos(photo: press.url, fromLibrary: fromLibrary)
+            : DraggedPhotos(photo: press.photo.url, fromLibrary: fromLibrary)
         let pasteboard = NSPasteboardItem()
         pasteboard.setString(photos.token, forType: LibraryDrags.photos)
         let item = NSDraggingItem(pasteboardWriter: pasteboard)

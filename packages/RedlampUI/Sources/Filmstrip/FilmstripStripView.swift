@@ -47,7 +47,7 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
     private var itemPhotos = ContiguousArray<Int64>()
     /// The selection and marks as last followed. Cells are drawn from these, not from the model,
     /// which can be a turn ahead, so `follow` knows every cell it has to change.
-    private var selected: URL?
+    private var selected: PhotoAddress?
     private var marked = PhotoSelection()
     private var prefetching: [URL: UInt64] = [:]
     /// The items waiting for a large source's rows, by row (`showRead`).
@@ -82,7 +82,7 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
                 return
             }
             let shown = layout.items(in: scrollView.contentView.bounds)
-            let open = model.selection.flatMap(item(of:)).flatMap { shown.contains($0) ? $0 : nil }
+            let open = model.activeAddress.flatMap(item(of:)).flatMap { shown.contains($0) ? $0 : nil }
             let kept = open ?? layout.item(nearest: scrollView.contentView.bounds.midX)
             layout.itemSize = FilmstripSize.cell(height: cellHeight)
             followLongEdge()
@@ -172,11 +172,11 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
         editObservation = model.editRenders.observe { [weak self] urls in self?.editsShown(urls) }
         stacksObservation = model.gridStacks.observe { [weak self] change in self?.stacksChanged(change) }
         groupsObservation = model.gridGroups.observe { [weak self] change in self?.groupsChanged(change) }
-        selected = model.selection
+        selected = model.activeAddress
         wasInSight = isInShownModule(model)
         tracker = Tracker { [weak self] in
             guard let self else { return }
-            let (selection, photos) = (model.selection, model.photoSelection)
+            let (selection, photos) = (model.activeAddress, model.photoSelection)
             let inSight = isInShownModule(model)
             defer { wasInSight = inSight }
             if inSight, !wasInSight {
@@ -221,7 +221,7 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
             prefetching = [:]
             reload()
         }
-        follow(model.selection, marking: model.photoSelection, scrolling: false)
+        follow(model.activeAddress, marking: model.photoSelection, scrolling: false)
         needsPlace = true
         needsLayout = true
     }
@@ -300,6 +300,15 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
         return shownOrder.cell(for: model.library.photoIDs[row]).flatMap(shownOrder.index(of:))
     }
 
+    /// The item showing the photo `photo` names, a file's own edit or one of its versions (LIB-48), or the closed
+    /// stack's
+    /// it's in; nil in a closed group.
+    private func item(of photo: PhotoAddress) -> Int? {
+        guard let row = model.library.index(of: photo) else { return nil }
+        guard let shownOrder else { return row }
+        return shownOrder.cell(for: model.library.photoIDs[row]).flatMap(shownOrder.index(of:))
+    }
+
     /// The stacks changed: the strip shows them afresh, unless it shows the groups, which follow the stacks.
     private func stacksChanged(_ change: LibraryStacks.Change) {
         guard model.libraryViews.groups?.list == nil else { return }
@@ -347,10 +356,10 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
         guard !afresh else {
             prefetching.values.forEach(model.thumbnailLoader.cancel)
             prefetching = [:]
-            follow(model.selection, marking: model.photoSelection, animated: false)
+            follow(model.activeAddress, marking: model.photoSelection, animated: false)
             return
         }
-        follow(model.selection, marking: model.photoSelection)
+        follow(model.activeAddress, marking: model.photoSelection)
     }
 
     /// What item `index`'s cell shows of its stacks.
@@ -435,15 +444,15 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
         item.cell.configure(photo, image: shown?.image, edit: shown?.edit, longEdge: shown?.longEdge ?? 0)
         item.cell.stackBadges = stackBadges(ofItem: index)
         item.cell.isFocusSuggested = suggestedFrames.contains(photo.url)
-        item.cell.isSelected = photo.url == selected
-        item.cell.isInSelection = photo.url != selected && marked.contains(model.library.photoIDs[row])
+        item.cell.isSelected = photo.address == selected
+        item.cell.isInSelection = photo.address != selected && marked.contains(model.library.photoIDs[row])
         item.cell.isDropTarget = dropTarget != nil && model.library.photoIDs[row] == dropTarget
-        item.cell.onClick = { [weak self] modifiers in self?.click(photo.url, holding: modifiers) }
-        item.cell.onPress = { [weak self] event in self?.pressed(event, on: photo.url) }
+        item.cell.onClick = { [weak self] modifiers in self?.click(photo.address, holding: modifiers) }
+        item.cell.onPress = { [weak self] event in self?.pressed(event, on: photo.address) }
         item.cell.onDrag = { [weak self] event in self?.dragged(event) }
         item.cell.onRelease = { [weak self] event in self?.released(event) }
         item.cell.onMenu = { [weak self] in
-            self.flatMap { FilmstripMenu.menu(for: photo.url, model: $0.model, culling: true) }
+            self.flatMap { FilmstripMenu.menu(for: photo.address, model: $0.model, culling: true) }
         }
     }
 
@@ -470,8 +479,8 @@ extension FilmstripStripView {
         guard let item = item as? FilmstripItem, let row = row(ofItem: indexPath.item),
               let photo = model.library.items.row(row)
         else { return }
-        item.cell.isSelected = photo.url == selected
-        item.cell.isInSelection = photo.url != selected && marked.contains(model.library.photoIDs[row])
+        item.cell.isSelected = photo.address == selected
+        item.cell.isInSelection = photo.address != selected && marked.contains(model.library.photoIDs[row])
         if let id = prefetching.removeValue(forKey: photo.url) {
             model.thumbnailLoader.cancel(id)
         }
@@ -566,7 +575,7 @@ extension FilmstripStripView {
             prefetching.values.forEach(model.thumbnailLoader.cancel)
             prefetching = [:]
             reload()
-            follow(model.selection, marking: model.photoSelection, animated: false)
+            follow(model.activeAddress, marking: model.photoSelection, animated: false)
             return
         }
         // While groups or stacks are shown, the photos that came or went wait for them (`cellsChanged`).
@@ -623,14 +632,14 @@ extension FilmstripStripView {
     // MARK: - Selection
 
     private func follow(
-        _ selection: URL?, marking photos: PhotoSelection, animated: Bool = true, scrolling: Bool = true,
+        _ selection: PhotoAddress?, marking photos: PhotoSelection, animated: Bool = true, scrolling: Bool = true,
     ) {
         // The cells the strip holds, without asking it to lay out as `visibleItems()` would.
         let ids = model.library.photoIDs
         for case let cell as FilmstripCellView in collectionView.subviews {
-            guard let url = cell.item?.url, let row = model.library.index(of: url) else { continue }
-            cell.isSelected = url == selection
-            cell.isInSelection = url != selection && photos.contains(ids[row])
+            guard let photo = cell.item?.address, let row = model.library.index(of: photo) else { continue }
+            cell.isSelected = photo == selection
+            cell.isInSelection = photo != selection && photos.contains(ids[row])
         }
         marked = photos
         let moved = selected != selection

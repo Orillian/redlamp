@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import RedlampDocument
 import RedlampLibrary
 import Synchronization
 
@@ -332,7 +333,7 @@ extension EditorModel {
             step.active = selection
         }
         let destination = selection.flatMap { active in shown.first { $0.from == active } }?.to
-        let active = selection.flatMap(library.photoID(of:))
+        let active = selectionID
         let leaves = active.map(leaving.contains) == true
         let next = active.flatMap { leaves ? photo(after: $0, leaving: leaving) : nil }
         await library.show(LibraryMoves(moves: shown, restoring: restoring, keys: keys, ids: ids)) { [self] in
@@ -343,8 +344,8 @@ extension EditorModel {
             } else if leaves, step.isTrash {
                 letGoOfActivePhoto()
             }
-            if let anchor = selectionAnchor, let moved = shown.first(where: { $0.from == anchor }) {
-                selectionAnchor = moved.to
+            if let anchor = selectionAnchor, let moved = shown.first(where: { $0.from == anchor.url }) {
+                selectionAnchor = moved.to.map { PhotoAddress(url: $0, version: anchor.version) }
             }
         }
         if !restoring.isEmpty {

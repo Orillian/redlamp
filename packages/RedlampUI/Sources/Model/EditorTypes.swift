@@ -83,6 +83,20 @@ public struct LibraryItem: Identifiable, Hashable, Sendable {
     public var name: String {
         url.lastPathComponent
     }
+
+    /// What its cell's tooltip and VoiceOver call it: its file's name, or for a version, the version's name and its
+    /// file's (`Copy 1, a version of IMG_0001.CR3`).
+    public var title: String {
+        guard version != nil else { return name }
+        return "\(versionName ?? "A version"), a version of \(name)"
+    }
+
+    /// The end of its cell's accessibility identifier, apart from its file's and its other versions' cells: its file's
+    /// name, and a version's name after a colon (`IMG_0001.CR3:Copy 1`).
+    var accessibilityName: String {
+        guard let version else { return name }
+        return "\(name):\(versionName ?? version.uuidString)"
+    }
 }
 
 /// The Develop panels, in Lightroom's order.

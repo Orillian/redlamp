@@ -18,10 +18,10 @@ enum LibraryGridMenu {
         let enabled = !model.isModalDialogOpen
         add([
             item("Open in Loupe", key: ShortcutAction.loupeView.combos.first, enabled: enabled) {
-                model.openInLoupe(photo)
+                model.openInLoupe(address)
             },
             item("Open in Develop", key: ShortcutAction.editTool.combos.first, enabled: enabled) {
-                model.openInDevelop(photo)
+                model.openInDevelop(address)
             },
             item(ShortcutAction.showInFinder.title, key: ShortcutAction.showInFinder.combos.first, enabled: enabled) {
                 model.showInFinder(photo)
@@ -30,7 +30,7 @@ enum LibraryGridMenu {
         add(health(for: photo, model: model), to: menu)
         add(culling(for: address, model: model), to: menu)
         add([stacking(for: photo, model: model)] + focusStacking(for: photo, model: model), to: menu)
-        if let photoMenu = FilmstripMenu.menu(for: photo, model: model) {
+        if let photoMenu = FilmstripMenu.menu(for: address, model: model) {
             menu.addItem(.separator())
             for item in photoMenu.items {
                 photoMenu.removeItem(item)
