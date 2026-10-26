@@ -4,13 +4,15 @@ import Observation
 import RedlampLibrary
 import Synchronization
 
-/// Renaming, moving and copying photos in Library (LIB-25, LIB-26), each one of the library's journaled batches with
-/// Undo and Redo on Library's ⌘Z and ⇧⌘Z, in turn with the library's other changes (`EditorModel+LibraryUndo`); a
-/// copy's Undo moves its copies to the Trash, and its Redo copies again.
+/// Renaming, moving and copying photos in Library (LIB-25, LIB-26), and moving them to the Trash in either module
+/// (LIB-46, `EditorModel+MoveToTrash`), each one of the library's journaled batches with Undo and Redo on Library's ⌘Z
+/// and ⇧⌘Z, in turn with the library's other changes (`EditorModel+LibraryUndo`); a copy's Undo moves its copies to
+/// the Trash, and its Redo copies again.
 ///
 /// - **Shown at once:** the photos go where the batch puts them in the grid and the filmstrip before it runs
 ///   (`LibraryMoves`), each keeping its ID, so the selection follows; the active photo, leaving Develop's
-///   document first, goes with it. The library's lists then find each photo where it already is.
+///   document first, goes with it, or, leaving the photos shown, hands over to the photo after it. The library's
+///   lists then find each photo where it already is.
 /// - **Saved first:** the sidecars the photos' saves still write are on disk before the batch plans, and the
 ///   batch runs in the library's changes' turn, after the culling batches asked for before it.
 /// - **Afterwards,** each photo is shown where the index has it, so a batch that stopped or was rolled back
@@ -54,12 +56,13 @@ extension EditorModel {
 
     // MARK: - Keys, menus and the palette
 
-    /// Rename Photos, Move to Folder and Copy to Folder; nil for every other action.
+    /// Rename Photos, Move to Folder, Copy to Folder and Move to Trash; nil for every other action.
     func performFileShortcut(_ action: ShortcutAction) -> Bool? {
         switch action {
         case .renamePhotos: renamePhotos()
         case .moveToFolder: moveToFolder()
         case .copyToFolder: copyToFolder()
+        case .moveToTrash: moveToTrash()
         default: nil
         }
     }
@@ -67,6 +70,7 @@ extension EditorModel {
     func canPerformFileShortcut(_ action: ShortcutAction) -> Bool? {
         switch action {
         case .renamePhotos, .moveToFolder, .copyToFolder: canRenamePhotos
+        case .moveToTrash: canMoveToTrash
         default: nil
         }
     }
@@ -99,7 +103,7 @@ extension EditorModel {
         guard let service = library.service, service.isReady else { return "The library isn't open" }
         guard let (renames, batch) = await sheet.renames() else { return "The template has an error" }
         guard !renames.isEmpty else { return nil }
-        let photos = renames.map { rename in
+        let photos = renames.map { rename -> (id: Int64, from: String, to: String?) in
             (
                 id: rename.id,
                 from: rename.path,
@@ -201,6 +205,7 @@ extension EditorModel {
                     case let .rename(renames): await service.rename(renames, progress: progress, stop: stop)
                     case let .move(ids, folder): await service.move(ids, to: folder, progress: progress, stop: stop)
                     case let .copy(ids, folder): await service.copy(ids, to: folder, progress: progress, stop: stop)
+                    case let .trash(ids): await service.trash(ids, progress: progress, stop: stop)
                     }
                 }
             }
@@ -236,8 +241,11 @@ extension EditorModel {
         _ step: LibraryFileStep, undoing: Bool, batch: @escaping () async -> LibraryService.FileRun,
     ) async -> LibraryService.FileRun {
         let isNew = step.batch == nil && !undoing
-        let moves = step.isCopy ? [] : step.photos.map { photo in
-            undoing ? (id: photo.id, from: photo.to, to: photo.from) : photo
+        let moves: [FileMove] = step.isCopy ? [] : step.photos.map { photo -> FileMove in
+            if undoing {
+                return (photo.id, photo.to, photo.from)
+            }
+            return (photo.id, photo.from, photo.to)
         }
         let saving: [URL]
         if step.isCopy {
@@ -247,8 +255,18 @@ extension EditorModel {
             saving = await show(moves, of: step, undoing: undoing)
         }
         await waitForSaves(of: saving)
+        let shown = selection
         let run = await batch()
         await follow(moves, of: step, paths: run.paths)
+        // A source's photos come back as its list has them again, which it hands over after the batch.
+        if undoing, step.isTrash, let active = step.active, selection != active, selection == shown {
+            for _ in 0 ..< 100 where library.index(of: active) == nil {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            if selection == shown {
+                selectAgain(step)
+            }
+        }
         libraryPanels.photosMoved()
         if !undoing, run.stopped, run.batch != nil, let done = run.outcome?.photoIDs {
             step.keep(Set(done))
@@ -263,13 +281,14 @@ extension EditorModel {
         return run
     }
 
-    /// Shows `moves` at once: the photos at their new URLs, or out of the folders shown; a move's Undo shows
+    /// A photo a step moves, by its ID in the index: its path before and after, nil in the Trash.
+    typealias FileMove = (id: Int64, from: String?, to: String?)
+
+    /// Shows `moves` at once: the photos at their new URLs, or out of the photos shown; a move's Undo shows
     /// again the photos it took away, selected as they were. The active photo goes with them, or, when it
-    /// leaves the folders shown, the photo after it becomes active. Returns the URLs of the photos as they were,
-    /// whose saves the batch waits for.
-    private func show(
-        _ moves: [(id: Int64, from: String, to: String)], of step: LibraryFileStep, undoing: Bool,
-    ) async -> [URL] {
+    /// leaves the photos shown, the photo after it becomes active, and with none left, a step to the Trash lets it
+    /// go. Returns the URLs of the photos as they were, whose saves the batch waits for.
+    private func show(_ moves: [FileMove], of step: LibraryFileStep, undoing: Bool) async -> [URL] {
         // Culling's batches asked for before reach the lists first; the list's changes made before or meanwhile
         // reach the photos where they're shown (`MovesAhead`).
         await cullingTail?.value
@@ -278,11 +297,19 @@ extension EditorModel {
         var keys: [URL: ContentKey] = [:]
         var ids: [URL: Int64] = [:]
         var saving: [URL] = []
+        // The photos leaving those shown, by their IDs there: moved where the folders shown don't reach, or to the
+        // Trash, which takes a source's photo out of it too.
+        var leaving = Set<Int64>()
         let urls = await listedURLs(of: moves)
         for (move, url) in zip(moves, urls) {
-            saving.append(url.file)
+            if let file = url.file {
+                saving.append(file)
+            }
             let to = url.to
             guard let from = url.from, library.index(of: from) != nil else {
+                if move.to == nil, library.showsIndexIDs, library.photoList.index(of: move.id) != nil {
+                    leaving.insert(move.id)
+                }
                 if let to, let item = step.items[move.id] {
                     restoring.append(FolderLibrary.item(item, at: to))
                     keys[to] = step.keys[move.id]
@@ -291,6 +318,9 @@ extension EditorModel {
                 continue
             }
             saving.append(from)
+            if to == nil, let id = library.photoID(of: from) {
+                leaving.insert(id)
+            }
             if !undoing, step.items[move.id] == nil, let item = library.item(for: from) {
                 step.items[move.id] = item
                 step.keys[move.id] = library.contentKey(of: from)
@@ -301,47 +331,66 @@ extension EditorModel {
             step.selected = Set(selectedPhotos)
             step.active = selection
         }
-        let destination = selection.flatMap { active in shown.first { $0.from == active } }
-        // The photo after the active one that stays, else the nearest before it.
-        var next: URL?
-        if let destination, destination.to == nil, let row = selectionIndex, items.indices.contains(row) {
-            let leaving = Set(shown.filter { $0.to == nil }.map(\.from))
-            next = items[(row + 1)...].first { !leaving.contains($0.url) }?.url
-                ?? items[..<row].last { !leaving.contains($0.url) }?.url
-        }
+        let destination = selection.flatMap { active in shown.first { $0.from == active } }?.to
+        let active = selection.flatMap(library.photoID(of:))
+        let leaves = active.map(leaving.contains) == true
+        let next = active.flatMap { leaves ? photo(after: $0, leaving: leaving) : nil }
         await library.show(LibraryMoves(moves: shown, restoring: restoring, keys: keys, ids: ids)) { [self] in
             if let destination {
-                if let to = destination.to {
-                    select(to, keepingSelection: true)
-                } else if let next, library.index(of: next) != nil {
-                    select(next)
-                }
+                select(destination, keepingSelection: true)
+            } else if let next {
+                select(photo: next)
+            } else if leaves, step.isTrash {
+                letGoOfActivePhoto()
             }
             if let anchor = selectionAnchor, let moved = shown.first(where: { $0.from == anchor }) {
                 selectionAnchor = moved.to
             }
         }
-        if !restoring.isEmpty, let active = step.active, library.index(of: active) != nil {
-            select(active, keepingSelection: true)
-            photoSelection.select(
-                step.selected.compactMap(library.photoID(of:)), active: library.photoID(of: active),
-                in: library.photoList,
-            )
+        if !restoring.isEmpty {
+            selectAgain(step)
         }
         return saving
     }
 
+    /// The photo shown after `active` that isn't `leaving`, by the photos' IDs, else the nearest before it.
+    private func photo(after active: Int64, leaving: Set<Int64>) -> Int64? {
+        let ids = library.photoIDs
+        guard let row = library.photoList.index(of: active), ids.indices.contains(row) else { return nil }
+        return ids[(row + 1)...].first { !leaving.contains($0) } ?? ids[..<row].last { !leaving.contains($0) }
+    }
+
+    /// Selects photo `id` of those shown alone: at once, or, for a large source's row not read yet, once it's read.
+    private func select(photo id: Int64) {
+        if let url = library.url(ofPhoto: id) {
+            return select(url)
+        }
+        library.whenRead([id]) { [weak self] in
+            guard let self, let url = library.url(ofPhoto: id) else { return }
+            select(url)
+        }
+    }
+
+    /// The photos `step` took away, shown again, selected as they were.
+    private func selectAgain(_ step: LibraryFileStep) {
+        guard let active = step.active, library.index(of: active) != nil else { return }
+        select(active, keepingSelection: true)
+        photoSelection.select(
+            step.selected.compactMap(library.photoID(of:)), active: library.photoID(of: active),
+            in: library.photoList,
+        )
+    }
+
     /// Each move's file, and the URLs the folders shown give its photo where it is and where it goes, worked out off
     /// the main thread: a thousand photos' take milliseconds. Should the folders shown change meanwhile, they're
-    /// worked out again for those shown then.
-    private func listedURLs(of moves: [(id: Int64, from: String, to: String)]) async
-        -> [(file: URL, from: URL?, to: URL?)] {
-        let urls: @Sendable (ListedURLs) -> [(file: URL, from: URL?, to: URL?)] = { listed in
+    /// worked out again for those shown then. A photo in the Trash has neither.
+    private func listedURLs(of moves: [FileMove]) async -> [(file: URL?, from: URL?, to: URL?)] {
+        let urls: @Sendable (ListedURLs) -> [(file: URL?, from: URL?, to: URL?)] = { listed in
             moves.map { move in
                 (
-                    file: URL(fileURLWithPath: move.from),
-                    from: listed.url(ofPath: move.from),
-                    to: listed.url(ofPath: move.to),
+                    file: move.from.map { URL(fileURLWithPath: $0) },
+                    from: move.from.flatMap(listed.url(ofPath:)),
+                    to: move.to.flatMap(listed.url(ofPath:)),
                 )
             }
         }
@@ -353,9 +402,7 @@ extension EditorModel {
     /// Once a batch has run: each photo shown where the index has it, should the batch have stopped, been rolled
     /// back or left some out; then, once the open folder's list has handed over the batch's change, as the list has
     /// it.
-    private func follow(
-        _ moves: [(id: Int64, from: String, to: String)], of step: LibraryFileStep, paths: [Int64: String],
-    ) async {
+    private func follow(_ moves: [FileMove], of step: LibraryFileStep, paths: [Int64: String]) async {
         var corrections: [LibraryMoves.Move] = []
         var restoring: [LibraryItem] = []
         var keys: [URL: ContentKey] = [:]
@@ -364,7 +411,7 @@ extension EditorModel {
         for move in moves {
             guard let path = paths[move.id], path != move.to else { continue }
             let actual = listed.url(ofPath: path)
-            if let shown = listed.url(ofPath: move.to), library.index(of: shown) != nil {
+            if let shown = move.to.flatMap(listed.url(ofPath:)), library.index(of: shown) != nil {
                 corrections.append(LibraryMoves.Move(from: shown, to: actual, id: move.id))
             } else if let actual, library.index(of: actual) == nil, let item = step.items[move.id] {
                 restoring.append(FolderLibrary.item(item, at: actual))
@@ -436,8 +483,8 @@ final class LibraryFileSteps {
     }
 }
 
-/// One of Library's renames, moves or copies, as Undo takes it back and Redo makes it again. A step whose batch
-/// was stopped is what the batch did: its photos, and its title saying how many.
+/// One of Library's renames, moves, copies or moves to the Trash, as Undo takes it back and Redo makes it again. A
+/// step whose batch was stopped is what the batch did: its photos, and its title saying how many.
 @MainActor
 final class LibraryFileStep {
     enum Kind {
@@ -446,11 +493,14 @@ final class LibraryFileStep {
         case move([Int64], URL)
         /// The photos asked for, by index ID, and the folder their copies go to.
         case copy([Int64], URL)
+        /// The photos asked for and their pairs, by index ID, which go to the Trash.
+        case trash([Int64])
     }
 
     private(set) var kind: Kind
-    /// Each photo, by index ID, and its path before and after the step; a copy's photos stay where they are.
-    private(set) var photos: [(id: Int64, from: String, to: String)]
+    /// Each photo, by index ID, and its path before and after the step, none in the Trash; a copy's photos stay where
+    /// they are.
+    private(set) var photos: [(id: Int64, from: String, to: String?)]
     /// The batch that made it last, for its Undo.
     var batch: UUID?
     /// The photos as the folders shown listed them before it, and their content keys, by index ID: a move's Undo
@@ -463,7 +513,7 @@ final class LibraryFileStep {
     /// Its turn in Library's Undo and Redo (`EditorModel+LibraryUndo`).
     var turn = 0
 
-    init(kind: Kind, photos: [(id: Int64, from: String, to: String)]) {
+    init(kind: Kind, photos: [(id: Int64, from: String, to: String?)]) {
         self.kind = kind
         self.photos = photos
     }
@@ -476,11 +526,19 @@ final class LibraryFileStep {
         case .rename: "Rename \(photos)"
         case let .move(_, folder): "Move \(photos) to \(folder.lastPathComponent)"
         case let .copy(_, folder): "Copy \(photos) to \(folder.lastPathComponent)"
+        case .trash: "Move \(photos) to the Trash"
         }
     }
 
     var isCopy: Bool {
         if case .copy = kind {
+            return true
+        }
+        return false
+    }
+
+    var isTrash: Bool {
+        if case .trash = kind {
             return true
         }
         return false
@@ -493,6 +551,7 @@ final class LibraryFileStep {
         case let .rename(renames): kind = .rename(renames.filter { done.contains($0.id) })
         case let .move(ids, folder): kind = .move(ids.filter(done.contains), folder)
         case let .copy(ids, folder): kind = .copy(ids.filter(done.contains), folder)
+        case let .trash(ids): kind = .trash(ids.filter(done.contains))
         }
     }
 }

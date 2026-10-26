@@ -2,10 +2,11 @@ import Foundation
 import RedlampLibrary
 import Synchronization
 
-/// Renames, moves and copies in the app (LIB-26): each one of the library's journaled file operations, planned
-/// and run off the main thread in the library's changes' turn (`LibraryCore.change`), after the culling batches
-/// asked for before it. The index follows as the steps go, without reading a photo, and the open lists hear of
-/// it. A batch given a `FileStop` stops when it's pressed: after the photo in hand, what's done staying done.
+/// Renames, moves, copies and moves to the Trash in the app (LIB-26, LIB-46): each one of the library's journaled file
+/// operations, planned and run off the main thread in the library's changes' turn (`LibraryCore.change`), after the
+/// culling batches asked for before it. The index follows as the steps go, without reading a photo, and the open
+/// lists hear of it. A batch given a `FileStop` stops when it's pressed: after the photo in hand, what's done staying
+/// done.
 extension LibraryService {
     /// What a batch made of its photos.
     struct FileRun: Sendable {
@@ -56,6 +57,17 @@ extension LibraryService {
     ) async -> FileRun {
         await runFiles(ids, progress: progress, stop: stop) { files in
             try await files.planCopy(photos: ids, to: folder)
+        }
+    }
+
+    /// Moves photos `ids` to the Trash, each with its sidecars and other apps' `.xmp`, as one batch, their rows out of
+    /// the index: Recently Trashed lists them, and the batch's Undo puts them back while they're still there, rows,
+    /// keywords and collections as they were. A photo's pair goes only when `ids` names it.
+    func trash(
+        _ ids: [Int64], progress: (@Sendable (FileProgress) -> Void)? = nil, stop: FileStop? = nil,
+    ) async -> FileRun {
+        await runFiles(ids, progress: progress, stop: stop) { files in
+            try await files.planTrash(photos: ids)
         }
     }
 

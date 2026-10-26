@@ -957,6 +957,18 @@ public final class EditorModel {
         open(url, keepingSelection: keepingSelection)
     }
 
+    /// Lets go of the active photo with none to take its place, as when the last photo shown goes to the Trash: what
+    /// belonged to it is put away, its saves on their way, and no photo is open until one is chosen.
+    func letGoOfActivePhoto() {
+        guard selection != nil else { return }
+        endNudgeRun()
+        saveNow()
+        stopOpening()
+        metadataChangesWhileOpening = []
+        leave(for: nil, keepingSelection: false, ready: false)
+        clearCanvas()
+    }
+
     /// Develop is shown: the active photo opens there unless it's open, or opening, already, shown from its
     /// preview until its render lands.
     func openActivePhoto() {
@@ -1096,9 +1108,9 @@ public final class EditorModel {
         showThumbnail(of: url)
     }
 
-    /// Moves the selection to `url`, putting away what belonged to the photo left (saved by
+    /// Moves the selection to `url`, or to none, putting away what belonged to the photo left (saved by
     /// then). Unless `url` is `ready` to show now, no photo is open until it is.
-    private func leave(for url: URL, keepingSelection: Bool, ready: Bool) {
+    private func leave(for url: URL?, keepingSelection: Bool, ready: Bool) {
         if !keepingSelection {
             selectOnly(url)
             selectionAnchor = url
@@ -1118,8 +1130,10 @@ public final class EditorModel {
         }
         selection = url
         visits += 1
-        selectionIndex = library.index(of: url)
-        library.remember(url)
+        selectionIndex = url.flatMap(library.index(of:))
+        if let url {
+            library.remember(url)
+        }
         // Each is set only when it changes: an assignment tells the views reading it even of the same value, and
         // the Library's held arrow keys leave a photo many times a second, Develop's views listening beneath it.
         // Cleared first so the resets below don't render the outgoing photo.
@@ -1138,7 +1152,7 @@ public final class EditorModel {
         if hasUnmergedEdits {
             hasUnmergedEdits = false
         }
-        let metadata = library.item(for: url)?.metadata ?? PhotoMetadata()
+        let metadata = url.flatMap(library.item(for:))?.metadata ?? PhotoMetadata()
         if photoMetadata != metadata {
             photoMetadata = metadata
         }

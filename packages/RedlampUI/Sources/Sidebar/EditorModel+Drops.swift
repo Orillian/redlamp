@@ -188,7 +188,7 @@ extension EditorModel {
         let target = indexed ?? destination
         let all = await (try? core.files.withPairs(ids)) ?? ids
         let before = await service.paths(of: all)
-        let photos = all.compactMap { id -> (id: Int64, from: String, to: String)? in
+        let photos = all.compactMap { id -> (id: Int64, from: String, to: String?)? in
             guard let path = before[id] else { return nil }
             guard !copying else { return (id, path, path) }
             guard (path as NSString).deletingLastPathComponent != target else { return nil }
