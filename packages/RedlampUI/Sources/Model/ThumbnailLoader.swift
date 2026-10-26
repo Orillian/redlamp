@@ -11,8 +11,9 @@ import Synchronization
 /// A request is answered from memory; for a photo the library shows, from the store's grid tier
 /// (made there first when the indexer hasn't yet), or its render of the photo's edit once `renders`
 /// has made it (LIB-17); else from the folder's pack, else by decoding the photo's embedded preview
-/// at the cell's pixel size, which then goes into the pack. Thumbnails are kept by the edit they
-/// show, and requests for one photo and edit share a decode. A request can be promoted (its cell
+/// at the cell's pixel size, which then goes into the pack. Thumbnails are kept by the file and the edit
+/// they show, so a file's photos with the same edit, its own and its versions' (LIB-48), share one, and
+/// requests for one file and edit share a decode. A request can be promoted (its cell
 /// scrolled into view) or
 /// cancelled (it scrolled away), held arrow keys read the photos ahead (`prefetch`), and photos iCloud
 /// Drive hasn't downloaded are never read. Warming
@@ -53,8 +54,8 @@ public final class ThumbnailLoader {
     private var requested: [UInt64: Key] = [:]
     private var lanes: [Key: WorkScheduler.Lane] = [:]
     private var nextID: UInt64 = 0
-    /// The requests the last `prefetch` made that are still waiting, by photo.
-    private var prefetching: [URL: UInt64] = [:]
+    /// The requests the last `prefetch` made that are still waiting, by photo: a file's own or one of its versions.
+    private var prefetching: [PhotoAddress: UInt64] = [:]
     private var warmQueue: [LibraryItem] = []
     private var warmHead = 0
     private var warming = 0
@@ -212,26 +213,26 @@ public final class ThumbnailLoader {
     /// two, on the on-screen lane, the rest on the look-ahead lane. Each call replaces the last: what that asked for
     /// and this leaves out is dropped unless it has started or someone else waits for it.
     public func prefetch(_ items: [LibraryItem], soon: Int = 0) {
-        let wanted = Set(items.map(\.url))
-        for (url, id) in prefetching where !wanted.contains(url) {
-            prefetching[url] = nil
+        let wanted = Set(items.map(\.address))
+        for (photo, id) in prefetching where !wanted.contains(photo) {
+            prefetching[photo] = nil
             cancel(id)
         }
         for (place, item) in items.enumerated() where item.isLocal && !item.isSettling {
             let lane: WorkScheduler.Lane = place < soon ? .onScreen : .lookAhead
-            guard prefetching[item.url] == nil else {
+            let photo = item.address
+            guard prefetching[photo] == nil else {
                 promote(item.url, to: lane)
                 continue
             }
             guard !hasThumbnail(item) else { continue }
-            let url = item.url
             var id: UInt64 = 0
             id = request(item, lane: lane) { [weak self] _ in
-                if self?.prefetching[url] == id {
-                    self?.prefetching[url] = nil
+                if self?.prefetching[photo] == id {
+                    self?.prefetching[photo] = nil
                 }
             }
-            prefetching[url] = id
+            prefetching[photo] = id
         }
     }
 
@@ -278,7 +279,7 @@ public final class ThumbnailLoader {
         if let image {
             insert(image, for: key, item)
         } else if let edit = key.edit {
-            renders?.missing(item.url, edit)
+            renders?.missing(item.address, edit)
         }
         for completion in completions.values {
             completion(image)

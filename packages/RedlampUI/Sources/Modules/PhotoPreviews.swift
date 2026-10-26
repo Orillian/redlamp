@@ -6,7 +6,8 @@ import RedlampLibrary
 /// Photos' previews at screen size, for the Library loupe and for Develop until a photo's render lands:
 /// for a photo the library shows, its store's preview tier (LIB-09), made there first when it has none,
 /// or its render of the photo's edit once `renders` has made it (LIB-17); for any other, its embedded
-/// preview. They're decoded off the main thread. The last few stay in memory, kept by the edit they show.
+/// preview. They're decoded off the main thread. The last few stay in memory, kept by the file and the edit
+/// they show, which a file's own photo and its versions with that edit share (LIB-48).
 /// Asking for one photo's drops what's waiting for another's, and held arrow keys read the next ones ahead
 /// (`prefetch`, LIB-16), each step dropping what the one before asked for and hasn't started: decoding is
 /// latest-wins, so held keys decode where they're going rather than where they've been.
@@ -61,18 +62,27 @@ public final class PhotoPreviews {
         self.decode = decode
     }
 
-    /// The photo's preview, if it's one of the last decoded: of the edit it's to show, else, until that's
-    /// decoded, of its embedded preview.
+    /// The preview of the photo `photo` names, a file's own or one of its versions, if it's one of the last decoded:
+    /// of the edit it's to show, else, until that's decoded, of its embedded preview.
+    public func cached(_ photo: PhotoAddress) -> CGImage? {
+        cachedPreview(photo)?.image
+    }
+
+    /// The preview of the file's own photo at `url`, not one of its versions'.
     public func cached(_ url: URL) -> CGImage? {
-        cachedPreview(url)?.image
+        cached(PhotoAddress(url: url))
+    }
+
+    func cachedPreview(_ url: URL) -> (image: CGImage, edit: EditDigest?)? {
+        cachedPreview(PhotoAddress(url: url))
     }
 
     /// `cached(_:)`'s preview, and the edit it shows (nil for the embedded preview).
-    func cachedPreview(_ url: URL) -> (image: CGImage, edit: EditDigest?)? {
-        let edit = renders?.shownEdit(at: url)
-        guard let entry = recent.last(where: { $0.url == url }), entry.edit == edit || entry.edit == nil else {
-            return nil
-        }
+    func cachedPreview(_ photo: PhotoAddress) -> (image: CGImage, edit: EditDigest?)? {
+        let edit = renders?.shownEdit(at: photo)
+        guard let entry = recent.last(where: { $0.url == photo.url && $0.edit == edit })
+            ?? recent.last(where: { $0.url == photo.url && $0.edit == nil })
+        else { return nil }
         return (entry.image, entry.edit)
     }
 
@@ -180,13 +190,13 @@ public final class PhotoPreviews {
         }
         let item = done.item
         if let image, wanted {
-            recent.removeAll { $0.url == item.url }
+            recent.removeAll { $0.url == item.url && $0.edit == key.edit }
             recent.append(Entry(url: item.url, size: item.size, modified: item.modified, edit: key.edit, image: image))
             if recent.count > Self.kept {
                 recent.removeFirst(recent.count - Self.kept)
             }
         } else if image == nil, let edit = key.edit {
-            renders?.missing(item.url, edit)
+            renders?.missing(item.address, edit)
         }
         for completion in done.completions {
             completion(image)

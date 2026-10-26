@@ -1103,8 +1103,9 @@ public final class EditorModel {
     /// The canvas is empty when Library chose the photo: its preview shows until its render lands.
     private func showCachedPreview(of url: URL) {
         selectionThumbnailRequest.map(thumbnailLoader.cancel)
-        selectionThumbnail = hasFrame ? nil : previews.cached(url)
-            ?? library.item(for: url).flatMap { thumbnailLoader.cached($0) }
+        let photo = PhotoAddress(url: url, version: openingVersion)
+        selectionThumbnail = hasFrame ? nil : previews.cached(photo)
+            ?? library.index(of: photo).flatMap { library.items.row($0) }.flatMap { thumbnailLoader.cached($0) }
     }
 
     private func showPlaceholder(for url: URL) {
@@ -1220,13 +1221,14 @@ public final class EditorModel {
     }
 
     /// Shows the photo's thumbnail on the canvas until its first frame arrives, or the preview the Library
-    /// loupe has of it.
+    /// loupe has of it: of the version it opens in, if it does.
     private func showThumbnail(of url: URL) {
         selectionThumbnailRequest.map(thumbnailLoader.cancel)
-        selectionThumbnail = previews.cached(url)
+        let photo = PhotoAddress(url: url, version: openingVersion)
+        selectionThumbnail = previews.cached(photo)
         guard selectionThumbnail == nil else { return }
-        selectionThumbnailRequest = thumbnailLoader.request(library.item(for: url) ?? LibraryItem(url: url)) {
-            [weak self] image in
+        let item = library.index(of: photo).flatMap { library.items.row($0) } ?? LibraryItem(url: url)
+        selectionThumbnailRequest = thumbnailLoader.request(item) { [weak self] image in
             guard let self, selection == url, selectionThumbnail == nil else { return }
             selectionThumbnail = image
         }
@@ -1234,7 +1236,9 @@ public final class EditorModel {
 
     /// Shows the photo's preview on the empty canvas Develop opened it on, once it's decoded.
     private func showPreview(of url: URL) {
-        guard previews.cached(url) == nil, let item = library.item(for: url) else { return }
+        let photo = PhotoAddress(url: url, version: openingVersion)
+        guard previews.cached(photo) == nil, let item = library.index(of: photo).flatMap({ library.items.row($0) })
+        else { return }
         previews.request(item) { [weak self] image in
             guard let self, let image, selection == url, !hasFrame else { return }
             selectionThumbnail = image

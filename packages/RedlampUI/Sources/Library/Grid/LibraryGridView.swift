@@ -178,7 +178,7 @@ final class LibraryGridView: NSView, NSViewToolTipOwner {
         )
         screenChanged()
         observation = model.library.observe { [weak self] diff in self?.apply(diff) }
-        editObservation = model.editRenders.observe { [weak self] urls in self?.editsShown(urls) }
+        editObservation = model.editRenders.observe { [weak self] photos in self?.editsShown(photos) }
         groupsObservation = model.gridGroups.observe { [weak self] change in self?.groupsChanged(change) }
         stacksObservation = model.gridStacks.observe { [weak self] change in self?.stacksChanged(change) }
         proposalsObservation = proposals.observe { [weak self] in self?.proposalsChanged() }

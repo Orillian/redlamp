@@ -429,7 +429,7 @@ struct EditRendersTests {
         let rated = try #require(fixture.item("IMG_1.JPG"))
         #expect(rated.metadata.rating == 3 && rated.sidecarModified != changed.sidecarModified)
         try await fixture
-            .eventually { fixture.renders.known[rated.url].map { EditRenders.isCurrent($0, for: rated) } == true }
+            .eventually { fixture.renders.known[rated.address].map { EditRenders.isCurrent($0, for: rated) } == true }
         #expect(fixture.renders.shownEdit(for: rated) == darker, "a rating saved with the same edit renders nothing")
         #expect(fixture.engine.rendered.withLock { $0.count } == 2)
     }
@@ -505,7 +505,7 @@ struct EditRendersTests {
         let key = try #require(fixture.key(names[5]))
         try fixture.edit(names[5], exposure: -1, telling: true)
         try await fixture.eventually { fixture.engine.gate.arrived == 1 }
-        #expect(renders.current?.url == fixture.photo(names[5]))
+        #expect(renders.current?.photo == PhotoAddress(url: fixture.photo(names[5])))
         fixture.model.showFolder(fixture.root.appending(path: "Other", directoryHint: .isDirectory))
         try await fixture.eventually { fixture.library.items.map(\.name) == ["IMG_99.JPG"] }
         fixture.engine.gate.release()
@@ -513,7 +513,7 @@ struct EditRendersTests {
         #expect(renders.current == nil && fixture.engine.cancelled.withLock { $0 } == 1, "the render is cancelled")
         #expect(renders.statistics.rendered == names.count, "nothing more is stored")
         #expect(try !fixture.store.edits(of: key).contains(EditRenderFixture.digest(exposure: -1)))
-        #expect(renders.known[fixture.photo(names[5])] == nil, "what's left the source is forgotten")
+        #expect(renders.known[PhotoAddress(url: fixture.photo(names[5]))] == nil, "what's left the source is forgotten")
     }
 
     @Test func `an open dialog or an export running holds the renders until it's done`() async throws {
@@ -710,8 +710,8 @@ extension EditRendersTests {
         // Saved meanwhile by another Mac, or another app.
         try await fixture.relaunch(whileClosed: { try fixture.edit("IMG_1.JPG", exposure: -1) })
         let url = fixture.photo("IMG_1.JPG")
-        try await fixture.eventually { fixture.renders.known[url]?.digest == darker }
-        #expect(fixture.renders.known[url]?.digest == darker, "its sidecar is read again")
+        try await fixture.eventually { fixture.renders.known[PhotoAddress(url: url)]?.digest == darker }
+        #expect(fixture.renders.known[PhotoAddress(url: url)]?.digest == darker, "its sidecar is read again")
         let read = try #require(fixture.item("IMG_1.JPG"))
         #expect(fixture.renders.shownEdit(for: read) == nil, "its embedded preview shows until the new edit renders")
         let meanwhile = await fixture.model.thumbnailLoader.image(for: read)

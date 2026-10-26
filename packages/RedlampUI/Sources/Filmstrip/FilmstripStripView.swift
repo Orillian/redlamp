@@ -169,7 +169,7 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
         suggestedFrames = Set(model.stackSuggestions.flatMap(\.frames))
         reload()
         observation = model.library.observe { [weak self] diff in self?.apply(diff) }
-        editObservation = model.editRenders.observe { [weak self] urls in self?.editsShown(urls) }
+        editObservation = model.editRenders.observe { [weak self] photos in self?.editsShown(photos) }
         stacksObservation = model.gridStacks.observe { [weak self] change in self?.stacksChanged(change) }
         groupsObservation = model.gridGroups.observe { [weak self] change in self?.groupsChanged(change) }
         selected = model.activeAddress
@@ -614,13 +614,13 @@ extension FilmstripStripView {
 
     /// The thumbnails of these photos show another edit: their cells ask for them, or the strip reloads
     /// once it's in sight.
-    private func editsShown(_ urls: [URL]) {
+    private func editsShown(_ photos: [PhotoAddress]) {
         guard isInShownModule(model) else {
             isStale = true
             return
         }
-        for url in urls {
-            guard let row = model.library.index(of: url), let index = item(ofRow: row),
+        for photo in photos {
+            guard let row = model.library.index(of: photo), let index = item(ofRow: row),
                   let item = collectionView.item(at: IndexPath(item: index, section: 0)) as? FilmstripItem,
                   let photo = model.library.items.row(row)
             else { continue }

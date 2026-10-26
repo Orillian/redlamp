@@ -8,8 +8,9 @@ import RedlampLibrary
 /// other, the filmstrip's pack at the smallest size and the photo's embedded preview beyond. Each is
 /// decoded off the main thread and drawn there in the window's colour space, so Core Animation shows it
 /// as it is rather than converting it on the main thread as it commits. An edited photo's, once `renders`
-/// has rendered its edit, is that render's tier (LIB-17). Kept in memory by the edit they show, within a
-/// byte budget, the photos on screen last to go.
+/// has rendered its edit, is that render's tier (LIB-17). Kept in memory by the file and the edit they show,
+/// which a file's photos with that edit, its own and its versions' (LIB-48), share, within a byte budget, the
+/// photos on screen last to go.
 @MainActor
 final class GridThumbnails {
     /// The long edges thumbnails are decoded at; a cell takes the smallest at least as large as its image.
@@ -184,7 +185,7 @@ final class GridThumbnails {
         if let image, generation == self.generation {
             insert(image, for: key, item)
         } else if image == nil, let edit = key.edit {
-            renders?.missing(item.url, edit)
+            renders?.missing(item.address, edit)
         }
         for completion in completions.values {
             completion(generation == self.generation ? image : nil)

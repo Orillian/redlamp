@@ -101,7 +101,7 @@ final class LibraryCompareView: NSView {
         guard window != nil else { return }
         images.colorSpace = window?.colorSpace?.cgColorSpace
         libraryObservation = model.library.observe { [weak self] diff in self?.libraryChanged(diff) }
-        editObservation = model.editRenders.observe { [weak self] urls in self?.editsShown(urls) }
+        editObservation = model.editRenders.observe { [weak self] photos in self?.editsShown(photos) }
         trackers = [
             Tracker { [weak self] in
                 guard let self else { return }
@@ -161,7 +161,8 @@ final class LibraryCompareView: NSView {
     }
 
     /// The previews of these photos show another edit: those shown are asked for again.
-    private func editsShown(_ urls: [URL]) {
+    private func editsShown(_ photos: [PhotoAddress]) {
+        let urls = photos.map(\.url)
         for half in halves.values where half.photo.url.map(urls.contains) == true {
             half.photo.refresh()
         }

@@ -25,19 +25,29 @@ extension EditDigest {
 }
 
 extension EditRenders {
-    /// The edit in `photo`'s sidecar as `store` reads it, from its `edit.json` alone, as its summary is
-    /// read: no mask bitmaps, history or file coordination, since the JSON is only ever replaced
-    /// atomically. Nil when there's no sidecar or it can't be read.
-    nonisolated static func recipe(of photo: URL, in store: SidecarStore) -> EditRecipe? {
+    /// The edits in `photo`'s sidecar as `store` reads them, the photo's own under nil and each version's under its
+    /// ID, from its `edit.json` alone, as its summary is read: no mask bitmaps, history or file coordination, since the
+    /// JSON is only ever replaced atomically. None when there's no sidecar or it can't be read.
+    nonisolated static func recipes(of photo: URL, in store: SidecarStore) -> [UUID?: EditRecipe] {
         let sidecar = store.locator.readURL(for: photo)
         guard let data = (try? Data(contentsOf: sidecar.appending(path: SidecarStore.editFile)))
             ?? (try? Data(contentsOf: sidecar))
-        else { return nil }
+        else { return [:] }
+        struct Version: Decodable {
+            var id: UUID
+            var recipe: EditRecipe
+        }
         struct Probe: Decodable {
             var recipe: EditRecipe
+            var versions: [Version]?
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(Probe.self, from: data).recipe
+        guard let probe = try? decoder.decode(Probe.self, from: data) else { return [:] }
+        var recipes: [UUID?: EditRecipe] = [nil: probe.recipe]
+        for version in probe.versions ?? [] {
+            recipes[version.id] = version.recipe
+        }
+        return recipes
     }
 }

@@ -23,38 +23,40 @@ extension EditRenders {
             guard let self else { return }
             await render(next.item, key: next.key, store: next.store, digest: next.digest)
         }
-        current = (next.item.url, task)
+        current = (next.item.address, task)
     }
 
     /// Renders `item`'s edit, whose digest was read as `digest`, and stores its tiers: the sidecar read
     /// again with its masks' bitmaps, the photo opened and its edit rendered at the preview tier's size,
     /// each step once `mayGoOn` says so, then both tiers made from that render off the main thread, and the
-    /// edit recorded in the index as rendered.
+    /// edit recorded in the index as rendered, for the file's other photos read with the same edit too.
     private func render(_ item: LibraryItem, key: ContentKey, store: PhotoStore, digest: EditDigest) async {
-        let url = item.url
+        let (url, photo) = (item.url, item.address)
         defer {
             current = nil
             schedulePump()
         }
         let sidecars = library.sidecars
-        let loaded = try? await scheduler.run(.background) { sidecars.store(for: url).load(for: url)?.recipe }
+        let loaded = try? await scheduler.run(.background) {
+            sidecars.store(for: url).load(for: url)?[edit: photo.version]?.recipe
+        }
         guard !Task.isCancelled else { return }
         guard let recipe = loaded ?? nil, EditDigest(rendering: recipe) == digest else {
             // Changed since it was read: read again.
-            if known[url]?.digest == digest {
-                set(url, nil)
-                revisit(url)
+            if known[photo]?.digest == digest {
+                set(photo, nil)
+                revisit(photo)
             }
             return
         }
-        guard await mayGoOn(rendering: url), let engine = await workerEngine() else { return }
+        guard await mayGoOn(rendering: photo), let engine = await workerEngine() else { return }
         let opening = ContinuousClock.now
         stepRunning = true
         engine.expect(recipe.rawRevision, for: url)
         let opened = try? await engine.open(url)
         stepRunning = false
         guard !Task.isCancelled else { return }
-        guard let info = opened else { return failed(url, digest) }
+        guard let info = opened else { return failed(photo, digest) }
         var step = Statistics.Step(
             pixels: info.pixelSize.width * info.pixelSize.height, opening: Self.seconds(.now - opening), rendering: 0,
             storing: 0,
@@ -64,43 +66,47 @@ extension EditRenders {
             engine.registerBaseLook(look)
         }
         // Without its look the engine renders the edit without it, which would be kept under its digest.
-        guard engine.canRender(recipe.baseLook) else { return failed(url, digest) }
+        guard engine.canRender(recipe.baseLook) else { return failed(photo, digest) }
         var request = StillRequest(
             recipe: EditorModel.asShot(recipe, info), maxLongEdge: PhotoStore.Tier.preview.pixelSize,
             colorSpace: .displayP3, purpose: .preview,
         )
         request.source = url
-        guard await mayGoOn(rendering: url) else { return }
+        guard await mayGoOn(rendering: photo) else { return }
         let rendering = ContinuousClock.now
         stepRunning = true
         let rendered = try? await engine.renderStill(request)
         stepRunning = false
         guard !Task.isCancelled else { return }
-        guard let image = rendered else { return failed(url, digest) }
+        guard let image = rendered else { return failed(photo, digest) }
         step.rendering = Self.seconds(.now - rendering)
         let storing = ContinuousClock.now
-        let keeping = claims(of: key, except: url).union([digest])
+        let keeping = claims(of: key, except: photo).union([digest])
         let (size, modified) = (item.size, item.modified)
         let stored = try? await scheduler.run(.background) {
             Self.store(image, key: key, edit: digest, size: size, modified: modified, in: store, keeping: keeping)
         }
         guard !Task.isCancelled, let stored else { return }
-        guard stored else { return failed(url, digest) }
+        guard stored else { return failed(photo, digest) }
         step.storing = Self.seconds(.now - storing)
         statistics.steps.append(step)
         statistics.rendered += 1
-        guard var entry = known[url], entry.digest == digest, entry.state == .unrendered else { return }
-        entry.state = .rendered
-        set(url, entry)
-        notify([url])
-        record([Record(url: url, sidecarModified: item.sidecarModified, digest: digest)])
+        guard let entry = known[photo], entry.digest == digest, entry.state == .unrendered else { return }
+        let photos = [photo] + sharing(entry, with: photo)
+        for rendered in photos {
+            settle(rendered, as: .rendered)
+        }
+        notify(photos)
+        record(photos.map { Record(photo: $0, sidecarModified: item.sidecarModified, digest: digest) })
     }
 
-    private func failed(_ url: URL, _ digest: EditDigest) {
+    /// A render that couldn't be made, for `photo` and the file's other photos read with the same edit.
+    private func failed(_ photo: PhotoAddress, _ digest: EditDigest) {
         statistics.failed += 1
-        guard var entry = known[url], entry.digest == digest else { return }
-        entry.state = .failed
-        set(url, entry)
+        guard let entry = known[photo], entry.digest == digest else { return }
+        for failed in [photo] + sharing(entry, with: photo) {
+            settle(failed, as: .failed)
+        }
     }
 
     /// Both tiers of `image`, a render of `edit`, stored for the photo `key` names, as its file was
@@ -124,7 +130,7 @@ extension EditRenders {
     /// shown, or it has asked for no frame for `developQuiet` and isn't opening a photo; no thumbnail on
     /// screen waits; the Mac isn't hot or saving power; and renders aren't paused, nor the window closed.
     /// False when the render is to stop instead: it was cancelled, or its photo opened in Develop.
-    private func mayGoOn(rendering url: URL) async -> Bool {
+    private func mayGoOn(rendering photo: PhotoAddress) async -> Bool {
         let started = ContinuousClock.now
         var waited = false
         defer {
@@ -133,7 +139,7 @@ extension EditRenders {
                 statistics.waited += .now - started
             }
         }
-        while !Task.isCancelled, !isOpenInDevelop(url) {
+        while !Task.isCancelled, !isOpenInDevelop(photo) {
             if isRunning, isWindowOpen, isDevelopQuiet, scheduler.load().waiting[.onScreen, default: 0] == 0,
                WorkScheduler.isRelaxed() {
                 return true

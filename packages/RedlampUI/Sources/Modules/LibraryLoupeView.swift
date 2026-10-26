@@ -35,8 +35,9 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
     private var trackers: [Tracker] = []
     private var editObservation: LibraryObservation?
     private var libraryObservation: LibraryObservation?
-    /// The photo shown, and whether its preview, and at 1:1 the photo itself, are in.
-    private var shown: URL?
+    /// The photo shown, a file's own or one of its versions (LIB-48), and whether its preview, and at 1:1 the photo
+    /// itself, are in.
+    private var shown: PhotoAddress?
     private(set) var showsPreview = false
     private(set) var showsFullPhoto = false
     /// The edit the image shows, nil for the photo's embedded preview or the photo itself.
@@ -117,8 +118,23 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
 
     /// An edited photo the library renders shows an image without its edit, and is marked so.
     var showsUneditedPreview: Bool {
-        guard image != nil, shownEdit == nil, let shown, let item = model.library.item(for: shown) else { return false }
+        guard image != nil, shownEdit == nil, let shown, let item = item(shown) else { return false }
         return model.editRenders.renders(item)
+    }
+
+    /// The row of the photo `photo` names, while it's shown and read.
+    private func item(_ photo: PhotoAddress) -> LibraryItem? {
+        model.library.index(of: photo).flatMap { model.library.items.row($0) }
+    }
+
+    /// The photo the loupe shows: the selection's active photo, a file's own or one of its versions, while it's of the
+    /// active photo's file; else the file's own.
+    static func shownPhoto(_ selection: URL?, active: Int64?, in library: FolderLibrary) -> PhotoAddress? {
+        guard let selection else { return nil }
+        if let active, let photo = library.address(ofPhoto: active), photo.url == selection {
+            return photo
+        }
+        return PhotoAddress(url: selection)
     }
 
     private var zoom: LoupeZoom {
@@ -133,15 +149,15 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         libraryObservation = nil
         judging.stop()
         guard window != nil else { return }
-        editObservation = model.editRenders.observe { [weak self] urls in self?.editsShown(urls) }
+        editObservation = model.editRenders.observe { [weak self] photos in self?.editsShown(photos) }
         libraryObservation = model.library.observe { [weak self] diff in self?.libraryChanged(diff) }
         judging.start()
         trackers = [
             Tracker { [weak self] in
                 guard let self else { return }
-                let selection = model.selection
+                let (selection, active) = (model.selection, model.photoSelection.active)
                 guard model.module == .library, model.libraryView == .loupe else { return }
-                show(selection)
+                show(Self.shownPhoto(selection, active: active, in: model.library))
             },
             Tracker { [weak self] in
                 guard let self else { return }
@@ -157,8 +173,8 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
             Tracker { [weak self] in
                 guard let self else { return }
                 let magnifies = model.libraryJudging.magnification != nil
-                guard magnifies, model.module == .library, model.libraryView == .loupe, let url = shown,
-                      let item = model.library.item(for: url) else { return }
+                guard magnifies, model.module == .library, model.libraryView == .loupe, let shown,
+                      let item = item(shown) else { return }
                 loadFullPhoto(item)
             },
         ]
@@ -199,15 +215,15 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         model.toggleSensorClipping()
     }
 
-    private func show(_ url: URL?) {
-        guard url != shown else { return }
-        shown = url
+    private func show(_ photo: PhotoAddress?) {
+        guard photo != shown else { return }
+        shown = photo
         showsPreview = false
         showsFullPhoto = false
         loading?.cancel()
         loading = nil
         pixelSize = nil
-        guard let url, let item = model.library.item(for: url) else {
+        guard let photo, let item = item(photo) else {
             setImage(nil)
             name.stringValue = ""
             showCaption(nil)
@@ -221,11 +237,11 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         setAccessibilityLabel(item.name)
         showDetails(of: item)
         details.request([item]) { [weak self] _ in
-            guard let self, shown == url else { return }
+            guard let self, shown == photo else { return }
             showDetails(of: item)
         }
         let edit = model.editRenders.shownEdit(for: item)
-        if let preview = model.previews.cachedPreview(url) {
+        if let preview = model.previews.cachedPreview(photo) {
             setImage(preview.image, edit: preview.edit)
             showsPreview = true
             if preview.edit != edit {
@@ -236,7 +252,7 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
             setImage(thumbnail?.image, edit: thumbnail?.edit)
             if thumbnail.map({ $0.edit != edit }) ?? true {
                 model.thumbnailLoader.request(item) { [weak self] image in
-                    guard let self, shown == url, !showsPreview, let image else { return }
+                    guard let self, shown == photo, !showsPreview, let image else { return }
                     setImage(image, edit: edit)
                 }
             }
@@ -250,7 +266,7 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
     private func requestPreview(of item: LibraryItem) {
         let edit = model.editRenders.shownEdit(for: item)
         model.previews.request(item) { [weak self] preview in
-            guard let self, shown == item.url, !showsFullPhoto, let preview else { return }
+            guard let self, shown == item.address, !showsFullPhoto, let preview else { return }
             setImage(preview, edit: edit)
             showsPreview = true
         }
@@ -259,12 +275,12 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
     /// The shown photo's badges, as a culling change or the library leaves them.
     private func libraryChanged(_ diff: LibraryDiff) {
         guard let shown, diff.reset || model.library.index(of: shown).map(diff.updated.contains) == true else { return }
-        badges.metadata = model.library.item(for: shown)?.metadata
+        badges.metadata = item(shown)?.metadata
     }
 
     /// The previews of these photos show another edit: the one shown is asked for again.
-    private func editsShown(_ urls: [URL]) {
-        guard let shown, urls.contains(shown), let item = model.library.item(for: shown) else { return }
+    private func editsShown(_ photos: [PhotoAddress]) {
+        guard let shown, photos.contains(shown), let item = item(shown) else { return }
         if showsFullPhoto {
             updateMark()
         } else {
@@ -312,7 +328,7 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
     // MARK: - Zoom
 
     private func zoomChanged() {
-        if zoom == .actual, !showsFullPhoto, let url = shown, let item = model.library.item(for: url) {
+        if zoom == .actual, !showsFullPhoto, let shown, let item = item(shown) {
             loadFullPhoto(item)
         }
         layoutPhoto()
@@ -324,12 +340,12 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         guard loading == nil, item.isLocal else { return }
         let (engine, scheduler, space) = (model.engine, model.library.scheduler, window?.colorSpace?.cgColorSpace)
         let edge = pixelSize.map { Int(max($0.width, $0.height)) } ?? 1 << 14
-        let url = item.url
+        let (url, photo) = (item.url, item.address)
         loading = Task { [weak self] in
             let full = try? await scheduler.run(.onScreen) {
                 engine.decodeThumbnail(for: url, maxPixelSize: edge).flatMap { GridThumbnails.drawn($0, in: space) }
             }
-            guard let self, shown == url, !Task.isCancelled, let full = full ?? nil else { return }
+            guard let self, shown == photo, !Task.isCancelled, let full = full ?? nil else { return }
             if pixelSize == nil || CGFloat(full.width) >= (pixelSize?.width ?? 0) {
                 pixelSize = CGSize(width: full.width, height: full.height)
             }
@@ -370,7 +386,7 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         photo.contentsScale = window?.backingScaleFactor ?? 2
         CATransaction.commit()
         updateMark()
-        judging.show(shown, edit: shownEdit, pixelSize: pixelSize)
+        judging.show(shown?.url, edit: shownEdit, pixelSize: pixelSize)
         judging.place(JudgingPlacement(photoFrame: frame, bounds: bounds, scale: window?.backingScaleFactor ?? 2))
     }
 

@@ -65,7 +65,7 @@ final class LibrarySurveyView: NSView {
         guard window != nil else { return }
         images.colorSpace = window?.colorSpace?.cgColorSpace
         libraryObservation = model.library.observe { [weak self] diff in self?.libraryChanged(diff) }
-        editObservation = model.editRenders.observe { [weak self] urls in self?.editsShown(urls) }
+        editObservation = model.editRenders.observe { [weak self] photos in self?.editsShown(photos) }
         trackers = [
             Tracker { [weak self] in
                 guard let self else { return }
@@ -145,7 +145,8 @@ final class LibrarySurveyView: NSView {
         }
     }
 
-    private func editsShown(_ urls: [URL]) {
+    private func editsShown(_ edited: [PhotoAddress]) {
+        let urls = edited.map(\.url)
         for cell in cells.prefix(photos.count) where cell.url.map(urls.contains) == true {
             cell.photo.refresh()
         }

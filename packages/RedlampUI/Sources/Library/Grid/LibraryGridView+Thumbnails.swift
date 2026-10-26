@@ -14,13 +14,13 @@ extension LibraryGridView {
         }
         let edit = thumbnails.edit(for: item)
         let request = thumbnails.request(item, edge: edge, lane: .onScreen) { [weak cell] image in
-            guard let cell, cell.item?.url == item.url else { return }
+            guard let cell, cell.item?.id == item.id else { return }
             cell.request = nil
             if let image {
                 cell.setImage(image, edge: edge, edit: edit)
             }
         }
-        if cell.image == nil || cell.edge < edge || cell.shownEdit != edit, cell.item?.url == item.url {
+        if cell.image == nil || cell.edge < edge || cell.shownEdit != edit, cell.item?.id == item.id {
             cell.request = request
         }
     }
@@ -41,8 +41,8 @@ extension LibraryGridView {
 
     /// The thumbnails of these photos show another edit: their cells ask for them, or once the grid is
     /// shown again.
-    func editsShown(_ urls: [URL]) {
-        let rows = IndexSet(urls.compactMap(model.library.index(of:)))
+    func editsShown(_ photos: [PhotoAddress]) {
+        let rows = IndexSet(photos.compactMap(model.library.index(of:)))
         guard isShown, !isStale else {
             staleRows.formUnion(rows)
             return

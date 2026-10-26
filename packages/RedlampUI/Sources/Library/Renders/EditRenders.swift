@@ -30,6 +30,10 @@ import RedlampLibrary
 /// - Bounded: one render at a time, cancelled when its photo leaves the source or its edit changes. The
 ///   engine is let go once the photos it opened would hold more than `engineBudget` on the GPU, and after
 ///   `engineIdle` with nothing to render.
+/// - Versions (LIB-48): a photo is known by its address, a file's own edit or one of its versions, whose edit is the
+///   version's in the file's sidecar (`Sidecar[edit:]`) and whose render is recorded under its own row. A file's
+///   photos with the same edit share its render, and the renders of the edits its sidecar holds stay while another
+///   source shows the photos that have them.
 @MainActor
 public final class EditRenders {
     /// Where the views report the rows on screen from.
@@ -101,10 +105,10 @@ public final class EditRenders {
     weak var editor: EditorModel?
     let library: FolderLibrary
     let scheduler: WorkScheduler
-    var known: [URL: Known] = [:]
+    var known: [PhotoAddress: Known] = [:]
     /// Photos whose edits are read but not rendered: those still to render.
     private(set) var waiting = 0
-    private var reading: Set<URL> = []
+    private var reading: Set<PhotoAddress> = []
     private var readJobs = 0
     private var onScreen: [Place: Range<Int>] = [:]
     /// The rows of the rest of the source before these need no reading, and no rendering.
@@ -123,14 +127,14 @@ public final class EditRenders {
     private var showsRecords = true
     /// The index's records of rendered edits being written, one write after another.
     private var recording: Task<Void, Never>?
-    var current: (url: URL, task: Task<Void, Never>)?
+    var current: (photo: PhotoAddress, task: Task<Void, Never>)?
     var engine: (any EditingEngine)?
     var engineBytes = 0
     var idleRelease: Task<Void, Never>?
     /// When Develop last asked for a frame or got one, and whether a render's step is running.
     var developActive: ContinuousClock.Instant?
     var stepRunning = false
-    private var observers: [UUID: @MainActor ([URL]) -> Void] = [:]
+    private var observers: [UUID: @MainActor ([PhotoAddress]) -> Void] = [:]
     private var windowClosing: [UUID: @MainActor () -> Void] = [:]
     private var observation: LibraryObservation?
     private var pumping = false
@@ -144,6 +148,9 @@ public final class EditRenders {
         var sidecarModified: Date?
         /// Nil: its sidecar holds no edit to render.
         var digest: EditDigest?
+        /// The digests of the edits to render its file's sidecar held when it was read, by version, nil for the file's
+        /// own: the file's photos with its edit share its render, and the renders of the others' edits stay.
+        var fileEdits: [UUID?: EditDigest] = [:]
         var state: State
 
         enum State {
@@ -174,12 +181,17 @@ public final class EditRenders {
     /// as it is.
     func shownEdit(for item: LibraryItem) -> EditDigest? {
         guard item.hasEdits else { return nil }
-        guard let known = known[item.url] else { return showsRecords ? item.renderedEdit : nil }
+        guard let known = known[item.address] else { return showsRecords ? item.renderedEdit : nil }
         return known.state == .rendered ? known.digest : nil
     }
 
-    func shownEdit(at url: URL) -> EditDigest? {
-        library.item(for: url).flatMap(shownEdit(for:))
+    func shownEdit(at photo: PhotoAddress) -> EditDigest? {
+        item(photo).flatMap(shownEdit(for:))
+    }
+
+    /// The row of the photo `photo` names, while the source shows it and it's read.
+    func item(_ photo: PhotoAddress) -> LibraryItem? {
+        library.index(of: photo).flatMap { library.items.row($0) }
     }
 
     /// Whether the library renders `item`'s edit, so its embedded preview is marked until then.
@@ -189,7 +201,7 @@ public final class EditRenders {
 
     /// Calls `handler` with the photos whose thumbnails and previews show another edit, until the
     /// returned token is released.
-    func observe(_ handler: @escaping @MainActor ([URL]) -> Void) -> LibraryObservation {
+    func observe(_ handler: @escaping @MainActor ([PhotoAddress]) -> Void) -> LibraryObservation {
         let id = UUID()
         observers[id] = handler
         return LibraryObservation { [weak self] in self?.observers.removeValue(forKey: id) }
@@ -220,37 +232,40 @@ public final class EditRenders {
         schedulePump()
     }
 
-    func notify(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
+    func notify(_ photos: [PhotoAddress]) {
+        guard !photos.isEmpty else { return }
         for observer in observers.values {
-            observer(urls)
+            observer(photos)
         }
     }
 
     /// A loader found no render of `edit` in the store, where one was, or where the index recorded one: it's made
-    /// again.
-    func missing(_ url: URL, _ edit: EditDigest) {
-        if var entry = known[url] {
-            guard entry.digest == edit, entry.state == .rendered else { return }
-            entry.state = .unrendered
-            set(url, entry)
-        } else {
-            guard let item = library.item(for: url), shownEdit(for: item) == edit,
+    /// again. It was the render of the file's other photos with that edit too, which show without it until then.
+    func missing(_ photo: PhotoAddress, _ edit: EditDigest) {
+        if known[photo] == nil {
+            guard let item = item(photo), shownEdit(for: item) == edit,
                   let (_, key) = library.storeThumbnail(for: item)
             else { return }
-            set(url, Known(
+            set(photo, Known(
                 key: key, size: item.size, modified: item.modified, sidecarModified: item.sidecarModified, digest: edit,
-                state: .unrendered,
+                state: .rendered,
             ))
         }
-        revisit(url)
-        notify([url])
+        let gone = known.compactMap { address, entry in
+            address.url == photo.url && entry.digest == edit && entry.state == .rendered ? address : nil
+        }
+        guard !gone.isEmpty else { return }
+        for address in gone {
+            settle(address, as: .unrendered)
+            revisit(address)
+        }
+        notify(gone)
         schedulePump()
     }
 
-    /// The photo at `url` needs reading or rendering again: the rest of the source is looked at from it.
-    func revisit(_ url: URL) {
-        guard let row = library.index(of: url) else { return }
+    /// The photo `photo` names needs reading or rendering again: the rest of the source is looked at from it.
+    func revisit(_ photo: PhotoAddress) {
+        guard let row = library.index(of: photo) else { return }
         readCursor = min(readCursor, row)
         renderCursor = min(renderCursor, row)
     }
@@ -270,7 +285,7 @@ public final class EditRenders {
                 }
             }
         }
-        record(known.keys.map { Record(url: $0, sidecarModified: nil, digest: nil) })
+        record(known.keys.map { Record(photo: $0, sidecarModified: nil, digest: nil) })
         showsRecords = false
         known = [:]
         waiting = 0
@@ -283,7 +298,7 @@ public final class EditRenders {
     /// Whether `item`'s edit, as its file and sidecar are now, is rendered: true once it is, false once it's found
     /// it can't be, nil until then. For measurements.
     @_spi(Harness) public func isRendered(_ item: LibraryItem) -> Bool? {
-        guard let entry = known[item.url], Self.isCurrent(entry, for: item), entry.state != .unrendered else {
+        guard let entry = known[item.address], Self.isCurrent(entry, for: item), entry.state != .unrendered else {
             return nil
         }
         return entry.state == .rendered
@@ -328,11 +343,11 @@ public final class EditRenders {
             editedRows = nil
             if diff.reset {
                 onScreen = [:]
-                for url in known.keys where library.index(of: url) == nil {
-                    set(url, nil)
+                for photo in known.keys where library.index(of: photo) == nil {
+                    set(photo, nil)
                 }
             }
-            if let current, library.index(of: current.url) == nil {
+            if let current, library.index(of: current.photo) == nil {
                 current.task.cancel()
             }
         } else if let first = diff.updated.first {
@@ -346,19 +361,19 @@ public final class EditRenders {
                 findAgain = findingEdited
             }
         }
-        var gone: [URL] = []
+        var gone: [PhotoAddress] = []
         let items = library.items
         // A change to thousands of rows (culling a whole selection) reaches the photos known here alone.
         let rows = diff.updated.count > known.count
             ? known.keys.compactMap { library.index(of: $0) }.filter(diff.updated.contains).sorted()
             : Array(diff.updated)
         for row in rows where items.indices.contains(row) {
-            guard let item = items.row(row), let entry = known[item.url] else { continue }
+            guard let item = items.row(row), let entry = known[item.address] else { continue }
             if !item.hasEdits {
-                set(item.url, nil)
-                drop(entry.digest, of: entry.key, unlessShownBy: item.url)
-                gone.append(item.url)
-                if current?.url == item.url {
+                drop(entry.digest, of: entry.key, unlessShownBy: item.address)
+                set(item.address, nil)
+                gone.append(item.address)
+                if current?.photo == item.address {
                     current?.task.cancel()
                 }
             } else if !Self.isCurrent(entry, for: item) {
@@ -375,24 +390,53 @@ public final class EditRenders {
         entry.size == item.size && entry.modified == item.modified && entry.sidecarModified == item.sidecarModified
     }
 
-    func set(_ url: URL, _ entry: Known?) {
-        let before = known[url]?.state == .unrendered
-        known[url] = entry
+    func set(_ photo: PhotoAddress, _ entry: Known?) {
+        let before = known[photo]?.state == .unrendered
+        known[photo] = entry
         waiting += (entry?.state == .unrendered ? 1 : 0) - (before ? 1 : 0)
     }
 
+    func settle(_ photo: PhotoAddress, as state: Known.State) {
+        guard var entry = known[photo] else { return }
+        entry.state = state
+        set(photo, entry)
+    }
+
+    /// The file's other photos, its own or its versions, read with `entry`'s edit from the file and sidecar `entry` was
+    /// read from, and still to render: what rendering `entry`'s edit renders for them too.
+    func sharing(_ entry: Known, with photo: PhotoAddress) -> [PhotoAddress] {
+        entry.fileEdits.compactMap { version, edit in
+            let other = PhotoAddress(url: photo.url, version: version)
+            guard other != photo, edit == entry.digest, let known = known[other], known.digest == edit,
+                  known.state == .unrendered, known.size == entry.size, known.modified == entry.modified,
+                  known.sidecarModified == entry.sidecarModified
+            else { return nil }
+            return other
+        }
+    }
+
     /// Removes the store's renders of `edit` of the photo `key` names, unless another photo with that
-    /// key shows them (a copy of it).
-    func drop(_ edit: EditDigest?, of key: ContentKey, unlessShownBy url: URL) {
+    /// key shows them (a copy of it, or another of its file's versions) or a sidecar read holds it.
+    func drop(_ edit: EditDigest?, of key: ContentKey, unlessShownBy photo: PhotoAddress) {
         guard let edit, let store = library.service?.thumbnails?.store else { return }
-        let keeping = claims(of: key, except: url)
+        let keeping = claims(of: key, except: photo)
         guard !keeping.contains(edit) else { return }
         scheduler.submit(.background) { _ = store.removeEdits(of: key, keeping: keeping) }
     }
 
-    /// The edits other photos with `key` show, or will once rendered.
-    func claims(of key: ContentKey, except url: URL) -> Set<EditDigest> {
-        Set(known.compactMap { $0.key != url && $0.value.key == key ? $0.value.digest : nil })
+    /// The edits other photos with `key` show, or will once rendered, and those the sidecars read for photos with `key`
+    /// hold for photos other than `photo`, which another source may show.
+    func claims(of key: ContentKey, except photo: PhotoAddress) -> Set<EditDigest> {
+        var claims = Set<EditDigest>()
+        for (address, entry) in known where entry.key == key {
+            if address != photo, let digest = entry.digest {
+                claims.insert(digest)
+            }
+            for (version, edit) in entry.fileEdits where PhotoAddress(url: address.url, version: version) != photo {
+                claims.insert(edit)
+            }
+        }
+        return claims
     }
 }
 
@@ -420,17 +464,18 @@ extension EditRenders {
         guard item.hasEdits, item.isLocal, !item.isSettling, item.sidecarIsLocal,
               library.storeThumbnail(for: item) != nil
         else { return .nothing }
-        guard let entry = known[item.url], Self.isCurrent(entry, for: item) else {
-            return reading.contains(item.url) ? .nothing : .read
+        let photo = item.address
+        guard let entry = known[photo], Self.isCurrent(entry, for: item) else {
+            return reading.contains(photo) ? .nothing : .read
         }
-        return entry.state == .unrendered && !reading.contains(item.url) ? .render : .nothing
+        return entry.state == .unrendered && !reading.contains(photo) ? .render : .nothing
     }
 
     /// The rows on screen, the active photo's first, then those within a screen of them, nearest first.
     private func focusRows() -> [Int] {
         let count = library.items.count
         var ranges = Array(onScreen.values).map { $0.clamped(to: 0 ..< count) }.filter { !$0.isEmpty }
-        if let selection = editor?.selection, let row = library.index(of: selection) {
+        if let row = activeRow {
             ranges.insert(row ..< row + 1, at: 0)
         }
         var seen = Set<Int>()
@@ -452,6 +497,18 @@ extension EditRenders {
             }
         }
         return rows
+    }
+
+    /// The active photo's row: the selection's active photo, a file's own or one of its versions, while it's of the
+    /// file
+    /// the editor has active; else that file's own.
+    private var activeRow: Int? {
+        guard let editor, let selection = editor.selection else { return nil }
+        if let active = editor.photoSelection.active, let row = library.photoList.index(of: active),
+           library.items.row(row)?.url == selection {
+            return row
+        }
+        return library.index(of: selection)
     }
 
     /// The rows of the rest of the source from `cursor`, `scanLimit` at most, `visit`ed in order until it
@@ -548,7 +605,7 @@ extension EditRenders {
             var urgent = false
             let add = { (row: Int) in
                 guard let item = items.row(row), self.need(item) == .read,
-                      !batch.contains(where: { $0.item.url == item.url }),
+                      !batch.contains(where: { $0.item.address == item.address }),
                       let (thumbnails, key) = self.library.storeThumbnail(for: item)
                 else { return }
                 batch.append(ReadPhoto(item: item, key: key, store: thumbnails.store))
@@ -565,10 +622,10 @@ extension EditRenders {
             }
             guard !batch.isEmpty else { return }
             readJobs += 1
-            reading.formUnion(batch.map(\.item.url))
+            reading.formUnion(batch.map(\.item.address))
             let (photos, sidecars) = (batch, library.sidecars)
             scheduler.submit(urgent ? .lookAhead : .background) {
-                let read = photos.map { ($0, Self.read($0, sidecars: sidecars)) }
+                let read = Self.read(photos, sidecars: sidecars)
                 Task { @MainActor [weak self] in self?.received(read) }
             }
         }
@@ -581,62 +638,91 @@ extension EditRenders {
         let store: PhotoStore
     }
 
-    /// What reading a photo's edit found: its digest (nil for none to render), and whether the store
-    /// has both its tiers of the file as it is.
+    /// What reading a photo's edit found: its digest (nil for none to render), the digests of the edits to render its
+    /// file's sidecar holds, by version, and whether the store has both its tiers of the file as it is.
     struct ReadEdit: Sendable {
         let digest: EditDigest?
+        let fileEdits: [UUID?: EditDigest]
         let isStored: Bool
     }
 
-    /// An edit made by a newer Redlamp isn't rendered: a render made here would be kept under its
-    /// digest after an update that renders it as it was made.
-    nonisolated static func read(_ photo: ReadPhoto, sidecars: SidecarPlacement) -> ReadEdit {
-        let url = photo.item.url
-        guard let recipe = recipe(of: url, in: sidecars.store(for: url)), !recipe.isPristine,
-              !recipe.requiresNewerProcess, let digest = EditDigest(rendering: recipe)
-        else { return ReadEdit(digest: nil, isStored: false) }
+    /// Reads the edits of `photos`, each file's sidecar once for its photos among them, its own and its versions'.
+    nonisolated static func read(_ photos: [ReadPhoto], sidecars: SidecarPlacement) -> [(ReadPhoto, ReadEdit)] {
+        var files: [URL: [UUID?: EditDigest]] = [:]
+        return photos.map { photo in
+            let url = photo.item.url
+            let edits = files[url] ?? digests(of: url, in: sidecars.store(for: url))
+            files[url] = edits
+            return (photo, read(photo, in: edits))
+        }
+    }
+
+    /// The digests of the edits to render in `photo`'s sidecar, by version, nil for the photo's own. An edit made by a
+    /// newer Redlamp isn't rendered: a render made here would be kept under its digest after an update that renders
+    /// it as it was made.
+    nonisolated static func digests(of photo: URL, in store: SidecarStore) -> [UUID?: EditDigest] {
+        var digests: [UUID?: EditDigest] = [:]
+        for (version, recipe) in recipes(of: photo, in: store)
+            where !recipe.isPristine && !recipe.requiresNewerProcess {
+            digests[version] = EditDigest(rendering: recipe)
+        }
+        return digests
+    }
+
+    /// `photo`'s edit among its file's, and whether the store holds its render.
+    nonisolated static func read(_ photo: ReadPhoto, in fileEdits: [UUID?: EditDigest]) -> ReadEdit {
+        guard let digest = fileEdits[photo.item.version] else {
+            return ReadEdit(digest: nil, fileEdits: fileEdits, isStored: false)
+        }
         let stored = PhotoStore.Tier.allCases.allSatisfy { tier in
             photo.store.contains(
                 photo.key, tier: tier, edit: digest, size: photo.item.size, modified: photo.item.modified,
             )
         }
-        return ReadEdit(digest: digest, isStored: stored)
+        return ReadEdit(digest: digest, fileEdits: fileEdits, isStored: stored)
     }
 
     /// Takes the edits read. Before a photo's sidecar is read, the edit the index records stands for the one it
-    /// showed; a photo whose edit isn't recorded as it's now stored has its record set right.
+    /// showed; a photo whose edit isn't recorded as it's now stored has its record set right. A photo with the edit
+    /// another of its file's photos shows rendered, read from the same sidecar, shows that render.
     private func received(_ read: [(ReadPhoto, ReadEdit)]) {
         readJobs -= 1
-        var changed: [URL] = []
+        var changed: [PhotoAddress] = []
         var records: [Record] = []
         for (photo, edit) in read {
-            let url = photo.item.url
-            reading.remove(url)
-            guard let item = library.item(for: url), item.size == photo.item.size,
+            let address = photo.item.address
+            reading.remove(address)
+            guard let item = item(address), item.size == photo.item.size,
                   item.modified == photo.item.modified, item.sidecarModified == photo.item.sidecarModified,
                   library.storeThumbnail(for: item)?.1 == photo.key
             else {
-                revisit(url)
+                revisit(address)
                 continue
             }
             let shown = shownEdit(for: item)
-            let before = known[url]
+            let before = known[address]
             let previous = before == nil ? shown : before?.digest
-            set(url, Known(
+            let isStored = edit.isStored || edit.fileEdits.contains { version, other in
+                guard version != item.version, other == edit.digest,
+                      let entry = known[PhotoAddress(url: item.url, version: version)]
+                else { return false }
+                return entry.digest == other && entry.state == .rendered && Self.isCurrent(entry, for: item)
+            }
+            set(address, Known(
                 key: photo.key, size: item.size, modified: item.modified, sidecarModified: item.sidecarModified,
-                digest: edit.digest,
-                state: edit.digest == nil ? .failed : edit.isStored ? .rendered : .unrendered,
+                digest: edit.digest, fileEdits: edit.fileEdits,
+                state: edit.digest == nil ? .failed : isStored ? .rendered : .unrendered,
             ))
             if let previous, previous != edit.digest {
-                drop(previous, of: before?.key ?? photo.key, unlessShownBy: url)
+                drop(previous, of: before?.key ?? photo.key, unlessShownBy: address)
             }
-            if edit.digest != item.renderedEdit, edit.isStored || item.renderedEdit != nil {
+            if edit.digest != item.renderedEdit, isStored || item.renderedEdit != nil {
                 records.append(Record(
-                    url: url, sidecarModified: item.sidecarModified, digest: edit.isStored ? edit.digest : nil,
+                    photo: address, sidecarModified: item.sidecarModified, digest: isStored ? edit.digest : nil,
                 ))
             }
             if shownEdit(for: item) != shown {
-                changed.append(url)
+                changed.append(address)
             }
         }
         record(records)
@@ -647,14 +733,14 @@ extension EditRenders {
     /// What the index is to record of a photo's rendered edit: the digest whose render the store holds, read from
     /// its sidecar as modified at `sidecarModified`; with no digest, that it has none.
     struct Record: Sendable {
-        let url: URL
+        let photo: PhotoAddress
         let sidecarModified: Date?
         let digest: EditDigest?
     }
 
-    /// Records the edits whose renders the store holds in the index, off the main thread and in the order asked, so
-    /// a relaunch shows them before the photos' sidecars are read again (`PhotoEdit`); forgets a photo's for a
-    /// record with no digest.
+    /// Records the edits whose renders the store holds in the index, each under its photo's own row, off the main
+    /// thread and in the order asked, so a relaunch shows them before the photos' sidecars are read again
+    /// (`PhotoEdit`); forgets a photo's for a record with no digest.
     func record(_ records: [Record]) {
         guard !records.isEmpty, let index = library.service?.core?.index else { return }
         let (renderer, previous) = (Self.renderer, recording)
@@ -662,7 +748,7 @@ extension EditRenders {
             await previous?.value
             _ = try? await index.write { writer in
                 for record in records {
-                    guard let photo = try LibraryService.photo(at: record.url, in: writer) else { continue }
+                    guard let photo = try Self.row(of: record.photo, in: writer) else { continue }
                     if let digest = record.digest, let modified = record.sidecarModified {
                         try writer.setPhotoEdit(
                             digest,
@@ -676,6 +762,13 @@ extension EditRenders {
                 }
             }
         }
+    }
+
+    /// The index's row of `photo`: its file's own, or its version's.
+    nonisolated static func row(of photo: PhotoAddress, in reader: some IndexQueries) throws -> PhotoRecord? {
+        guard let file = try LibraryService.photo(at: photo.url, in: reader) else { return nil }
+        guard let version = photo.version else { return file }
+        return try reader.versions(folder: file.folder, name: file.name).first { $0.version == version }
     }
 
     /// A photo to render: its edit's digest, and the store its tiers go to under its content key.
@@ -692,8 +785,8 @@ extension EditRenders {
         let items = library.items
         var found: NextRender?
         let take = { (row: Int) -> Bool in
-            guard let item = items.row(row), self.need(item) == .render, !self.isOpenInDevelop(item.url),
-                  let digest = self.known[item.url]?.digest,
+            guard let item = items.row(row), self.need(item) == .render, !self.isOpenInDevelop(item.address),
+                  let digest = self.known[item.address]?.digest,
                   let (thumbnails, key) = self.library.storeThumbnail(for: item)
             else { return false }
             found = NextRender(item: item, key: key, store: thumbnails.store, digest: digest)
@@ -702,12 +795,18 @@ extension EditRenders {
         if focus.contains(where: take) {
             return found
         }
-        scan(from: &renderCursor, isDone: { need($0) == .nothing && !reading.contains($0.url) }) { !take($0) }
+        scan(from: &renderCursor, isDone: { need($0) == .nothing && !reading.contains($0.address) }) { !take($0) }
         return found
     }
 
-    func isOpenInDevelop(_ url: URL) -> Bool {
+    /// Whether Develop shows `photo`, a file's own edit or one of its versions, or is to open it: the file's other
+    /// photos render meanwhile.
+    func isOpenInDevelop(_ photo: PhotoAddress) -> Bool {
         guard let editor, editor.module == .develop else { return false }
-        return editor.selection == url || editor.info?.url == url
+        if editor.info?.url == photo.url, editor.openVersion == photo.version {
+            return true
+        }
+        let isOpen = editor.info?.url == photo.url && editor.opening == nil
+        return editor.selection == photo.url && !isOpen && editor.openingVersion == photo.version
     }
 }
