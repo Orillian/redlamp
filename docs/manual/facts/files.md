@@ -1,7 +1,8 @@
 # Files, Settings and Help — fact sheet for the user manual
 
-Read from the code at commit `5eb32a241` (14 October 2026), on the branch `ux-11/crash-reports`, for section 7.4,
-Reporting a bug or sending feedback. Sections 7.1 to 7.3 aren't gathered yet. Every fact cites the file and lines it
+Read from the code at commit `5eb32a241` (14 October 2026), on the branch `ux-11/crash-reports`, for section 7.7
+(7.4 until the imports were planned before it on 26 October), Reporting a bug or sending feedback. Sections 7.1 to 7.4
+and 7.6 aren't gathered yet; 7.5's facts are at the end. Every fact cites the file and lines it
 was read from; facts marked **(inferred)** were reasoned from the code rather than read as a string. "Label" means a
 string literal the app displays. Where `README.md` and the code disagree, both are given in §14.
 
@@ -169,4 +170,80 @@ Section header "Included with your report"; footer "Paths, folder names, locatio
 
 ## 16. Screenshots for figures
 
-None of `docs/images` shows the feedback sheet, Your Reports or the banner. The capture scripts the manual's skill names (`scripts/capture-hero.sh`, `capture-promo.sh`, `capture-screenshots.sh`) launch the Debug app with the release app's bundle ID and preferences, saving and restoring them, not in a home of their own, so no figure was captured for 7.4.
+None of `docs/images` shows the feedback sheet, Your Reports or the banner. The capture scripts the manual's skill names (`scripts/capture-hero.sh`, `capture-promo.sh`, `capture-screenshots.sh`) launch the Debug app with the release app's bundle ID and preferences, saving and restoring them, not in a home of their own, so no figure was captured for 7.7.
+
+---
+
+# Importing from Apple Photos (section 7.5)
+
+Read from the code at commit `99eb1fcb8` (26 October 2026), on the branch `apple-photos-import`, for section 7.5. Paths
+below are under `packages/RedlampUI/Sources/` unless they start otherwise. The design is
+`docs/plans/2026-10-26-apple-photos-import-design.md`; where it and the code differ, the code is followed (§A9).
+
+## A1. Where it opens
+
+- **File › Import from Apple Photos…**, after Import from Lightroom Classic… (`apps/RedlampMac/Sources/AppCommands.swift:56-59`); title "Import from Apple Photos…" (`Shortcuts/ShortcutAction.swift:430`), no keys (`:617`), File category (`:243-244`).
+- The command palette finds it by import, apple photos, photos library, icloud, albums, iphone, migrate (`CommandPalette/ShortcutAction+Palette.swift:196`).
+- The window is titled "Import from Apple Photos" (`Library/ApplePhotos/ApplePhotosWindowController.swift:14, 42`).
+- Photos is read through PhotoKit at its read and write access level, the only one that reads (`packages/RedlampLibrary/Sources/ApplePhotos/PhotoKitLibrary.swift:24-28`); nothing is written to Photos (DEC-106).
+
+## A2. Access pages (`Library/ApplePhotos/ApplePhotosScreen.swift:107-151`)
+
+- While checking: "Checking access to Photos…" (`:82`); then "Reading Photos’ albums…" (`:86`).
+- Not asked yet: heading "Allow Redlamp to read Photos"; "Redlamp copies the photos in the albums you choose into your folders, with their favourites, dates and albums. It only reads your Photos library and never changes it." and "macOS asks you once. You can change your answer in System Settings › Privacy & Security › Photos."; button **Continue**; bar note "Continue asks macOS for access to Photos." (`:111-121`).
+- Denied: "Redlamp isn’t allowed to read Photos"; "To import from Photos, turn Redlamp on in System Settings › Privacy & Security › Photos, then come back to this window."; **Open System Settings** (`:109, 122-130`).
+- Restricted: "Photos is restricted on this Mac"; a profile or Screen Time keeps apps from reading Photos; whoever manages the Mac can allow it there; **Open System Settings** (`:131-140`).
+- Limited: "Redlamp can read only some of your photos"; limited access gives none of the albums, so there are none to import; "choose Full Access for Redlamp in System Settings › Privacy & Security › Photos, then come back to this window."; **Open System Settings** (`:141-150`).
+- The macOS prompt shows the usage string "Redlamp copies the photos in the albums you choose into your folders. It never changes your Photos library." (`apps/RedlampMac/Project.swift:28-29`).
+
+## A3. Setup (`ApplePhotosScreen.swift:156-210`; `Library/ApplePhotos/ApplePhotosViews.swift:131-197`)
+
+- Left: "From", then cards **Albums** (Photos' folders and albums, a folder's albums indented 18 pt a level below it; a folder holding no album isn't listed), **Smart Albums** ("Each becomes a collection of the photos it holds now.") and **Shared Albums** ("Reduced copies, not the originals: Photos keeps shared albums’ photos smaller."); the last two only when Photos has some; an empty group reads "None in Photos" (`ApplePhotosScreen.swift:172-210`; `ApplePhotosViews.swift:140-170`).
+- Each row: a checkbox with the album's title and Photos' estimated count; a folder's count is its albums' sum; a folder's box chooses every album in it at any depth, shared albums apart, shows a dash while some are chosen, tooltip "Chooses every album in this folder" (`ApplePhotosScreen.swift:174-181`; `Library/ApplePhotos/ApplePhotosImportModel.swift:191-215`; `ApplePhotosViews.swift:156-170, 317-320`).
+- Nothing is chosen when the window opens (`ApplePhotosImportModel.swift:44`).
+- Under the lists: "N albums chosen, about M photos." or "No albums chosen." (`ApplePhotosScreen.swift:159-161`).
+- **Include hidden photos**, off (`ApplePhotosImportModel.swift:45`), tooltip "Photos’ Hidden album’s photos come too"; **Follow these albums**, on (`:46`), tooltip "The Library panel’s From Apple Photos offers the new photos that arrive in them"; note "The Library panel offers the new photos that arrive in albums you follow." (`ApplePhotosViews.swift:178-188`).
+- Right: the card import's To column without its Card section: To, Destination, Folders, Names, Example, Backup, Files, Keywords, Metadata Preset (`ApplePhotosWindowController.swift:34-35`; `Library/Import/ImportDestinationView.swift:64, 115-126`); no example until an album is chosen: "Choose an album to see where its photos go." (`ApplePhotosWindowController.swift:35`); the example is the first chosen album's first photo, or a stand-in IMG_0001.HEIC (`ApplePhotosImportModel.swift:504-523`). Destination not chosen reads "Not chosen yet: Import asks for it" (`ImportDestinationView.swift:204`).
+- `{album}` token, titled Apple Photos Album (`Library/Rename/NamingTemplateField.swift:354`): the album an import brings the photo from, nil elsewhere (`packages/RedlampLibrary/Sources/Naming/NamingFields.swift:50`); the photo's first chosen album (`ApplePhotosImportModel.swift:521`; design §How it runs 3).
+- **Review**, dimmed until an album is chosen; bar note "Review counts what comes across before anything is copied. Photos is only read." (`ApplePhotosScreen.swift:164-167`). While counting: "Counting what the albums chosen hold…", "Nothing is copied until you import." (`:89-93`).
+
+## A4. Review (`ApplePhotosScreen.swift:214-334`)
+
+- Heading "N photos from M albums", or "Nothing new to import" (`:220-222`); buttons **Back** and **Import N Photos** (or Import) (`:224-230`); bar note "Photos is only read: nothing in it changes. Undo Import takes the import back." (`:231-233`).
+- Comes across: photos copied as files with their size and the photos in the library; RAW+JPEG pairs "each kept together under one name"; raws on their own, with the DNG (ProRAW) ones; "edited in Photos: each original, with Photos’ version stacked over it"; edited photos without Photos' version, only the original; Live Photos "as their still"; bursts, "frames shown or picked in Photos, stacked"; favourites "flagged as picks"; ratings, captions and keywords when the Mac gives them; photos "in more than one album: copied once"; shared albums' "reduced copies, not originals"; hidden photos "as you chose"; "Each album becomes a collection, and Photos’ folders collection sets." (`:240-296`).
+- Stays in Photos: videos ("Redlamp edits photos"); hidden photos ("Include hidden photos brings them"); burst frames not picked in Photos; photos an earlier import brought; items that aren't photos; "Titles, people and pets, memories and Recently Deleted: PhotoKit doesn’t give them"; places: photos keep the GPS their files hold, a place set only in Photos stays there (`:298-323`).
+- Fields: "This Mac gives …" and "macOS 27 would add …" (`:325-328`); everywhere: favourites, dates, original names, albums, places; from macOS 27: ratings, captions, keywords (`packages/RedlampLibrary/Sources/ApplePhotos/ApplePhotosLibrary.swift:46-48`). They're read only by a build whose compiler is Swift 6.4 or later, the macOS 27 SDK's; "Xcode 26's (macOS 26.5) doesn't" (`PhotoKitLibrary.swift:198-211`).
+
+## A5. Progress (`ApplePhotosScreen.swift:356-413`)
+
+- Heading "Importing", or "Importing the new photos in the albums followed" from the Library panel (`:359`).
+- Stages: Reading albums, From Photos, Copying, Finishing (`:391-398`); the current one shows "n of N" (`:405-408`).
+- Lines: bytes written of the total, "Downloading N photos from iCloud", "N photos Photos couldn’t give" (`:370-380`).
+- **Stop** (Stopping… while it stops); bar notes "Stop ends it once the photos being copied are done. Closing the window lets it carry on." and "Stopping: the photos being copied finish, and Resume takes up where it stopped." (`:361-387`).
+- Files are first written into a hidden folder at the destination, `.Redlamp Photos Import/<import ID>/`, one folder per photo; an edit's rendering as `<name> (Photos edit).<ext>`; a stopped import keeps it and the next import with the same settings takes up there (`packages/RedlampLibrary/Sources/ApplePhotos/ApplePhotosStager.swift:4-13`; `ApplePhotosImport.swift:16, 189-196`).
+
+## A6. Result (`ApplePhotosScreen.swift:418-510`)
+
+- "Imported N photos from Apple Photos in <time>", or "Stopped with N photos imported" with the stages (`:443-449`).
+- Imported: "N photos in the library, M versions edited in Photos stacked over the originals"; "In N collections, one for each album"; "Copied to <path>"; "Their albums are followed: new photos in them show in the Library panel’s From Apple Photos" (`:450-469`).
+- Left in Photos: photos Photos couldn't give, files that couldn't be copied, photos placed only in Photos, "N items left in Photos, as Review said", and when stopped "The rest are still in Photos: Resume takes up where it stopped" (`:470-492`).
+- Buttons: **Undo Import** and **Show in Library** when photos were imported, **Resume** when stopped, **Done** (`:497-505`); bar note "Undo Import moves the copies to the Trash and takes them out of the library." (`:507-508`).
+- Undo: "Taking the import back…", then "The import is taken back": "The copies of N photos are in the Trash and out of the library." and "Photos is as it was: nothing in it changed." (`:419-432`); the albums only that import followed stop being followed (`ApplePhotosImport.swift:290-291`).
+- Show in Library shows the photos the import brought in Library's grid, selected (`ApplePhotosImportModel.swift:473-483`); Done shows the albums again, their counts read afresh (`:485-495`).
+- Each photo's sidecar: the favourite as the pick flag, from macOS 27 the rating, caption and keywords, a date changed in Photos as a capture-time shift, its albums as collections (Photos' folders as sets), and where it came from; an edit's rendering and a burst's frames stacked with the original and key photo, the key photo first, then the rendering, on top (`ApplePhotosImport.swift:10-14, 391-408`).
+
+## A7. Followed albums (LIB-55)
+
+- The Library panel's **From Apple Photos** row, only while followed albums have new photos (`Sidebar/AppKit/SourceOutlineView.swift:121-123`), with the count and **Import** ("Imports the new photos with the last import’s settings"); a click on the row opens Import from Apple Photos; right-click: **Import N New Photos**, **Import from Apple Photos…** (`Sidebar/AppKit/ApplePhotosRowViews.swift:7-30, 39-47`).
+- Settings › Library › Apple Photos: **Import new photos from followed albums automatically**, with "Each import from Apple Photos follows the albums it chose, and the Library panel’s From Apple Photos offers the new photos in them. Turned on, they’re imported with the last import’s settings a minute after Photos last changes, while Redlamp runs. Nothing is removed from Redlamp when a photo leaves Photos or an album." (`Settings/LibrarySettings.swift:63-72`); off by default, since an unset default reads false (`Library/ApplePhotos/ApplePhotosSource.swift:40-51`).
+- Followed albums are counted at launch and when Photos changes (`ApplePhotosFollower.swift:79, 87-99`).
+
+## A8. Command line
+
+- `redlamp library photos` with `--albums`, `--census`, `--apply --destination`, `--undo`, `--album` (title, path such as Trips/Lisbon, or ID; repeatable), `--include-hidden`, `--folders`, `--names`, `--index`, `--simulated`, `--json` (`apps/RedlampCLI/Sources/LibraryCommand+Photos.swift:6-27`).
+
+## A9. Design and code
+
+| Design | Code |
+| --- | --- |
+| Ratings, captions and keywords "from macOS 27" | Also need a build made with the macOS 27 SDK; builds use the 26.5 SDK (`PhotoKitLibrary.swift:198-211`) |
