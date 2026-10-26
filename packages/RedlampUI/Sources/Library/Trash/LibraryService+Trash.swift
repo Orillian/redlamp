@@ -62,10 +62,10 @@ extension LibraryService {
     /// `written` with the photos it leaves to their own saves that are in the Trash left as they are: a
     /// sidecar written beside a photo there wouldn't go back with it, and one rewritten there would stay.
     nonisolated static func leavingTrash(_ written: CullingWritten) -> CullingWritten {
-        let trashed = written.unindexed.filter(isInTrash)
+        let trashed = written.unindexed.filter { isInTrash($0.url) }
         guard !trashed.isEmpty else { return written }
         var written = written
-        written.unindexed.removeAll(where: isInTrash)
+        written.unindexed.removeAll { isInTrash($0.url) }
         for photo in trashed {
             written.unwritten.append(photo)
             written.reasons[photo] = "it's in the Trash"

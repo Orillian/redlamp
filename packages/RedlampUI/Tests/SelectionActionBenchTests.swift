@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 import Testing
 @testable import RedlampUI
@@ -67,7 +68,8 @@ struct SelectionActionBenchTests {
             #expect(urls.count == all.count)
             #expect(urls == all.ids.compactMap { rows.items[$0]?.url }, "the rows' own URLs, in order")
             #expect(all.ids.allSatisfy { id in
-                rows.items[id].map { badges[id]?.url == $0.url && badges[id]?.values == CullingValues($0.metadata) }
+                rows.items[id]
+                    .map { badges[id]?.address == $0.address && badges[id]?.values == CullingValues($0.metadata) }
                     ?? false
             }, "the rows' own URLs and badges")
             print("""

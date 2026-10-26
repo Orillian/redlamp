@@ -344,7 +344,7 @@ extension CullingTests {
 
     @Test func `lists hear of a batch's photos once no change asked for after it is still to come`() {
         let queue = CullingQueue()
-        let photos = (0 ..< 3).map { URL(fileURLWithPath: "/Photos/IMG_\($0).JPG") }
+        let photos = (0 ..< 3).map { PhotoAddress(url: URL(fileURLWithPath: "/Photos/IMG_\($0).JPG")) }
         let first = queue.request(photos)
         let second = queue.request([photos[0]])
         #expect(queue.indexed([1, 2, 3], by: first).isEmpty, "the second change is to come")
@@ -563,7 +563,7 @@ extension CullingTests {
         model.click(fixture.photos[0])
         model.click(fixture.photos[1], extending: true)
         func choose(_ title: String, in submenu: String?, on photo: URL) throws {
-            var menu = LibraryGridMenu.menu(for: photo, model: model)
+            var menu = LibraryGridMenu.menu(for: PhotoAddress(url: photo), model: model)
             if let submenu {
                 menu = try #require(menu.items.first { $0.title == submenu }?.submenu)
             }
@@ -580,7 +580,7 @@ extension CullingTests {
         #expect(strip.items.contains { $0.title == "Set Flag" }, "the filmstrip's menu in Library")
         model.showModule(.develop)
         #expect(
-            LibraryGridMenu.culling(for: fixture.photos[3], model: model).isEmpty,
+            LibraryGridMenu.culling(for: PhotoAddress(url: fixture.photos[3]), model: model).isEmpty,
             "Develop's keys act on its photo",
         )
     }

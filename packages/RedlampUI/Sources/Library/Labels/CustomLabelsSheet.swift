@@ -11,7 +11,7 @@ enum CustomLabelsSheet {
     /// Shows the sheet over the editor window; `photo` is the cell whose context menu opened it, which the new label
     /// goes to with the selection it's in. False when there's no window to show it over, or the library isn't open.
     @discardableResult
-    static func present(editor model: EditorModel, giving photo: URL? = nil) -> Bool {
+    static func present(editor model: EditorModel, giving photo: PhotoAddress? = nil) -> Bool {
         guard model.module == .library, model.library.service?.isReady == true else { return false }
         let sheet = PanelSheet(title: "Custom Labels", model: model)
         var choices: [(label: CustomLabelCount, popUp: NSPopUpButton)] = []
@@ -71,9 +71,9 @@ enum CustomLabelsSheet {
     }
 
     /// How many photos the new label goes to: `photo` alone when it isn't selected, else the selection.
-    private static func reached(from photo: URL?, in model: EditorModel) -> Int {
+    private static func reached(from photo: PhotoAddress?, in model: EditorModel) -> Int {
         if let photo, let id = model.library.photoID(of: photo), !model.photoSelection.contains(id),
-           photo != model.selection {
+           photo.version != nil || photo.url != model.selection {
             return 1
         }
         return model.selectedCount

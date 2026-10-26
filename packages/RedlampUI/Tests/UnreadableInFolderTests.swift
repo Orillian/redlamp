@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 import Testing
 @_spi(Harness) @testable import RedlampUI
@@ -75,7 +76,7 @@ struct UnreadableInFolderTests {
         @MainActor func item(_ identifier: String, in menu: NSMenu) -> NSMenuItem? {
             menu.items.first { $0.accessibilityIdentifier() == identifier }
         }
-        let menu = LibraryGridMenu.menu(for: locked, model: model)
+        let menu = LibraryGridMenu.menu(for: PhotoAddress(url: locked), model: model)
         let found = try #require(item("library.menu.unreadableFinding", in: menu))
         #expect(found.title == "Can't be read: \(String(cString: strerror(EACCES)))" && !found.isEnabled)
         let trash = try #require(item("library.menu.trashUnreadable", in: menu))
@@ -85,7 +86,7 @@ struct UnreadableInFolderTests {
         #expect(show.isEnabled)
         #expect(menu.items.contains { $0.title == ShortcutAction.showInFinder.title })
         #expect(menu.items.contains { $0.title.hasPrefix("Open in Loupe") })
-        let readable = LibraryGridMenu.menu(for: sandbox.photo("Shoot/A.JPG"), model: model)
+        let readable = LibraryGridMenu.menu(for: PhotoAddress(url: sandbox.photo("Shoot/A.JPG")), model: model)
         #expect(item("library.menu.unreadableFinding", in: readable) == nil, "a photo that reads offers none of it")
 
         try NSApplication.shared.sendAction(#require(show.action), to: show.target, from: show)

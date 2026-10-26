@@ -60,26 +60,31 @@ final class LargeListRows: Sendable {
         try await read(ids) { _, url in url }
     }
 
-    /// What culling reads of a photo whose row isn't read: its URL and what its badges show of culling's fields.
+    /// What culling reads of a photo whose row isn't read: its address, a version's included (LIB-48), and what its
+    /// badges show of culling's fields.
     struct Badges: Sendable {
-        let url: URL
+        let address: PhotoAddress
         let values: CullingValues
     }
 
     /// The columns `badges(of:)` reads after each photo's ID, folder and name, in the order it takes them.
-    private static let badgeColumns = "sidecar_modified, rating, flag, label, custom_label, marked, other_fields"
+    private static let badgeColumns =
+        "sidecar_modified, rating, flag, label, custom_label, marked, other_fields, version"
 
     /// The URLs of the photos `ids` and what their rows' badges show of culling's fields
     /// (`LibraryFolderList.Mapping.metadata`), for culling photos whose rows aren't read, without reading or keeping
     /// their rows; photos the index no longer has are left out. Read as `urls(of:)` reads theirs.
     func badges(of ids: [Int64]) async throws -> [Int64: Badges] {
         try await read(ids, columns: Self.badgeColumns) { row, url in
-            Badges(url: url, values: CullingValues(LibraryFolderList.Mapping.metadata(
-                rating: row.int(at: 4), flag: PhotoRecord.flag(code: row.int(at: 5)),
-                label: PhotoRecord.label(code: row.int(at: 6)), customLabel: row.string(at: 7),
-                marked: row.bool(at: 8), otherFields: PhotoRecord.fields(code: row.int(at: 9)),
-                hasSidecar: row.optionalDouble(at: 3) != nil,
-            )))
+            Badges(
+                address: PhotoAddress(url: url, version: PhotoRecord.version(code: row.string(at: 10))),
+                values: CullingValues(LibraryFolderList.Mapping.metadata(
+                    rating: row.int(at: 4), flag: PhotoRecord.flag(code: row.int(at: 5)),
+                    label: PhotoRecord.label(code: row.int(at: 6)), customLabel: row.string(at: 7),
+                    marked: row.bool(at: 8), otherFields: PhotoRecord.fields(code: row.int(at: 9)),
+                    hasSidecar: row.optionalDouble(at: 3) != nil,
+                )),
+            )
         }
     }
 

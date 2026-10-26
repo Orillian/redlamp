@@ -68,13 +68,13 @@ extension LibraryGridView {
         guard let item = model.library.items.row(row) else { return }
         let metadata = item.metadata
         switch target {
-        case let .star(stars): model.cull(.rating(metadata.rating == stars ? 0 : stars), fromCell: item.url)
-        case .flag: model.cull(.flag(metadata.flag == .pick ? nil : .pick), fromCell: item.url)
-        case .mark: model.cull(.mark(!metadata.mark), fromCell: item.url)
+        case let .star(stars): model.cull(.rating(metadata.rating == stars ? 0 : stars), fromCell: item.address)
+        case .flag: model.cull(.flag(metadata.flag == .pick ? nil : .pick), fromCell: item.address)
+        case .mark: model.cull(.mark(!metadata.mark), fromCell: item.address)
         case .label:
             menuItem = index
             cells[index]?.isMenuTarget = true
-            NSMenu.popUpContextMenu(LibraryGridMenu.labels(for: item.url, model: model), with: event, for: content)
+            NSMenu.popUpContextMenu(LibraryGridMenu.labels(for: item.address, model: model), with: event, for: content)
         }
     }
 
@@ -150,8 +150,8 @@ extension LibraryGridView {
         if let index = gridLayout.item(at: point), index < shownCount {
             switch content(ofItem: index) {
             case let .photo(row):
-                guard let url = model.library.items.row(row)?.url else { break }
-                let menu = LibraryGridMenu.menu(for: url, model: model)
+                guard let photo = model.library.items.row(row)?.address else { break }
+                let menu = LibraryGridMenu.menu(for: photo, model: model)
                 menuItem = index
                 cells[index]?.isMenuTarget = true
                 return menu

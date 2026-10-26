@@ -261,6 +261,11 @@ public final class FolderLibrary {
         photoList.index(of: id).flatMap { items.row($0)?.address }
     }
 
+    /// The ID of the photo `address` names, as `index(of:)` finds it.
+    public func photoID(of address: PhotoAddress) -> Int64? {
+        index(of: address).map { photoIDs[$0] }
+    }
+
     /// How far above the index's IDs those given here start: a session would have to index more photos than this
     /// before one of them met an ID given here, while bits over IDs (`PhotoList`) stay small.
     static let ownIDMargin: Int64 = 1 << 21
@@ -454,7 +459,12 @@ public final class FolderLibrary {
 
     /// Changes one photo's badges.
     func update(_ url: URL, _ change: (inout LibraryItem) -> Void) {
-        guard let index = index(of: url) else { return }
+        update(PhotoAddress(url: url), change)
+    }
+
+    /// Changes the badges of the photo `address` names: a file's own row, or one of its versions' (LIB-48).
+    func update(_ address: PhotoAddress, _ change: (inout LibraryItem) -> Void) {
+        guard let index = index(of: address) else { return }
         var item = items[index]
         change(&item)
         guard item != items[index] else { return }

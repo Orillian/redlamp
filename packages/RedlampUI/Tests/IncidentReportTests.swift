@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import RedlampDocument
 import Testing
 @_spi(Harness) @testable import RedlampUI
 
@@ -407,7 +408,8 @@ struct IncidentReportTests {
         let modules = fixture.showModules()
         model.showLibrary(.grid)
         model.cullingProblem = CullingProblem(
-            title: "3 Stars", field: .rating, photos: [fixture.photos[1]], values: [], reasons: ["permission denied"],
+            title: "3 Stars", field: .rating, photos: [PhotoAddress(url: fixture.photos[1])], values: [],
+            reasons: ["permission denied"],
             step: ObjectIdentifier(model),
         )
         func frame(_ identifier: String) -> NSRect? {

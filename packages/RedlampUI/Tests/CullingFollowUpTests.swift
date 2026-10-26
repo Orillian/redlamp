@@ -104,7 +104,7 @@ struct CullingFollowUpTests {
         #expect(!model.giveCustomLabel("Red", color: .pink))
         #expect(model.giveCustomLabel("Hero", color: .pink))
         await settled(folder)
-        let menu = LibraryGridMenu.labels(for: folder.photos[0], model: model)
+        let menu = LibraryGridMenu.labels(for: PhotoAddress(url: folder.photos[0]), model: model)
         let hero = try #require(menu.items.first { $0.title == "Hero" })
         #expect(hero.image != nil && hero.state == .on)
         #expect(menu.items.contains { $0.title == "Custom Labels…" })
@@ -129,7 +129,7 @@ struct CullingFollowUpTests {
         #expect(model.perform(.rating4))
         await settled(folder)
         let problem = try #require(model.cullingProblem)
-        #expect(problem.title == "4 Stars" && problem.photos == [folder.photos[1]])
+        #expect(problem.title == "4 Stars" && problem.photos == [PhotoAddress(url: folder.photos[1])])
         #expect(problem.message.hasPrefix("4 Stars wasn't saved to IMG_0001.JPG: "), "\(problem.message)")
         #expect(folder.shown(1).rating == 2 && folder.shown(3).rating == 4, "each shows what its sidecar holds")
 

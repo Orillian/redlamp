@@ -229,8 +229,8 @@ public struct CullingProblem: Sendable, Hashable {
     /// The change as Undo names it: `3 Stars`, `Undo Red Label`.
     public let title: String
     let field: CullingField
-    /// The photos it didn't reach, in the change's order, with what each was to get.
-    public let photos: [URL]
+    /// The photos it didn't reach, in the change's order, with what each was to get: files' own edits or versions.
+    public let photos: [PhotoAddress]
     let values: [CullingValues]
     /// Why, each reason once: "its sidecar can't be read".
     public let reasons: [String]
@@ -239,7 +239,7 @@ public struct CullingProblem: Sendable, Hashable {
 
     /// "3 Stars wasn't saved to 4 photos (A.ARW, B.ARW, C.ARW and 1 more): its sidecar can't be read."
     public var message: String {
-        let names = photos.prefix(3).map(\.lastPathComponent)
+        let names = photos.prefix(3).map(\.url.lastPathComponent)
         let who = switch photos.count {
         case 1: names[0]
         case 2, 3: names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")

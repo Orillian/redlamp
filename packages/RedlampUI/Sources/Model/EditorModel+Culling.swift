@@ -149,21 +149,27 @@ public extension EditorModel {
             }
             cull(change, rows: rows)
         } else {
-            culled = library.photoID(of: active).map { [$0] } ?? []
+            culled = library.photoID(of: PhotoAddress(url: active, version: developedVersion)).map { [$0] } ?? []
             cullActivePhoto(change)
         }
-        if advance, let next = gridOrder.cell(after: culled), let url = library.url(ofPhoto: next) {
-            select(url)
+        if advance, let next = gridOrder.cell(after: culled), let photo = library.address(ofPhoto: next) {
+            select(photo)
             coverClosedStacks()
         }
         return true
     }
 
-    /// A click on a cell's stars, flag, label or mark, or a photo's context menu: `change` on `photo`, or on
-    /// the selection when `photo` is in it.
-    func cull(_ change: CullingChange, from photo: URL) {
+    /// The version Develop's culling reaches: the one open, or the one opening; nil for the photo's own edit.
+    private var developedVersion: UUID? {
+        opening == nil ? openVersion : openingVersion
+    }
+
+    /// A click on a cell's stars, flag, label or mark, or a photo's context menu: `change` on `photo`, a file's own
+    /// edit or one of its versions (LIB-48), or on the selection when `photo` is in it.
+    func cull(_ change: CullingChange, from photo: PhotoAddress) {
         guard module == .library, !showsMissingPhotos, let row = library.index(of: photo) else { return }
-        let inSelection = library.photoID(of: photo).map(photoSelection.contains) == true || photo == selection
+        let inSelection = library.photoID(of: photo).map(photoSelection.contains) == true
+            || photo.version == nil && photo.url == selection
         if inSelection, library.items.readsOnRequest {
             cull(change, photos: selectedIDs)
         } else {
@@ -453,7 +459,7 @@ public extension EditorModel {
         let wanted = change.resolved(current, ids: shownIDs, color: change.customLabel.flatMap(givenLabelColor(of:)))
         var changed: [Int] = []
         var photoIDs: [Int64] = []
-        var photos: [URL] = []
+        var photos: [PhotoAddress] = []
         var before: [CullingValues] = []
         var after: [CullingValues] = []
         changed.reserveCapacity(shown.count)
@@ -463,10 +469,10 @@ public extension EditorModel {
         after.reserveCapacity(shown.count)
         for place in shown.indices where !wanted[place].matches(current[place], in: change.field) {
             let row = shown[place]
-            guard let url = items.row(row)?.url ?? read[ids[row]]?.url else { continue }
+            guard let photo = items.row(row)?.address ?? read[ids[row]]?.address else { continue }
             changed.append(row)
             photoIDs.append(ids[row])
-            photos.append(url)
+            photos.append(photo)
             before.append(current[place])
             after.append(wanted[place])
         }
@@ -486,7 +492,8 @@ public extension EditorModel {
         cullingOverlay.add(CullingOverlay.Change(sequence: sequence, field: field, photos: photoIDs, values: values))
         // Develop's open photo: what it hasn't saved is saved first, and from then on its saves count the
         // change as another writer's, so they never write it over the batch's.
-        let open = info != nil && !isReadOnly && selection.flatMap(library.index(of:)).map(rows.contains) == true
+        let edits = activeEdits(among: rows)
+        let open = info != nil && !isReadOnly && !edits.isEmpty
         if open {
             saveNow()
         }
@@ -494,8 +501,8 @@ public extension EditorModel {
             cullingOverlay.publishing = true
             library.setMetadata(rows) { place, metadata in values[place].apply(field, to: &metadata) }
             cullingOverlay.publishing = false
-            if let active = selection.flatMap(library.index(of:)), let place = rows.firstIndex(of: active) {
-                changeOwnMetadata { values[place].apply(field, to: &$0) }
+            for (place, version) in edits {
+                changeMetadata(of: version) { values[place].apply(field, to: &$0) }
             }
         }
         if open, let selection {
@@ -512,13 +519,31 @@ public extension EditorModel {
             }
         }
         cullingOverlay.publishing = false
-        if let active = selection.flatMap(library.index(of:)), let place = rows.firstIndex(of: active) {
-            changeOwnMetadata { metadata in
+        for (place, version) in activeEdits(among: rows) {
+            changeMetadata(of: version) { metadata in
                 for field in fields {
                     values[place].apply(field, to: &metadata)
                 }
             }
         }
+    }
+
+    /// The active photo's edits among `rows`, each with its place there: its own, and while Develop has it open, its
+    /// versions (LIB-48), each a row of its own, whose metadata Develop holds and saves with the photo's.
+    private func activeEdits(among rows: [Int]) -> [(place: Int, version: UUID?)] {
+        guard let selection else { return [] }
+        var edits: [(place: Int, version: UUID?)] = []
+        if let row = library.index(of: selection), let place = rows.firstIndex(of: row) {
+            edits.append((place, nil))
+        }
+        guard info?.url == selection else { return edits }
+        for version in versions {
+            if let row = library.index(of: PhotoAddress(url: selection, version: version.id)),
+               let place = rows.firstIndex(of: row) {
+                edits.append((place, version.id))
+            }
+        }
+        return edits
     }
 
     /// What a culling step's background work makes of it.
@@ -553,7 +578,7 @@ public extension EditorModel {
         let field = step.field
         var written = CullingWritten()
         if let service = library.service, service.isReady {
-            await waitForSaves(of: step.photos)
+            await waitForSaves(of: step.photos.map(\.url))
             if redoing, !step.undos.isEmpty,
                let redone = await service.redoCulling(
                    step.undos,
@@ -578,11 +603,11 @@ public extension EditorModel {
         step.saved = step.photos.indices.filter { unindexed.contains(step.photos[$0]) }
         let held = step.held
         await save((redoing ? ownSaves(of: step) : step.saved).map { place in
-            let (url, before, after) = (step.photos[place], step.before[place], step.after[place])
-            return (url, { @Sendable (metadata: inout PhotoMetadata) in
+            let (photo, before, after) = (step.photos[place], step.before[place], step.after[place])
+            return (photo, { @Sendable (metadata: inout PhotoMetadata) in
                 let current = CullingValues(metadata)
-                guard !redoing || current.matches(held.value(for: url) ?? before, in: field) else { return }
-                held.keep(current, for: url)
+                guard !redoing || current.matches(held.value(for: photo) ?? before, in: field) else { return }
+                held.keep(current, for: photo)
                 after.apply(field, to: &metadata)
             })
         })
@@ -597,17 +622,17 @@ public extension EditorModel {
         let field = step.field
         var written = CullingWritten()
         if !step.batches.isEmpty, let service = library.service, service.isReady {
-            await waitForSaves(of: step.photos)
+            await waitForSaves(of: step.photos.map(\.url))
             written = await service.undoCulling(step.batches, photos: step.ids, sequence: sequence, queue: cullingQueue)
         }
         step.undos = written.batches
         step.batches = []
         let held = step.held
         await save(ownSaves(of: step).map { place in
-            let (url, before, after) = (step.photos[place], step.before[place], step.after[place])
-            return (url, { @Sendable (metadata: inout PhotoMetadata) in
+            let (photo, before, after) = (step.photos[place], step.before[place], step.after[place])
+            return (photo, { @Sendable (metadata: inout PhotoMetadata) in
                 if CullingValues(metadata).matches(after, in: field) {
-                    (held.value(for: url) ?? before).apply(field, to: &metadata)
+                    (held.value(for: photo) ?? before).apply(field, to: &metadata)
                 }
             })
         })
@@ -617,11 +642,12 @@ public extension EditorModel {
     /// The places in `step` of the photos its own saves write, and of the photo Develop has open: a save of
     /// Develop's can write the step's values before the library's batch reads the sidecar, and the batch, finding
     /// them there, logs nothing to take back, so Undo and Redo put the open photo's field right through its own save
-    /// as well, each field that still holds what the step gave it, or had before it.
+    /// as well, each field that still holds what the step gave it, or had before it. Its versions are in its sidecar,
+    /// which its saves write whole (LIB-48).
     private func ownSaves(of step: CullingStep) -> [Int] {
-        guard let selection, info != nil, let open = step.photos.firstIndex(of: selection), !step.saved.contains(open)
-        else { return step.saved }
-        return step.saved + [open]
+        guard let selection, info != nil else { return step.saved }
+        let saved = Set(step.saved)
+        return step.saved + step.photos.indices.filter { step.photos[$0].url == selection && !saved.contains($0) }
     }
 
     /// Returns once the saves asked for any of `photos` before the call are on disk, so a batch reads their
@@ -633,13 +659,14 @@ public extension EditorModel {
         }
     }
 
-    /// Changes each photo's culling metadata through its own save, as the sidecar is on disk then.
-    private func save(_ writes: [(URL, @Sendable (inout PhotoMetadata) -> Void)]) async {
+    /// Changes each photo's culling metadata through its own save, as the sidecar is on disk then: a version's in its
+    /// own edit.
+    private func save(_ writes: [(PhotoAddress, @Sendable (inout PhotoMetadata) -> Void)]) async {
         guard !writes.isEmpty else { return }
         let saves = saves
         await Task.detached(priority: .userInitiated) {
-            for (url, change) in writes {
-                saves.enqueue(.metadata(change), for: url)
+            for (photo, change) in writes {
+                saves.enqueue(.metadata(change, version: photo.version), for: photo.url)
             }
         }.value
     }
@@ -663,16 +690,24 @@ public extension EditorModel {
         var badges = await library.service?.badges(of: unwritten) ?? [:]
         let rest = unwritten.filter { badges[$0] == nil }
         let sidecars = library.sidecars
-        for (url, metadata) in await Task.detached(priority: .userInitiated, operation: {
-            rest.map { ($0, sidecars.store(for: $0).summary(for: $0)?.metadata ?? PhotoMetadata()) }
+        for (photo, metadata) in await Task.detached(priority: .userInitiated, operation: {
+            rest.map { photo in
+                let summary = sidecars.store(for: photo.url).summary(for: photo.url)
+                let metadata = if let version = photo.version {
+                    summary?.versions.first { $0.id == version }?.metadata
+                } else {
+                    summary?.metadata
+                }
+                return (photo, metadata ?? PhotoMetadata())
+            }
         }).value {
-            badges[url] = metadata
+            badges[photo] = metadata
         }
         let shown = cullingQueue.changedLater(than: sequence)
         var rows: [Int] = []
         var values: [CullingValues] = []
-        for url in unwritten where !shown.contains(url) {
-            guard let row = library.index(of: url), let metadata = badges[url] else { continue }
+        for photo in unwritten where !shown.contains(photo) {
+            guard let row = library.index(of: photo), let metadata = badges[photo] else { continue }
             rows.append(row)
             values.append(CullingValues(metadata))
         }
@@ -681,10 +716,10 @@ public extension EditorModel {
 
     /// Says in the activity log which of the step's photos the library couldn't write, and why: "Undo 3 Stars
     /// couldn't put back Photo C: its sidecar can't be read".
-    private func report(_ reasons: [URL: String], of step: CullingStep, title: String, undoing: Bool) {
+    private func report(_ reasons: [PhotoAddress: String], of step: CullingStep, title: String, undoing: Bool) {
         let photos = reasons.isEmpty ? [] : step.photos.filter { reasons[$0] != nil }
         guard !photos.isEmpty else { return }
-        let named = photos.prefix(3).map(activity.alias(for:))
+        let named = photos.prefix(3).map { activity.alias(for: $0.url) }
         let who = switch photos.count {
         case 1: named[0]
         case 2, 3: named.dropLast().joined(separator: ", ") + " and " + (named.last ?? "")
@@ -702,7 +737,7 @@ public extension EditorModel {
     /// Says above the photos which of the step's photos the library couldn't write, and why (`cullingProblem`):
     /// those of `unwritten`, which no change asked for since changes again.
     private func noteProblem(
-        _ unwritten: [URL], _ written: CullingWritten, of step: CullingStep, title: String, undoing: Bool,
+        _ unwritten: [PhotoAddress], _ written: CullingWritten, of step: CullingStep, title: String, undoing: Bool,
     ) {
         let missed = Set(unwritten)
         let places = step.photos.indices.filter { missed.contains(step.photos[$0]) }
@@ -719,8 +754,8 @@ public extension EditorModel {
     func selectCullingProblem() {
         guard let problem = cullingProblem else { return }
         let ids = problem.photos.compactMap(library.photoID(of:))
-        guard let first = ids.first, let url = library.url(ofPhoto: first) else { return }
-        select(url)
+        guard let first = ids.first, let photo = library.address(ofPhoto: first) else { return }
+        select(photo)
         photoSelection.select(ids, active: first, in: library.photoList)
     }
 
@@ -733,15 +768,15 @@ public extension EditorModel {
         let items = library.items
         let ids = library.photoIDs
         var rows: [Int] = []
-        var photos: [URL] = []
+        var photos: [PhotoAddress] = []
         var before: [CullingValues] = []
         var after: [CullingValues] = []
-        for (url, wanted) in zip(problem.photos, problem.values) {
-            guard let row = library.index(of: url), let item = items.row(row) else { continue }
+        for (photo, wanted) in zip(problem.photos, problem.values) {
+            guard let row = library.index(of: photo), let item = items.row(row) else { continue }
             let current = CullingValues(item.metadata)
             guard !wanted.matches(current, in: problem.field) else { continue }
             rows.append(row)
-            photos.append(url)
+            photos.append(photo)
             before.append(current)
             after.append(wanted)
         }
@@ -762,21 +797,21 @@ public extension EditorModel {
     // MARK: - Develop
 
     /// `change` on the active photo, saved with its edit as Develop saves it; a read-only photo's metadata
-    /// doesn't change, since it wouldn't be saved. While another photo opens, the change is that photo's.
+    /// doesn't change, since it wouldn't be saved. While another photo opens, the change is that photo's. A version's
+    /// metadata is its own, which its row shows (LIB-48).
     private func cullActivePhoto(_ change: CullingChange) {
         guard let url = opening ?? selection, opening != nil || !isReadOnly else { return }
-        let before = CullingValues(opening == nil ? photoMetadata : library.item(for: url)?.metadata ?? PhotoMetadata())
+        let edit = PhotoAddress(url: url, version: developedVersion)
+        let shown = library.index(of: edit).flatMap { library.items.row($0) }?.metadata
+        let before = CullingValues(opening == nil ? photoMetadata : shown ?? PhotoMetadata())
         let after = change.resolved([before], color: change.customLabel.flatMap(givenLabelColor(of:)))[0]
         guard !after.matches(before, in: change.field) else { return }
         let setting = after.setting(change.field)
         if opening == nil {
             setting(&photoMetadata)
         }
-        // A version's metadata is its own: the photo's row shows the photo's.
-        if openVersion == nil {
-            forgetCulling(url)
-            library.update(url) { setting(&$0.metadata) }
-        }
+        forgetCulling(edit)
+        library.update(edit) { setting(&$0.metadata) }
         remember(after.customLabel.map { [$0] } ?? [])
         if info != nil, opening == nil {
             saveNow()
@@ -784,7 +819,7 @@ public extension EditorModel {
             // The metadata shown may be the filmstrip's, not yet the file's: only what `change` set goes to
             // the file, and again onto the file's when it opens.
             metadataChangesWhileOpening.append(setting)
-            saves.enqueue(.metadata(setting), for: url)
+            saves.enqueue(.metadata(setting, version: edit.version), for: url)
         }
     }
 
@@ -792,7 +827,12 @@ public extension EditorModel {
 
     /// Develop changed `url` itself, or a save showed what's on disk: no culling change stands over it.
     internal func forgetCulling(_ url: URL) {
-        guard !cullingOverlay.isEmpty, let id = library.photoID(of: url) else { return }
+        forgetCulling(PhotoAddress(url: url))
+    }
+
+    /// Develop changed the edit `photo` itself: no culling change stands over its row.
+    internal func forgetCulling(_ photo: PhotoAddress) {
+        guard !cullingOverlay.isEmpty, let id = library.photoID(of: photo) else { return }
         cullingOverlay.forget(id)
     }
 
@@ -822,7 +862,9 @@ public extension EditorModel {
     /// hasn't caught up with stand over it, as they stand over the photos' rows, so a save read before a batch
     /// wrote doesn't show Develop the photo as it was.
     internal func keepCullingShown(in metadata: inout PhotoMetadata) {
-        guard !cullingOverlay.isEmpty, let id = selection.flatMap(library.photoID(of:)) else { return }
+        guard !cullingOverlay.isEmpty,
+              let id = selection.flatMap({ library.photoID(of: PhotoAddress(url: $0, version: openVersion)) })
+        else { return }
         cullingOverlay.expire()
         guard let shown = cullingOverlay.latest()[id] else { return }
         for field in shown.fields {
@@ -967,7 +1009,7 @@ public extension EditorModel {
     /// menu's) or the selection it's in, as the Custom Labels sheet gives it: a label of that name takes the colour
     /// first, with an Undo of its own. False for a name no custom label can have, or with no photo to reach.
     @discardableResult
-    func giveCustomLabel(_ name: String, color: LabelColor?, to photo: URL? = nil) -> Bool {
+    func giveCustomLabel(_ name: String, color: LabelColor?, to photo: PhotoAddress? = nil) -> Bool {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.canNameCustomLabel(name), photo.flatMap(library.index(of:)) != nil || canCull else { return false }
         if let label = customLabelCounts.first(where: { $0.name == name }) {
@@ -1014,7 +1056,8 @@ public enum AutoAdvancePlace: String, CaseIterable, Sendable {
 final class CullingStep {
     let title: String
     let field: CullingField
-    let photos: [URL]
+    /// Each photo's file and edit: its own, or one of its versions (LIB-48).
+    let photos: [PhotoAddress]
     /// Where the photos were listed when it was made, and their IDs there.
     let rows: [Int]
     let photoIDs: [Int64]
@@ -1023,7 +1066,7 @@ final class CullingStep {
     let after: [CullingValues]
     /// The library's batches that made it last, for its Undo, and its photos' IDs in the index.
     var batches: [UUID] = []
-    var ids: [Int64: URL] = [:]
+    var ids: [Int64: PhotoAddress] = [:]
     /// The Undos that took those batches back, for Redo to take back in turn.
     var undos: [UUID] = []
     /// The photos (by place) their own saves write: those the library hadn't indexed.
@@ -1034,7 +1077,7 @@ final class CullingStep {
     var turn = 0
 
     init(
-        title: String, field: CullingField, photos: [URL], rows: [Int], photoIDs: [Int64],
+        title: String, field: CullingField, photos: [PhotoAddress], rows: [Int], photoIDs: [Int64],
         before: [CullingValues], after: [CullingValues],
     ) {
         self.title = title
@@ -1060,19 +1103,19 @@ private final class DroppedSteps: @unchecked Sendable {
 
 /// What photos' sidecars held before a culling change their own saves made, as each save found them.
 final class CullingHeld: Sendable {
-    private let values = Mutex<[URL: CullingValues]>([:])
+    private let values = Mutex<[PhotoAddress: CullingValues]>([:])
 
     /// The first one found: a save tried again, or Redo's, finds the sidecar as the change or Undo left it.
-    func keep(_ held: CullingValues, for url: URL) {
+    func keep(_ held: CullingValues, for photo: PhotoAddress) {
         values.withLock { values in
-            if values[url] == nil {
-                values[url] = held
+            if values[photo] == nil {
+                values[photo] = held
             }
         }
     }
 
-    func value(for url: URL) -> CullingValues? {
-        values.withLock { $0[url] }
+    func value(for photo: PhotoAddress) -> CullingValues? {
+        values.withLock { $0[photo] }
     }
 }
 
@@ -1083,13 +1126,13 @@ final class CullingQueue: Sendable {
 
     private struct State {
         var requested: UInt64 = 0
-        var pending: [UInt64: [URL]] = [:]
+        var pending: [UInt64: [PhotoAddress]] = [:]
         /// Photos in the index whose lists haven't heard of them, waiting for the latest change.
         var deferred = Set<Int64>()
     }
 
     /// A change asked for, of `photos`: its number.
-    func request(_ photos: [URL]) -> UInt64 {
+    func request(_ photos: [PhotoAddress]) -> UInt64 {
         state.withLock { state in
             state.requested += 1
             state.pending[state.requested] = photos
@@ -1123,9 +1166,9 @@ final class CullingQueue: Sendable {
     }
 
     /// The photos changes asked for after `sequence` change.
-    func changedLater(than sequence: UInt64) -> Set<URL> {
+    func changedLater(than sequence: UInt64) -> Set<PhotoAddress> {
         state.withLock { state in
-            state.pending.filter { $0.key > sequence }.values.reduce(into: Set<URL>()) { $0.formUnion($1) }
+            state.pending.filter { $0.key > sequence }.values.reduce(into: Set<PhotoAddress>()) { $0.formUnion($1) }
         }
     }
 }

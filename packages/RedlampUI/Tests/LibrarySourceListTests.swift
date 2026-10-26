@@ -196,7 +196,7 @@ struct LibrarySourceListTests {
         let (fewURLs, fewBadges) = try await (rows.urls(of: few), rows.badges(of: few))
         await index.close()
         #expect(ids.map { urls[$0] } == items.map(\.url))
-        #expect(ids.map { badges[$0]?.url } == items.map(\.url))
+        #expect(ids.map { badges[$0]?.address } == items.map(\.address))
         #expect(ids.map { badges[$0]?.values } == items.map { CullingValues($0.metadata) })
         #expect(few.map { fewURLs[$0] } == items.prefix(10).map(\.url))
         #expect(few.map { fewBadges[$0]?.values } == items.prefix(10).map { CullingValues($0.metadata) })

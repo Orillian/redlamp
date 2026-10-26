@@ -9,8 +9,9 @@ final class SaveQueue: @unchecked Sendable {
     enum Write: Sendable {
         /// The photo's whole sidecar, written as `SidecarStore.saveOrRemove` does.
         case sidecar(Sidecar)
-        /// A change to the culling metadata of the sidecar as it is on disk then.
-        case metadata(@Sendable (inout PhotoMetadata) -> Void)
+        /// A change to the culling metadata of the sidecar as it is on disk then: the photo's own, or with
+        /// `version`, that version's (LIB-48).
+        case metadata(@Sendable (inout PhotoMetadata) -> Void, version: UUID? = nil)
         /// From now on the photo's saves go over `base` (nil: the sidecar as it is then);
         /// `opened` is the editor's state when it took it, to tell what changed here. A photo
         /// still tracked whose last save failed keeps the base it had: a newer one would hide
@@ -234,8 +235,14 @@ final class SaveQueue: @unchecked Sendable {
                 tracking[url] = nil
             }
             return outcome
-        case let .metadata(change):
+        case let .metadata(change, nil):
             try Library.writeMetadata(for: url, store: store, change)
+            return .saved
+        case let .metadata(change, version?):
+            guard var sidecar = try store.loadThrowing(for: url), sidecar.version(version) != nil else { return .saved }
+            sidecar.changeMetadata(of: version, change)
+            sidecar.modified = Date()
+            try store.saveOrRemove(sidecar, for: url)
             return .saved
         case let .track(base, opened):
             if tracking[url] != nil, lock.withLock({ failing.contains(url) }) {

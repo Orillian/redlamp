@@ -81,14 +81,18 @@ public extension EditorModel {
     }
 
     /// Opens `url` in the version `version`, or in its own edit when it has no such version: a version as the
-    /// library addresses it (`PhotoAddress`).
+    /// library addresses it (`PhotoAddress`). A version the library lists is a photo of its own, selected alone
+    /// (LIB-48).
     func select(_ photo: PhotoAddress) {
-        if photo.url == selection, info?.url == photo.url, opening == nil {
+        if module == .develop, photo.url == selection, info?.url == photo.url, opening == nil {
             showVersion(photo.version)
-            return
+        } else {
+            select(photo.url)
+            openingVersion = photo.version
         }
-        openingVersion = photo.version
-        select(photo.url)
+        if photo.version != nil, library.photoID(of: photo) != nil {
+            selectOnly(photo)
+        }
     }
 
     // MARK: - Asking
@@ -152,9 +156,25 @@ extension EditorModel {
     /// Changes the open photo's own metadata, as a change to its row in the library does: `photoMetadata` while its
     /// own edit is open, else the metadata saving writes beside the version open.
     func changeOwnMetadata(_ change: (inout PhotoMetadata) -> Void) {
-        guard openVersion != nil else { return change(&photoMetadata) }
-        var metadata = openSidecar.metadata ?? PhotoMetadata()
+        changeMetadata(of: nil, change)
+    }
+
+    /// Changes the metadata of the open photo's edit `version` (nil: its own), as a change to that edit's row in the
+    /// library does (LIB-48): `photoMetadata` for the edit open, else what saving writes for the other.
+    func changeMetadata(of version: UUID?, _ change: (inout PhotoMetadata) -> Void) {
+        guard version != openVersion else { return change(&photoMetadata) }
+        openSidecar.changeMetadata(of: version, change)
+    }
+}
+
+extension Sidecar {
+    /// Changes the metadata of edit `version`, or the photo's own for nil; a version the photo doesn't have changes
+    /// nothing.
+    mutating func changeMetadata(of version: UUID?, _ change: (inout PhotoMetadata) -> Void) {
+        guard var edit = self[edit: version] else { return }
+        var metadata = edit.metadata ?? PhotoMetadata()
         change(&metadata)
-        openSidecar.metadata = metadata.isEmpty ? nil : metadata
+        edit.metadata = metadata.isEmpty ? nil : metadata
+        self[edit: version] = edit
     }
 }

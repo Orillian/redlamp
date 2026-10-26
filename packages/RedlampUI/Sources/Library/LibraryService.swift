@@ -643,11 +643,11 @@ extension LibraryService {
     // MARK: - Culling (LIB-15)
 
     /// Gives each of `photos` its own fields (`fields`, by place), as one batch off the main thread, in the
-    /// library's changes' turn (`LibraryCore.change`). Lists hear of its photos once the index holds it, as
-    /// `queue` allows for change `sequence`; the photos the index doesn't have are left for their own saves,
-    /// but for those in the Trash (Recently Trashed's), which are left as they are.
+    /// library's changes' turn (`LibraryCore.change`): a version's in its own edit (LIB-48). Lists hear of its photos
+    /// once the index holds it, as `queue` allows for change `sequence`; the photos the index doesn't have are left
+    /// for their own saves, but for those in the Trash (Recently Trashed's), which are left as they are.
     func cull(
-        _ photos: [URL], fields: [[MetadataField]], sequence: UInt64, queue: CullingQueue,
+        _ photos: [PhotoAddress], fields: [[MetadataField]], sequence: UInt64, queue: CullingQueue,
     ) async -> CullingWritten {
         guard let core, let metadata else { return Self.leavingTrash(CullingWritten(unindexed: photos)) }
         return await core.change {
@@ -685,7 +685,7 @@ extension LibraryService {
     /// Takes back `batches`, newest first, as `cull` makes them; `photos` are their photos by index ID. The
     /// written batches are the Undos, which `redoCulling` takes back.
     func undoCulling(
-        _ batches: [UUID], photos: [Int64: URL], sequence: UInt64, queue: CullingQueue,
+        _ batches: [UUID], photos: [Int64: PhotoAddress], sequence: UInt64, queue: CullingQueue,
     ) async -> CullingWritten {
         await runCulling(
             batches.reversed().map { batch -> CullingPlanning in { try await $0.planUndo(batch) } }, photos: photos,
@@ -696,7 +696,7 @@ extension LibraryService {
     /// Makes again the batches Undo took back (`undos`, as `undoCulling` wrote them) as the Undo of each Undo,
     /// oldest batch first; nil, nothing made, when the journal doesn't have every one of them as it was run.
     func redoCulling(
-        _ undos: [UUID], photos: [Int64: URL], sequence: UInt64, queue: CullingQueue,
+        _ undos: [UUID], photos: [Int64: PhotoAddress], sequence: UInt64, queue: CullingQueue,
     ) async -> CullingWritten? {
         guard let core, let metadata else { return nil }
         let plans: [MetadataPlan]? = await core.change {
@@ -718,7 +718,7 @@ extension LibraryService {
 
     /// Runs each of `plans` in turn, off the main thread, in the library's changes' turn.
     private func runCulling(
-        _ plans: [CullingPlanning], photos: [Int64: URL], sequence: UInt64, queue: CullingQueue,
+        _ plans: [CullingPlanning], photos: [Int64: PhotoAddress], sequence: UInt64, queue: CullingQueue,
     ) async -> CullingWritten {
         guard let core, let metadata else { return CullingWritten() }
         return await core.change {
@@ -743,16 +743,16 @@ extension LibraryService {
         core?.live.photosChanged(ids)
     }
 
-    /// The badges the library's lists show for the photos at `urls`, from their rows; those it doesn't have
+    /// The badges the library's lists show for the photos `photos`, from their rows; those it doesn't have
     /// are left out.
-    func badges(of urls: [URL]) async -> [URL: PhotoMetadata] {
+    func badges(of photos: [PhotoAddress]) async -> [PhotoAddress: PhotoMetadata] {
         guard let core else { return [:] }
-        let ids = await Self.indexIDs(of: urls, in: core.index)
+        let ids = await Self.indexIDs(of: photos, in: core.index)
         return await (try? core.index.read { reader in
-            var found: [URL: PhotoMetadata] = [:]
-            for (url, id) in ids {
+            var found: [PhotoAddress: PhotoMetadata] = [:]
+            for (photo, id) in ids {
                 if let row = try reader.photo(id: id) {
-                    found[url] = LibraryFolderList.Mapping.item(row, url: url).metadata
+                    found[photo] = LibraryFolderList.Mapping.item(row, url: photo.url).metadata
                 }
             }
             return found
@@ -883,6 +883,40 @@ extension LibraryService {
         }) ?? [:]
     }
 
+    /// The index's IDs of the photos `photos` it has: a file's own row for its own edit, a version's row for a
+    /// version's (LIB-48), a folder's photos read at a time.
+    nonisolated static func indexIDs(of photos: [PhotoAddress], in index: LibraryIndex) async -> [PhotoAddress: Int64] {
+        let files = await indexIDs(of: photos.filter { $0.version == nil }.map(\.url), in: index)
+        var found = Dictionary(files.map { (PhotoAddress(url: $0.key), $0.value) }) { first, _ in first }
+        var versions: [String: [PhotoAddress]] = [:]
+        for photo in photos where photo.version != nil {
+            versions[path(photo.url.deletingLastPathComponent()), default: []].append(photo)
+        }
+        guard !versions.isEmpty else { return found }
+        let folders = versions
+        let rows = await (try? index.read { reader -> [PhotoAddress: Int64] in
+            var rows: [PhotoAddress: Int64] = [:]
+            for (path, photos) in folders {
+                guard let folder = try Self.folder(at: path, in: reader) else { continue }
+                var named: [String: [UUID: Int64]] = [:]
+                for row in try reader.versions(inFolder: folder.id) {
+                    if let version = row.version {
+                        named[row.name.precomposedStringWithCanonicalMapping, default: [:]][version] = row.id
+                    }
+                }
+                for photo in photos {
+                    let name = photo.url.lastPathComponent.precomposedStringWithCanonicalMapping
+                    if let version = photo.version, let id = named[name]?[version] {
+                        rows[photo] = id
+                    }
+                }
+            }
+            return rows
+        }) ?? [:]
+        found.merge(rows) { first, _ in first }
+        return found
+    }
+
     /// The index's folder at `path` (as `path(_:)` gives it), in whichever of Unicode's forms the index keeps
     /// its name: Foundation's URLs decompose names, and the index keeps them as listings gave them.
     nonisolated static func folder(at path: String, in reader: some IndexQueries) throws -> FolderRecord? {
@@ -933,17 +967,17 @@ struct CullingWritten: Sendable {
     /// The batches it ran, for their Undo.
     var batches: [UUID] = []
     /// The photos it has, by index ID.
-    var ids: [Int64: URL] = [:]
+    var ids: [Int64: PhotoAddress] = [:]
     /// The photos it leaves to their own saves: those it hasn't indexed.
-    var unindexed: [URL] = []
+    var unindexed: [PhotoAddress] = []
     /// Photos it left as they were: their sidecars can't be read or written here, or their batch failed and
     /// was rolled back.
-    var unwritten: [URL] = []
+    var unwritten: [PhotoAddress] = []
     /// Why each of `unwritten` was left, but for those of a batch that failed, which `errors` says.
-    var reasons: [URL: String] = [:]
+    var reasons: [PhotoAddress: String] = [:]
     var errors: [String] = []
 
-    mutating func failed(_ photos: [URL], _ error: any Error) {
+    mutating func failed(_ photos: [PhotoAddress], _ error: any Error) {
         unwritten += photos
         errors.append(String(describing: error))
     }

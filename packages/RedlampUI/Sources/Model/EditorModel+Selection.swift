@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 
 /// Several photos selected in the filmstrip or the grid, as in Lightroom: the active photo is the one
@@ -122,8 +123,13 @@ public extension EditorModel {
 
     /// Selects `url` alone, if it's shown.
     internal func selectOnly(_ url: URL?) {
+        selectOnly(url.map { PhotoAddress(url: $0) })
+    }
+
+    /// Selects the photo `photo` names alone, a file's own edit or one of its versions (LIB-48), if it's shown.
+    internal func selectOnly(_ photo: PhotoAddress?) {
         var only = PhotoSelection()
-        if let id = url.flatMap(library.photoID(of:)) {
+        if let id = photo.flatMap(library.photoID(of:)) {
             only.select(id, in: library.photoList)
         }
         photoSelection = only

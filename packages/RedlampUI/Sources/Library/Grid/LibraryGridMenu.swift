@@ -9,7 +9,10 @@ import RedlampDocument
 /// (LIB-41): opening and closing groups. Each ends with the cell style, Group By and the thumbnail size.
 @MainActor
 enum LibraryGridMenu {
-    static func menu(for photo: URL, model: EditorModel) -> NSMenu {
+    /// `address` is the cell's photo, a file's own edit or one of its versions (LIB-48): culling reaches it, and
+    /// what acts on files reaches its file.
+    static func menu(for address: PhotoAddress, model: EditorModel) -> NSMenu {
+        let photo = address.url
         let menu = NSMenu()
         menu.autoenablesItems = false
         let enabled = !model.isModalDialogOpen
@@ -25,7 +28,7 @@ enum LibraryGridMenu {
             },
         ], to: menu)
         add(health(for: photo, model: model), to: menu)
-        add(culling(for: photo, model: model), to: menu)
+        add(culling(for: address, model: model), to: menu)
         add([stacking(for: photo, model: model)] + focusStacking(for: photo, model: model), to: menu)
         if let photoMenu = FilmstripMenu.menu(for: photo, model: model) {
             menu.addItem(.separator())
@@ -213,7 +216,7 @@ enum LibraryGridMenu {
 
     /// Set Rating, Set Flag and Set Color Label, and the mark, for `photo` or the selection it's in, in the
     /// Library module.
-    static func culling(for photo: URL, model: EditorModel) -> [NSMenuItem] {
+    static func culling(for photo: PhotoAddress, model: EditorModel) -> [NSMenuItem] {
         guard model.module == .library, !model.isModalDialogOpen else { return [] }
         func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -245,10 +248,11 @@ enum LibraryGridMenu {
 
     /// The colour labels, the custom labels the photos have, and none, for `photo` or the selection it's in;
     /// the photo's own label ticked.
-    static func labels(for photo: URL, model: EditorModel) -> NSMenu {
+    static func labels(for photo: PhotoAddress, model: EditorModel) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let metadata = model.library.item(for: photo)?.metadata ?? PhotoMetadata()
+        let metadata = model.library.index(of: photo).flatMap { model.library.items.row($0) }?
+            .metadata ?? PhotoMetadata()
         for action in [ShortcutAction.labelRed, .labelYellow, .labelGreen, .labelBlue, .labelPurple] {
             let item = cull(action, photo, model)
             if case let .toggleLabel(label)? = CullingChange(action) {
@@ -278,7 +282,7 @@ enum LibraryGridMenu {
     }
 
     /// `action`'s item, for `photo` or the selection it's in.
-    private static func cull(_ action: ShortcutAction, _ photo: URL, _ model: EditorModel) -> NSMenuItem {
+    private static func cull(_ action: ShortcutAction, _ photo: PhotoAddress, _ model: EditorModel) -> NSMenuItem {
         let item = item(action.title, key: action.combos.first, enabled: true) {
             if let change = CullingChange(action) {
                 model.cull(change, fromCell: photo)

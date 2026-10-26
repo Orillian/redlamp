@@ -143,7 +143,7 @@
             try app.press(.rating3)
             try app.waitWritten()
             try app.wait("the photo it didn't reach said over the grid", timeout: 15) { model in
-                model.cullingProblem?.photos == [b]
+                model.cullingProblem?.photos.map(\.url) == [b]
             }
             try app.expect(try app.exists(.identifier("library.cullingProblem")), "No strip over the grid")
             let message = try app.main { $0.cullingProblem?.message ?? "" }

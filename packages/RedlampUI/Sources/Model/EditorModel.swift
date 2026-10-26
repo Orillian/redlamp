@@ -918,6 +918,7 @@ public final class EditorModel {
     /// Opens `url`. Unless `keepingSelection`, it becomes the only photo selected. In the Library module it
     /// becomes the active photo without opening: Develop opens it when it's shown (`openActivePhoto`).
     public func select(_ url: URL, keepingSelection: Bool = false) {
+        openingVersion = nil
         if url == selection, opening != nil, info?.url == url, engine.openIfReady(url) != nil {
             // Back before the next photo was read: the open one stays as it was, in a new visit,
             // since what was started on it may have read the other photo meanwhile.
@@ -1576,11 +1577,9 @@ public final class EditorModel {
             switch write {
             case let .sidecar(saved):
                 return saved
-            case let .metadata(change):
+            case let .metadata(change, version):
                 var changed = sidecar ?? Sidecar(recipe: EditRecipe())
-                var metadata = changed.metadata ?? PhotoMetadata()
-                change(&metadata)
-                changed.metadata = metadata.isEmpty ? nil : metadata
+                changed.changeMetadata(of: version, change)
                 return changed
             case .track, .forget:
                 return sidecar

@@ -1,5 +1,6 @@
 import AppKit
 import RedlampDesign
+import RedlampDocument
 
 /// A filmstrip photo's context menu (`docs/plans/2026-10-02-copy-paste-sync-design.md`), as in
 /// Lightroom and Finder: on a selected photo, the Photo menu's copy, paste and sync items, in
@@ -16,7 +17,7 @@ enum FilmstripMenu {
         }
         let menu = NSMenu()
         if culling {
-            add(LibraryGridMenu.culling(for: photo, model: model), to: menu)
+            add(LibraryGridMenu.culling(for: PhotoAddress(url: photo), model: model), to: menu)
             if model.module == .library, !model.isModalDialogOpen {
                 add([LibraryGridMenu.stacking(for: photo, model: model)], to: menu)
             }

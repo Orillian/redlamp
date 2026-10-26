@@ -252,7 +252,7 @@ struct RecentlyTrashedTests {
             model.showFolder(shoot)
             try await eventually { !library.showsRecentlyTrashed && library.count == 3 }
             model.select(photo(names[2]))
-            model.cull(.rating(4), from: photo(names[2]))
+            model.cull(.rating(4), from: PhotoAddress(url: photo(names[2])))
             try await eventually { !model.isWritingCulling && library.item(for: photo(names[2]))?.metadata.rating == 4 }
             #expect(model.perform(.undo))
             try await eventually { !model.isWritingCulling && library.item(for: photo(names[2]))?.metadata.rating == 0 }
@@ -284,7 +284,7 @@ struct RecentlyTrashedTests {
             model.showFolder(shoot)
             try await eventually { library.count == 2 }
             model.select(photo(names[1]))
-            model.cull(.rating(3), from: photo(names[1]))
+            model.cull(.rating(3), from: PhotoAddress(url: photo(names[1])))
             try await eventually { !model.isWritingCulling && library.item(for: photo(names[1]))?.metadata.rating == 3 }
             #expect(library.item(for: photo(names[1]))?.metadata.rating == 3)
             try await service.moveToTrash([photo(names[0])])
@@ -332,7 +332,7 @@ struct RecentlyTrashedTests {
                 model.activity.events.dropFirst(logged)
                     .contains { $0.kind == .error && $0.text.contains("in the Trash") }
             }
-            model.cull(.rating(5), from: place)
+            model.cull(.rating(5), from: PhotoAddress(url: place))
             try await eventually { !model.isWritingCulling && refused() }
             #expect(refused(), "the activity log says why")
             #expect(try Data(contentsOf: edit) == kept, "its sidecar in the Trash wasn't written")
