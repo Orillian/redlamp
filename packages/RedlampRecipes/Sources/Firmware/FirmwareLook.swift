@@ -317,7 +317,7 @@
         /// camera's JPEG at the profiler's flat points, each frame's exposure matched to the
         /// camera's midtones, with the input at `exposure` and `black` taken out, then rounded to
         /// two significant digits. Held out by leaving each frame out in turn, with `black` the
-        /// mean over the simulations goes from 1.71 to 1.51 (OKLab × 100), and Nostalgic Neg's,
+        /// mean over the simulations goes from 1.73 to 1.51 (OKLab × 100), and Nostalgic Neg's,
         /// whose shadows the camera renders deeper and whose colours less saturated, from 3.4 to 2.3.
         static let corrections: [FirmwareSimulation: OutputCorrection] = [
             .standard: .init(lightness: [-0.48, -0.79, -0.4, -1.2], chroma: -0.67),
