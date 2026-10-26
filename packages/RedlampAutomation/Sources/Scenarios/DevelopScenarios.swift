@@ -245,7 +245,7 @@
             try app.wait("the edit at process 18 or later, without Dehaze") { model in
                 model.recipe.processVersion >= 18 && model.value(.dehaze) == 0
             }
-            let clear = try settledHistogram(app)
+            let clear = try app.settledHistogram()
             @MainActor func lastStep(_ model: EditorModel) -> UUID? {
                 model.history.last?.id
             }
@@ -262,13 +262,13 @@
                 lastStep(model) != dragged && model.history.last?.title == "Dehaze"
             }
             app.covered(.parameter(.dehaze), via: .key)
-            let hazed = try settledHistogram(app)
+            let hazed = try app.settledHistogram()
 
             try app.expectRenders("the edit moved to process 17") { try app.main { $0.setProcessVersion(17) } }
-            let even = try settledHistogram(app)
+            let even = try app.settledHistogram()
             try app.click(.sliderLabel(.dehaze), count: 2)
             try app.wait("a double-click on its label to reset Dehaze") { $0.value(.dehaze) == 0 }
-            let evenClear = try settledHistogram(app)
+            let evenClear = try app.settledHistogram()
             let (veil, evenVeil) = (Tones(hazed), Tones(even))
             let (lift, evenLift) = (veil.darkest - Tones(clear).darkest, evenVeil.darkest - Tones(evenClear).darkest)
             app.recorder.write("note", [
@@ -287,30 +287,13 @@
             try app.wait("⌘Z: Dehaze -60 again at 17") { model in
                 abs(model.value(.dehaze) + 60) < 1e-6 && model.recipe.processVersion == 17
             }
-            try app.expect(try settledHistogram(app) == even, "Undo to Dehaze -60 at 17 renders otherwise than before")
+            try app.expect(try app.settledHistogram() == even, "Undo to Dehaze -60 at 17 renders otherwise than before")
             try app.press(.undo)
             try app.wait("⌘Z: back at process 18") { model in
                 abs(model.value(.dehaze) + 60) < 1e-6 && model.recipe.processVersion >= 18
             }
-            try app.expect(try settledHistogram(app) == hazed, "Back at 18, Dehaze -60 renders otherwise than before")
+            try app.expect(try app.settledHistogram() == hazed, "Back at 18, Dehaze -60 renders otherwise than before")
             try app.choose(.resetAll)
-        }
-
-        /// The histogram once renders have settled: no new frame for 0.4 s.
-        private static func settledHistogram(_ app: RunningApp, timeout: Double = 20) throws -> Histogram {
-            let deadline = Date().addingTimeInterval(timeout)
-            var (frames, since) = try (app.frames(), Date())
-            while Date().timeIntervalSince(since) < 0.4 {
-                try app.expect(Date() < deadline, "Renders didn't settle in \(Int(timeout)) s")
-                app.pause(0.05)
-                let now = try app.frames()
-                if now != frames {
-                    (frames, since) = (now, Date())
-                }
-            }
-            // The histogram follows the latest frame within 33 ms.
-            app.pause(0.1)
-            return try app.main { $0.histogram }
         }
 
         /// A render's tones from its histogram: its mean luminance and where its darkest 2 % end, 0 ... 1.
@@ -453,7 +436,7 @@
             try app.type(parameter.spec.formatted(value))
             try app.pressInWindow(KeyCombo(.character("\r")))
             try app.wait("\(parameter.spec.label) to be \(parameter.spec.formatted(value))") {
-                abs($0.value(parameter) - value) < 1e-6
+                abs($0.sliderValue(parameter) - value) < 1e-6
             }
         }
 

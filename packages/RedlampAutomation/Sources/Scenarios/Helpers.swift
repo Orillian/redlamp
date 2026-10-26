@@ -74,6 +74,23 @@
             try expectRendered(after: before, what)
         }
 
+        /// The histogram once renders have settled: no new frame for 0.4 s.
+        func settledHistogram(timeout: Double = 20) throws -> Histogram {
+            let deadline = Date().addingTimeInterval(timeout)
+            var (count, since) = try (frames(), Date())
+            while Date().timeIntervalSince(since) < 0.4 {
+                try expect(Date() < deadline, "Renders didn't settle in \(Int(timeout)) s")
+                pause(0.05)
+                let now = try frames()
+                if now != count {
+                    (count, since) = (now, Date())
+                }
+            }
+            // The histogram follows the latest frame within 33 ms.
+            pause(0.1)
+            return try main { $0.histogram }
+        }
+
         /// Sets a parameter as a scenario's set-up, and waits for the frame.
         func set(_ parameter: ParameterID, _ value: Double) throws {
             if try abs(self.value(parameter) - value) < 1e-9 {

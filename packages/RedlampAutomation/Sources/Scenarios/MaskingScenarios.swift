@@ -7,6 +7,7 @@
         static let all: [Scenario] = [
             gradients,
             brush,
+            pastThirtyTwoRasters,
             ranges,
             ai,
             objectsAndLandscape,
@@ -102,6 +103,172 @@
             try app.press(KeyCombo(.escape))
             try app.main { $0.deleteAllMasks() }
             app.covered(.feature("masking.brush"), via: .key)
+        }
+
+        /// #478: before process 18 a render drew an edit's first 32 brush and AI rasters, in the order of its
+        /// components, and no more. From 18 a mask past them is drawn; on an edit made before, it stays undrawn until
+        /// the edit is moved to the current version, as 0.3.3 rendered it.
+        static let pastThirtyTwoRasters = Scenario(
+            "masking.past-32-rasters",
+            "A Brush mask brushed past 33 others' rasters, and an Objects selection past them, show on their thumbnails "
+                + "and the photo; on the edit moved to process 17 they stay undrawn until it's moved to the current "
+                + "version",
+            claims: [.mask(.brush), .feature("masking.brush")],
+            needsFocus: true,
+        ) { app in
+            try app.openWorking()
+            try app.choose(.resetAll)
+            try app.wait("the edit at process 18 or later, without masks") { model in
+                model.recipe.processVersion >= 18 && model.masks.isEmpty
+            }
+            // The 33 rasters ahead: one mask of 33 Brush components, a stroke each across the photo's top third.
+            try app.main { model in
+                model.startDrawing(.brush)
+                for index in 0 ..< 33 {
+                    if index > 0, let mask = model.selectedMaskID {
+                        model.startDrawing(.brush, addingTo: mask)
+                    }
+                    let start = ImagePoint(x: 0.05 + 0.08 * Double(index % 11), y: 0.08 + 0.1 * Double(index / 11))
+                    model.beginStroke(at: start)
+                    model.continueStroke(to: ImagePoint(x: start.x + 0.04, y: start.y))
+                    model.endStroke()
+                }
+            }
+            try app.wait("a mask of 33 Brush components") { model in
+                model.masks.count == 1 && model.masks[0].components.count == 33
+            }
+            try putAway(app)
+
+            try app.press(.brushMask)
+            try app.wait("the brush, for a new mask") { $0.isBrushing }
+            if try app.focus() {
+                try app.drag(.canvas, from: CGPoint(x: 0.3, y: 0.7), by: CGVector(dx: 160, dy: 0), steps: 16)
+                app.covered(.mask(.brush), via: .mouse)
+            } else {
+                try app.main { model in
+                    model.beginStroke(at: ImagePoint(x: 0.3, y: 0.7))
+                    for step in 1 ... 10 {
+                        model.continueStroke(to: ImagePoint(x: 0.3 + 0.03 * Double(step), y: 0.7))
+                    }
+                    model.endStroke()
+                }
+                app.covered(.mask(.brush), via: .model)
+            }
+            try app.wait("a new Brush mask after them") { $0.masks.count == 2 }
+            let brushed = try app.main { $0.masks[1].id }
+            try expectCovering([brushed], "At process 18 the Brush mask past 33 rasters", app: app)
+            try DevelopScenarios.typeValue(1.5, into: .localExposure, app: app)
+            app.covered(.parameter(.localExposure), via: .key)
+
+            var selected: UUID?
+            if try app.main({ $0.availableAIMaskKinds.contains(.objects) }) {
+                try app.main { $0.armObjectSelection() }
+                try app.run("selecting an object past the 33 rasters", timeout: 240) {
+                    await $0.selectObject(at: ImagePoint(x: 0.5, y: 0.55))
+                }
+                selected = try app.main { model in
+                    model.masks.count == 3 && model.masks[2].components.contains { $0.shape.kind == .objects }
+                        ? model.masks[2].id : nil
+                }
+                if let selected {
+                    try expectCovering([selected], "At process 18 the Objects selection past 34 rasters", app: app)
+                    app.covered([.mask(.objects), .feature("masking.objects")], via: .model)
+                } else {
+                    try app.recorder.write("note", ["objects": app.main { $0.maskMessage } ?? "no Objects mask"])
+                }
+            } else {
+                app.recorder.write("note", ["objects": "Segment Anything 2.1 isn't downloaded"])
+            }
+            try putAway(app)
+
+            let past = [brushed] + (selected.map { [$0] } ?? [])
+            let thumbnails = try app.main { model in past.compactMap { model.maskThumbnails[$0] } }
+            try app.expectRenders("the edit moved to process 17") { try app.main { $0.setProcessVersion(17) } }
+            try app.wait("the thumbnails drawn again at process 17") { model in
+                past.allSatisfy { id in
+                    model.maskThumbnails[id].map { thumbnail in !thumbnails.contains { $0 === thumbnail } } ?? false
+                }
+            }
+            let drawn = try app.main { model in past.filter { model.maskPins[$0] != nil } }
+            try app.expect(
+                drawn.isEmpty,
+                "At process 17, \(drawn.count) of the \(past.count) masks past 32 rasters cover something on their "
+                    + "thumbnails, where 0.3.3 drew none",
+            )
+            let older = try shownAndHidden(brushed, app: app)
+            let leaked = percent(moved(older.shown, older.hidden))
+            try app.expect(
+                older.shown == older.hidden,
+                "At process 17 the Brush mask past 32 rasters shows on the photo: hiding it moved \(leaked) of its "
+                    + "pixels",
+            )
+
+            let current = EditRecipe.currentProcessVersion
+            try app.expectRenders("the edit moved to Version \(current)") {
+                try app.main { $0.setProcessVersion(current) }
+            }
+            try expectCovering(past, "Moved to Version \(current), the masks past 32 rasters", app: app)
+            let newer = try shownAndHidden(brushed, app: app)
+            let (lit, unlit) = (DevelopScenarios.Tones(newer.shown), DevelopScenarios.Tones(newer.hidden))
+            try app.expect(
+                newer.shown != newer.hidden && lit.mean > unlit.mean,
+                "Moved to Version \(current), the Brush mask past 32 rasters doesn't show its Exposure on the photo: "
+                    + "\(unlit) hidden, \(lit) shown",
+            )
+            app.recorder.write("note", [
+                "Exposure +1.5 on the Brush mask past 33 rasters, the photo's pixels it moves": "process 17: "
+                    + "\(leaked); Version \(current): \(percent(moved(newer.hidden, newer.shown)))",
+            ])
+            try app.main { $0.deleteAllMasks() }
+            try app.choose(.resetAll)
+            app.covered(.feature("masking.brush"), via: .key)
+        }
+
+        /// The photo's histogram with `mask` shown, then hidden; it's shown again after.
+        private static func shownAndHidden(
+            _ mask: UUID, app: RunningApp,
+        ) throws -> (shown: Histogram, hidden: Histogram) {
+            let shown = try app.settledHistogram()
+            try app.expectRenders("the mask hidden") { try app.main { $0.toggleMaskVisibility(mask) } }
+            let hidden = try app.settledHistogram()
+            try app.expectRenders("the mask shown again") { try app.main { $0.toggleMaskVisibility(mask) } }
+            return (shown, hidden)
+        }
+
+        /// The share of a render's pixels in another luminance bin of `other`'s histogram.
+        private static func moved(_ histogram: Histogram, _ other: Histogram) -> Double {
+            let differences = zip(histogram.luminance, other.luminance).reduce(0.0) { sum, bins in
+                sum + abs(Double(bins.0) - Double(bins.1))
+            }
+            return differences / 2 / Double(max(histogram.totalCount, 1))
+        }
+
+        private static func percent(_ share: Double) -> String {
+            String(format: "%.3f %%", share * 100)
+        }
+
+        /// Escape while something is armed puts it away; with nothing armed it would leave the Masking tool, whose
+        /// panel draws the masks' thumbnails.
+        private static func putAway(_ app: RunningApp) throws {
+            if try app.main({ $0.drawingKind != nil }) {
+                try app.press(KeyCombo(.escape))
+            }
+            try app.wait("nothing armed, in the Masking tool") { $0.drawingKind == nil && $0.activeTool == .masking }
+        }
+
+        /// Waits until each of `masks` has a thumbnail that covers something: the Masks panel draws them a moment
+        /// after their coverage may have changed, and a black one, covering nothing, has no pin.
+        private static func expectCovering(_ masks: [UUID], _ what: String, app: RunningApp) throws {
+            do {
+                try app.wait("\(what) to cover what it was drawn on", timeout: 10) { model in
+                    masks.allSatisfy { model.maskPins[$0] != nil }
+                }
+            } catch {
+                let black = try app.main { model in
+                    masks.filter { model.maskThumbnails[$0] != nil && model.maskPins[$0] == nil }.count
+                }
+                throw ScenarioFailure("\(what) covers nothing: \(black) of \(masks.count) thumbnails are black")
+            }
         }
 
         static let ranges = Scenario(
