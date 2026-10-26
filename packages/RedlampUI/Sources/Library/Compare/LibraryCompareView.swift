@@ -125,15 +125,15 @@ final class LibraryCompareView: NSView {
         ]
     }
 
-    private func show(select: URL?, candidate: URL?, active: CompareSide) {
-        let urls = [select, candidate].compactMap(\.self)
-        details.request(urls.compactMap(model.library.item(for:))) { [weak self] _ in self?.showDetails() }
-        images.protected = Set(urls)
+    private func show(select: PhotoAddress?, candidate: PhotoAddress?, active: CompareSide) {
+        let photos = [select, candidate].compactMap(\.self)
+        details.request(photos.compactMap(model.comparedItem)) { [weak self] _ in self?.showDetails() }
+        images.protected = Set(photos.map(\.url))
         for (side, half) in halves {
-            let url = side == .select ? select : candidate
-            half.photo.show(url)
+            let photo = side == .select ? select : candidate
+            half.photo.show(photo)
             half.photo.isActive = side == active
-            half.item = url.flatMap(model.library.item(for:))
+            half.item = photo.flatMap(model.comparedItem)
         }
         showDetails()
         swap.isEnabled = candidate != nil
@@ -151,12 +151,12 @@ final class LibraryCompareView: NSView {
         }
     }
 
-    /// The badges of the photos shown, as a culling change or the library leaves them.
+    /// The badges of the photos shown, each its own row's, as a culling change or the library leaves them.
     private func libraryChanged(_ diff: LibraryDiff) {
         for half in halves.values {
-            guard let url = half.photo.url,
-                  diff.reset || model.library.index(of: url).map(diff.updated.contains) == true else { continue }
-            half.item = model.library.item(for: url)
+            guard let photo = half.photo.address,
+                  diff.reset || model.library.index(of: photo).map(diff.updated.contains) == true else { continue }
+            half.item = model.comparedItem(photo)
         }
     }
 
@@ -238,10 +238,10 @@ final class CompareHalfView: NSView, ThemeFollowing {
     private let name = NSTextField(labelWithString: "")
     private let caption = NSTextField(labelWithString: "")
 
-    /// The photo shown, for its name and badges.
+    /// The photo shown, for its name, a version's with its file's (LIB-48), and its badges.
     var item: LibraryItem? {
         didSet {
-            name.stringValue = item?.name ?? ""
+            name.stringValue = item?.title ?? ""
             badges.metadata = item?.metadata
         }
     }

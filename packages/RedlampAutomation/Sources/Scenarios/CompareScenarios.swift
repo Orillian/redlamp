@@ -12,7 +12,7 @@
 
         /// Compare's select and candidate, by name.
         @MainActor private static func compared(_ model: EditorModel) -> [String] {
-            [model.libraryCompare.select, model.libraryCompare.candidate].map { $0?.lastPathComponent ?? "-" }
+            [model.libraryCompare.select, model.libraryCompare.candidate].map { $0?.url.lastPathComponent ?? "-" }
         }
 
         @MainActor private static func firstResponder() -> String {
@@ -117,10 +117,12 @@
                 try app.expect(try app.exists(.identifier("library.survey")), "Survey isn't on screen")
                 do {
                     try app
-                        .wait("the four cells' photos laid out") { $0.surveyPhotos.map(\.lastPathComponent) == shown }
+                        .wait("the four cells' photos laid out") {
+                            $0.surveyPhotos.map(\.url.lastPathComponent) == shown
+                        }
                 } catch {
                     let state = try app.main { model in
-                        "Survey shows \(model.surveyPhotos.map(\.lastPathComponent)), of the selection "
+                        "Survey shows \(model.surveyPhotos.map(\.url.lastPathComponent)), of the selection "
                             + "\(model.selectedPhotos.map(\.lastPathComponent)), \(model.selection?.lastPathComponent ?? "") active"
                     }
                     throw ScenarioFailure("\(error): \(state); the cells are \(Array(cells.prefix(4)))")
@@ -133,16 +135,16 @@
                         }
                 }
                 try app.expect(
-                    try app.main { $0.surveyActivePhoto?.lastPathComponent } == shown[3],
+                    try app.main { $0.surveyActivePhoto?.url.lastPathComponent } == shown[3],
                     "The last isn't active",
                 )
 
                 try app.press(.previousPhoto)
-                try app.wait("←: \(shown[2]) active") { $0.surveyActivePhoto?.lastPathComponent == shown[2] }
+                try app.wait("←: \(shown[2]) active") { $0.surveyActivePhoto?.url.lastPathComponent == shown[2] }
                 try app.press(.nextPhoto)
-                try app.wait("→: \(shown[3]) active") { $0.surveyActivePhoto?.lastPathComponent == shown[3] }
+                try app.wait("→: \(shown[3]) active") { $0.surveyActivePhoto?.url.lastPathComponent == shown[3] }
                 try app.click(.identifier("survey.\(shown[1])"))
-                try app.wait("a click: \(shown[1]) active") { $0.surveyActivePhoto?.lastPathComponent == shown[1] }
+                try app.wait("a click: \(shown[1]) active") { $0.surveyActivePhoto?.url.lastPathComponent == shown[1] }
 
                 let others = cells[0] + cells[2]
                 let kept = try others.map { try app.shown($0).rating }
@@ -159,10 +161,10 @@
                 try app.wait("×: \(shown[1]) out of the selection, Survey staying") { model in
                     model.libraryView == .survey && !model.selectedPhotos
                         .contains { cells[1].contains($0.lastPathComponent) }
-                        && model.surveyPhotos.map(\.lastPathComponent) == [shown[0], shown[2], shown[3]]
+                        && model.surveyPhotos.map(\.url.lastPathComponent) == [shown[0], shown[2], shown[3]]
                 }
                 try app.expect(
-                    try app.main { $0.surveyActivePhoto?.lastPathComponent } == shown[2],
+                    try app.main { $0.surveyActivePhoto?.url.lastPathComponent } == shown[2],
                     "\(shown[2]) isn't active",
                 )
                 try app.press(KeyCombo(.escape))

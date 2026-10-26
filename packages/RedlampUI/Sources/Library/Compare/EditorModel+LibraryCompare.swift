@@ -21,10 +21,11 @@ public final class LibraryCompare {
     /// The most photos Survey lays out: a selection of thousands shows these, from the active one's place.
     public static let surveyLimit = 64
 
-    /// The photo the candidates are compared with.
-    public internal(set) var select: URL?
+    /// The photo the candidates are compared with: a file's own edit or one of its versions (LIB-48), each a photo of
+    /// its own, so a version can be compared with its file or with another of its versions.
+    public internal(set) var select: PhotoAddress?
     /// The photo compared with the select; nil when the source has no other.
-    public internal(set) var candidate: URL?
+    public internal(set) var candidate: PhotoAddress?
     /// The side whose photo is active, which a photo chosen elsewhere, in the filmstrip, takes the place of.
     public internal(set) var activeSide = CompareSide.select
     /// Whether the two zoom and pan together, as Lightroom Classic's lock has them.
@@ -35,7 +36,7 @@ public final class LibraryCompare {
     /// The other photo's zoom and place while unlinked; linked, it shows the active one's.
     var unlinked = (zoom: LoupeZoom.fit, focus: CGPoint(x: 0.5, y: 0.5))
 
-    public func photo(_ side: CompareSide) -> URL? {
+    public func photo(_ side: CompareSide) -> PhotoAddress? {
         side == .select ? select : candidate
     }
 }
@@ -74,11 +75,16 @@ public extension EditorModel {
         module == .library && (libraryView == .compare || libraryView == .survey)
     }
 
-    /// The photo whose cell stands for `url`'s in the grid: itself, or the first of the closed stack it's in.
-    internal func cellPhoto(of url: URL?, in order: GridOrder) -> URL? {
-        guard let url, let id = library.photoID(of: url) else { return nil }
-        guard let cell = order.cell(for: id), cell != id else { return url }
-        return library.url(ofPhoto: cell)
+    /// The photo whose cell stands for `photo`'s in the grid: itself, or the first of the closed stack it's in.
+    internal func cellPhoto(of photo: PhotoAddress?, in order: GridOrder) -> PhotoAddress? {
+        guard let photo, let id = library.photoID(of: photo) else { return nil }
+        guard let cell = order.cell(for: id), cell != id else { return photo }
+        return library.address(ofPhoto: cell)
+    }
+
+    /// The row of `photo`, a file's own or one of its versions, as Compare and Survey show it.
+    internal func comparedItem(_ photo: PhotoAddress) -> LibraryItem? {
+        library.index(of: photo).map { library.items[$0] }
     }
 
     /// The photos cell `id` stands for: a closed stack's, a raw and its JPEG; else the photo alone.
@@ -94,12 +100,12 @@ public extension EditorModel {
     @discardableResult
     func showCompare() -> Bool {
         let order = gridOrder
-        guard let active = cellPhoto(of: selection, in: order),
+        guard let active = cellPhoto(of: activeAddress, in: order),
               let id = library.photoID(of: active) else { return false }
         let compare = libraryCompare
         let candidate = selectedCell(after: id, in: order) ?? order.cell(1, from: id) ?? order.cell(-1, from: id)
         compare.select = active
-        compare.candidate = candidate.flatMap(library.url(ofPhoto:))
+        compare.candidate = candidate.flatMap(library.address(ofPhoto:))
         if compare.activeSide != .select {
             activateCompared(.select)
         }
@@ -145,11 +151,11 @@ public extension EditorModel {
             next = order.cell(offset, from: found)
         }
         guard let next else { return false }
-        guard let url = library.url(ofPhoto: next) else {
+        guard let photo = library.address(ofPhoto: next) else {
             library.askForRows(ofPhotos: [next])
             return false
         }
-        compare.candidate = url
+        compare.candidate = photo
         selectCompared()
         return true
     }
@@ -164,7 +170,7 @@ public extension EditorModel {
         let next = order.cell(1, from: id) ?? order.cell(-1, from: id)
         let old = compare.select
         compare.select = promoted
-        compare.candidate = next.flatMap(library.url(ofPhoto:)) ?? old
+        compare.candidate = next.flatMap(library.address(ofPhoto:)) ?? old
         compare.activeSide = .select
         selectCompared()
         return true
@@ -238,7 +244,7 @@ public extension EditorModel {
         if selected != photoSelection {
             photoSelection = selected
         }
-        if let active, active != selection {
+        if let active, active != activeAddress {
             select(active, keepingSelection: true)
         }
     }
@@ -249,8 +255,8 @@ public extension EditorModel {
         guard libraryView == .compare else { return }
         let compare = libraryCompare
         let order = gridOrder
-        let listed = { (url: URL?) -> Bool in url.flatMap(self.library.photoID(of:)) != nil }
-        if let active = cellPhoto(of: selection, in: order) {
+        let listed = { (photo: PhotoAddress?) -> Bool in photo.flatMap(self.library.photoID(of:)) != nil }
+        if let active = cellPhoto(of: activeAddress, in: order) {
             if active == compare.select {
                 activateCompared(.select)
             } else if active == compare.candidate {
@@ -263,13 +269,14 @@ public extension EditorModel {
             }
         }
         if !listed(compare.select) {
-            compare.select = listed(compare.candidate) ? compare.candidate : cellPhoto(of: selection, in: order)
+            compare.select = listed(compare.candidate) ? compare.candidate : cellPhoto(of: activeAddress, in: order)
             compare.candidate = nil
             compare.activeSide = .select
         }
         if !listed(compare.candidate) || compare.candidate == compare.select,
            let id = compare.select.flatMap(library.photoID(of:)) {
-            compare.candidate = (order.cell(1, from: id) ?? order.cell(-1, from: id)).flatMap(library.url(ofPhoto:))
+            compare.candidate = (order.cell(1, from: id) ?? order.cell(-1, from: id))
+                .flatMap(library.address(ofPhoto:))
         }
         selectCompared()
     }
@@ -285,8 +292,9 @@ public extension EditorModel {
     }
 
     /// The photos Survey shows: a photo for each of the grid's cells the selection has photos of, the active one's
-    /// among them, in the grid's order, at most `LibraryCompare.surveyLimit` of them from the active one's place.
-    var surveyPhotos: [URL] {
+    /// among them, in the grid's order, at most `LibraryCompare.surveyLimit` of them from the active one's place. A
+    /// file's versions are photos of their own, beside it (LIB-48).
+    var surveyPhotos: [PhotoAddress] {
         let order = gridOrder
         let active = selectionID.map { order.cell(for: $0) ?? $0 }
         var cells = selectedCells(in: order)
@@ -295,12 +303,12 @@ public extension EditorModel {
             let start = min(active.flatMap(cells.firstIndex(of:)) ?? 0, cells.count - limit)
             cells = Array(cells[start ..< start + limit])
         }
-        return cells.compactMap(library.url(ofPhoto:))
+        return cells.compactMap(library.address(ofPhoto:))
     }
 
     /// The photo Survey marks active: the active photo's cell's.
-    var surveyActivePhoto: URL? {
-        cellPhoto(of: selection, in: gridOrder)
+    var surveyActivePhoto: PhotoAddress? {
+        cellPhoto(of: activeAddress, in: gridOrder)
     }
 
     /// ← and → in Survey: the photo before or after the active one among those shown becomes active. False at either
@@ -315,22 +323,27 @@ public extension EditorModel {
     }
 
     /// A click on a photo Survey shows: it becomes the active photo, the selection staying as it is.
-    func activateSurveyed(_ url: URL) {
-        guard url != selection else { return }
-        if let id = library.photoID(of: url), photoSelection.contains(id) {
+    func activateSurveyed(_ photo: PhotoAddress) {
+        guard photo != activeAddress else { return }
+        if let id = library.photoID(of: photo), photoSelection.contains(id) {
             photoSelection.activate(id)
         }
-        select(url, keepingSelection: true)
+        select(photo, keepingSelection: true)
+    }
+
+    /// `activateSurveyed(_:)` for the file's own photo at `url`.
+    func activateSurveyed(_ url: URL) {
+        activateSurveyed(PhotoAddress(url: url))
     }
 
     /// A photo's × in Survey: the photos its cell stands for taken out of the selection, and so out of Survey, which
     /// stays; when the active photo was among them, the photo after it in Survey becomes active, else the one before
     /// it. The last photo stays.
     @discardableResult
-    func removeFromSurvey(_ url: URL) -> Bool {
+    func removeFromSurvey(_ photo: PhotoAddress) -> Bool {
         let order = gridOrder
         let shown = surveyPhotos
-        guard shown.count > 1, let id = library.photoID(of: url) else { return false }
+        guard shown.count > 1, let id = library.photoID(of: photo) else { return false }
         let cell = order.cell(for: id) ?? id
         let removed = photos(ofCell: cell, in: order)
         let list = library.photoList
@@ -339,7 +352,7 @@ public extension EditorModel {
             selected.toggle(photo, in: list)
         }
         guard !selected.isEmpty, selected != photoSelection else { return false }
-        let place = library.url(ofPhoto: cell).flatMap(shown.firstIndex(of:))
+        let place = library.address(ofPhoto: cell).flatMap(shown.firstIndex(of:))
         let next = place.flatMap { place in
             shown.indices.contains(place + 1) ? shown[place + 1] : place > 0 ? shown[place - 1] : nil
         }
@@ -348,12 +361,18 @@ public extension EditorModel {
             selected.activate(nextID)
             photoSelection = selected
             select(next, keepingSelection: true)
-            selectionAnchor = PhotoAddress(url: next)
+            selectionAnchor = next
         } else {
             photoSelection = selected
         }
         activity.record(.action, "Remove from Survey")
         return true
+    }
+
+    /// `removeFromSurvey(_:)` for the file's own photo at `url`.
+    @discardableResult
+    func removeFromSurvey(_ url: URL) -> Bool {
+        removeFromSurvey(PhotoAddress(url: url))
     }
 
     // MARK: - Keys
@@ -420,7 +439,7 @@ public extension EditorModel {
             return comparing ? libraryCompare.select != nil && libraryCompare.candidate != nil : nil
         default:
             guard CullingChange(action) != nil else { return nil }
-            return selection.flatMap(library.index(of:)) != nil
+            return activeAddress.flatMap(library.index(of:)) != nil
         }
     }
 

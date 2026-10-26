@@ -32,6 +32,10 @@ struct LibraryCompareTests {
         urls.map { $0?.lastPathComponent ?? "-" }
     }
 
+    private func names(_ photos: [PhotoAddress?]) -> [String] {
+        names(photos.map { $0?.url })
+    }
+
     /// A turn for the views' trackers, then the window laid out, as a display cycle lays it out on screen.
     private func settle(_ fixture: ModuleFixture, _ modules: ModuleWindow) async throws {
         try await fixture.settle()
@@ -134,22 +138,22 @@ struct LibraryCompareTests {
         model.click(photos[2])
         model.perform(.compareView)
         let compare = model.libraryCompare
-        #expect(compare.candidate == photos[3])
-        #expect(model.perform(.nextPhoto) && compare.candidate == photos[4])
+        #expect(compare.candidate?.url == photos[3])
+        #expect(model.perform(.nextPhoto) && compare.candidate?.url == photos[4])
         #expect(
             model.selection == photos[2] && model.selectedPhotos == [photos[2], photos[4]],
             "the select stays active",
         )
         #expect(!model.canPerform(.nextPhoto), "→ at the last photo")
         model.perform(.nextPhoto)
-        #expect(compare.candidate == photos[4])
+        #expect(compare.candidate?.url == photos[4])
         model.perform(.previousPhoto)
-        #expect(compare.candidate == photos[3])
+        #expect(compare.candidate?.url == photos[3])
         model.perform(.previousPhoto)
-        #expect(compare.candidate == photos[1], "← goes past the select")
+        #expect(compare.candidate?.url == photos[1], "← goes past the select")
         model.perform(.previousPhoto)
-        #expect(compare.candidate == photos[0] && !model.canPerform(.previousPhoto))
-        #expect(compare.select == photos[2] && model.libraryView == .compare)
+        #expect(compare.candidate?.url == photos[0] && !model.canPerform(.previousPhoto))
+        #expect(compare.select?.url == photos[2] && model.libraryView == .compare)
     }
 
     @Test func `↑ makes the candidate the select and the next photo the candidate, and ↓ swaps the two`() async throws {
@@ -196,7 +200,7 @@ struct LibraryCompareTests {
         #expect(model.perform(.flagPick))
         #expect(metadata(1).flag == .pick && metadata(0).flag == nil, "the candidate alone")
         #expect(model.perform(.rating2, shifted: true))
-        #expect(metadata(1).rating == 2 && model.libraryCompare.candidate == photos[2])
+        #expect(metadata(1).rating == 2 && model.libraryCompare.candidate?.url == photos[2])
         #expect(model.selection == photos[2] && model.libraryCompare.activeSide == .candidate)
         #expect(metadata(2).rating == 0)
         #expect(model.perform(.undo) && metadata(1).rating == 0, "Undo takes back the candidate's rating")
@@ -307,7 +311,7 @@ struct LibraryCompareTests {
         model.activateCompared(.candidate)
         #expect(model.perform(.loupeView) && model.libraryView == .loupe && model.selection == photos[2])
         #expect(model.selectedPhotos == [photos[1], photos[2]])
-        #expect(model.perform(.compareView) && model.libraryCompare.select == photos[2])
+        #expect(model.perform(.compareView) && model.libraryCompare.select?.url == photos[2])
         #expect(model.perform(.gridView) && model.libraryView == .grid && model.selectedPhotos == [
             photos[1],
             photos[2],
@@ -330,7 +334,7 @@ struct LibraryCompareTests {
         try await settle(fixture, modules)
         let view = modules.content.library.survey
         #expect(!view.isHidden && modules.window.firstResponder === view)
-        #expect(view.photos == Array(photos[1 ... 6]))
+        #expect(view.photos.map(\.url) == Array(photos[1 ... 6]))
         try await fixture.eventually { view.cells.prefix(6).allSatisfy { $0.photo.image != nil } }
         let frames = view.cells.prefix(6).map(\.frame)
         for (index, frame) in frames.enumerated() {
@@ -408,12 +412,12 @@ struct LibraryCompareTests {
         #expect(active.remove.accessibilityPerformPress())
         #expect(model.selectedPhotos == Array(photos[1 ... 3]) && model.selection == photos[3])
         try await fixture.settle()
-        #expect(model.libraryView == .survey && view.photos == Array(photos[1 ... 3]))
+        #expect(model.libraryView == .survey && view.photos.map(\.url) == Array(photos[1 ... 3]))
         #expect(view.cell(showing: photos[3])?.photo.isActive == true)
         #expect(view.cell(showing: photos[1])?.remove.accessibilityPerformPress() == true)
         #expect(view.cell(showing: photos[2])?.remove.accessibilityPerformPress() == true)
         try await fixture.settle()
-        #expect(view.photos == [photos[3]] && model.libraryView == .survey)
+        #expect(view.photos.map(\.url) == [photos[3]] && model.libraryView == .survey)
         #expect(view.cell(showing: photos[3])?.remove.isEnabled == false)
         #expect(!model.removeFromSurvey(photos[3]) && model.selection == photos[3], "the last photo stays")
     }

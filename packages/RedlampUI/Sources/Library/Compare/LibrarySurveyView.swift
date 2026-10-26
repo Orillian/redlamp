@@ -18,8 +18,8 @@ final class LibrarySurveyView: NSView {
     private let details: PhotoDetailsCache
     /// A cell for each photo shown, in order, then those kept for later.
     private(set) var cells: [SurveyCell] = []
-    /// The photos shown, in order.
-    private(set) var photos: [URL] = []
+    /// The photos shown, in order: files' own and versions (LIB-48).
+    private(set) var photos: [PhotoAddress] = []
     private var trackers: [Tracker] = []
     private var libraryObservation: LibraryObservation?
     private var editObservation: LibraryObservation?
@@ -76,24 +76,29 @@ final class LibrarySurveyView: NSView {
         ]
     }
 
-    /// The cell showing `url`, for the tests and the regression suite.
-    func cell(showing url: URL) -> SurveyCell? {
-        photos.firstIndex(of: url).map { cells[$0] }
+    /// The cell showing the photo `photo` names, for the tests and the regression suite.
+    func cell(showing photo: PhotoAddress) -> SurveyCell? {
+        photos.firstIndex(of: photo).map { cells[$0] }
     }
 
-    private func show(_ shown: [URL], active: URL?) {
+    /// The cell showing the file's own photo at `url`.
+    func cell(showing url: URL) -> SurveyCell? {
+        cell(showing: PhotoAddress(url: url))
+    }
+
+    private func show(_ shown: [PhotoAddress], active: PhotoAddress?) {
         if shown != photos {
             photos = shown
             while cells.count < shown.count {
                 let cell = SurveyCell(photo: ComparePhotoView(model: model, images: images))
-                cell.photo.onPress = { [weak self, weak cell] _ in self?.pressed(cell?.url) }
+                cell.photo.onPress = { [weak self, weak cell] _ in self?.pressed(cell?.photo.address) }
                 cell.photo.onClick = { [weak self, weak cell] _, _, count in
-                    guard count == 2, let url = cell?.url else { return }
-                    self?.model.openInLoupe(url)
+                    guard count == 2, let photo = cell?.photo.address else { return }
+                    self?.model.openInLoupe(photo)
                 }
                 cell.remove.onPress = { [weak self, weak cell] in
-                    guard let url = cell?.url else { return }
-                    self?.model.removeFromSurvey(url)
+                    guard let photo = cell?.photo.address else { return }
+                    self?.model.removeFromSurvey(photo)
                 }
                 cell.photo.onReshape = { [weak self, weak cell] in
                     self?.needsLayout = true
@@ -102,15 +107,14 @@ final class LibrarySurveyView: NSView {
                 addSubview(cell)
                 cells.append(cell)
             }
-            let items = shown.compactMap(model.library.item(for:))
+            let items = shown.compactMap(model.comparedItem)
             details.request(items) { [weak self] _ in self?.showDetails() }
-            images.protected = Set(shown)
+            images.protected = Set(shown.map(\.url))
             for (index, cell) in cells.enumerated() {
-                let url = index < shown.count ? shown[index] : nil
-                cell.isHidden = url == nil
-                cell.url = url
-                cell.photo.show(url)
-                cell.item = url.flatMap(model.library.item(for:))
+                let photo = index < shown.count ? shown[index] : nil
+                cell.isHidden = photo == nil
+                cell.photo.show(photo)
+                cell.item = photo.flatMap(model.comparedItem)
             }
             showDetails()
             needsLayout = true
@@ -124,7 +128,7 @@ final class LibrarySurveyView: NSView {
     private func showDetails() {
         var resized = false
         for cell in cells.prefix(photos.count) {
-            guard let url = cell.url, let details = details.details(for: url), let width = details.width,
+            guard let url = cell.photo.url, let details = details.details(for: url), let width = details.width,
                   let height = details.height, width > 0, height > 0 else { continue }
             let size = CGSize(width: width, height: height)
             if cell.photo.pixelSize != size, !cell.photo.showsFullPhoto {
@@ -137,17 +141,18 @@ final class LibrarySurveyView: NSView {
         }
     }
 
+    /// The badges of the photos shown, each its own row's.
     private func libraryChanged(_ diff: LibraryDiff) {
         for cell in cells.prefix(photos.count) {
-            guard let url = cell.url,
-                  diff.reset || model.library.index(of: url).map(diff.updated.contains) == true else { continue }
-            cell.item = model.library.item(for: url)
+            guard let photo = cell.photo.address,
+                  diff.reset || model.library.index(of: photo).map(diff.updated.contains) == true else { continue }
+            cell.item = model.comparedItem(photo)
         }
     }
 
     private func editsShown(_ edited: [PhotoAddress]) {
         let urls = edited.map(\.url)
-        for cell in cells.prefix(photos.count) where cell.url.map(urls.contains) == true {
+        for cell in cells.prefix(photos.count) where cell.photo.url.map(urls.contains) == true {
             cell.photo.refresh()
         }
     }
@@ -212,10 +217,10 @@ final class LibrarySurveyView: NSView {
 
     // MARK: - Mouse and keys
 
-    private func pressed(_ url: URL?) {
+    private func pressed(_ photo: PhotoAddress?) {
         window?.makeFirstResponder(self)
-        if let url {
-            model.activateSurveyed(url)
+        if let photo {
+            model.activateSurveyed(photo)
         }
     }
 
@@ -239,7 +244,7 @@ final class LibrarySurveyView: NSView {
         case 126: moveVertically(by: -1)
         case 125: moveVertically(by: 1)
         case 36, 76, 49, 6:
-            guard let active = model.selection else { return }
+            guard let active = model.activeAddress else { return }
             model.openInLoupe(active, zoomed: event.keyCode == 6 ? true : nil)
         default: super.keyDown(with: event)
         }
@@ -261,20 +266,15 @@ final class SurveyCell: NSView, ThemeFollowing {
         return [surround, LibraryLook.surroundTokens.secondaryLabel.nsColor]
     }
 
-    /// The photo shown.
-    var url: URL? {
-        didSet {
-            let name = url?.lastPathComponent ?? ""
-            photo.setAccessibilityIdentifier("survey.\(name)")
-            remove.setAccessibilityIdentifier("survey.remove.\(name)")
-            remove.toolTip = "Remove \(name) from the Survey"
-        }
-    }
-
-    /// The photo's row, for its badges.
+    /// The photo's row, for its badges and its name: its file's, and a version's after it (`IMG_0001.CR3:Copy 1`),
+    /// so a file's photos each have identifiers of their own.
     var item: LibraryItem? {
         didSet {
             badges.metadata = item?.metadata
+            let name = item?.accessibilityName ?? photo.url?.lastPathComponent ?? ""
+            photo.setAccessibilityIdentifier("survey.\(name)")
+            remove.setAccessibilityIdentifier("survey.remove.\(name)")
+            remove.toolTip = "Remove \(item?.title ?? name) from the Survey"
         }
     }
 

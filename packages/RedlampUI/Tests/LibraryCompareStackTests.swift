@@ -113,6 +113,10 @@ struct LibraryCompareStackTests {
         urls.map { $0?.lastPathComponent ?? "-" }
     }
 
+    private func names(_ photos: [PhotoAddress?]) -> [String] {
+        names(photos.map { $0?.url })
+    }
+
     @Test func `Compare's photos are the grid's cells, and a culling key reaches every photo of the active one`()
         async throws {
         defer { cleanUp() }
@@ -125,7 +129,7 @@ struct LibraryCompareStackTests {
         let compare = model.libraryCompare
         #expect(names([compare.select, compare.candidate]) == [cells[0][0], cells[1][0]], "the next cell, not B02")
         #expect(Set(model.selectedPhotos.map(\.lastPathComponent)) == Set(cells[0] + cells[1]))
-        #expect(model.perform(.nextPhoto) && compare.candidate?.lastPathComponent == cells[2][0])
+        #expect(model.perform(.nextPhoto) && compare.candidate?.url.lastPathComponent == cells[2][0])
         #expect(model.perform(.rating3))
         let rated = Set(model.items.filter { $0.metadata.rating == 3 }.map(\.url.lastPathComponent))
         #expect(rated == Set(cells[0]), "the burst's every photo, and nothing else: \(rated)")
@@ -133,7 +137,7 @@ struct LibraryCompareStackTests {
         try model.clickInGrid(url(model, cells[1][0]))
         try await Task.sleep(for: .milliseconds(30))
         model.keepCompareInStep()
-        #expect(compare.candidate?.lastPathComponent == cells[1][0], "the pair chosen in the filmstrip")
+        #expect(compare.candidate?.url.lastPathComponent == cells[1][0], "the pair chosen in the filmstrip")
         #expect(model.perform(.flagPick))
         let picked = Set(model.items.filter { $0.metadata.flag == .pick }.map(\.url.lastPathComponent))
         #expect(picked == Set(cells[1]), "the JPEG and its HEIC: \(picked)")
@@ -157,11 +161,11 @@ struct LibraryCompareStackTests {
         #expect(model.selectedPhotos.count == 6)
         #expect(model.perform(.surveyView))
         #expect(names(model.surveyPhotos) == [cells[0][0], cells[1][0], cells[3][0]])
-        #expect(model.surveyActivePhoto?.lastPathComponent == cells[3][0])
+        #expect(model.surveyActivePhoto?.url.lastPathComponent == cells[3][0])
         #expect(model.perform(.previousPhoto) && model.selection?.lastPathComponent == cells[1][0])
         #expect(try model.removeFromSurvey(url(model, cells[1][0])))
         #expect(Set(model.selectedPhotos.map(\.lastPathComponent)) == Set(cells[0] + cells[3]), "the pair's both")
         #expect(names(model.surveyPhotos) == [cells[0][0], cells[3][0]] && model.libraryView == .survey)
-        #expect(model.surveyActivePhoto?.lastPathComponent == cells[3][0], "the photo selected after it is active")
+        #expect(model.surveyActivePhoto?.url.lastPathComponent == cells[3][0], "the photo selected after it is active")
     }
 }

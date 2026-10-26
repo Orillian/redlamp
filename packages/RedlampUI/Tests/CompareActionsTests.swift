@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import RedlampDocument
 import Testing
 @_spi(Harness) @testable import RedlampUI
 
@@ -19,6 +20,10 @@ struct CompareActionsTests {
 
     private func names(_ urls: [URL?]) -> [String] {
         urls.map { $0?.lastPathComponent ?? "-" }
+    }
+
+    private func names(_ photos: [PhotoAddress?]) -> [String] {
+        names(photos.map { $0?.url })
     }
 
     @Test func `Swap and Make Select are Library's ↓ and ↑, in the palette and in Settings › Shortcuts`() {

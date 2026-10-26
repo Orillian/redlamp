@@ -24,7 +24,8 @@ final class ComparePhotoView: NSView {
     private let photo = CALayer()
     private let outline = CALayer()
     private let mark = CALayer()
-    private(set) var url: URL?
+    /// The photo shown: a file's own edit or one of its versions (LIB-48), each shown with its own edit.
+    private(set) var address: PhotoAddress?
     private(set) var zoom = LoupeZoom.fit
     private(set) var focus = CGPoint(x: 0.5, y: 0.5)
     /// The edge of the image shown, 0 while it's a stand-in (its thumbnail, or the loupe's preview), and the edit
@@ -169,6 +170,11 @@ final class ComparePhotoView: NSView {
         photo.contents.map { $0 as! CGImage } // swiftlint:disable:this force_cast
     }
 
+    /// The file of the photo shown.
+    var url: URL? {
+        address?.url
+    }
+
     /// The photo's frame, for the tests.
     var photoFrame: CGRect {
         photo.frame
@@ -176,31 +182,31 @@ final class ComparePhotoView: NSView {
 
     /// An edited photo the library renders shows an image without its edit, and is marked so.
     var showsUneditedPreview: Bool {
-        guard image != nil, shownEdit == nil, let url, let item = model.library.item(for: url) else { return false }
+        guard image != nil, shownEdit == nil, let address, let item = model.comparedItem(address) else { return false }
         return model.editRenders.renders(item)
     }
 
     // MARK: - Showing a photo
 
-    /// Shows `url`'s photo at once from what's in memory: its image at the size it's shown, else a smaller one, the
-    /// loupe's preview or its thumbnail; what it lacks is asked for.
-    func show(_ url: URL?) {
-        guard url != self.url else { return }
+    /// Shows the photo `photo` names at once from what's in memory: its image at the size it's shown, else a smaller
+    /// one, the loupe's preview or its thumbnail; what it lacks is asked for.
+    func show(_ photo: PhotoAddress?) {
+        guard photo != address else { return }
         cancelLoads()
-        self.url = url
+        address = photo
         showsFullPhoto = false
         pixelSize = nil
-        guard let url, let item = model.library.item(for: url) else {
+        guard let photo, let item = model.comparedItem(photo) else {
             setAccessibilityLabel(nil)
             return setImage(nil, edge: 0, edit: nil)
         }
-        setAccessibilityLabel(item.name)
+        setAccessibilityLabel(item.title)
         let edge = wantedEdge
         if bounds.width > 1, let image = images.cached(item, edge: edge) {
             setImage(image, edge: edge, edit: images.edit(for: item))
         } else if let standIn = images.standIn(item, below: edge) {
             setImage(standIn.image, edge: 0, edit: standIn.edit)
-        } else if let preview = model.previews.cachedPreview(url) {
+        } else if let preview = model.previews.cachedPreview(photo) {
             setImage(preview.image, edge: 0, edit: preview.edit)
         } else if let thumbnail = model.thumbnailLoader.cachedThumbnail(item) {
             setImage(thumbnail.image, edge: 0, edit: thumbnail.edit)
@@ -208,7 +214,7 @@ final class ComparePhotoView: NSView {
             setImage(nil, edge: 0, edit: nil)
             let edit = model.editRenders.shownEdit(for: item)
             thumbnailRequest = model.thumbnailLoader.request(item) { [weak self] image in
-                guard let self, self.url == url, let image else { return }
+                guard let self, address == photo, let image else { return }
                 thumbnailRequest = nil
                 if self.image == nil {
                     setImage(image, edge: 0, edit: edit)
@@ -244,7 +250,8 @@ final class ComparePhotoView: NSView {
 
     /// The image at the size the photo is shown, of the edit it's to show, unless it's on screen or asked for.
     private func requestImage() {
-        guard let url, let item = model.library.item(for: url), !showsFullPhoto, bounds.width > 1, bounds.height > 1
+        guard let photo = address, let item = model.comparedItem(photo), !showsFullPhoto, bounds.width > 1,
+              bounds.height > 1
         else { return }
         let edge = wantedEdge
         let edit = images.edit(for: item)
@@ -257,7 +264,7 @@ final class ComparePhotoView: NSView {
         cancelRequest()
         var id: UInt64 = 0
         id = images.request(item, edge: edge) { [weak self] image in
-            guard let self, self.url == url, request?.id == id else { return }
+            guard let self, address == photo, request?.id == id else { return }
             request = nil
             guard let image, !showsFullPhoto else { return }
             setImage(image, edge: edge, edit: edit)
@@ -268,16 +275,16 @@ final class ComparePhotoView: NSView {
     /// The photo itself, for 1:1: decoded off the main thread at its full size and drawn in the window's colour
     /// space, so the commit that shows it copies it rather than converting it.
     private func loadFullPhoto() {
-        guard loading == nil, !showsFullPhoto, let url, let item = model.library.item(for: url), item.isLocal else {
-            return
-        }
+        guard loading == nil, !showsFullPhoto, let photo = address, let item = model.comparedItem(photo), item.isLocal
+        else { return }
+        let url = photo.url
         let (engine, scheduler, space) = (model.engine, model.library.scheduler, window?.colorSpace?.cgColorSpace)
         let edge = pixelSize.map { Int(max($0.width, $0.height)) } ?? 1 << 14
         loading = Task { [weak self] in
             let full = try? await scheduler.run(.onScreen) {
                 engine.decodeThumbnail(for: url, maxPixelSize: edge).flatMap { GridThumbnails.drawn($0, in: space) }
             }
-            guard let self, self.url == url, !Task.isCancelled else { return }
+            guard let self, address == photo, !Task.isCancelled else { return }
             loading = nil
             guard let full = full ?? nil else { return }
             if pixelSize == nil || CGFloat(full.width) >= (pixelSize?.width ?? 0) {

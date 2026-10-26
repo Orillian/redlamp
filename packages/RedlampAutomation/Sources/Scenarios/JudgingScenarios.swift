@@ -134,8 +134,8 @@
                 }
                 try app.press(.compareView)
                 try app.wait("Compare of \(sun) and \(focused)") { model in
-                    model.libraryView == .compare && model.libraryCompare.select?.lastPathComponent == sun
-                        && model.libraryCompare.candidate?.lastPathComponent == focused
+                    model.libraryView == .compare && model.libraryCompare.select?.url.lastPathComponent == sun
+                        && model.libraryCompare.candidate?.url.lastPathComponent == focused
                 }
                 let sides = ["library.compare.select", "library.compare.candidate"]
                 do {
@@ -145,7 +145,7 @@
                 } catch {
                     let state = try app.main { model -> String in
                         let compare = model.libraryCompare
-                        let names = [compare.select, compare.candidate].map { $0?.lastPathComponent ?? "-" }
+                        let names = [compare.select, compare.candidate].map { $0?.url.lastPathComponent ?? "-" }
                         var parts: [String] = []
                         for (name, side) in zip(names, sides) {
                             parts.append("\(name): \"\(spoken(side))\"")

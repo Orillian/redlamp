@@ -120,7 +120,8 @@
                     try app.press(.nextPhoto)
                 }
                 try app.wait("Compare: \(order[0]) beside \(name)") { model in
-                    [model.libraryCompare.select, model.libraryCompare.candidate].map { $0?.lastPathComponent ?? "-" }
+                    [model.libraryCompare.select, model.libraryCompare.candidate]
+                        .map { $0?.url.lastPathComponent ?? "-" }
                         == [order[0], name]
                 }
                 if index == 1 {
@@ -138,7 +139,7 @@
             try app.wait("every photo selected") { Set($0.selectedPhotos.map(\.lastPathComponent)) == Set(order) }
             try app.press(.surveyView)
             try app.wait("N: Survey of every photo") { model in
-                model.libraryView == .survey && Set(model.surveyPhotos.map(\.lastPathComponent)) == Set(order)
+                model.libraryView == .survey && Set(model.surveyPhotos.map(\.url.lastPathComponent)) == Set(order)
             }
             for name in order {
                 try check("survey.\(name)", name)

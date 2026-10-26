@@ -2,7 +2,7 @@ import AppKit
 
 /// The photos the loupe, Compare and Survey show in a window, for the regression suite: where each is drawn and the
 /// image drawn there, found by the identifier its view carries (`library.loupe`, `library.compare.select`,
-/// `survey.<name>`).
+/// `survey.<name>`, and a version's `survey.<name>:<version name>`).
 @_spi(Harness) public enum LibraryPhotoFrames {
     /// The views read each photo's size from its own header, as they do for a folder the library hasn't indexed yet,
     /// which the library takes over before a check could find it listed.

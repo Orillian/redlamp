@@ -17,7 +17,7 @@
 
         /// Compare's select and candidate, by name.
         @MainActor private static func compared(_ model: EditorModel) -> [String] {
-            [model.libraryCompare.select, model.libraryCompare.candidate].map { $0?.lastPathComponent ?? "-" }
+            [model.libraryCompare.select, model.libraryCompare.candidate].map { $0?.url.lastPathComponent ?? "-" }
         }
 
         /// The rating the grid shows on photo `name`.
