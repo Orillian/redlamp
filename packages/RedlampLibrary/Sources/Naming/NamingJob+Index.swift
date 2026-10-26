@@ -37,12 +37,16 @@ public extension NamingFields {
 public extension NamingJob {
     /// A job renaming photos `ids` of `index` where they are, in that order (leaving out IDs the index
     /// doesn't have), with the files beside them as `fileSystem` lists their folders, or as the index
-    /// has them where a folder can't be listed; and the IDs of the job's photos.
+    /// has them where a folder can't be listed; and the IDs of the job's photos. Each file is named once,
+    /// by its own row, a version of a photo's edit standing for its file, whose rename takes its versions
+    /// (LIB-48).
     static func renaming(
         _ ids: [Int64], in index: LibraryIndex, fileSystem: any LibraryFileSystem = LocalFileSystem(),
         keywords: Bool = true,
     ) async throws -> (job: NamingJob, ids: [Int64]) {
-        let found = try await index.read { reader in try NamingFields.read(ids, from: reader, keywords: keywords) }
+        let found = try await index.read { reader in
+            try NamingFields.read(reader.fileRows(of: ids), from: reader, keywords: keywords)
+        }
         var existing: [String: Set<String>] = [:]
         var unlisted: [String] = []
         for folder in Set(found.map(\.fields.folder)) {

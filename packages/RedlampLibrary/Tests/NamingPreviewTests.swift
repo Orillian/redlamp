@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import Testing
 @testable import RedlampLibrary
 
@@ -74,6 +75,29 @@ struct NamingPreviewTests {
         #expect(holder["holder"] as? String == "\(day)-001.txt" && holder["holderIsFile"] as? Bool == true)
         let limited = try #require(try JSONSerialization.jsonObject(with: preview.json(limit: 2)) as? [String: Any])
         #expect((limited["photos"] as? [Any])?.count == 2)
+    }
+
+    @Test func `the preview names each file once, its versions standing for it, and numbers none for them`(
+    ) async throws {
+        let sandbox = try await Self.indexed(8, seed: 7)
+        defer { sandbox.remove() }
+        let path = sandbox.path(sandbox.fixture.photo(at: 0).path)
+        let file = try #require(try await sandbox.index.read { try $0.photo(path: path) })
+        let versions = try await sandbox.index.write { writer in
+            try writer.setVersions((1 ... 2).map { number in
+                VersionSummary(id: UUID(), name: "Copy \(number)", created: Date(), hasEdits: true)
+            }, ofPhoto: file.id).inserted
+        }
+        let template = try NamingTemplate(parsing: "{date:yyyyMMdd}-{sequence:3:folder}")
+        let preview = try await NamingPreview.make(template, index: sandbox.index)
+        #expect(preview.entries.count == 8 && Set(preview.entries.map(\.path)).count == 8)
+        #expect(preview.entries.contains { $0.id == file.id } && !preview.entries.contains { versions.contains($0.id) })
+        #expect(preview.batch.collisions == 0)
+
+        let copies = try await NamingPreview.make(
+            template, query: LibraryQuery(parsing: "version:yes"), index: sandbox.index,
+        )
+        #expect(copies.entries.map(\.id) == [file.id], "a version stands for its file")
     }
 
     @Test func `a query picks the photos, and their empty tokens and the counters are reported`() async throws {

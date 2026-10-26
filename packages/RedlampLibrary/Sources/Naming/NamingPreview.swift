@@ -19,8 +19,8 @@ public struct NamingPreview: Sendable {
     /// Naming the photos, once their fields were read.
     public let elapsed: Duration
 
-    /// The photos `query` finds in `index` named by `template`, with the files beside them as
-    /// `fileSystem` lists their folders.
+    /// The photos `query` finds in `index` named by `template`, each file once, with the files beside
+    /// them as `fileSystem` lists their folders.
     public static func make(
         _ template: NamingTemplate, query: LibraryQuery = .all, index: LibraryIndex,
         options: NamingOptions = NamingOptions(), context: NamingContext = NamingContext(),

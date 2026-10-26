@@ -58,6 +58,27 @@ struct FileVersionsTests {
         #expect(sandbox.files().keys.contains("Shoot/Day 2/IMG_0001.ARW"))
     }
 
+    @Test func `Rename over a file and its versions names the file once, its versions' rows taking its new name`(
+    ) async throws {
+        let sandbox = try await Self.sandbox()
+        defer { sandbox.remove() }
+        let (file, versions) = try await Self.versions(of: "Shoot/IMG_0001.ARW", in: sandbox)
+        let other = try #require(try await sandbox.rows()["Shoot/IMG_0002.ARW"])
+        let operations = sandbox.operations()
+        let preview = try await operations.renamePreview(
+            NamingTemplate(parsing: "Heron-{sequence}"), photos: [versions[1], file, other, versions[0]],
+        )
+        #expect(preview.entries.map(\.id) == [file, other], "each file once, by its own row")
+        #expect(preview.batch.collisions == 0 && Set(preview.entries.map(\.result.name)).count == 2)
+        let name = try #require(preview.entries.first?.result.name)
+        let batch = try await operations.planRename(preview)
+        #expect(batch.title == "Rename 2 photos")
+        #expect(try await operations.run(batch).isFinished)
+        let rows = try await Self.rows([file] + versions, sandbox)
+        #expect(rows.count == 3 && rows.allSatisfy { $0.contains(" Shoot/\(name) ") }, "\(rows)")
+        #expect(sandbox.files().keys.contains("Shoot/\(name)"))
+    }
+
     @Test func `the Trash takes a file with its versions, and Undo and Put Back bring their rows back under their IDs`(
     ) async throws {
         let sandbox = try await Self.sandbox()
