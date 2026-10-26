@@ -61,7 +61,7 @@ extension PhotoVersion: Codable {
 extension PhotoMetadata: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case rating, flag, label, customLabel, customLabelColor, mark, originalName, keywords, title, caption, creator
-        case copyright, location, collections, stack, captureShift, captureOffset
+        case copyright, location, collections, stack, captureShift, captureOffset, applePhotos
     }
 
     public init(from decoder: Decoder) throws {
@@ -83,6 +83,7 @@ extension PhotoMetadata: Codable {
         stack = try container.decodeIfPresent(PhotoStack.self, forKey: .stack)
         captureShift = try container.decodeIfPresent(Int.self, forKey: .captureShift) ?? 0
         captureOffset = try container.decodeIfPresent(Int.self, forKey: .captureOffset)
+        applePhotos = try container.decodeIfPresent(ApplePhotosOrigin.self, forKey: .applePhotos)
         unknownFields = try decoder.container(keyedBy: DynamicCodingKey.self)
             .unknownFields(excluding: Set(CodingKeys.allCases.map(\.stringValue)))
     }
@@ -119,6 +120,7 @@ extension PhotoMetadata: Codable {
             try container.encode(captureShift, forKey: .captureShift)
         }
         try container.encodeIfPresent(captureOffset, forKey: .captureOffset)
+        try container.encodeIfPresent(applePhotos, forKey: .applePhotos)
     }
 }
 
@@ -147,6 +149,30 @@ extension PhotoLocation: Codable {
         try container.encodeIfPresent(city, forKey: .city)
         try container.encodeIfPresent(sublocation, forKey: .sublocation)
         try container.encodeIfPresent(countryCode, forKey: .countryCode)
+    }
+}
+
+extension ApplePhotosOrigin: Codable {
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, cloud, version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        cloud = try container.decodeIfPresent(String.self, forKey: .cloud)
+        version = try container.decodeIfPresent(Version.self, forKey: .version) ?? .original
+        unknownFields = try decoder.container(keyedBy: DynamicCodingKey.self)
+            .unknownFields(excluding: Set(CodingKeys.allCases.map(\.stringValue)))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var unknown = encoder.container(keyedBy: DynamicCodingKey.self)
+        try unknown.encode(unknownFields)
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(cloud, forKey: .cloud)
+        try container.encode(version, forKey: .version)
     }
 }
 

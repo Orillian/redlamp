@@ -26,7 +26,8 @@ public struct PhotoVersion: Sendable, Hashable, Identifiable {
     public var created: Date
     public var recipe: EditRecipe
     /// Its own rating, flag, label, keywords, title, caption and collections. The fields that describe the
-    /// file (`originalName`, `captureShift`, `captureOffset`) are the photo's, and aren't written here.
+    /// file (`originalName`, `captureShift`, `captureOffset`, `applePhotos`) are the photo's, and aren't written
+    /// here.
     public var metadata: PhotoMetadata?
     public var snapshots: [Snapshot]
     /// Fields written by a newer Redlamp, written back unchanged.
@@ -158,9 +159,41 @@ public struct PhotoStack: Sendable, Hashable {
     }
 }
 
+/// Where a photo came from in Apple Photos (LIB-54): the asset's local identifier on the Mac that imported it,
+/// its cloud identifier, which names it on every device on the same iCloud Photos library, and whether the file
+/// is the original or Photos' rendering of its edit. Later imports skip the asset by it.
+public struct ApplePhotosOrigin: Sendable, Hashable {
+    /// `original` or `edited`; another value, as a newer build may write, is kept as written.
+    public struct Version: RawRepresentable, Codable, Sendable, Hashable {
+        public let rawValue: String
+
+        public init(rawValue: String) {
+            self.rawValue = rawValue
+        }
+
+        public static let original = Version(rawValue: "original")
+        /// Photos' rendering of its edit (`.fullSizePhoto`).
+        public static let edited = Version(rawValue: "edited")
+    }
+
+    /// PhotoKit's local identifier.
+    public var id: String
+    /// Its `PHCloudIdentifier`'s text, when it has one.
+    public var cloud: String?
+    public var version: Version
+    /// Fields written by a newer Redlamp, written back unchanged.
+    public var unknownFields: [String: JSONValue] = [:]
+
+    public init(id: String, cloud: String? = nil, version: Version = .original) {
+        self.id = id
+        self.cloud = cloud
+        self.version = version
+    }
+}
+
 /// Rating, flag, label and mark: the culling metadata Lightroom lets you set while developing; the
 /// photo's name before Redlamp first renamed it; its keywords and IPTC Core's descriptions; the
-/// collections and stack it's in; and what's done to its capture time.
+/// collections and stack it's in; what's done to its capture time; and the Apple Photos asset it came from.
 public struct PhotoMetadata: Sendable, Hashable {
     /// The zones Redlamp gives `captureOffset`, in seconds east of UTC: −14:00 to +14:00.
     public static let captureOffsets = -14 * 3600 ... 14 * 3600
@@ -205,6 +238,8 @@ public struct PhotoMetadata: Sendable, Hashable {
     /// The zone the camera's clock was in, in seconds east of UTC, in place of the one the file records
     /// or for a file that records none (LIB-22).
     public var captureOffset: Int?
+    /// The Apple Photos asset the file came from (LIB-54); nil for one that didn't.
+    public var applePhotos: ApplePhotosOrigin?
     /// Fields written by a newer Redlamp (a headline, say), written back unchanged.
     public var unknownFields: [String: JSONValue] = [:]
 
@@ -213,7 +248,7 @@ public struct PhotoMetadata: Sendable, Hashable {
         keywords: [String]? = nil, customLabel: String? = nil, mark: Bool = false, title: String? = nil,
         caption: String? = nil, creator: String? = nil, copyright: String? = nil, location: PhotoLocation? = nil,
         collections: [String] = [], stack: PhotoStack? = nil, captureShift: Int = 0, captureOffset: Int? = nil,
-        customLabelColor: LabelColor? = nil,
+        customLabelColor: LabelColor? = nil, applePhotos: ApplePhotosOrigin? = nil,
     ) {
         self.rating = min(max(rating, 0), 5)
         self.flag = flag
@@ -232,13 +267,14 @@ public struct PhotoMetadata: Sendable, Hashable {
         self.stack = stack
         self.captureShift = captureShift
         self.captureOffset = captureOffset
+        self.applePhotos = applePhotos
     }
 
     public var isEmpty: Bool {
         rating == 0 && flag == nil && label == nil && customLabel == nil && !mark && originalName == nil
             && keywords == nil && title == nil && caption == nil && creator == nil && copyright == nil
             && location == nil && collections.isEmpty && stack == nil && captureShift == 0 && captureOffset == nil
-            && unknownFields.isEmpty
+            && applePhotos == nil && unknownFields.isEmpty
     }
 }
 

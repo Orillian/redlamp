@@ -942,7 +942,7 @@
         "recipe": { "$ref": "#/$defs/recipe" },
         "metadata": {
           "$ref": "#/$defs/metadata",
-          "description": "The version's own rating, flag, label, keywords, title, caption, collections and the rest. originalName, captureShift and captureOffset describe the file: the photo's apply, and Redlamp doesn't write them here. Written only when one is set."
+          "description": "The version's own rating, flag, label, keywords, title, caption, collections and the rest. originalName, captureShift, captureOffset and applePhotos describe the file: the photo's apply, and Redlamp doesn't write them here. Written only when one is set."
         },
         "snapshots": {
           "type": "array",
@@ -954,7 +954,7 @@
       "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
     },
     "metadata": {
-      "description": "Rating, flag, color label, mark, the photo's original name, its keywords, title, caption, creator, copyright and location, the collections and stack it's in, and its capture time's shift and zone. Written only when one is set.",
+      "description": "Rating, flag, color label, mark, the photo's original name, its keywords, title, caption, creator, copyright and location, the collections and stack it's in, its capture time's shift and zone, and the Apple Photos asset it came from. Written only when one is set.",
       "type": "object",
       "required": ["rating"],
       "properties": {
@@ -1012,7 +1012,8 @@
           "minimum": -50400,
           "maximum": 50400,
           "description": "The zone the camera's clock was in, in seconds east of UTC, in place of the zone the file records or for a file that records none. Written only when set."
-        }
+        },
+        "applePhotos": { "$ref": "#/$defs/applePhotos" }
       },
       "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
     },
@@ -1041,6 +1042,24 @@
           "type": "integer",
           "minimum": 0,
           "description": "Its place in the stack id names, from 0 at the top, once the stack's photos have been put in an order. Written only when they have."
+        }
+      },
+      "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }
+    },
+    "applePhotos": {
+      "description": "The Apple Photos asset the file came from, written by an import from Apple Photos. Later imports skip the asset by its id.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "description": "The asset's local identifier in PhotoKit on the Mac that imported it." },
+        "cloud": {
+          "type": "string",
+          "description": "Its cloud identifier, which names the same asset on every device on the same iCloud Photos library. Written when it has one."
+        },
+        "version": {
+          "type": "string",
+          "default": "original",
+          "description": "original for the original's file, edited for Photos' rendering of its edit, stacked over the original. Another value, as a newer build may write, is kept as written."
         }
       },
       "additionalProperties": { "description": "Fields written by a newer Redlamp: kept and written back unchanged." }

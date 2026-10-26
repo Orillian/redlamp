@@ -53,6 +53,15 @@ struct SidecarMetadataTests {
         ),
         ("captureShift", PhotoMetadata(captureShift: -18000), .number(-18000)),
         ("captureOffset", PhotoMetadata(captureOffset: 19800), .number(19800)),
+        (
+            "applePhotos",
+            PhotoMetadata(applePhotos: ApplePhotosOrigin(id: "9F98/L0/001", cloud: "9F98:001", version: .edited)),
+            .object(["id": .string("9F98/L0/001"), "cloud": .string("9F98:001"), "version": .string("edited")]),
+        ),
+        (
+            "applePhotos", PhotoMetadata(applePhotos: ApplePhotosOrigin(id: "9F98/L0/001")),
+            .object(["id": .string("9F98/L0/001"), "version": .string("original")]),
+        ),
     ]
 
     @Test(arguments: fields)
@@ -183,7 +192,7 @@ struct SidecarMetadataTests {
             customLabel: "Urgent", mark: true, title: "Tram 28", caption: "Graça", creator: "Ana Sousa",
             copyright: "© 2026 Ana Sousa", location: PhotoLocation(city: "Lisbon"), collections: ["Clients/Acme"],
             stack: PhotoStack(id: Self.stackID, top: true), captureShift: 3600, captureOffset: -18000,
-            customLabelColor: .teal,
+            customLabelColor: .teal, applePhotos: ApplePhotosOrigin(id: "asset/L0/001", version: .edited),
         )
         let unset = Dictionary(uniqueKeysWithValues: Mirror(reflecting: PhotoMetadata()).children.map {
             ($0.label ?? "", String(describing: $0.value))
@@ -218,6 +227,23 @@ struct SidecarMetadataTests {
         let metadata = try written(store, for: image)
         #expect(metadata["location"] == .object(["city": .string("Lisbon"), "altitude": .number(12)]))
         #expect(metadata["stack"] == .object(["id": .string(Self.stackID.uuidString), "order": .number(2)]))
+    }
+
+    @Test func `an Apple Photos origin keeps a version and keys a newer build wrote`() throws {
+        let (image, cleanup) = try temporaryImage()
+        defer { cleanup() }
+        let store = SidecarStore()
+        let json = #"{"format":"app.redlamp.edit","recipe":{"version":3,"processVersion":1},"metadata":{"rating":0,"#
+            + #""applePhotos":{"id":"9F98/L0/001","version":"proxy","library":"Family"}}}"#
+        try Data(json.utf8).write(to: store.url(for: image))
+        #expect(store.protection(for: image) == nil)
+        var sidecar = try #require(store.load(for: image))
+        #expect(sidecar.metadata?.applePhotos?.version.rawValue == "proxy")
+        sidecar.metadata?.rating = 2
+        try store.save(sidecar, for: image)
+        #expect(try written(store, for: image)["applePhotos"] == .object([
+            "id": .string("9F98/L0/001"), "version": .string("proxy"), "library": .string("Family"),
+        ]))
     }
 
     @Test func `a false mark or top, or a shift of 0, another writer left reads as none and is dropped on saving`(

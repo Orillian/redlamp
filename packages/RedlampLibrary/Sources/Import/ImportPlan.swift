@@ -65,6 +65,33 @@ public struct ImportPlan: Sendable, Hashable {
         }
     }
 
+    /// What a photo's source gives its sidecars besides the choices made while browsing: an import from Apple
+    /// Photos' caption, keywords, collections, stack, capture time and the asset it came from (LIB-54).
+    public struct Given: Sendable, Hashable, Codable {
+        public var caption: String?
+        /// By path, added to the photo's own.
+        public var keywords: [String]
+        /// By path, added to those it's in.
+        public var collections: [String]
+        public var stack: PhotoStack?
+        public var captureShift: Int
+        public var captureOffset: Int?
+        public var applePhotos: ApplePhotosOrigin?
+
+        public init(
+            caption: String? = nil, keywords: [String] = [], collections: [String] = [], stack: PhotoStack? = nil,
+            captureShift: Int = 0, captureOffset: Int? = nil, applePhotos: ApplePhotosOrigin? = nil,
+        ) {
+            self.caption = caption
+            self.keywords = keywords
+            self.collections = collections
+            self.stack = stack
+            self.captureShift = captureShift
+            self.captureOffset = captureOffset
+            self.applePhotos = applePhotos
+        }
+    }
+
     /// A photo: its files go together, a raw with its JPEG and the sidecars named after them.
     public struct Item: Sendable, Hashable, Codable {
         public var photo: String
@@ -81,6 +108,8 @@ public struct ImportPlan: Sendable, Hashable {
         /// Its own title, caption, creator, copyright and location, from its file and other apps' `.xmp`,
         /// which the metadata preset's fields add to (LIB-22); nil when the import ticks none.
         public var fields: XMPFields?
+        /// What its source gives its sidecars; nil for a card's or a folder's photo.
+        public var given: Given?
 
         /// Its photo files: a raw, its JPEG.
         public var photos: [Copy] {

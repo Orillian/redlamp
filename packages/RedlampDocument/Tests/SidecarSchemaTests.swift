@@ -465,6 +465,11 @@ enum RichSidecar {
                 collections: ["Clients/Acme/Selects", "Best of 2026"],
                 stack: PhotoStack(id: UUID(uuidString: "6F1C2A4E-8B1D-4C3A-9E57-1B2D3C4E5F60"), top: true, position: 0),
                 captureShift: -18000, captureOffset: -18000, customLabelColor: .teal,
+                applePhotos: ApplePhotosOrigin(
+                    id: "9F983DBA-EC35-42B8-8773-B597CF782EDD/L0/001",
+                    cloud: "9F983DBA-EC35-42B8-8773-B597CF782EDD:001",
+                    version: .edited,
+                ),
             ),
             versions: [version()],
             modified: date,

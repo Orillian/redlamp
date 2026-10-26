@@ -559,14 +559,15 @@ extension Importer {
 
     // MARK: - Sidecars
 
-    /// Writes the choices made while browsing and the metadata preset in the `.redlamp` of each of the
-    /// photo's files at the destination, keeping what a `.redlamp` copied with it holds; and, for a
-    /// photo given a new name, the name it had. Returns how many were written.
+    /// Writes the choices made while browsing, what the photo's source gives (`ImportPlan.Given`) and the
+    /// metadata preset in the `.redlamp` of each of the photo's files at the destination, keeping what a
+    /// `.redlamp` copied with it holds; and, for a photo given a new name, the name it had. Returns how many
+    /// were written.
     private func writeSidecars(_ item: ImportPlan.Item, plan: ImportPlan, locator: SidecarLocator) async throws -> Int {
         let preset = plan.settings.metadata
         let edits = preset.edits
         let renamed = item.photos.contains { $0.name != $0.sourceName }
-        guard !item.choices.given.isEmpty || !preset.isEmpty || renamed else { return 0 }
+        guard !item.choices.given.isEmpty || !preset.isEmpty || renamed || item.given != nil else { return 0 }
         let destination = LibraryIndexer.path(plan.settings.destination)
         let store = SidecarStore(locator: locator)
         let fields = item.fields
@@ -588,6 +589,9 @@ extension Importer {
                 metadata.rating = given.contains(.rating) ? item.choices.rating : preset.rating ?? own.0
                 metadata.flag = given.contains(.flag) ? item.choices.flag : own.1
                 metadata.label = given.contains(.label) ? item.choices.label : preset.label ?? own.2
+                if let from = item.given {
+                    metadata.take(from, keywords: item.keywords)
+                }
                 if !preset.keywords.isEmpty {
                     metadata.keywords = KeywordPath.texts((metadata.keywords ?? item.keywords) + preset.keywords)
                 }
@@ -678,5 +682,26 @@ extension Importer {
         } onCancel: {
             task.cancel()
         }
+    }
+}
+
+extension PhotoMetadata {
+    /// Takes what a photo's source gives: its caption where it has one, its keywords added to the photo's
+    /// (`own`, while the sidecar has none), its collections added to those it's in, its stack, its capture
+    /// time's shift and zone, and where it came from.
+    mutating func take(_ given: ImportPlan.Given, keywords own: [String]) {
+        if let caption = given.caption, !caption.isEmpty {
+            self.caption = caption
+        }
+        if !given.keywords.isEmpty {
+            keywords = KeywordPath.texts((keywords ?? own) + given.keywords)
+        }
+        collections += given.collections.filter { !collections.contains($0) }
+        stack = given.stack ?? stack
+        if given.captureShift != 0 {
+            captureShift = given.captureShift
+            captureOffset = given.captureOffset ?? captureOffset
+        }
+        applePhotos = given.applePhotos ?? applePhotos
     }
 }

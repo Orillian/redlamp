@@ -68,7 +68,8 @@ public extension Sidecar {
 
     /// Adds a version made from the photo's own edit (`source` nil) or from the version `source`, and returns it;
     /// nil for a source the photo doesn't have. It takes the source's edit and its metadata but for what a version
-    /// doesn't hold of its own, the file's name and capture time, and for its place in a stack and the quick
+    /// doesn't hold of its own, the file's name, capture time and origin in Apple Photos, and for its place in a stack
+    /// and the quick
     /// collection; it starts without snapshots.
     @discardableResult
     mutating func addVersion(
@@ -79,6 +80,7 @@ public extension Sidecar {
         metadata.originalName = nil
         metadata.captureShift = 0
         metadata.captureOffset = nil
+        metadata.applePhotos = nil
         metadata.stack = nil
         metadata.mark = false
         let version = PhotoVersion(
