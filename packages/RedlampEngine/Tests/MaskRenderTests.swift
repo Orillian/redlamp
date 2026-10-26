@@ -104,6 +104,33 @@ struct MaskRenderTests {
         #expect(engine.renderQueue.sync { engine.masks.rasters?.arrayLength } == 40)
     }
 
+    /// Before process 18 a render drew the first 32 brush and AI rasters and no more, so an edit
+    /// made then keeps the Brush past them empty, as it rendered (#478), even once an edit at 18
+    /// has drawn it.
+    @Test func `before process 18 a brush past thirty-two brush and AI masks stays empty`() throws {
+        let session = try makeSession(width: 320, height: 200) { _, _ in SIMD3(repeating: 0.18) }
+        let objects = try MaskLayer(
+            name: "Objects", components: (0 ..< 33).map { try MaskInterleavingTests.bitmapComponent(seed: $0) },
+        )
+        let brush = MaskLayer(name: "Brush", components: [MaskComponent(shape: .brush(BrushMask(strokes: [
+            BrushStroke(points: [ImagePoint(x: 0.1, y: 0.5), ImagePoint(x: 0.4, y: 0.5)], size: 0.1, feather: 0),
+        ])))])
+        var older = EditRecipe()
+        older.processVersion = 17
+        older.masks = [objects, brush]
+        var newer = older
+        newer.processVersion = 18
+        let engine = try RedlampEngine()
+        let painted = 100 * 320 + 80
+        let before = try render(older, session: session, engine: engine, overlay: brush.id, style: .blackAndWhite)
+        #expect(before[painted].y < 0.1, "\(before[painted])")
+        #expect(engine.renderQueue.sync { engine.masks.rasters?.arrayLength } == 32)
+        let drawn = try render(newer, session: session, engine: engine, overlay: brush.id, style: .blackAndWhite)
+        #expect(drawn[painted].y > 0.9, "\(drawn[painted])")
+        let again = try render(older, session: session, engine: engine, overlay: brush.id, style: .blackAndWhite)
+        #expect(again == before)
+    }
+
     // MARK: - Ranges
 
     /// A dark left half and a bright right half: a range over the bright tones selects the right.

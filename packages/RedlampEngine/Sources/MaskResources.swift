@@ -741,6 +741,12 @@ final class MaskResources {
         }
     }
 
+    /// The rasters a render at `process` draws. Before process 18 it drew the first 32 in the order
+    /// of its components, all the array held, and the rest covered nothing (#478).
+    static func sliceLimit(process: Int) -> Int {
+        process >= 18 ? maximumSlices : 32
+    }
+
     /// The slice of every raster component, drawing the ones not already on the GPU.
     func slices(
         for components: [MaskComponent],
@@ -748,9 +754,10 @@ final class MaskResources {
         analysisGuide: (any MTLTexture)?,
         commands: any MTLCommandBuffer,
     ) throws -> [UUID: Int] {
-        if components.count > Self.doublingSlices {
+        let limit = Self.sliceLimit(process: process)
+        if components.count > Self.doublingSlices, limit > Self.doublingSlices {
             let needed = Set(components.compactMap { Self.key(for: $0.shape, process: process) }).count
-            let count = min((needed + 7) / 8 * 8, Self.maximumSlices)
+            let count = min((needed + 7) / 8 * 8, limit)
             if needed > Self.doublingSlices, count > keys.count {
                 try grow(to: count, commands: commands)
             }
@@ -759,13 +766,15 @@ final class MaskResources {
         var used = Set<Int>()
         for component in components {
             guard let key = Self.key(for: component.shape, process: process) else { continue }
-            if let slice = keys.firstIndex(of: key) {
+            // Drawn for a later render past an older edit's limit, a raster stays out of its render.
+            if let slice = keys.firstIndex(of: key), used.contains(slice) || used.count < limit {
                 clock += 1
                 lastUsed[slice] = clock
                 used.insert(slice)
                 result[component.id] = slice
                 continue
             }
+            guard used.count < limit else { continue }
             let drawn: Int? = switch component.shape {
             case let .brush(brush):
                 try drawBrush(brush, avoiding: used, guide: analysisGuide, commands: commands)
