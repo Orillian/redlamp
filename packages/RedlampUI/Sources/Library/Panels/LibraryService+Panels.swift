@@ -374,6 +374,21 @@ final class PanelPhotoIDs: Sendable {
         return known
     }
 
+    /// The index's IDs of `photos` (their IDs in the list and their addresses), by their IDs in the list, for those the
+    /// index has: a file's own row by its folder and name, a version's (LIB-48) by its file's and its UUID.
+    func ids(of photos: [(list: Int64, address: PhotoAddress)], in index: LibraryIndex) async -> [Int64: Int64] {
+        let versions = photos.filter { $0.address.version != nil }
+        var known = await ids(
+            of: photos.filter { $0.address.version == nil }.map { (list: $0.list, url: $0.address.url) }, in: index,
+        )
+        guard !versions.isEmpty else { return known }
+        let found = await LibraryService.indexIDs(of: versions.map(\.address), in: index)
+        for photo in versions {
+            known[photo.list] = found[photo.address]
+        }
+        return known
+    }
+
     /// The list was made afresh, photos came or went, or the index moved photos the list already showed where they
     /// went: folders are read again.
     func forget() {

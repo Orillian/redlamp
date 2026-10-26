@@ -279,7 +279,7 @@ public final class LibraryPanels {
             read.ids = places.map { list[$0] }.sorted()
             read.activeID = active.flatMap { snapshot.selection.isEmpty || snapshot.selection.contains($0) ? $0 : nil }
         } else {
-            let found = await ids.ids(of: places.map { (list[$0], snapshot.items[$0].url) }, in: core.index)
+            let found = await ids.ids(of: places.map { (list[$0], snapshot.items[$0].address) }, in: core.index)
             read.ids = found.values.sorted()
             read.activeID = active.flatMap { found[$0] }
         }
