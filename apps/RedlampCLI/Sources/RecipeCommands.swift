@@ -16,6 +16,8 @@ enum RecipeCommands {
                                                look's id (local/firmware/…) is the model's recipe at its settings
       lint <recipe|all> [--json]               check recipes against the lint chart (exit 1 on failure)
       render <image> --recipe <recipe> -o <out> [--size <px>] [--amount <0-200>] [--16bit]
+             [--set <name>=<value>]…           --set is set on the edit after the recipe, settings a recipe
+                                               can't hold (calibration.red.hue) included
       contact-sheet -o <sheet.png> [--recipes <list>] [--images <file>…] [--lookdev] [--chart]
                     [--original] [--tile <px>]
       hald-identity [-o <identity.png>] [--level <2-16>]
@@ -70,7 +72,7 @@ enum RecipeCommands {
     static let valued: Set<String> = [
         "--output", "--query", "--recipe", "--size", "--amount", "--recipes", "--images", "--tile", "--level",
         "--space", "--display", "--name", "--cube", "--out", "--references", "--evaluations", "--seed", "--pairs",
-        "--slots", "--evaluate", "--photo", "--firmware-exposure",
+        "--slots", "--evaluate", "--photo", "--firmware-exposure", "--set",
     ]
 
     /// One command's inputs.
@@ -206,9 +208,16 @@ enum RecipeCommands {
               let output = arguments.value("--output")
         else { throw CLIError(description: "render needs <image> --recipe <recipe> -o <out>") }
         let recipe = try withFirmwareLook(context.library.resolvingCard(context.library.resolve(spec)), context)
+        var settings: [ParameterID: Double] = [:]
+        for pair in arguments.values("--set").map({ $0.split(separator: "=", maxSplits: 1).map(String.init) }) {
+            guard pair.count == 2, let id = parameter(named: pair[0]), let number = Double(pair[1]) else {
+                throw CLIError(description: "bad --set \(pair.joined(separator: "=")) (it takes name=value)")
+            }
+            settings[id] = number
+        }
         let rendered = try await context.renderer().render(
             recipe, image: URL(fileURLWithPath: image), maxLongEdge: arguments.int("--size"),
-            amount: arguments.double("--amount") ?? 100, sixteenBit: arguments.has("--16bit"),
+            amount: arguments.double("--amount") ?? 100, sixteenBit: arguments.has("--16bit"), settings: settings,
         )
         try ImageFile.write(rendered, to: URL(fileURLWithPath: output), protecting: [URL(fileURLWithPath: image)])
         print("\(recipe.name) → \(output) \(rendered.width)x\(rendered.height)")

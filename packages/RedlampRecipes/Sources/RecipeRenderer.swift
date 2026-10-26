@@ -92,13 +92,15 @@ public final class RecipeRenderer: @unchecked Sendable {
         }
     }
 
-    /// Renders a recipe (nil for the unedited photo) on an image.
+    /// Renders a recipe (nil for the unedited photo) on an image. `settings` are set on the edit
+    /// after the recipe, the photo's own settings a recipe can't hold (Calibration) included.
     public func render(
         _ recipe: Recipe?,
         image: URL,
         maxLongEdge: Int? = 1024,
         amount: Double = 100,
         sixteenBit: Bool = false,
+        settings: [ParameterID: Double] = [:],
     ) async throws -> CGImage {
         try await exclusive { try await renderUnlocked(
             recipe,
@@ -106,6 +108,7 @@ public final class RecipeRenderer: @unchecked Sendable {
             maxLongEdge: maxLongEdge,
             amount: amount,
             sixteenBit: sixteenBit,
+            settings: settings,
         ) }
     }
 
@@ -115,9 +118,13 @@ public final class RecipeRenderer: @unchecked Sendable {
         maxLongEdge: Int?,
         amount: Double = 100,
         sixteenBit: Bool = false,
+        settings: [ParameterID: Double] = [:],
     ) async throws -> CGImage {
         try await openUnlocked(image)
-        let edit = await editUnlocked(for: recipe, amount: amount)
+        var edit = await editUnlocked(for: recipe, amount: amount)
+        for (parameter, value) in settings {
+            edit[parameter] = value
+        }
         return try await stillUnlocked(edit, maxLongEdge: maxLongEdge, sixteenBit: sixteenBit)
     }
 
