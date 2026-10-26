@@ -12,9 +12,10 @@ struct PhotoPress {
     var selectsOnRelease: Bool
 }
 
-/// Where a keyword dragged over the grid lands: the photo under it, or the selection when that photo is in it.
+/// Where a keyword dragged over the grid lands: the photo under it, a version as itself (LIB-48), or the selection
+/// when that photo is in it.
 enum KeywordTarget: Equatable {
-    case photo(list: Int64, url: URL)
+    case photo(list: Int64, photo: PhotoAddress)
     case selection
 }
 
@@ -55,7 +56,7 @@ extension LibraryGridView {
                 selection: selection, items: library.items, ids: library.photoIDs, source: library.rowSource,
                 fromLibrary: fromLibrary,
             )
-            : DraggedPhotos(photo: press.photo.url, fromLibrary: fromLibrary)
+            : DraggedPhotos(photo: press.photo, fromLibrary: fromLibrary)
         let pasteboard = NSPasteboardItem()
         pasteboard.setString(photos.token, forType: LibraryDrags.photos)
         let item = NSDraggingItem(pasteboardWriter: pasteboard)
@@ -104,10 +105,10 @@ extension LibraryGridView {
             // their rows aren't read for it.
             panels.change([keyword], ids: model.selectedIDs)
         case .selection:
-            let photos = model.selectedPhotos
+            let photos = model.selectedAddresses
             Task { await panels.change([keyword], on: photos) }
-        case let .photo(_, url):
-            let photos = model.photos(standingFor: url)
+        case let .photo(_, photo):
+            let photos = model.photos(standingFor: photo)
             Task { await panels.change([keyword], on: photos) }
         }
     }
@@ -127,7 +128,7 @@ extension LibraryGridView {
         if model.isMultiSelecting, model.photoSelection.contains(id) {
             return .selection
         }
-        return library.row(at: row).map { .photo(list: id, url: $0.url) }
+        return library.row(at: row).map { .photo(list: id, photo: $0.address) }
     }
 
     /// Outlines the cells on screen that `target` would tag.

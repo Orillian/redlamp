@@ -33,14 +33,14 @@ extension LibraryGridView {
         let point = content.convert(sender.draggingLocation, from: nil)
         // The photos a drag of thousands carries are listed only over a stack that could hold them.
         guard let index = gridLayout.item(at: point), index < shownCount, let id = photoID(ofItem: index),
-              let size = model.openStackSize(of: id), dragged.count < size, let url = library.url(ofPhoto: id)
+              let size = model.openStackSize(of: id), dragged.count < size, let photo = library.address(ofPhoto: id)
         else { return nil }
         let photos: [Int64] = if dragged.count == 1 {
-            dragged.listed?.urls.first.flatMap(library.photoID(of:)).map { [$0] } ?? []
+            dragged.listed?.photos.first.flatMap(library.photoID(of:)).map { [$0] } ?? []
         } else {
             Array(model.photoSelection.ids(in: library.photoList))
         }
         guard model.canMovePhotos(photos, inStackTo: id) else { return nil }
-        return (photos, .photo(list: id, url: url))
+        return (photos, .photo(list: id, photo: photo))
     }
 }

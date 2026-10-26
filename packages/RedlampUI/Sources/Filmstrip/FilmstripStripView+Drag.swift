@@ -65,11 +65,11 @@ extension FilmstripStripView: NSDraggingSource, LibraryDragSource {
                 selection: selection, items: library.items, ids: library.photoIDs, source: library.rowSource,
                 fromLibrary: fromLibrary,
             )
-            : DraggedPhotos(photo: press.photo.url, fromLibrary: fromLibrary)
+            : DraggedPhotos(photo: press.photo, fromLibrary: fromLibrary)
         let pasteboard = NSPasteboardItem()
         pasteboard.setString(photos.token, forType: LibraryDrags.photos)
         let item = NSDraggingItem(pasteboardWriter: pasteboard)
-        let cell = cell(showing: press.photo.url)
+        let cell = cell(showing: press.photo)
         let frame = cell.map { convert($0.bounds, from: $0) }
             ?? CGRect(origin: press.point, size: FilmstripCellView.size)
         item.setDraggingFrame(frame, contents: LibraryDrags.image(cell?.image, size: frame.size, count: photos.count))
@@ -122,7 +122,7 @@ extension FilmstripStripView: NSDraggingSource, LibraryDragSource {
         else { return nil }
         let target = library.photoIDs[row]
         let photos: [Int64] = if dragged.count == 1 {
-            dragged.listed?.urls.first.flatMap(library.photoID(of:)).map { [$0] } ?? []
+            dragged.listed?.photos.first.flatMap(library.photoID(of:)).map { [$0] } ?? []
         } else {
             Array(model.photoSelection.ids(in: library.photoList))
         }
@@ -139,12 +139,12 @@ extension FilmstripStripView: NSDraggingSource, LibraryDragSource {
         }
         let library = model.library
         for case let cell as FilmstripCellView in collectionView.subviews {
-            cell.isDropTarget = target != nil && cell.item.flatMap { library.photoID(of: $0.url) } == target
+            cell.isDropTarget = target != nil && cell.item.flatMap { library.photoID(of: $0.address) } == target
         }
     }
 
-    /// The cell on screen showing `url`'s photo.
-    private func cell(showing url: URL) -> FilmstripCellView? {
-        collectionView.subviews.lazy.compactMap { $0 as? FilmstripCellView }.first { $0.item?.url == url }
+    /// The cell on screen showing the photo `photo` names, a version's own (LIB-48).
+    private func cell(showing photo: PhotoAddress) -> FilmstripCellView? {
+        collectionView.subviews.lazy.compactMap { $0 as? FilmstripCellView }.first { $0.item?.address == photo }
     }
 }

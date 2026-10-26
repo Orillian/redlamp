@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import RedlampDesign
+import RedlampDocument
 import RedlampLibrary
 
 /// The painter (LIB-21), as Lightroom Classic's: a tool of the grid's toolbar and the Keywording panel that puts
@@ -23,8 +24,9 @@ public final class KeywordPainter {
     struct Stroke {
         let keywords: [KeywordPath]
         let removing: Bool
-        /// The photos reached, in order, by their IDs in the list shown and their URLs.
-        var photos: [(list: Int64, url: URL)] = []
+        /// The photos reached, in order, by their IDs in the list shown and their addresses: a version as itself
+        /// (LIB-48).
+        var photos: [(list: Int64, photo: PhotoAddress)] = []
         var reached: Set<Int64> = []
     }
 
@@ -74,10 +76,10 @@ public final class KeywordPainter {
         return true
     }
 
-    /// The stroke reaches a photo, by its ID in the list shown: true the first time.
-    func paint(_ list: Int64, url: URL) -> Bool {
+    /// The stroke reaches a photo, by its ID in the list shown and its address: true the first time.
+    func paint(_ list: Int64, photo: PhotoAddress) -> Bool {
         guard stroke?.reached.insert(list).inserted == true else { return false }
-        stroke?.photos.append((list, url))
+        stroke?.photos.append((list, photo))
         return true
     }
 
@@ -87,7 +89,7 @@ public final class KeywordPainter {
         self.stroke = nil
         lastStroke = stroke.photos.count
         guard !stroke.photos.isEmpty else { return }
-        Task { await panels.change(stroke.keywords, removing: stroke.removing, on: stroke.photos.map(\.url)) }
+        Task { await panels.change(stroke.keywords, removing: stroke.removing, on: stroke.photos.map(\.photo)) }
     }
 
     /// The pointer over the grid while it's out: a brush, its tip the point it paints.

@@ -1,4 +1,5 @@
 import AppKit
+import RedlampDocument
 import RedlampLibrary
 
 /// What dropping photos on a row of the left panel does: the operation the drag shows, and the change made once
@@ -242,13 +243,13 @@ extension LibrarySources {
         }
     }
 
-    /// Puts the photos dropped in the collection at `path`, then counts again.
+    /// Puts the photos dropped in the collection at `path`, a version as itself (LIB-48), then counts again.
     func add(_ photos: DraggedPhotos, to path: CollectionPath) async {
-        let urls = await photos.urls()
-        let ids = await indexIDs(of: urls)
+        let dropped = await photos.addresses()
+        let ids = await indexIDs(of: dropped)
         guard !ids.isEmpty, let panels = model?.libraryPanels, panels.make(
             [.collections(.add(ids, to: path))], title: "Add \(Self.count(ids.count)) to “\(path.displayName)”",
-            photos: (urls, ids),
+            photos: (dropped.map(\.url), ids),
         ) else { return }
         await panels.written()
         recount()

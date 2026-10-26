@@ -1,4 +1,5 @@
 import AppKit
+import RedlampDocument
 import RedlampLibrary
 
 /// Library's drags (LIB-21, LIB-23, LIB-26): photos from the grid onto a folder or a collection, and a keyword from
@@ -124,14 +125,19 @@ protocol LibraryDragSource: AnyObject {
 }
 
 /// Photos dragged from the grid (LIB-23, LIB-26): the selection, or the photo pressed when it isn't selected, as the
-/// grid listed them when the drag began. Their URLs and folders are worked out off the main thread, and a drop waits
-/// for them.
+/// grid listed them when the drag began. Their addresses and folders are worked out off the main thread, and a drop
+/// waits for them. A version is a photo of its own (LIB-48): it goes in a collection as itself, and moves with its
+/// file.
 @MainActor
 final class DraggedPhotos {
     struct Listed: Sendable {
-        var urls: [URL]
+        var photos: [PhotoAddress]
         /// The folders they're in, as `LibraryService.path` gives them.
         var folders: Set<String>
+
+        var urls: [URL] {
+            photos.map(\.url)
+        }
     }
 
     let token = UUID().uuidString
@@ -141,10 +147,10 @@ final class DraggedPhotos {
     private(set) var listed: Listed?
     private var listing: Task<Listed, Never>?
 
-    init(photo: URL, fromLibrary: Bool) {
+    init(photo: PhotoAddress, fromLibrary: Bool) {
         count = 1
         self.fromLibrary = fromLibrary
-        listed = Listed(urls: [photo], folders: [LibraryService.path(photo.deletingLastPathComponent())])
+        listed = Listed(photos: [photo], folders: [LibraryService.path(photo.url.deletingLastPathComponent())])
     }
 
     /// The photos of `selection` among `items`, whose IDs are `ids`; a large source's rows not yet read are read from
@@ -164,12 +170,17 @@ final class DraggedPhotos {
         }
     }
 
-    /// The photos, in the grid's order.
+    /// The photos' files, in the grid's order.
     func urls() async -> [URL] {
+        await addresses().map(\.url)
+    }
+
+    /// The photos, in the grid's order, by address.
+    func addresses() async -> [PhotoAddress] {
         if let listed {
-            return listed.urls
+            return listed.photos
         }
-        return await listing?.value.urls ?? []
+        return await listing?.value.photos ?? []
     }
 
     private nonisolated static func list(
@@ -182,16 +193,16 @@ final class DraggedPhotos {
                 read = await (try? source?.rows(of: unread))?.items ?? [:]
             }
         }
-        var urls: [URL] = []
-        urls.reserveCapacity(selection.count)
+        var photos: [PhotoAddress] = []
+        photos.reserveCapacity(selection.count)
         var folders = Set<String>()
         for (index, id) in ids.enumerated() where selection.contains(id) && index < items.count {
             guard let item = items.row(index) ?? read[id] else { continue }
-            urls.append(item.url)
+            photos.append(item.address)
             folders.insert(item.folderPath)
         }
         let paths = folders.map { LibraryService.path(URL(fileURLWithPath: $0, isDirectory: true)) }
-        return Listed(urls: urls, folders: Set(paths))
+        return Listed(photos: photos, folders: Set(paths))
     }
 }
 

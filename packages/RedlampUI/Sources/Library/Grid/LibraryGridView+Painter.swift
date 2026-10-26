@@ -52,7 +52,7 @@ extension LibraryGridView {
             let at = CGPoint(x: from.x + (point.x - from.x) * t, y: from.y + (point.y - from.y) * t)
             guard let index = gridLayout.item(at: at), index < shownCount else { continue }
             var paintedHere = false
-            for photo in photos(standingFor: index) where model.keywordPainter.paint(photo.id, url: photo.url) {
+            for photo in photos(standingFor: index) where model.keywordPainter.paint(photo.id, photo: photo.photo) {
                 paintedHere = true
             }
             if paintedHere {

@@ -220,12 +220,13 @@ public extension EditorModel {
     }
 
     /// B with a target collection set, as Lightroom Classic's with its target collection: the photos of `listed`
-    /// (the list's IDs) go in `target`, or come out of it when every one is in it already, as one change with Undo in
-    /// Library's one order.
+    /// (the list's IDs), a version as itself (LIB-48), go in `target`, or come out of it when every one is in it
+    /// already, as one change with Undo in Library's one order.
     private func toggle(inTarget target: CollectionPath, listed: [Int64]) {
         guard librarySources.canAdd, !listed.isEmpty, let collections = library.service?.metadata?.collections
         else { return }
-        let urls = listed.compactMap(library.url(ofPhoto:))
+        let photos = listed.compactMap(library.address(ofPhoto:))
+        let urls = photos.map(\.url)
         let known = library.showsIndexIDs ? listed : nil
         let sources = librarySources
         let panels = libraryPanels
@@ -233,7 +234,7 @@ public extension EditorModel {
             let ids = if let known {
                 known
             } else {
-                await sources.indexIDs(of: urls)
+                await sources.indexIDs(of: photos)
             }
             guard self != nil, !ids.isEmpty else { return }
             let inside = await Set((try? collections.photoIDs(in: target)) ?? [])

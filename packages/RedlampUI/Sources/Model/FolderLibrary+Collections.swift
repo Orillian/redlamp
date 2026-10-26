@@ -54,6 +54,12 @@ extension FolderLibrary {
         fromLibrary.sourcePaths?.id(of: url)
     }
 
+    /// The index's ID of the photo `address` names, a file's own or one of its versions (LIB-48), while it's one of
+    /// the photos of the entry or the collection shown, filtered or not.
+    func sourcePhotoID(of address: PhotoAddress) -> Int64? {
+        fromLibrary.sourcePaths?.id(of: address)
+    }
+
     /// Whether the photos' IDs (`photoIDs`) are the index's: those of the entry or the collection shown, and of a
     /// folder shown from the library as its list hands them over (`FromLibrary.indexIDs`).
     var showsIndexIDs: Bool {

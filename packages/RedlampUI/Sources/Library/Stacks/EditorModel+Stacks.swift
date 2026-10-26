@@ -134,11 +134,12 @@ public extension EditorModel {
         stackSuggestions.first { $0.frames.contains(photo) }
     }
 
-    /// The photos `url`'s cell stands for: every photo of a closed stack, else the photo alone.
-    func photos(standingFor url: URL) -> [URL] {
-        guard let stacked = libraryViews.stacks?.list, let id = library.photoID(of: url) else { return [url] }
-        let photos = stacked.photos(of: id).compactMap(library.url(ofPhoto:))
-        return photos.isEmpty ? [url] : photos
+    /// The photos the cell of `photo`, a file's own edit or one of its versions (LIB-48), stands for: every photo of a
+    /// closed stack, else the photo alone.
+    func photos(standingFor photo: PhotoAddress) -> [PhotoAddress] {
+        guard let stacked = libraryViews.stacks?.list, let id = library.photoID(of: photo) else { return [photo] }
+        let photos = stacked.photos(of: id).compactMap(library.address(ofPhoto:))
+        return photos.isEmpty ? [photo] : photos
     }
 
     // MARK: - The selection

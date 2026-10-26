@@ -527,4 +527,16 @@ public final class LibrarySources {
         let found = await LibraryService.indexIDs(of: photos, in: index)
         return photos.compactMap { found[$0] }
     }
+
+    /// The index's IDs of the photos `photos` names, a version's row for a version (LIB-48), from the source shown when
+    /// they're among its photos, else from the index.
+    func indexIDs(of photos: [PhotoAddress]) async -> [Int64] {
+        let known = photos.compactMap { model?.library.sourcePhotoID(of: $0) }
+        if known.count == photos.count {
+            return known
+        }
+        guard let index = model?.library.service?.core?.index else { return [] }
+        let found = await LibraryService.indexIDs(of: photos, in: index)
+        return photos.compactMap { found[$0] }
+    }
 }

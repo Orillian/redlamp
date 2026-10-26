@@ -1,20 +1,21 @@
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 
 /// Keywords put on photos given rather than the selection (LIB-21): a keyword dropped on a photo in the grid, and the
 /// painter's strokes. Each is one change of the panels', with Undo and Redo on Library's ⌘Z and ⇧⌘Z, made once the
 /// photos' IDs in the index are found, read afresh rather than from the IDs the panels keep for the selection, which
 /// can hold a folder's photos as they were while a batch moved photos into it; photos the library hasn't read are
-/// left out.
+/// left out. A version of a photo's edit is a photo of its own (LIB-48): its keywords are its own row's.
 extension LibraryPanels {
-    /// Puts `keywords` on the photos at `urls`, or with `removing` takes them off; false when there's nothing to
-    /// change.
+    /// Puts `keywords` on the photos `photos` names, each a file's own edit or one of its versions, or with
+    /// `removing` takes them off; false when there's nothing to change.
     @discardableResult
-    func change(_ keywords: [KeywordPath], removing: Bool = false, on urls: [URL]) async -> Bool {
-        guard !keywords.isEmpty, !urls.isEmpty, let core = model?.library.service?.core else { return false }
-        let found = await LibraryService.indexIDs(of: urls, in: core.index)
-        let known = urls.filter { found[$0] != nil }
-        return change(keywords, removing: removing, photos: (known, known.compactMap { found[$0] }))
+    func change(_ keywords: [KeywordPath], removing: Bool = false, on photos: [PhotoAddress]) async -> Bool {
+        guard !keywords.isEmpty, !photos.isEmpty, let core = model?.library.service?.core else { return false }
+        let found = await LibraryService.indexIDs(of: photos, in: core.index)
+        let known = photos.filter { found[$0] != nil }
+        return change(keywords, removing: removing, photos: (known.map(\.url), known.compactMap { found[$0] }))
     }
 
     /// Puts `keywords` on the photos with the index's IDs `ids`, or with `removing` takes them off: a large source's

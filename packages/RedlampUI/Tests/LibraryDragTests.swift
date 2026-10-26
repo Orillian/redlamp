@@ -217,11 +217,11 @@ struct LibraryDragTests {
 
         // A folder outside the library, which Folders never lists, and photos from Recently Trashed.
         let outside = sandbox.base.appending(path: "Elsewhere", directoryHint: .isDirectory)
-        let dragged = DraggedPhotos(photo: sandbox.photo("A.JPG"), fromLibrary: true)
+        let dragged = DraggedPhotos(photo: PhotoAddress(url: sandbox.photo("A.JPG")), fromLibrary: true)
         #expect(model.photoDrop(dragged, onFolder: outside, isMissing: false, operations: [.move]) == nil)
         #expect(model
             .photoDrop(dragged, onFolder: sandbox.folder("Picked"), isMissing: true, operations: [.move]) == nil)
-        let trashed = DraggedPhotos(photo: sandbox.photo("A.JPG"), fromLibrary: false)
+        let trashed = DraggedPhotos(photo: PhotoAddress(url: sandbox.photo("A.JPG")), fromLibrary: false)
         #expect(model
             .photoDrop(trashed, onFolder: sandbox.folder("Picked"), isMissing: false, operations: [.move]) == nil)
         #expect(model.photoDrop(dragged, onFolder: sandbox.folder("Picked"), isMissing: false, operations: [.move])?
@@ -245,7 +245,7 @@ struct LibraryDragTests {
             )
             let list = try #require(sandbox.first(FolderOutlineView.self))
             let pickedFolder = sandbox.folder("Picked")
-            let dragged = DraggedPhotos(photo: sandbox.photo("A.JPG"), fromLibrary: true)
+            let dragged = DraggedPhotos(photo: PhotoAddress(url: sandbox.photo("A.JPG")), fromLibrary: true)
             #expect(
                 model.photoDrop(dragged, onFolder: pickedFolder, isMissing: false, operations: [.copy])?
                     .operation == .copy,

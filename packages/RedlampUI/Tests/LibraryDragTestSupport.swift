@@ -41,14 +41,23 @@ final class DragSandbox {
         modules!.window
     }
 
-    /// Writes `photos` directly in the root and makes the empty `folders` in it, indexes them, opens the root in
-    /// Library's grid, its own photos alone, and shows the window with Folders' rows open.
-    func open(photos: [String], folders: [String] = []) async throws {
+    /// Writes `photos` directly in the root, with `sidecars` beside the photos they're named for, and makes the empty
+    /// `folders` in it, indexes them, opens the root in Library's grid, its own photos alone, each followed by its
+    /// sidecar's versions (LIB-48), and shows the window with Folders' rows open. With `listedFirst`, the root is
+    /// listed from the disk before the library has indexed it, so its list keeps IDs of its own once the library
+    /// takes it over (`FolderLibrary.showsIndexIDs`).
+    func open(
+        photos: [String], folders: [String] = [], sidecars: [String: Sidecar] = [:], listedFirst: Bool = false,
+    ) async throws {
         LibraryDrags.simulates = true
         for path in folders {
             try FileManager.default.createDirectory(at: folder(path), withIntermediateDirectories: true)
         }
         try writePhotos(photos)
+        for (name, sidecar) in sidecars {
+            try SidecarStore().saveOrRemove(sidecar, for: photo(name))
+        }
+        let shown = photos.count + sidecars.values.map(\.versions.count).reduce(0, +)
         library = FolderLibrary(defaults: defaults)
         library.setIncludesSubfolders(false)
         library.add([root])
@@ -56,19 +65,31 @@ final class DragSandbox {
             paths: LibraryPaths(root: base.appending(path: "Library", directoryHint: .isDirectory)),
             sidecars: library.sidecars,
         ) { url, size in StoreThumbnailMaker.imageIO(url, nil, size) }
-        library.attach(service)
-        try await SourcesSandbox.eventually { await self.service.canShow(self.root, includingSubfolders: false) }
-        model = EditorModel(engine: StubEngine(), library: library)
-        model.open([root])
-        try await eventually { self.library.isShownFromLibrary && self.model.items.count == photos.count }
-        try #require(library.isShownFromLibrary && model.items.count == photos.count, "the root shown from the library")
+        if listedFirst {
+            library.open(root)
+            library.attach(service)
+            try await eventually { !self.library.isListing && self.library.count == shown }
+            try await eventually(seconds: 60) { self.library.isShownFromLibrary && !self.library.fromLibrary.adopting }
+            await library.caughtUp()
+            model = EditorModel(engine: StubEngine(), library: library)
+        } else {
+            library.attach(service)
+            try await SourcesSandbox.eventually { await self.service.canShow(self.root, includingSubfolders: false) }
+            model = EditorModel(engine: StubEngine(), library: library)
+            model.open([root])
+        }
+        try await eventually { self.library.isShownFromLibrary && self.model.items.count == shown }
+        try #require(library.isShownFromLibrary && model.items.count == shown, "the root shown from the library")
+        if listedFirst {
+            try #require(!library.showsIndexIDs, "listed from the disk first, its list keeps IDs of its own")
+        }
         library.setExpanded(root, true)
         model.showModule(.library)
         modules = show()
         try await eventually { folders.allSatisfy { self.view("folders." + self.folder($0).path) != nil } }
         try #require(folders.allSatisfy { view("folders." + folder($0).path) != nil }, "Folders lists the folders")
         layOut()
-        try await eventually { self.grid.cells.count == photos.count }
+        try await eventually { self.grid.cells.count == shown }
     }
 
     /// Lays the window out, as its display cycle would: the columns size their documents to their rows.
@@ -181,6 +202,14 @@ final class DragSandbox {
         return grid.content.convert(CGPoint(x: frame.midX, y: frame.midY), to: nil)
     }
 
+    /// The middle of the cell of the photo `photo` names, a file's own edit or one of its versions (LIB-48), in the
+    /// window.
+    func cell(_ photo: PhotoAddress) throws -> CGPoint {
+        let item = try #require(grid.item(of: photo), "\(photo.url.lastPathComponent) is in the grid")
+        let frame = grid.gridLayout.frame(forItem: item)
+        return grid.content.convert(CGPoint(x: frame.midX, y: frame.midY), to: nil)
+    }
+
     // MARK: - The mouse
 
     func mouse(
@@ -201,6 +230,18 @@ final class DragSandbox {
     /// Clicks `name` in the grid.
     func click(_ name: String, modifiers: NSEvent.ModifierFlags = []) throws {
         let location = try cell(name)
+        try grid.content.mouseDown(with: mouse(.leftMouseDown, at: location, modifiers: modifiers))
+        try grid.content.mouseUp(with: mouse(.leftMouseUp, at: location, modifiers: modifiers))
+    }
+
+    /// Presses the cell of the photo `photo` names, a version's own (LIB-48), without letting go.
+    func press(_ photo: PhotoAddress, modifiers: NSEvent.ModifierFlags = []) throws {
+        try grid.content.mouseDown(with: mouse(.leftMouseDown, at: cell(photo), modifiers: modifiers))
+    }
+
+    /// Clicks the cell of the photo `photo` names, a version's own (LIB-48).
+    func click(_ photo: PhotoAddress, modifiers: NSEvent.ModifierFlags = []) throws {
+        let location = try cell(photo)
         try grid.content.mouseDown(with: mouse(.leftMouseDown, at: location, modifiers: modifiers))
         try grid.content.mouseUp(with: mouse(.leftMouseUp, at: location, modifiers: modifiers))
     }

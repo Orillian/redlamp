@@ -134,15 +134,15 @@ public extension LibrarySources {
     }
 
     /// The index's IDs of the photos selected now, found when they're asked for: a source's are their own IDs,
-    /// whose rows needn't be read.
+    /// whose rows needn't be read; a folder's own list finds them by address, a version's row for a version (LIB-48).
     private func selectedPhotosNow() -> @MainActor () async -> [Int64] {
         guard let model else { return { [] } }
         if model.library.showsIndexIDs {
             let ids = model.selectedIDs
             return { ids }
         }
-        let urls = model.selectedPhotos
-        return { [weak self] in await self?.indexIDs(of: urls) ?? [] }
+        let photos = model.selectedAddresses
+        return { [weak self] in await self?.indexIDs(of: photos) ?? [] }
     }
 
     /// Puts the selection's photos in the collection at `path`.

@@ -499,14 +499,14 @@ extension LibraryGridView {
         shownGroups?.stacked ?? shownStacks
     }
 
-    /// The photos item `index`'s cell stands for, by their IDs and URLs: every photo of a closed stack, else its
-    /// own; none for a header.
-    func photos(standingFor index: Int) -> [(id: Int64, url: URL)] {
+    /// The photos item `index`'s cell stands for, by their IDs and addresses, a version as itself (LIB-48): every
+    /// photo of a closed stack, else its own; none for a header.
+    func photos(standingFor index: Int) -> [(id: Int64, photo: PhotoAddress)] {
         guard let id = photoID(ofItem: index) else { return [] }
         let library = model.library
         let stacked = cellStacks?.photos(of: id) ?? []
         return (stacked.isEmpty ? [id] : stacked)
-            .compactMap { photo in library.url(ofPhoto: photo).map { (photo, $0) } }
+            .compactMap { photo in library.address(ofPhoto: photo).map { (photo, $0) } }
     }
 
     /// The row of item `index`'s photo; nil for a header.

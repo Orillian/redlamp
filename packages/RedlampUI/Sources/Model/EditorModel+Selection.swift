@@ -19,6 +19,14 @@ public extension EditorModel {
         return library.items.urls(at: selectedPlaces(selected))
     }
 
+    /// The photos selected, in the filmstrip's order, by address: a version as itself (LIB-48); the active photo's
+    /// alone when nothing else is. Of a large source's photos, only those whose rows are read, as `selectedPhotos`.
+    var selectedAddresses: [PhotoAddress] {
+        let selected = photoSelection
+        guard !selected.isEmpty else { return activeAddress.map { [$0] } ?? [] }
+        return library.items.addresses(at: selectedPlaces(selected))
+    }
+
     /// The IDs of the photos selected, in the filmstrip's order; the active photo's alone when nothing else is. Every
     /// photo of the list selected is its IDs as they are, without a pass over them (`PhotoSelection.ids(in:)`).
     var selectedIDs: [Int64] {
@@ -58,15 +66,15 @@ public extension EditorModel {
     }
 
     /// The index's IDs of the photos selected, in order: their own while the photos' IDs are the index's, else found
-    /// from their URLs; photos the index doesn't have are left out.
+    /// from their addresses, a version's row for a version (LIB-48); photos the index doesn't have are left out.
     func selectedIndexIDs() async -> [Int64] {
         if library.showsIndexIDs {
             return selectedIDs
         }
-        let urls = selectedPhotos
+        let photos = selectedAddresses
         guard let index = library.service?.core?.index else { return [] }
-        let found = await LibraryService.indexIDs(of: urls, in: index)
-        return urls.compactMap { found[$0] }
+        let found = await LibraryService.indexIDs(of: photos, in: index)
+        return photos.compactMap { found[$0] }
     }
 
     /// The places of the photos of `selected` among those shown, in order.
