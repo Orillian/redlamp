@@ -2,6 +2,7 @@
     import AppKit
     import RedlampDocument
     import RedlampEngineAPI
+    import RedlampRecipes
     @_spi(Harness) import RedlampUI
 
     enum StackScenarios {
@@ -121,7 +122,7 @@
     }
 
     enum RawScenarios {
-        static let all: [Scenario] = [damaged]
+        static let all: [Scenario] = [damaged, balancedInCamera]
 
         static let damaged = Scenario(
             "raw.damaged", "A damaged raw shows why it won't open, and the editor carries on",
@@ -145,6 +146,136 @@
             let error = try app.main { $0.errorMessage }
             try app.expect(error == nil, "A good photo after the damaged one shows \(error ?? "")")
             app.covered(.feature("raw.wont-open"), via: .model)
+        }
+
+        /// #480: a raw the camera white-balanced (Sony's YCbCr ARWs, Nikon's small raws) is balanced once from
+        /// process 18; an edit at 17 renders it balanced twice, pink, as 0.3.3 did, until it's moved to the current
+        /// version. Judged as the camera bench judges a cast: the edit's still against the camera's own JPEG.
+        static let balancedInCamera = Scenario(
+            "raw.balanced-in-camera",
+            "A Sony YCbCr ARW and a Nikon small raw open in their camera's colour, and Auto White Balance keeps it; an "
+                + "edit moved to process 17 renders them balanced twice, as 0.3.3 did, until it's moved to the current "
+                + "version",
+            claims: [.feature("raw.colours"), .feature("develop.white-balance")],
+        ) { app in
+            let folder = app.photos.appending(path: "Balanced in Camera")
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+                .filter { SupportedFormats.isRaw(folder.appending(path: $0)) }.sorted()
+            guard !names.isEmpty else {
+                throw ScenarioSkip("The run has no raws the camera balanced: `mise run fixtures` fetches them")
+            }
+            try app.main { $0.open([folder]) }
+            try app.wait("the folder of raws the camera balanced, with its photos", timeout: 30) { model in
+                model.folder?.standardizedFileURL == folder.standardizedFileURL
+                    && Set(model.items.map(\.url.lastPathComponent)).isSuperset(of: names)
+            }
+            let current = EditRecipe.currentProcessVersion
+            for name in names {
+                let clicked = try app.exists(.filmstrip(name))
+                try app.open(name)
+                try app.settle(timeout: 60)
+                try app.wait("\(name) at process 18 or later, as shot") { model in
+                    model.recipe.processVersion >= 18 && model.whiteBalanceMode == .asShot
+                }
+                let preview = try cameraPreview(of: folder.appending(path: name), app: app)
+                let shot = try compare(app, against: preview)
+                app.covered(.feature("raw.colours"), via: clicked ? .mouse : .model)
+
+                try app.choose(.autoWhiteBalance)
+                try app.wait("Auto White Balance on \(name)", timeout: 30) { $0.whiteBalanceMode == .auto }
+                let (auto, asShot) = try app.main { model in
+                    (
+                        WhiteBalanceValue(temperature: model.value(.temperature), tint: model.value(.tint)),
+                        model.info?.asShotWhiteBalance,
+                    )
+                }
+                let automatic = try compare(app, against: preview)
+                app.covered(.feature("develop.white-balance"), via: .menu)
+                try app.press(.undo)
+                try app.wait("⌘Z: \(name) as shot again") { $0.whiteBalanceMode == .asShot }
+
+                try app.expectRenders("\(name)'s edit moved to process 17") {
+                    try app.main { $0.setProcessVersion(17) }
+                }
+                let older = try compare(app, against: preview)
+                try app.expectRenders("\(name)'s edit moved to Version \(current)") {
+                    try app.main { $0.setProcessVersion(current) }
+                }
+                let back = try compare(app, against: preview)
+                let (opened, automated, earlier, again) =
+                    (describe(shot), describe(automatic), describe(older), describe(back))
+                app.recorder.write("note", [
+                    name: "as shot \(opened); Auto \(automated), \(Int(auto.temperature)) K and tint "
+                        + "\(Int(auto.tint)) against \(Int(asShot?.temperature ?? 0)) K and tint "
+                        + "\(Int(asShot?.tint ?? 0)) as shot; at 17 \(earlier); at \(current) again \(again)",
+                ])
+                let once = [shot, back].allSatisfy { verdict($0) != .fail && verdict($0) != .warn }
+                    && verdict(automatic) != .fail
+                    && [shot, automatic, back].allSatisfy { ($0.colourDifference ?? .infinity) < Self.cameraColour }
+                try app.expect(
+                    once,
+                    "\(name) isn't in its camera's colour: as shot \(opened), after Auto \(automated), at \(current) "
+                        + "again \(again)",
+                )
+                try app.expect(
+                    (older.colourDifference ?? 0) > (shot.colourDifference ?? .infinity) + 4
+                        && (verdict(older) == .fail || shot.cast == nil),
+                    "At process 17 \(name) isn't balanced twice, as 0.3.3 rendered it: \(earlier), against \(opened) "
+                        + "at \(current)",
+                )
+                try app.choose(.resetAll)
+            }
+            try app.main { $0.open([app.photos]) }
+            try app.wait("the photos folder again", timeout: 30) {
+                $0.folder?.standardizedFileURL == app.photos.standardizedFileURL
+            }
+            try app.openWorking()
+        }
+
+        /// A colour difference from the camera's JPEG under this is the camera's colour: balanced once, the samples
+        /// measure about 2, and balanced twice 7 (the D810's small raw) and 13 (the a7 IV's M).
+        static let cameraColour = 5.0
+
+        /// The camera's own JPEG in `url`, at the size the camera bench compares; read off the main thread, as the
+        /// decode service asks.
+        private static func cameraPreview(of url: URL, app: RunningApp) throws -> CGImage {
+            let inspector = try app.main { $0.engine as? any RawFileInspecting }
+            guard let preview = inspector?.cameraPreview(of: url, maxLongEdge: CameraBench.pairSize) else {
+                throw ScenarioFailure("\(url.lastPathComponent) has no camera JPEG to compare")
+            }
+            return preview
+        }
+
+        /// The open photo's edit as it renders now against the camera's JPEG, as the camera bench compares them.
+        private static func compare(_ app: RunningApp, against preview: CGImage) throws -> CameraJPEGComparison {
+            let still = StillBox()
+            try app.run("a still of the edit, as the camera bench renders one", timeout: 120) { model in
+                still.image = try? await model.engine.renderStill(StillRequest(
+                    recipe: model.recipe, maxLongEdge: CameraBench.pairSize, colorSpace: .sRGB, bitsPerComponent: 16,
+                    purpose: .export,
+                ))
+            }
+            guard let ours = still.image, let comparison = CameraJPEGComparison(ours: ours, theirs: preview) else {
+                throw ScenarioFailure("The edit's still couldn't be compared with the camera's JPEG")
+            }
+            return comparison
+        }
+
+        /// The camera bench's cast check: skipped where the camera's JPEG has too few neutral areas.
+        private static func verdict(_ comparison: CameraJPEGComparison) -> BenchVerdict {
+            CameraBenchChecks.preview(comparison, hasPreview: true).first { $0.id == "preview.cast" }?.verdict
+                ?? .skipped
+        }
+
+        private static func describe(_ comparison: CameraJPEGComparison) -> String {
+            let cast = comparison.cast.map { String(format: "cast %.1f", $0) } ?? "no neutral areas"
+            let colour = comparison.colourDifference.map { String(format: "colour difference %.1f", $0) } ?? ""
+            return "\(cast), \(colour)"
+        }
+
+        /// A still carried back from the main thread, read once the work that made it has finished.
+        final class StillBox: @unchecked Sendable {
+            var image: CGImage?
         }
     }
 

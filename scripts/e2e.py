@@ -248,6 +248,11 @@ def make_test_copy(built: Path, destination: Path) -> Path:
 
 # ---------------------------------------------------------------- the run's home
 
+# The camera coverage set's raws the camera white-balanced (#480), in the run's photos where `mise run fixtures`
+# has fetched them.
+BALANCED_IN_CAMERA = ("Sony_ILCE-7M4_M-lossless.ARW", "Nikon_D810_sRAW.NEF")
+
+
 def prepare_photos(photos: Path) -> list[str]:
     """APFS clones of the sample raws, the process gate's bitmap and other formats made from it."""
     photos.mkdir(parents=True)
@@ -274,6 +279,12 @@ def prepare_photos(photos: Path) -> list[str]:
     nef = next((p for p in sorted(raw.iterdir()) if p.suffix.upper() == ".NEF"), None)
     if nef:
         (damaged / "Damaged.NEF").write_bytes(nef.read_bytes()[:4096])
+    cameras = ROOT / "tests/fixtures/cameras"
+    balanced = [cameras / name for name in BALANCED_IN_CAMERA if (cameras / name).is_file()]
+    if balanced:
+        (photos / "Balanced in Camera").mkdir()
+        for path in balanced:
+            run(["cp", "-c", str(path), str(photos / "Balanced in Camera" / path.name)])
     return names
 
 
@@ -473,8 +484,9 @@ def seed_defaults(relay: int) -> None:
     # would stop an export to a name an earlier scenario's export took. A value the app can't read is Ask.
     previous = json.dumps({"revealInFinder": False, "existingFiles": "addNumber"}).encode().hex()
     defaults("write", BUNDLE_ID, "exportPrevious", "-data", previous)
-    # Show Photos in Subfolders, on by default, off: the photos folder keeps a focus bracket and a damaged
-    # raw in subfolders, which the scenarios that open every photo of the folder leave out.
+    # Show Photos in Subfolders, on by default, off: the photos folder keeps a focus bracket, a damaged raw
+    # and raws the camera balanced in subfolders, which the scenarios that open every photo of the folder
+    # leave out.
     defaults("write", BUNDLE_ID, "folders.includesSubfolders", "-bool", "NO")
 
 
