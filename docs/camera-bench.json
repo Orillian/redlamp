@@ -13740,8 +13740,8 @@
    "key": "Fujifilm|X-E5|fuji_compressed_load_raw|14|7752x5178",
    "camera": "Fujifilm X-E5",
    "label": "14-bit compressed RAF, 7752 × 5178",
-   "tier": "unconfirmed",
-   "verified": false,
+   "tier": "verified",
+   "verified": true,
    "contributors": 1,
    "photos": 1,
    "conditions": [],
@@ -13754,10 +13754,20 @@
    ],
    "answers": {},
    "checks": {
-    "decode.colour": {
-     "pass": 0,
+    "decode.black": {
+     "pass": 1,
      "warn": 0,
-     "fail": 1
+     "fail": 0
+    },
+    "decode.colour": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.edges": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
     },
     "decode.opens": {
      "pass": 1,
@@ -13805,15 +13815,7 @@
      "fail": 0
     }
    },
-   "problems": [
-    {
-     "check": "decode.colour",
-     "summary": "The camera has no colour matrix, so its colours can't be right.",
-     "tracker": null,
-     "contributors": 1,
-     "photos": 1
-    }
-   ],
+   "problems": [],
    "decoders": [
     "LibRaw 0.22.2-Release"
    ],
