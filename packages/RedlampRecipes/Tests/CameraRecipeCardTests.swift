@@ -3,7 +3,7 @@ import RedlampEngineAPI
 import RedlampRecipes
 import Testing
 
-/// Pins mapping version 1. A failing test here means the mapping changed: bump
+/// Pins mapping versions 1 and 2. A failing test here means the mapping changed: bump
 /// `CameraRecipeCard.mappingVersion` and document the new row instead of editing these.
 struct CameraRecipeCardTests {
     @Test func `mapping version 1 translates every field`() {
@@ -42,6 +42,21 @@ struct CameraRecipeCardTests {
         ])
         #expect(settings.whiteBalanceMode == .auto)
         #expect(settings.treatment == .color)
+    }
+
+    @Test func `mapping version 2 sets a Kelvin white balance's temperature, 5500 K too, and Tint 0`() {
+        #expect(CameraRecipeCard.mappingVersion == 2)
+        var photo = EditRecipe()
+        photo[.temperature] = 4100
+        photo[.tint] = 12
+        for kelvin in [5500.0, 3200] {
+            let card = CameraRecipeCard(whiteBalance: .init(mode: "kelvin", kelvin: kelvin))
+            let settings = card.resolvedSettings()
+            #expect(settings.whiteBalanceMode == .custom)
+            #expect(settings.values[.temperature] == kelvin && settings.values[.tint] == 0)
+            let applied = card.recipe(id: "local/kelvin", name: "Kelvin").apply(to: photo)
+            #expect(applied[.temperature] == kelvin && applied[.tint] == 0, "the photo's own doesn't stay")
+        }
     }
 
     @Test func `neutral card is nearly a no-op`() {

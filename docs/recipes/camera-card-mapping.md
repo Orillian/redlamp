@@ -38,9 +38,11 @@ A card resolved on that Mac (made or edited in the Recipe Lab) pins the imported
 
 While the experimental firmware model is on (Settings › Experimental, [TON-49](../research/research-tracker.md#4-color-tone-and-detail)), every card resolves through it instead, bundled camera recipes included (`RecipeLibrary.resolvingCard`): the card's slot names the model's simulation, and its Highlight and Shadow Tone, Color, dynamic range and monochrome toning go into the look rather than into Redlamp's sliders, with the treatment kept colour so the toning shows. The look is baked for those settings and kept on that Mac ([look ids](sidecar-format.md)). Turned off, cards resolve to the looks that fill their slots as above; edits made while it was on keep the looks they pinned. The model's five simulations without a slot (ACROS, ACROS + Yellow, ACROS + Red, ACROS + Green and Reala Ace) aren't reached from cards, only from the Camera Recipe group's Simulation menu.
 
-## Mapping, version 1
+## Mapping, version 2
 
 `mappingVersion` records which mapping a recipe was resolved with. Improving a row means bumping the version; recipes are only re-resolved when the user edits their card.
+
+Version 2 changed one row: a Kelvin white balance sets Tint to 0, and sets Temp even at 5500 K, the slider's default. Under version 1 a card left out values at their defaults, and a recipe without Temp or Tint keeps the photo's own, so a 5500 K card kept the photo's As Shot temperature and every Kelvin card its As Shot tint.
 
 | Card field | Range | Redlamp values |
 | --- | --- | --- |
@@ -49,7 +51,7 @@ While the experimental firmware model is on (Settings › Experimental, [TON-49]
 | Color | −4 … +4 | Saturation ×7 per step |
 | Color Chrome, Chrome FX Blue | off, weak, strong | Color Chrome / Chrome FX Blue 0, 45, 85 |
 | Dynamic range | DR100, DR200, DR400, auto | Dynamic Range 100, 200, 400 (auto is 200) |
-| White balance | auto, as shot, a preset, or a Kelvin value | The same mode; Kelvin sets Temp in Custom mode |
+| White balance | auto, as shot, a preset, or a Kelvin value | The same mode; Kelvin sets Temp, and Tint 0, in Custom mode |
 | WB shift R, B | −9 … +9 | Red Shift, Blue Shift ×11 per step |
 | Grain | off, weak, strong; small, large | Amount 22 or 40; Size 20 or 55; Roughness 60 when strong |
 | Clarity | −5 … +5 | Clarity ×8 (renders from Phase 2) |

@@ -10,8 +10,9 @@ import RedlampEngineAPI
 public struct CameraRecipeCard: Codable, Sendable, Hashable {
     public static let dialect = "fujifilm-card"
     /// Bumped whenever `resolve` maps a card differently. Recipes record the mapping they
-    /// were resolved with and are only re-resolved when the user edits the card.
-    public static let mappingVersion = 1
+    /// were resolved with and are only re-resolved when the user edits the card. 2: a Kelvin
+    /// white balance sets Tint 0, and its temperature at 5500 K too.
+    public static let mappingVersion = 2
 
     public enum Strength: String, Codable, Sendable, Hashable, CaseIterable {
         case off, weak, strong
@@ -328,7 +329,9 @@ public extension CameraRecipeCard {
         switch card.whiteBalance.mode.lowercased() {
         case "kelvin", "custom":
             whiteBalanceMode = .custom
-            set(.temperature, card.whiteBalance.kelvin ?? 5500)
+            // Both, even at the sliders' defaults: a recipe without them keeps the photo's own.
+            values[.temperature] = ParameterID.temperature.spec.clamp(card.whiteBalance.kelvin ?? 5500)
+            values[.tint] = 0
         case "asshot", "as-shot": whiteBalanceMode = .asShot
         case "daylight", "fine", "sunny": whiteBalanceMode = .daylight
         case "cloudy", "shade": whiteBalanceMode = card.whiteBalance.mode.lowercased() == "shade" ? .shade : .cloudy
