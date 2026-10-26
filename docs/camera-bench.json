@@ -2,8 +2,8 @@
  "format": 1,
  "description": "The camera bench's evidence per camera mode (docs/camera-bench.md), written by scripts/camera-bench.py.",
  "thresholds": "DEC-28 (proposed)",
- "decoder": "LibRaw 4abfcd2ab82f2211b1f7e7c3cd83974c87e0d812",
- "generated": "2026-10-10",
+ "decoder": "LibRaw 3b20539d3faa766a370e93a529a3b87edffbf0f6",
+ "generated": "2026-10-26",
  "modes": [
   {
    "key": "Apple|iPhone10,1 back camera|lossless_dng_load_raw|16|4032x3024",
@@ -4608,9 +4608,19 @@
    ],
    "answers": {},
    "checks": {
+    "decode.black": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
     "decode.colour": {
      "pass": 0,
      "warn": 1,
+     "fail": 0
+    },
+    "decode.edges": {
+     "pass": 1,
+     "warn": 0,
      "fail": 0
     },
     "decode.opens": {
@@ -4662,7 +4672,7 @@
    "problems": [
     {
      "check": "preview.cast",
-     "summary": "A colour cast where the camera's is neutral (9.5).",
+     "summary": "A colour cast where the camera's is neutral (9.6).",
      "tracker": null,
      "contributors": 1,
      "photos": 1
@@ -28124,7 +28134,7 @@
    "problems": [
     {
      "check": "preview.cast",
-     "summary": "A colour cast where the camera's is neutral (17.0).",
+     "summary": "A colour cast where the camera's is neutral (19.2).",
      "tracker": null,
      "contributors": 1,
      "photos": 1
@@ -29227,8 +29237,8 @@
    "key": "Nikon|Z50_2|nikon_he_load_raw|14|3728x3728",
    "camera": "Nikon Z50_2",
    "label": "14-bit nikon_he NEF, 3728 × 3728",
-   "tier": "unconfirmed",
-   "verified": false,
+   "tier": "verified",
+   "verified": true,
    "contributors": 1,
    "photos": 2,
    "conditions": [
@@ -29328,8 +29338,8 @@
    "key": "Nikon|Z5_2|nikon_he_load_raw|14|4000x2672",
    "camera": "Nikon Z5_2",
    "label": "14-bit nikon_he NEF, 4000 × 2672",
-   "tier": "unconfirmed",
-   "verified": false,
+   "tier": "verified",
+   "verified": true,
    "contributors": 1,
    "photos": 2,
    "conditions": [
@@ -50584,8 +50594,8 @@
     },
     "preview.highlights": {
      "pass": 0,
-     "warn": 0,
-     "fail": 1
+     "warn": 1,
+     "fail": 0
     },
     "preview.orientation": {
      "pass": 1,
@@ -50606,14 +50616,7 @@
    "problems": [
     {
      "check": "preview.cast",
-     "summary": "A colour cast where the camera's is neutral (11.3).",
-     "tracker": null,
-     "contributors": 1,
-     "photos": 1
-    },
-    {
-     "check": "preview.highlights",
-     "summary": "Tinted where the camera's highlights are white (9.7).",
+     "summary": "A colour cast where the camera's is neutral (14.3).",
      "tracker": null,
      "contributors": 1,
      "photos": 1
@@ -52443,7 +52446,7 @@
    "key": "Sony|DSC-RX1RM3|sony_ycbcr_load_raw|15|5120x3584",
    "camera": "Sony DSC-RX1RM3",
    "label": "15-bit sony_ycbcr ARW, 5120 × 3584",
-   "tier": "unconfirmed",
+   "tier": "working",
    "verified": false,
    "contributors": 1,
    "photos": 1,
@@ -52479,13 +52482,13 @@
      "fail": 0
     },
     "preview.cast": {
-     "pass": 0,
+     "pass": 1,
      "warn": 0,
-     "fail": 1
+     "fail": 0
     },
     "preview.colour": {
-     "pass": 0,
-     "warn": 1,
+     "pass": 1,
+     "warn": 0,
      "fail": 0
     },
     "preview.exposure": {
@@ -52499,8 +52502,8 @@
      "fail": 0
     },
     "preview.highlights": {
-     "pass": 0,
-     "warn": 1,
+     "pass": 1,
+     "warn": 0,
      "fail": 0
     },
     "preview.orientation": {
@@ -52519,15 +52522,7 @@
      "fail": 0
     }
    },
-   "problems": [
-    {
-     "check": "preview.cast",
-     "summary": "A colour cast where the camera's is neutral (17.3).",
-     "tracker": null,
-     "contributors": 1,
-     "photos": 1
-    }
-   ],
+   "problems": [],
    "decoders": [
     "LibRaw 0.22.2-Release"
    ],
@@ -55288,6 +55283,194 @@
    ]
   },
   {
+   "key": "Sony|ILCE-7M4|sony_arw2_load_raw|14|7028x4688",
+   "camera": "Sony ILCE-7M4",
+   "label": "14-bit compressed ARW, 7028 × 4688",
+   "tier": "verified",
+   "verified": true,
+   "contributors": 1,
+   "photos": 8,
+   "conditions": [
+    "baseISO",
+    "highISO",
+    "portrait",
+    "warmLight"
+   ],
+   "needs": [
+    "clippedHighlights"
+   ],
+   "answers": {
+    "colours": 1
+   },
+   "checks": {
+    "decode.black": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.colour": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.edges": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.opens": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.white": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.cast": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.colour": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.exposure": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.framing": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.highlights": {
+     "pass": 7,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.orientation": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.structure": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    },
+    "render.default": {
+     "pass": 8,
+     "warn": 0,
+     "fail": 0
+    }
+   },
+   "problems": [],
+   "decoders": [
+    "LibRaw 0.22.0-Release (fork 3b20539)"
+   ],
+   "redlamp": [
+    "0.3.3-alpha"
+   ]
+  },
+  {
+   "key": "Sony|ILCE-7M5|sony_arw6_load_raw|14|4640x3088",
+   "camera": "Sony ILCE-7M5",
+   "label": "14-bit sony_arw6 ARW, 4640 × 3088",
+   "tier": "working",
+   "verified": false,
+   "contributors": 1,
+   "photos": 1,
+   "conditions": [
+    "baseISO"
+   ],
+   "needs": [
+    "highISO",
+    "portrait",
+    "clippedHighlights",
+    "warmLight"
+   ],
+   "answers": {},
+   "checks": {
+    "decode.black": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.colour": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.edges": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.opens": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "decode.white": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.cast": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.colour": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.exposure": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.framing": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.highlights": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.orientation": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.structure": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    },
+    "render.default": {
+     "pass": 1,
+     "warn": 0,
+     "fail": 0
+    }
+   },
+   "problems": [],
+   "decoders": [
+    "LibRaw 0.22.2-Release"
+   ],
+   "redlamp": [
+    "development"
+   ]
+  },
+  {
    "key": "Sony|ILCE-7R|sony_arw2_load_raw|14|7362x4920",
    "camera": "Sony ILCE-7R",
    "label": "14-bit compressed ARW, 7362 × 4920",
@@ -56274,79 +56457,93 @@
    "label": "14-bit compressed ARW, 6024 × 4024",
    "tier": "working",
    "verified": false,
-   "contributors": 1,
-   "photos": 1,
-   "conditions": [],
-   "needs": [
+   "contributors": 2,
+   "photos": 9,
+   "conditions": [
     "baseISO",
     "highISO",
     "portrait",
     "clippedHighlights",
     "warmLight"
    ],
-   "answers": {},
+   "needs": [],
+   "answers": {
+    "same": 1
+   },
    "checks": {
     "decode.black": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "decode.colour": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "decode.edges": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "decode.opens": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "decode.white": {
-     "pass": 1,
+     "pass": 9,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.cast": {
+     "pass": 8,
      "warn": 0,
      "fail": 0
     },
     "preview.colour": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "preview.exposure": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "preview.framing": {
-     "pass": 1,
+     "pass": 9,
+     "warn": 0,
+     "fail": 0
+    },
+    "preview.highlights": {
+     "pass": 6,
      "warn": 0,
      "fail": 0
     },
     "preview.orientation": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "preview.structure": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     },
     "render.default": {
-     "pass": 1,
+     "pass": 9,
      "warn": 0,
      "fail": 0
     }
    },
    "problems": [],
    "decoders": [
+    "LibRaw 0.22.0-Release (fork 3b20539)",
     "LibRaw 0.22.2-Release"
    ],
    "redlamp": [
+    "0.3.3-alpha",
     "development"
    ]
   },
@@ -56539,7 +56736,7 @@
    "key": "Sony|ILME-FX2|sony_ycbcr_load_raw|15|3516x2344",
    "camera": "Sony ILME-FX2",
    "label": "15-bit sony_ycbcr ARW, 3516 × 2344",
-   "tier": "unconfirmed",
+   "tier": "working",
    "verified": false,
    "contributors": 1,
    "photos": 1,
@@ -56575,9 +56772,9 @@
      "fail": 0
     },
     "preview.cast": {
-     "pass": 0,
+     "pass": 1,
      "warn": 0,
-     "fail": 1
+     "fail": 0
     },
     "preview.colour": {
      "pass": 1,
@@ -56595,8 +56792,8 @@
      "fail": 0
     },
     "preview.highlights": {
-     "pass": 0,
-     "warn": 1,
+     "pass": 1,
+     "warn": 0,
      "fail": 0
     },
     "preview.orientation": {
@@ -56615,15 +56812,7 @@
      "fail": 0
     }
    },
-   "problems": [
-    {
-     "check": "preview.cast",
-     "summary": "A colour cast where the camera's is neutral (17.0).",
-     "tracker": null,
-     "contributors": 1,
-     "photos": 1
-    }
-   ],
+   "problems": [],
    "decoders": [
     "LibRaw 0.22.2-Release"
    ],
@@ -59570,99 +59759,6 @@
    "problems": [],
    "decoders": [
     "LibRaw 0.22.2-Release"
-   ],
-   "redlamp": [
-    "development"
-   ]
-  },
-  {
-   "key": "Sony|ILCE-7M5|sony_arw6_load_raw|14|4640x3088",
-   "camera": "Sony ILCE-7M5",
-   "label": "14-bit sony_arw6 ARW, 4640 × 3088",
-   "tier": "working",
-   "verified": false,
-   "contributors": 1,
-   "photos": 1,
-   "conditions": [
-    "baseISO"
-   ],
-   "needs": [
-    "highISO",
-    "portrait",
-    "clippedHighlights",
-    "warmLight"
-   ],
-   "answers": {},
-   "checks": {
-    "decode.black": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "decode.colour": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "decode.edges": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "decode.opens": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "decode.white": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.cast": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.colour": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.exposure": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.framing": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.highlights": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.orientation": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "preview.structure": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    },
-    "render.default": {
-     "pass": 1,
-     "warn": 0,
-     "fail": 0
-    }
-   },
-   "problems": [],
-   "decoders": [
-    "LibRaw 0.22.0-Release (7bfffe2)"
    ],
    "redlamp": [
     "development"
