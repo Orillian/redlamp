@@ -53,7 +53,8 @@ struct FirmwareLookTests {
         #expect(try model.toneGain("Classic Chrome", dr: 200) == [1, 1], "colour keeps its own")
     }
 
-    @Test func `Redlamp's corrections keep greys grey and lightness in order, for every simulation`() throws {
+    @Test func `Redlamp's corrections and colour input keep greys grey and lightness in order, for every simulation`(
+    ) throws {
         let model = try FirmwareFilmModel(files: .identity(), source: "identity")
         #expect(FirmwareLook.corrections.count == FirmwareSimulation.allCases.count)
         for simulation in FirmwareSimulation.allCases {

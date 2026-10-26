@@ -171,8 +171,9 @@
     /// scene-referred table, which takes the place of Redlamp's tone curve.
     public enum FirmwareLook {
         /// Bumped when the bake changes: 2, black and white at DR200 and DR400 takes PROVIA's
-        /// change in tone gain; 3, Redlamp's corrections (`black`, `corrections`).
-        public static let bakeVersion = 3
+        /// change in tone gain; 3, Redlamp's corrections (`black`, `corrections`); 4, a colour
+        /// matrix on colour simulations' input (`input`).
+        public static let bakeVersion = 4
         public static let tableSize = 33
         /// Stops added to Redlamp's scene light before the model: the model expects a raw
         /// developer's linear output, and Redlamp's scene light is scaled differently. Swept with
@@ -243,6 +244,7 @@
             let gain = exp2(settings.exposure)
             let correction = corrected ? corrections[settings.simulation] : nil
             let black = corrected ? Self.black : 0
+            let input: simd_double3x3? = corrected && !settings.simulation.isMonochrome ? Self.input : nil
             let slices = parallelMap(size) { b in
                 var slice = [Float]()
                 slice.reserveCapacity(size * size * 3)
@@ -253,6 +255,7 @@
                             SIMD3<Double>(SceneLogEncoding.decode(encoded)),
                             gain: gain,
                             black: black,
+                            input: input,
                             rendering: rendering,
                             correction: correction,
                         )
@@ -268,10 +271,11 @@
             _ scene: SIMD3<Double>,
             gain: Double,
             black: Double = 0,
+            input: simd_double3x3? = nil,
             rendering: FirmwareFilmModel.Rendering,
             correction: OutputCorrection? = nil,
         ) -> SIMD3<Double> {
-            var linear = simd_max(ColorMatrices.rec2020ToSRGB * scene, .zero) * gain
+            var linear = simd_max(ColorMatrices.rec2020ToSRGB * (input.map { $0 * scene } ?? scene), .zero) * gain
             let luminance = simd_dot(linear, OutputCorrection.luma)
             if black > 0, luminance > 0 {
                 linear *= max(luminance - black, 0) / luminance
@@ -310,6 +314,28 @@
         /// Subtracted from the model's input luminance, keeping its chromaticity: the cameras'
         /// shadows are deeper than the model's in every simulation. Fitted with `corrections`.
         static let black = 0.005
+
+        /// Applied to Redlamp's scene light (linear Rec.2020) before the model in colour
+        /// simulations: on the donated X-E5 pairs at the camera's own 5500 K, reds and skin turn
+        /// towards orange from the camera's. A white-preserving matrix (the Calibration panel's six
+        /// sliders), fitted on the 11 colour simulations with each pair's exposure free and lightness
+        /// down-weighted; its off-diagonal terms rounded to two significant digits, and each row's
+        /// diagonal what makes it sum to one. Black and white keep their input, which it made worse.
+        static let input = whitePreserving(
+            red: (green: -0.18, blue: -0.058), green: (red: 0.08, blue: -0.03), blue: (red: 0.14, green: -0.11),
+        )
+
+        private static func whitePreserving(
+            red: (green: Double, blue: Double),
+            green: (red: Double, blue: Double),
+            blue: (red: Double, green: Double),
+        ) -> simd_double3x3 {
+            simd_double3x3(rows: [
+                SIMD3(1 - red.green - red.blue, red.green, red.blue),
+                SIMD3(green.red, 1 - green.red - green.blue, green.blue),
+                SIMD3(blue.red, blue.green, 1 - blue.red - blue.green),
+            ])
+        }
 
         /// Redlamp's corrections to the model's output, fitted per simulation on a donated set of
         /// 13 Fujifilm X-E5 raws with the camera's own JPEG of each in every simulation, at its
