@@ -171,7 +171,7 @@ struct MoveToTrashTests {
             let menu = try #require(FilmstripMenu.menu(for: photo("IMG_0003.JPG"), model: model))
             let item = try #require(menu.items.first { $0.title == ShortcutAction.moveToTrash.title })
             #expect(item.keyEquivalent == "\u{7F}" && item.keyEquivalentModifierMask == .command)
-            let grid = LibraryGridMenu.menu(for: photo("IMG_0002.JPG"), model: model)
+            let grid = LibraryGridMenu.menu(for: PhotoAddress(url: photo("IMG_0002.JPG")), model: model)
             #expect(grid.items.contains { $0.title == ShortcutAction.moveToTrash.title })
 
             #expect(await model.trash([]) == "The library hasn't read these photos yet")
