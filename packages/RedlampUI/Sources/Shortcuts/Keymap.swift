@@ -58,9 +58,15 @@ public struct Keymap: Sendable {
     }
 
     /// The action a key runs in `module`. Exact keys win; an action that takes ⇧ as a variant (a rating key moves
-    /// on, a nudge takes a larger step) also answers its key with ⇧, and is told so with `shifted`.
-    public func resolve(_ combo: KeyCombo, in module: AppModule) -> (action: ShortcutAction, shifted: Bool)? {
-        if let exact = actions(with: combo).first(where: { $0.applies(in: module) }) {
+    /// on, a nudge takes a larger step) also answers its key with ⇧, and is told so with `shifted`. Of the actions
+    /// that share a key (`ShortcutAction.givesKeys`), one given it runs where `claims` says it takes it, and the one
+    /// giving it elsewhere.
+    public func resolve(
+        _ combo: KeyCombo, in module: AppModule, claims: (ShortcutAction) -> Bool = { _ in true },
+    ) -> (action: ShortcutAction, shifted: Bool)? {
+        let owners = actions(with: combo).filter { $0.applies(in: module) }
+        let given = owners.filter { owner in owners.contains { $0.givesKeys.contains(owner) } }
+        if let exact = given.first(where: claims) ?? owners.first(where: { !given.contains($0) }) {
             return (exact, combo.shift && exact.acceptsShift)
         }
         guard combo.shift else { return nil }
@@ -95,28 +101,29 @@ public struct Keymap: Sendable {
     // MARK: - Conflicts
 
     /// What giving `combo` to `action` would collide with, before anything is saved: another action that has it
-    /// where both run, an action that answers it as its key with ⇧, or the Mac's and the app's own keys.
+    /// where both run, an action that answers it as its key with ⇧, or the Mac's and the app's own keys. Actions that
+    /// share keys (`ShortcutAction.givesKeys`) don't collide.
     public func conflicts(assigning combo: KeyCombo, to action: ShortcutAction) -> [KeyConflict] {
         if let use = Self.reserved[combo] {
             return [.reserved(use)]
         }
-        let taken = actions(with: combo).filter { $0 != action && $0.sharesModule(with: action) }
+        let taken = actions(with: combo).filter { $0 != action && $0.contends(with: action) }
         guard combo.shift else { return taken.map { .taken(by: $0) } }
         var unshifted = combo
         unshifted.shift = false
         let variants = actions(with: unshifted).filter {
-            $0 != action && $0.acceptsShift && $0.sharesModule(with: action) && !taken.contains($0)
+            $0 != action && $0.acceptsShift && $0.contends(with: action) && !taken.contains($0)
         }
         return taken.map { .taken(by: $0) } + variants.map { .shiftVariant(of: $0) }
     }
 
     /// Every key two actions have where both run, as pairs in the actions' order, which a keymap read from the
-    /// preferences may hold and Settings shows.
+    /// preferences may hold and Settings shows; not those that share keys (`ShortcutAction.givesKeys`).
     public var clashes: [(KeyCombo, ShortcutAction, ShortcutAction)] {
         var found: [(KeyCombo, ShortcutAction, ShortcutAction)] = []
         for (combo, actions) in owners where actions.count > 1 {
             for (index, action) in actions.enumerated() {
-                for other in actions[(index + 1)...] where other.sharesModule(with: action) {
+                for other in actions[(index + 1)...] where other.contends(with: action) {
                     found.append((combo, action, other))
                 }
             }
@@ -194,6 +201,22 @@ public extension ShortcutAction {
     /// Whether there's a module both actions run in, where one key can't mean both.
     func sharesModule(with other: ShortcutAction) -> Bool {
         AppModule.allCases.contains { applies(in: $0) && other.applies(in: $0) }
+    }
+
+    /// The actions this one lets have the keys it shares with them where they take them (`EditorModel.claimsKey`),
+    /// answering those keys itself elsewhere (LIB-46): Move to Trash's ⌫ is Remove from Collection's in a collection
+    /// and in Marked, and Delete Selected Mask or Spot's in Develop's Masking and Healing tools; its ⌘⌫ is Put Back's
+    /// in Recently Trashed, as the Finder's is in the Trash.
+    var givesKeys: Set<ShortcutAction> {
+        self == .moveToTrash ? [.removeFromCollection, .deleteMask, .putBack] : []
+    }
+
+    /// The actions another gives the keys they share (`givesKeys`).
+    static let takingKeys: Set<ShortcutAction> = Set(allCases.flatMap(\.givesKeys))
+
+    /// Whether one key can't mean both actions: a module runs both, and neither gives the other its keys.
+    func contends(with other: ShortcutAction) -> Bool {
+        sharesModule(with: other) && !givesKeys.contains(other) && !other.givesKeys.contains(self)
     }
 
     /// The action's place in the command list.

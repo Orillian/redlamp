@@ -116,6 +116,7 @@ struct AppCommands: Commands {
         item(.renamePhotos, keyed: false)
         item(.moveToFolder)
         item(.copyToFolder)
+        item(.moveToTrash)
         Divider()
         item(.addToCollection)
         item(.addToTargetCollection)
@@ -470,11 +471,12 @@ struct AppCommands: Commands {
     }
 
     /// The item's key equivalent: the action's first key, if it has ⌘ and isn't another action's in the module
-    /// shown, as ⌘N is New Collection's in Library and New Snapshot's in Develop. AppKit gives a key to the first
-    /// item that has it, enabled or not.
+    /// shown, as ⌘N is New Collection's in Library and New Snapshot's in Develop, nor another's that takes the key
+    /// they share now, as ⌘⌫ is Put Back's in Recently Trashed and Move to Trash's elsewhere. AppKit gives a key to
+    /// the first item that has it, enabled or not.
     private func keyEquivalent(of action: ShortcutAction) -> KeyboardShortcut? {
         let keymap = ShortcutKeymap.current
-        guard keymap.menuCarriesKey(of: action, in: menu.shown.module) else { return nil }
+        guard keymap.menuCarriesKey(of: action, in: menu.shown.module, claimed: menu.shown.claimed) else { return nil }
         return keymap.combos(for: action).first?.keyboardShortcut
     }
 

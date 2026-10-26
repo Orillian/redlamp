@@ -18,6 +18,7 @@ extension ShortcutAction {
         .smallerThumbnails: ["thumbnail size", "smaller", "grid", "library"],
         .showInFinder: ["finder", "reveal", "folder", "file", "library"],
         .showPhotosInSubfolders: ["subfolders", "folders", "nested", "include", "count", "library"],
+        .moveToTrash: ["trash", "delete", "remove", "remove photo", "bin", "discard", "library"],
         .showRecentlyTrashed: ["trash", "recently deleted", "deleted", "bin", "removed", "put back", "library"],
         .putBack: ["trash", "restore", "undelete", "recover", "deleted", "put back", "library"],
         .putBackBatch: ["trash", "restore", "undelete", "recover", "batch", "all", "put back", "library"],
@@ -229,7 +230,7 @@ extension ShortcutAction {
         case .smallerThumbnails: "minus.square"
         case .showInFinder: "folder"
         case .showPhotosInSubfolders: "list.bullet.indent"
-        case .showRecentlyTrashed: "trash"
+        case .moveToTrash, .showRecentlyTrashed: "trash"
         case .putBack: "arrow.uturn.backward.square"
         case .putBackBatch: "arrow.uturn.backward.square.fill"
         case .showAllPhotographs: "photo.on.rectangle"

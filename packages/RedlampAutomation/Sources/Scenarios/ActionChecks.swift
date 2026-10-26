@@ -225,6 +225,11 @@
                 })
             case .putBack, .putBackBatch:
                 ActionCheck(action: action, unavailable: "needs a photo in Recently Trashed: checked by its scenario")
+            case .moveToTrash:
+                ActionCheck(
+                    action: action,
+                    unavailable: "moves photos to the Trash: checked on copies by library.move-to-trash",
+                )
             case .showAllPhotographs:
                 ActionCheck(action: action, setUp: { app in
                     try app.wait("the library to open", timeout: 60) { $0.librarySources.canShow(.allPhotographs) }

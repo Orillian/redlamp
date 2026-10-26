@@ -125,7 +125,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
     /// Library
     case swapCompared, makeSelect
     case cycleGridStyle, largerThumbnails, smallerThumbnails, showInFinder, showPhotosInSubfolders
-    case showRecentlyTrashed, putBack, putBackBatch
+    case moveToTrash, showRecentlyTrashed, putBack, putBackBatch
     case showAllPhotographs, showPreviousImport, showMarked, showRejected
     case newCollection, newSmartCollection, newCollectionSet, addToCollection, addToTargetCollection
     case removeFromCollection
@@ -194,7 +194,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
             .modules
         case .swapCompared, .makeSelect,
              .cycleGridStyle, .largerThumbnails, .smallerThumbnails, .showInFinder, .showPhotosInSubfolders,
-             .showRecentlyTrashed, .putBack, .putBackBatch,
+             .moveToTrash, .showRecentlyTrashed, .putBack, .putBackBatch,
              .showAllPhotographs, .showPreviousImport, .showMarked, .showRejected,
              .newCollection, .newSmartCollection, .newCollectionSet, .addToCollection, .addToTargetCollection,
              .removeFromCollection,
@@ -263,6 +263,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .smallerThumbnails: "Decrease Thumbnail Size"
         case .showInFinder: "Show in Finder"
         case .showPhotosInSubfolders: "Show Photos in Subfolders"
+        case .moveToTrash: "Move to Trash"
         case .showRecentlyTrashed: "Show Recently Trashed"
         case .putBack: "Put Back"
         case .putBackBatch: "Put Back Whole Batch"
@@ -486,6 +487,9 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .keywordSet8: [.char("8", option: true)]
         case .keywordSet9: [.char("9", option: true)]
         case .importKeywords, .exportKeywords, .editCaptureTime: []
+        // The Finder's Move to Trash and Lightroom Classic's Delete, each where the actions it gives them to don't take
+        // them (`givesKeys`).
+        case .moveToTrash: [KeyCombo(.delete, command: true), KeyCombo(.delete)]
         // Finder's Put Back, in the Trash.
         case .putBack: [KeyCombo(.delete, command: true)]
         // Lightroom Classic has no Group By; its menus, the grid's toolbar and headers, and the palette have them.
@@ -648,6 +652,12 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
+    /// Whether a held key runs the action once: each press of Move to Trash's is one batch, and the photo after it,
+    /// active then, would go to the Trash with the key's next repeat.
+    public var actsOncePerPress: Bool {
+        self == .moveToTrash
+    }
+
     /// Where the feature lands on the roadmap; `nil` once it works, as every action's does now.
     public var plannedPhase: String? {
         nil
@@ -677,8 +687,11 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         resolve(combo, in: .develop)
     }
 
-    /// Resolves a key press in `module`, where J, = and - mean what they mean there.
-    public static func resolve(_ combo: KeyCombo, in module: AppModule) -> (action: ShortcutAction, shifted: Bool)? {
-        ShortcutKeymap.current.resolve(combo, in: module)
+    /// Resolves a key press in `module`, where J, = and - mean what they mean there; of actions that share a key
+    /// (`givesKeys`), the one `claims` says takes it now.
+    public static func resolve(
+        _ combo: KeyCombo, in module: AppModule, claims: (ShortcutAction) -> Bool = { _ in true },
+    ) -> (action: ShortcutAction, shifted: Bool)? {
+        ShortcutKeymap.current.resolve(combo, in: module, claims: claims)
     }
 }

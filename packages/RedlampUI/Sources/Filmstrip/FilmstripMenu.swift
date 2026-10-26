@@ -2,10 +2,10 @@ import AppKit
 import RedlampDesign
 
 /// A filmstrip photo's context menu (`docs/plans/2026-10-02-copy-paste-sync-design.md`), as in
-/// Lightroom and Finder: on a selected photo, the Photo menu's copy, paste and sync items and, in
-/// Library, renaming and moving, acting on the selection as they do there; on any other photo, copying from it or
-/// pasting onto it
-/// alone, without opening it. Items that don't apply are left out. In Library, its rating, flag,
+/// Lightroom and Finder: on a selected photo, the Photo menu's copy, paste and sync items, in
+/// Library renaming and moving, and in either module Move to Trash (LIB-46), acting on the selection as they do
+/// there; on any other photo, copying from it, pasting onto it or moving it to the Trash alone, without opening it.
+/// Items that don't apply are left out. In Library, its rating, flag,
 /// labels and mark come first (`LibraryGridMenu.culling`), then Stacking (`LibraryGridMenu.stacking`);
 /// the grid's menu has its own. A photo in Recently Trashed has Put Back's instead (`TrashMenu`).
 @MainActor
@@ -25,7 +25,7 @@ enum FilmstripMenu {
             let groups: [[ShortcutAction]] = [
                 [.copySettings, .copySettingsAgain, .pasteSettings, .pastePrevious],
                 [.syncSettings, .syncSettingsAgain, .undoSync, .toggleAutoSync],
-                [.renamePhotos, .moveToFolder, .copyToFolder],
+                [.renamePhotos, .moveToFolder, .copyToFolder, .moveToTrash],
             ]
             for group in groups {
                 let actions = group.filter { action in
@@ -51,6 +51,9 @@ enum FilmstripMenu {
             if model.canPerform(.undoSync) {
                 add([NSMenuItem(title: ShortcutAction.undoSync.title) { model.perform(.undoSync) }], to: menu)
             }
+            if model.canMoveToTrash {
+                add([trash(photo, model: model)], to: menu)
+            }
         }
         return menu.items.isEmpty ? nil : menu
     }
@@ -59,15 +62,21 @@ enum FilmstripMenu {
     private static func item(for action: ShortcutAction, model: EditorModel) -> NSMenuItem {
         let state: NSControl.StateValue = action == .toggleAutoSync && model.settingsSync.isAutoSyncing ? .on : .off
         let item = NSMenuItem(title: action.title, state: state) { model.perform(action) }
-        if let combo = action.combos.first, combo.command, case let .character(character) = combo.key {
-            item.keyEquivalent = String(character)
-            var modifiers: NSEvent.ModifierFlags = [.command]
-            if combo.shift {
-                modifiers.insert(.shift)
-            }
-            if combo.option {
-                modifiers.insert(.option)
-            }
+        if let (key, modifiers) = action.combos.first?.menuKeyEquivalent {
+            item.keyEquivalent = key
+            item.keyEquivalentModifierMask = modifiers
+        }
+        return item
+    }
+
+    /// Move to Trash for `photo` alone, which isn't selected.
+    private static func trash(_ photo: URL, model: EditorModel) -> NSMenuItem {
+        let item = NSMenuItem(title: ShortcutAction.moveToTrash.title) {
+            model.moveToTrash(photo)
+            model.activity.record(.action, ShortcutAction.moveToTrash.title)
+        }
+        if let (key, modifiers) = ShortcutAction.moveToTrash.combos.first?.menuKeyEquivalent {
+            item.keyEquivalent = key
             item.keyEquivalentModifierMask = modifiers
         }
         return item

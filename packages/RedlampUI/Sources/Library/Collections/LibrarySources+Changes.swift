@@ -176,14 +176,18 @@ public extension LibrarySources {
         return path
     }
 
-    /// Whether Remove from Collection would take photos out of the collection shown.
+    /// Whether Remove from Collection would take photos out of the collection shown, or out of Marked.
     var canRemove: Bool {
-        collectionShown != nil && model?.selection != nil
+        (collectionShown != nil || shown == .marked) && model?.selection != nil
     }
 
-    /// Takes the selection's photos out of the collection shown.
+    /// Takes the selection's photos out of the collection shown; in Marked, Redlamp's quick collection, takes their
+    /// mark off, as Lightroom Classic's Delete takes a photo out of its Quick Collection (LIB-46).
     @discardableResult
     func removeFromShown() -> Bool {
+        if shown == .marked, let model {
+            return model.cull(.mark(false))
+        }
         guard let path = collectionShown else { return false }
         let photos = selectedPhotosNow()
         Task { [weak self] in

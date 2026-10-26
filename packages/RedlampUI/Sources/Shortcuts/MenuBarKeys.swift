@@ -3,7 +3,8 @@ import AppKit
 /// A ⌘ key's menu item brought up to date before AppKit looks for it (LIB-14). SwiftUI gives a top-level menu's items
 /// the targets AppKit enables them by only as the menu opens, and AppKit's search for a key equivalent doesn't open
 /// it: a key would meet its item as its menu last showed it, so ⌘R did nothing for a photo selected since the Photo
-/// menu was last opened without one.
+/// menu was last opened without one. Held, a key whose action acts once a press (`ShortcutAction.actsOncePerPress`)
+/// runs it once.
 @MainActor public enum MenuBarKeys {
     /// Fills in the top-level menu holding the item `event`'s key reaches, as opening the menu does. True when the
     /// key is taken in its item's place: the item is still disabled though its action can run, as after a change
@@ -11,9 +12,19 @@ import AppKit
     /// A key no item carries that the key monitor doesn't read (⌘ or ⌃ with a key, or F1, F3, F4 and F9 on) runs
     /// the action the keymap gives it (LIB-36), and is taken when it does.
     public static func prepare(for event: NSEvent, model: EditorModel) -> Bool {
-        guard event.type == .keyDown, !KeyRecorderView.isRecording, let mainMenu = NSApp.mainMenu else { return false }
+        guard event.type == .keyDown, !KeyRecorderView.isRecording else { return false }
         let combo = KeyCombo(event: event)
         guard event.modifierFlags.contains(.command) || combo.map({ !$0.isMonitored }) == true else { return false }
+        // A field being edited keeps ⌘⌫, the text system's Delete to Beginning of Line, which AppKit would give Move to
+        // Trash's or Put Back's item first.
+        if combo?.isLineDeletion == true, let text = NSApp?.keyWindow?.firstResponder as? NSTextView, text.isEditable {
+            text.keyDown(with: event)
+            return true
+        }
+        if event.isARepeat, let combo, model.action(forKey: combo)?.action.actsOncePerPress == true {
+            return true
+        }
+        guard let mainMenu = NSApp?.mainMenu else { return false }
         #if DEBUG || REDLAMP_PROFILING
             let started = CFAbsoluteTimeGetCurrent()
             defer { MenuBarProbe.shared.readiedKey(since: started) }
@@ -37,7 +48,7 @@ import AppKit
         guard window == nil || window?.windowController is EditorWindowController,
               !(window?.firstResponder is NSTextView), window?.attachedSheet == nil, model.commandPalette == nil,
               !model.isModalDialogOpen,
-              let (action, shifted) = ShortcutAction.resolve(combo, in: model.module)
+              let (action, shifted) = model.action(forKey: combo)
         else { return false }
         return model.perform(action, shifted: shifted)
     }

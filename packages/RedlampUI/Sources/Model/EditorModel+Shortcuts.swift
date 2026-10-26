@@ -34,6 +34,12 @@ public extension EditorModel {
             : FeedbackPrefill(featureID: "raw.wont-open", message: errorMessage)
     }
 
+    /// The action a key press runs now, in the module shown: of actions that share a key, the one that takes it here
+    /// (`claimsKey`), as ⌫ is Remove from Collection's in a collection and Move to Trash's in a folder.
+    func action(forKey combo: KeyCombo) -> (action: ShortcutAction, shifted: Bool)? {
+        ShortcutAction.resolve(combo, in: module, claims: claimsKey)
+    }
+
     /// Whether a sheet, or a drop's move, keeps `action` from running. While a drop's move runs, Undo and Redo go
     /// through: they take their turn behind its batch, so ⌘Z takes the move back once it's made.
     func isHeldByDialog(_ action: ShortcutAction) -> Bool {

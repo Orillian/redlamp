@@ -124,7 +124,7 @@
                 for module in AppModule.allCases {
                     try app.main { $0.showModule(module) }
                     app.pause(0.4)
-                    let found = try app.main { _ -> [String] in
+                    let found = try app.main { model -> [String] in
                         guard let bar = NSApp.mainMenu else { return ["no menu bar"] }
                         let items = MenuBarCollisions.items(in: bar) { menu in
                             Menus.open(menu)
@@ -141,6 +141,7 @@
                         let keymap = ShortcutKeymap.shared.keymap
                         let missing = MenuBarCollisions.keysNotCarried(
                             by: items, titles: titles, keymap: keymap, module: module,
+                            claimed: Set(keymap.menuKeyTakers.filter(model.claimsKey)),
                         )
                         let collisions = MenuBarCollisions.collisions(in: items).filter { collision in
                             collision.first.modifiers == collision.later

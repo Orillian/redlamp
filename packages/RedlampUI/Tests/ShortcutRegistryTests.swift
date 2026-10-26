@@ -2,24 +2,37 @@ import Testing
 @_spi(Harness) @testable import RedlampUI
 
 struct ShortcutRegistryTests {
-    @Test func `every key combo belongs to exactly one action in each module`() {
+    @Test func `every key combo belongs to exactly one action in each module, but those Move to Trash gives`() {
         for module in AppModule.allCases {
             var owners: [KeyCombo: ShortcutAction] = [:]
             for action in ShortcutAction.allCases
                 where module == .library ? !action.isDevelopOnly : !action.isLibraryOnly {
                 for combo in action.combos {
+                    let owner = owners[combo]
                     #expect(
-                        owners[combo] == nil,
-                        "\(combo.display) is bound to both \(owners[combo].map { "\($0)" } ?? "") and \(action) in \(module)",
+                        owner.map { !$0.contends(with: action) } ?? true,
+                        "\(combo.display) is bound to both \(owner.map { "\($0)" } ?? "") and \(action) in \(module)",
                     )
                     owners[combo] = action
                     #expect(
-                        ShortcutAction.resolve(combo, in: module)?.action == action,
+                        ShortcutAction.resolve(combo, in: module, claims: { $0 == action })?.action == action,
                         "\(combo.display) in \(module)",
                     )
                 }
             }
         }
+    }
+
+    @Test func `⌫ moves photos to the Trash where Remove from Collection and the masks don't take it, and ⌘⌫ where Put Back doesn't`() {
+        let delete = KeyCombo(.delete)
+        let commandDelete = KeyCombo(.delete, command: true)
+        #expect(ShortcutAction.resolve(delete, in: .library, claims: { _ in false })?.action == .moveToTrash)
+        #expect(ShortcutAction.resolve(delete, in: .library)?.action == .removeFromCollection, "in a collection")
+        #expect(ShortcutAction.resolve(delete, in: .develop, claims: { _ in false })?.action == .moveToTrash)
+        #expect(ShortcutAction.resolve(delete, in: .develop)?.action == .deleteMask, "in the Masking tool")
+        #expect(ShortcutAction.resolve(commandDelete, in: .library, claims: { _ in false })?.action == .moveToTrash)
+        #expect(ShortcutAction.resolve(commandDelete, in: .library)?.action == .putBack, "in Recently Trashed")
+        #expect(ShortcutAction.moveToTrash.actsOncePerPress && !ShortcutAction.deleteMask.actsOncePerPress)
     }
 
     @Test func `the Library's J, = and - are its grid's, and Develop's are Develop's`() {

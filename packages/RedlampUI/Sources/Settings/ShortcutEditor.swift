@@ -120,7 +120,7 @@ public final class ShortcutEditor {
         store.update { keymap in
             let keys = keymap.preset.combos(for: action)
             for combo in keys {
-                for other in keymap.actions(with: combo) where other != action && other.sharesModule(with: action) {
+                for other in keymap.actions(with: combo) where other != action && other.contends(with: action) {
                     keymap.setCombos(keymap.combos(for: other).filter { $0 != combo }, for: other)
                 }
             }

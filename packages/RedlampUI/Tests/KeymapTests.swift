@@ -35,10 +35,47 @@ struct KeymapTests {
         for module in AppModule.allCases {
             for action in ShortcutAction.allCases where action.applies(in: module) {
                 for combo in keymap.combos(for: action) {
-                    #expect(keymap.resolve(combo, in: module)?.action == action, "\(combo.display) in \(module)")
+                    // A key Move to Trash gives an action is that action's where it takes it, and Move to Trash's
+                    // elsewhere.
+                    #expect(
+                        keymap.resolve(combo, in: module, claims: { $0 == action })?.action == action,
+                        "\(combo.display) in \(module)",
+                    )
                 }
             }
         }
+    }
+
+    @MainActor
+    @Test func `the keys Move to Trash shares are no conflict, given back or taken, and another action's are`() {
+        let keymap = Keymap.standard
+        #expect(keymap.conflicts(assigning: KeyCombo(.delete), to: .moveToTrash).isEmpty)
+        #expect(keymap.conflicts(assigning: KeyCombo(.delete, command: true), to: .moveToTrash).isEmpty)
+        #expect(keymap.conflicts(assigning: KeyCombo(.delete), to: .removeFromCollection).isEmpty)
+        #expect(Set(keymap.conflicts(assigning: KeyCombo(.delete), to: .flagPick)) == [
+            .taken(by: .removeFromCollection), .taken(by: .moveToTrash), .taken(by: .deleteMask),
+        ])
+        #expect(Set(keymap.conflicts(assigning: .char("p"), to: .moveToTrash)) == [.taken(by: .flagPick)])
+
+        let editor = ShortcutEditor(store: ShortcutKeymap(defaults: nil))
+        editor.store.update { $0.setCombos([], for: .moveToTrash) }
+        editor.reset(.moveToTrash)
+        #expect(editor.keymap.combos(for: .moveToTrash) == [KeyCombo(.delete, command: true), KeyCombo(.delete)])
+        #expect(editor.keymap.combos(for: .removeFromCollection) == [KeyCombo(.delete)], "it keeps ⌫")
+        #expect(editor.keymap.combos(for: .putBack) == [KeyCombo(.delete, command: true)], "it keeps ⌘⌫")
+    }
+
+    @Test func `⌘⌫ is Put Back's item's key in Recently Trashed and Move to Trash's elsewhere`() {
+        let keymap = Keymap.standard
+        for module in AppModule.allCases {
+            #expect(keymap.menuCarriesKey(of: .moveToTrash, in: module))
+            #expect(!keymap.menuCarriesKey(of: .putBack, in: module))
+            #expect(!keymap.menuCarriesKey(of: .moveToTrash, in: module, claimed: [.putBack]))
+            #expect(keymap.menuCarriesKey(of: .putBack, in: module, claimed: [.putBack]))
+        }
+        #expect(keymap.sharedKeyActions == [.moveToTrash, .putBack])
+        #expect(keymap.menuKeyTakers == [.putBack])
+        #expect(!keymap.moduleKeyedActions.contains(.putBack))
     }
 
     @Test(arguments: KeymapPreset.allCases)

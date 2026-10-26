@@ -110,6 +110,7 @@ enum PaletteCatalog {
         .rotateLeft, .rotateRight, .stackPhotos, .unstackPhotos,
         .addToTargetCollection, .addToCollection, .removeFromCollection,
         .moveToFolder, .copyToFolder, .renamePhotos, .editCaptureTime, .showInFinder, .export, .exportWithPrevious,
+        .moveToTrash,
     ]
 
     /// The selection's actions that can run now, with its custom labels beside the colour labels.

@@ -15,6 +15,8 @@ import RedlampLibrary
         var enabled: Set<ShortcutAction> = []
         var checked: Set<ShortcutAction> = []
         public internal(set) var module = AppModule.develop
+        /// The actions that take a ⌘ key they share with another now (`EditorModel.claimsKey`), whose items carry it.
+        public internal(set) var claimed: Set<ShortcutAction> = []
         public internal(set) var isModalDialogOpen = false
         public internal(set) var hasSelection = false
         public internal(set) var hasFilters = false
@@ -101,9 +103,9 @@ import RedlampLibrary
         }
         refreshed = asked.isEmpty ? nil : asked
         guard next != shown else { return }
-        let moduleChanged = next.module != shown.module
+        let keysMoved = next.module != shown.module || next.claimed != shown.claimed
         shown = next
-        if moduleChanged {
+        if keysMoved {
             Self.afterMenusUpdate { ModuleMenuKeys.refresh() }
         }
     }
@@ -119,6 +121,7 @@ import RedlampLibrary
             }
         }
         shown.module = model.module
+        shown.claimed = Set(ShortcutKeymap.current.menuKeyTakers.filter(model.claimsKey))
         shown.isModalDialogOpen = model.isModalDialogOpen
         shown.hasSelection = model.selection != nil
         let filters = model.libraryFilters

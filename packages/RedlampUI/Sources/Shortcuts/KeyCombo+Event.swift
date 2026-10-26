@@ -58,6 +58,22 @@ extension KeyCombo {
         return true
     }
 
+    /// ⌘⌫, which text fields keep for deleting to a line's start.
+    var isLineDeletion: Bool {
+        key == .delete && command && !shift && !option && !control
+    }
+
+    /// The key as a menu item's key equivalent, with ⌘ among its modifiers: a character, or ⌫ as the Delete key's
+    /// U+007F; nil for the keys a menu item can't carry.
+    var menuKeyEquivalent: (key: String, modifiers: NSEvent.ModifierFlags)? {
+        guard command else { return nil }
+        switch key {
+        case let .character(character): return (String(character), modifierFlags)
+        case .delete: return ("\u{7F}", modifierFlags)
+        default: return nil
+        }
+    }
+
     /// ⌘ with an arrow, which text fields and lists keep for moving to a line's or a list's ends.
     var isTextNavigation: Bool {
         guard command else { return false }

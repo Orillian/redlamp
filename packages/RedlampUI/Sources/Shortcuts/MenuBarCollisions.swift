@@ -91,12 +91,16 @@ import AppKit
     }
 
     /// Of the actions whose items are titled `titles`, those whose first key, with ⌘, the menus give the item in
-    /// `module`, but which no item of theirs carries: SwiftUI leaves an item without a key an earlier one has.
+    /// `module`, with the actions `claimed` that take a key they share (`EditorModel.claimsKey`), but which no item
+    /// of theirs carries: SwiftUI leaves an item without a key an earlier one has.
     public static func keysNotCarried(
         by items: [Item], titles: [String: ShortcutAction], keymap: Keymap, module: AppModule,
+        claimed: Set<ShortcutAction> = [],
     ) -> [ShortcutAction] {
         titles.compactMap { title, action in
-            guard keymap.menuCarriesKey(of: action, in: module), let key = keymap.combos(for: action).first else {
+            guard keymap.menuCarriesKey(of: action, in: module, claimed: claimed),
+                  let key = keymap.combos(for: action).first
+            else {
                 return nil
             }
             return items.contains { $0.title == title && $0.flags == key.modifierFlags } ? nil : action
