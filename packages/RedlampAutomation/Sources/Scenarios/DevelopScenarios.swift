@@ -11,6 +11,7 @@
             treatment,
             reproduction,
             toneAndPresence,
+            negativeDehaze,
             toneCurve,
             colorMixer,
             colorGrading,
@@ -226,6 +227,113 @@
                 .feature("develop.auto"),
                 .feature("workspace.sliders"),
             ], via: .mouse)
+        }
+
+        /// TON-55: from process 18, Dehaze below zero adds haze where the haze map finds it, lifting the shadows
+        /// gently;
+        /// an edit at process 17 keeps the even veil toward grey that 17 rendered, which lifts them further. Each is
+        /// measured against its own Dehaze 0.
+        static let negativeDehaze = Scenario(
+            "develop.negative-dehaze",
+            "Dehaze dragged and typed below zero adds haze, as History steps; on the edit moved to process 17 the same "
+                + "Dehaze renders 17's even veil, and Undo brings back 18's",
+            claims: [.parameter(.dehaze), .feature("develop.presence")],
+        ) { app in
+            try app.openWorking()
+            try app.choose(.resetAll)
+            try app.main { $0.expandedPanels = [.basic] }
+            try app.wait("the edit at process 18 or later, without Dehaze") { model in
+                model.recipe.processVersion >= 18 && model.value(.dehaze) == 0
+            }
+            let clear = try settledHistogram(app)
+            @MainActor func lastStep(_ model: EditorModel) -> UUID? {
+                model.history.last?.id
+            }
+
+            let undragged = try app.main(lastStep)
+            try app.drag(.slider(.dehaze), from: CGPoint(x: 0.5, y: 0.5), by: CGVector(dx: -30, dy: 0))
+            try app.wait("Dehaze dragged below zero, as a History step") { model in
+                model.value(.dehaze) < 0 && lastStep(model) != undragged && model.history.last?.title == "Dehaze"
+            }
+            app.covered([.parameter(.dehaze), .feature("develop.presence")], via: .mouse)
+            let dragged = try app.main(lastStep)
+            try typeValue(-60, into: .dehaze, app: app)
+            try app.wait("Dehaze typed, as a History step") { model in
+                lastStep(model) != dragged && model.history.last?.title == "Dehaze"
+            }
+            app.covered(.parameter(.dehaze), via: .key)
+            let hazed = try settledHistogram(app)
+
+            try app.expectRenders("the edit moved to process 17") { try app.main { $0.setProcessVersion(17) } }
+            let even = try settledHistogram(app)
+            try app.click(.sliderLabel(.dehaze), count: 2)
+            try app.wait("a double-click on its label to reset Dehaze") { $0.value(.dehaze) == 0 }
+            let evenClear = try settledHistogram(app)
+            let (veil, evenVeil) = (Tones(hazed), Tones(even))
+            let (lift, evenLift) = (veil.darkest - Tones(clear).darkest, evenVeil.darkest - Tones(evenClear).darkest)
+            app.recorder.write("note", [
+                "Dehaze -60 against 0": "process 18: \(Tones(clear)) to \(veil); process 17: \(Tones(evenClear)) to "
+                    + "\(evenVeil)",
+            ])
+            try app.expect(hazed != clear && veil.mean > Tones(clear).mean, "Dehaze -60 at 18 added no haze: \(veil)")
+            try app.expect(even != hazed, "At process 17, Dehaze -60 renders as at 18")
+            try app.expect(
+                evenLift > lift + 0.04,
+                "Under Dehaze -60 the darkest 2 % rose \(evenLift) at 17 and \(lift) at 18, where 17's even veil lifts "
+                    + "them further",
+            )
+
+            try app.press(.undo)
+            try app.wait("⌘Z: Dehaze -60 again at 17") { model in
+                abs(model.value(.dehaze) + 60) < 1e-6 && model.recipe.processVersion == 17
+            }
+            try app.expect(try settledHistogram(app) == even, "Undo to Dehaze -60 at 17 renders otherwise than before")
+            try app.press(.undo)
+            try app.wait("⌘Z: back at process 18") { model in
+                abs(model.value(.dehaze) + 60) < 1e-6 && model.recipe.processVersion >= 18
+            }
+            try app.expect(try settledHistogram(app) == hazed, "Back at 18, Dehaze -60 renders otherwise than before")
+            try app.choose(.resetAll)
+        }
+
+        /// The histogram once renders have settled: no new frame for 0.4 s.
+        private static func settledHistogram(_ app: RunningApp, timeout: Double = 20) throws -> Histogram {
+            let deadline = Date().addingTimeInterval(timeout)
+            var (frames, since) = try (app.frames(), Date())
+            while Date().timeIntervalSince(since) < 0.4 {
+                try app.expect(Date() < deadline, "Renders didn't settle in \(Int(timeout)) s")
+                app.pause(0.05)
+                let now = try app.frames()
+                if now != frames {
+                    (frames, since) = (now, Date())
+                }
+            }
+            // The histogram follows the latest frame within 33 ms.
+            app.pause(0.1)
+            return try app.main { $0.histogram }
+        }
+
+        /// A render's tones from its histogram: its mean luminance and where its darkest 2 % end, 0 ... 1.
+        struct Tones: CustomStringConvertible {
+            let mean: Double
+            let darkest: Double
+
+            init(_ histogram: Histogram) {
+                let counts = histogram.luminance.map(Double.init)
+                let total = max(counts.reduce(0, +), 1)
+                let top = Double(Histogram.binCount - 1)
+                mean = counts.enumerated().reduce(0) { $0 + Double($1.offset) * $1.element } / total / top
+                var running = 0.0
+                let bin = counts.firstIndex { count in
+                    running += count
+                    return running >= total * 0.02
+                } ?? 0
+                darkest = Double(bin) / top
+            }
+
+            var description: String {
+                String(format: "mean %.3f, darkest 2 %% %.3f", mean, darkest)
+            }
         }
 
         static let toneCurve = Scenario(
