@@ -38,6 +38,7 @@
             + MoveEditsScenarios.all
             + FilesScenarios.all
             + DragScenarios.all
+            + TrashScenarios.all
             + MenuBarScenarios.all
             + ShortcutScenarios.all
             + ForeignInputScenarios.all
