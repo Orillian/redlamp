@@ -250,15 +250,16 @@ extension FolderLibrary {
         fromLibrary.adopting = true
         Task { [weak self] in
             let (difference, edited) = await Task.detached(priority: .userInitiated) {
-                (Self.difference(from: current, to: library), library.filter(\.hasEdits).map(\.url))
+                (Self.difference(from: current, to: library), library.filter(\.hasEdits).map(\.address))
             }.value
             guard let self, self.generation == generation, fromLibrary.list != nil else { return }
             guard self.revision == revision else { return adopt(library, generation: generation) }
             for (index, item) in difference.updated {
                 items[index] = item
             }
-            let inserting = Set(difference.inserting.map(\.url))
-            let updated = difference.updated.map { items[$0.index].url } + edited.filter { !inserting.contains($0) }
+            let inserting = Set(difference.inserting.map(\.address))
+            let updated = difference.updated.map { items[$0.index].address }
+                + edited.filter { !inserting.contains($0) }
             if !difference.removed.isEmpty || !difference.inserting.isEmpty || !updated.isEmpty {
                 apply(
                     removed: difference.removed, inserting: difference.inserting, updated: updated, probing: false,
@@ -279,14 +280,14 @@ extension FolderLibrary {
     nonisolated static func difference(from current: [LibraryItem], to library: [LibraryItem]) -> (
         removed: IndexSet, updated: [(index: Int, item: LibraryItem)], inserting: [LibraryItem],
     ) {
-        let incoming = Dictionary(library.map { ($0.url, $0) }) { first, _ in first }
+        let incoming = Dictionary(library.map { ($0.address, $0) }) { first, _ in first }
         var removed = IndexSet()
         var updated: [(index: Int, item: LibraryItem)] = []
-        var listed = Set<URL>()
+        var listed = Set<PhotoAddress>()
         listed.reserveCapacity(current.count)
         for (index, item) in current.enumerated() {
-            listed.insert(item.url)
-            guard let new = incoming[item.url] else {
+            listed.insert(item.address)
+            guard let new = incoming[item.address] else {
                 removed.insert(index)
                 continue
             }
@@ -295,7 +296,7 @@ extension FolderLibrary {
                 updated.append((index, kept))
             }
         }
-        return (removed, updated, library.filter { !listed.contains($0.url) })
+        return (removed, updated, library.filter { !listed.contains($0.address) })
     }
 
     /// `new`, keeping `current`'s file and sidecar dates when they're the same within a millisecond:
@@ -324,19 +325,20 @@ extension FolderLibrary {
     /// moves where they're shown.
     private func apply(library change: LibraryFolderList.Change) {
         let change = fromLibrary.ahead.isEmpty ? change : fromLibrary.ahead.translate(change)
-        for url in change.removed {
-            fromLibrary.keys[url] = nil
+        // A version's content key is its file's.
+        for photo in change.removed where photo.version == nil {
+            fromLibrary.keys[photo.url] = nil
         }
         fromLibrary.keys.merge(change.keys) { _, new in new }
-        var removed = IndexSet(change.removed.compactMap { positions[$0] })
-        var updated: [URL] = []
+        var removed = IndexSet(change.removed.compactMap(place(of:)))
+        var updated: [PhotoAddress] = []
         var updatedRows: [Int] = []
         var inserting: [LibraryItem] = []
         // Only the photos a change brings can start settling: those settling already wait for `settleFromLibrary`.
         var settles = false
         let now = clock()
         for var item in [change.inserted, change.updated].joined() {
-            guard let index = positions[item.url] else {
+            guard let index = place(of: item.address) else {
                 item.isSettling = Self.isSettling(item.modified, at: now)
                 settles = settles || item.isSettling
                 inserting.append(item)
@@ -351,7 +353,7 @@ extension FolderLibrary {
             }
             if kept != items[index] {
                 items[index] = kept
-                updated.append(item.url)
+                updated.append(item.address)
                 updatedRows.append(index)
                 settles = settles || kept.isSettling
             }

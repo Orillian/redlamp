@@ -60,9 +60,11 @@ public struct LibraryItem: Identifiable, Hashable, Sendable {
     }
 
     /// The order photos have with Show Photos in Subfolders: a folder's photos by name, then each
-    /// subfolder's, depth first, subfolders in Finder's order.
+    /// subfolder's, depth first, subfolders in Finder's order; a file's own row before its versions (LIB-48).
     static func walkPrecedes(_ a: LibraryItem, _ b: LibraryItem) -> Bool {
-        guard a.folderPath != b.folderPath else { return FileOrder.precedes(a.name, b.name) }
+        guard a.folderPath != b.folderPath else {
+            return a.name == b.name ? a.version == nil && b.version != nil : FileOrder.precedes(a.name, b.name)
+        }
         let left = a.folderPath.split(separator: "/")
         let right = b.folderPath.split(separator: "/")
         for (x, y) in zip(left, right) where x != y {

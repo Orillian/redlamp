@@ -71,7 +71,7 @@ struct MovesAhead {
         var arrived: [Int64: (item: LibraryItem, inserted: Bool)] = [:]
         for (items, inserted) in [(change.inserted, true), (change.updated, false)] {
             for item in items {
-                if let id = change.ids[item.url], photos[id] != nil {
+                if let id = change.ids[item.address], photos[id] != nil {
                     arrived[id] = (item, inserted)
                 } else if inserted {
                     translated.inserted.append(item)
@@ -80,9 +80,11 @@ struct MovesAhead {
                 }
             }
         }
-        for url in change.removed {
-            guard let id = listed.removeValue(forKey: url), var photo = photos[id] else {
-                translated.removed.append(url)
+        // A version's row is never ahead: its file's is.
+        for removed in change.removed {
+            guard removed.version == nil, let id = listed.removeValue(forKey: removed.url),
+                  var photo = photos[id] else {
+                translated.removed.append(removed)
                 continue
             }
             photo.listed = nil
@@ -96,7 +98,7 @@ struct MovesAhead {
             guard var photo = photos[id] else { continue }
             let url = arrival.item.url
             let key = translated.keys.removeValue(forKey: url)
-            translated.ids[url] = nil
+            translated.ids[arrival.item.address] = nil
             if let before = photo.listed, listed[before] == id {
                 listed[before] = nil
             }
@@ -107,7 +109,7 @@ struct MovesAhead {
                 } else {
                     translated.updated.append(arrival.item)
                 }
-                translated.ids[url] = id
+                translated.ids[arrival.item.address] = id
                 translated.keys[url] = key
                 continue
             }
@@ -118,7 +120,7 @@ struct MovesAhead {
             photos[id] = photo
             if let shown = photo.shown {
                 translated.updated.append(FolderLibrary.item(arrival.item, at: shown))
-                translated.ids[shown] = id
+                translated.ids[PhotoAddress(url: shown)] = id
                 translated.keys[shown] = key
             }
         }
@@ -247,6 +249,7 @@ extension FolderLibrary {
         items = LibraryItems(moved.items)
         photoIDs = moved.photoIDs
         positions = moved.positions
+        versionPositions = Self.versionPositions(of: moved.items)
         var keys: [(URL, ContentKey)] = []
         for move in moves.moves {
             if let key = fromLibrary.keys.removeValue(forKey: move.from), let to = move.to {
@@ -342,9 +345,11 @@ extension FolderLibrary {
             }
         }
         let shown = merged.map(\.item)
+        // A file's versions (LIB-48) keep its old URL until the library's list brings them where it went.
+        let files = shown.enumerated().filter { $0.element.version == nil }
         return Moved(
             revision: revision, items: shown, photoIDs: ContiguousArray(merged.map(\.id)),
-            positions: Dictionary(shown.enumerated().map { ($1.url, $0) }) { first, _ in first }, diff: diff,
+            positions: Dictionary(files.map { ($1.url, $0) }) { first, _ in first }, diff: diff,
             reordered: !leaving.isEmpty || !inOrder || !restoredIDs.isEmpty,
         )
     }

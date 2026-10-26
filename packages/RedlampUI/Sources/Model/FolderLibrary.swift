@@ -138,7 +138,10 @@ public final class FolderLibrary {
     @ObservationIgnored var highestIndexID: Int64 = 0
     @ObservationIgnored var isReadingHighestIndexID = false
     @ObservationIgnored private var madeList: PhotoList?
+    /// Each file's own row, by its URL, in a folder's photos; a library's source finds its rows by `PhotoPaths`.
     @ObservationIgnored var positions: [URL: Int] = [:]
+    /// Each version's row (LIB-48), by its address, in a folder's photos, beside `positions`.
+    @ObservationIgnored var versionPositions: [PhotoAddress: Int] = [:]
     /// Sources shown with more photos than this have their rows read as they're asked for (`LibraryItems`), those of
     /// their first `firstRead` photos with their first change.
     @ObservationIgnored var largestRead = LibrarySourceList.largestRead
@@ -249,10 +252,30 @@ public final class FolderLibrary {
     }
 
     /// The row of the photo `address` names: its file's own, as `index(of:)` finds it by URL, or one of its versions
-    /// (LIB-48), which only the library's sources list.
+    /// (LIB-48).
     public func index(of address: PhotoAddress) -> Int? {
         guard address.version != nil else { return index(of: address.url) }
-        return fromLibrary.sourcePaths?.id(of: address).flatMap(photoList.index(of:))
+        guard let paths = fromLibrary.sourcePaths else { return place(of: address) }
+        return paths.id(of: address).flatMap(photoList.index(of:))
+    }
+
+    /// The row of `address` in a folder's photos, from `positions` and `versionPositions`; a version's only while
+    /// its row is still that version, rows replaced by a list of files alone (Recently Trashed's) leaving the table
+    /// behind them.
+    func place(of address: PhotoAddress) -> Int? {
+        guard address.version != nil else { return positions[address.url] }
+        return versionPositions[address].flatMap { row in
+            items.indices.contains(row) && items.row(row)?.address == address ? row : nil
+        }
+    }
+
+    /// The rows of `items`' versions, by address.
+    static func versionPositions(of items: some Sequence<LibraryItem>) -> [PhotoAddress: Int] {
+        var positions: [PhotoAddress: Int] = [:]
+        for (index, item) in items.enumerated() where item.version != nil {
+            positions[item.address] = index
+        }
+        return positions
     }
 
     /// The file and the edit photo `id` is: its URL and its version; nil for a large source's photo whose row isn't
@@ -408,14 +431,16 @@ public final class FolderLibrary {
     }
 
     func replace(with items: [LibraryItem]) {
-        replace(with: items, positions: Dictionary(items.enumerated().map { ($1.url, $0) }) { first, _ in first })
+        let files = items.enumerated().filter { $0.element.version == nil }
+        replace(with: items, positions: Dictionary(files.map { ($1.url, $0) }) { first, _ in first })
     }
 
-    /// `positions` being each item's index, as made off the main thread; `ids` their IDs in the index, for photos
-    /// shown from the library, which take them as theirs, else IDs given here.
+    /// `positions` being each file's own row's index, as made off the main thread; `ids` their IDs in the index, for
+    /// photos shown from the library, which take them as theirs, else IDs given here.
     func replace(with items: [LibraryItem], positions: [URL: Int], ids: ContiguousArray<Int64>? = nil) {
         self.items = LibraryItems(items)
         self.positions = positions
+        versionPositions = Self.versionPositions(of: items)
         if let ids, ids.count == items.count {
             photoIDs = ids
             if let highest = ids.max() {
@@ -474,7 +499,12 @@ public final class FolderLibrary {
 
     func reindex(from start: Int) {
         for index in start ..< items.count {
-            positions[items[index].url] = index
+            let item = items[index]
+            if item.version == nil {
+                positions[item.url] = index
+            } else {
+                versionPositions[item.address] = index
+            }
         }
     }
 

@@ -109,6 +109,30 @@ struct LibraryVersionsTests {
         #expect(sidecar?.version(second)?.metadata?.rating == 2)
     }
 
+    @Test func `a folder's own list shows a photo's versions after it, and clicks and culling reach them`(
+    ) async throws {
+        let (sandbox, model, photo) = try await open()
+        defer { sandbox.remove() }
+        model.library.open(photo.deletingLastPathComponent())
+        try await sandbox.eventually {
+            model.library.shownSource == nil && !model.library.isListing && model.library.count == 4
+        }
+        let (copy, other) = (PhotoAddress(url: photo, version: first), PhotoAddress(url: photo, version: second))
+        let places = [PhotoAddress(url: photo), copy, other].map { model.library.index(of: $0) }
+        #expect(places == [1, 2, 3], "each version after its file, in their order")
+        #expect(model.library.items.row(3)?.title == "Copy 2, a version of B.JPG")
+        model.clickInGrid(other)
+        #expect(try model.selectedIDs == [id(other, in: model)] && model.activeAddress == other)
+
+        model.cull(.rating(5), fromCell: copy)
+        #expect(model.library.items.row(2)?.metadata.rating == 5 && model.library.items.row(1)?.metadata.rating == 0)
+        try await sandbox.eventually { !model.isWritingCulling }
+        await sandbox.service?.settled()
+        #expect(SidecarStore().load(for: photo)?.version(first)?.metadata?.rating == 5)
+        try await sandbox.eventually { model.library.items.row(2)?.metadata.rating == 5 }
+        #expect(model.library.index(of: copy) == 2, "the version's row where it was, after its file")
+    }
+
     @Test func `Develop opens the version chosen in Library, and the file's own edit for its own row`() async throws {
         let (sandbox, model, photo) = try await open()
         defer { sandbox.remove() }

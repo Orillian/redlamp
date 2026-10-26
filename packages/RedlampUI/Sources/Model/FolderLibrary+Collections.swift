@@ -91,6 +91,7 @@ extension FolderLibrary {
             items = LibraryItems(change.items)
         }
         positions = [:]
+        versionPositions = [:]
         photoIDs = change.list.ids
         scheduler.submit(.background) { withExtendedLifetime(replaced) {} }
         if let highest = change.list.highestID {

@@ -38,15 +38,16 @@ extension FolderLibrary {
             fromLibrary.indexIDs = false
             ids.reserveCapacity(ordered.items.count)
             for index in ordered.items.indices {
-                let before = carried ? Int(ordered.previous[index]) : positions[ordered.items[index].url] ?? -1
+                let before = carried ? Int(ordered.previous[index]) : place(of: ordered.items[index].address) ?? -1
                 ids.append(photoIDs.indices.contains(before) ? photoIDs[before] : newPhotoIDs(1).lowerBound)
             }
         }
         let unchanged = carried && ordered.diff.isEmpty
         // Freeing tens of thousands of photos takes milliseconds: the list replaced goes off the main thread.
-        let replaced = (items, positions, fromLibrary.keys)
+        let replaced = (items, positions, versionPositions, fromLibrary.keys)
         items = LibraryItems(ordered.items)
         positions = ordered.positions
+        versionPositions = Self.versionPositions(of: ordered.items)
         photoIDs = ids
         fromLibrary.keys = ordered.keys
         fromLibrary.ahead = MovesAhead()

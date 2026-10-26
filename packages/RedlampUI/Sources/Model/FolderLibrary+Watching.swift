@@ -174,7 +174,7 @@ extension FolderLibrary {
             incoming[item.url] = item
         }
         var removed = IndexSet()
-        var updated: [URL] = []
+        var updated: [PhotoAddress] = []
         for (index, item) in items.enumerated() {
             if item.folderPath == directory {
                 guard var new = incoming.removeValue(forKey: item.url) else {
@@ -187,7 +187,7 @@ extension FolderLibrary {
                 new.hasEdits = item.hasEdits
                 new.metadata = item.metadata
                 items[index] = new
-                updated.append(item.url)
+                updated.append(item.address)
             } else if listing == nil, item.folderPath.hasPrefix(directory + "/") {
                 removed.insert(index)
             }
@@ -214,11 +214,13 @@ extension FolderLibrary {
         refreshStacks()
     }
 
-    /// Publishes photos removed (by their indexes now), inserted in order, and changed in place
-    /// (already in `items`). `probing` reads the badges of those with a sidecar. A photo inserted takes its ID in the
-    /// index from `ids` while every photo shown has theirs, else one given here.
+    /// Publishes photos removed (by their indexes now), inserted in order, each after those it doesn't precede (a
+    /// version after its file's own row and the versions before it), and changed in place (already in `items`).
+    /// `probing` reads the badges of those with a sidecar. A photo inserted takes its ID in the index from `ids` while
+    /// every photo shown has theirs, else one given here.
     func apply(
-        removed: IndexSet, inserting: [LibraryItem], updated: [URL], probing: Bool = true, ids: [URL: Int64] = [:],
+        removed: IndexSet, inserting: [LibraryItem], updated: [PhotoAddress], probing: Bool = true,
+        ids: [PhotoAddress: Int64] = [:],
     ) {
         if !removed.isEmpty {
             items = LibraryItems(items.enumerated().filter { !removed.contains($0.offset) }.map(\.element))
@@ -229,14 +231,14 @@ extension FolderLibrary {
             var high = items.count
             while low < high {
                 let middle = (low + high) / 2
-                if LibraryItem.walkPrecedes(items[middle], item) {
+                if !LibraryItem.walkPrecedes(item, items[middle]) {
                     low = middle + 1
                 } else {
                     high = middle
                 }
             }
             items.insert(item, at: low)
-            if fromLibrary.indexIDs, let id = ids[item.url] {
+            if fromLibrary.indexIDs, let id = ids[item.address] {
                 photoIDs.insert(id, at: low)
                 noteIndexID(id)
             } else {
@@ -245,11 +247,13 @@ extension FolderLibrary {
             }
         }
         if !removed.isEmpty || !inserting.isEmpty {
-            positions = Dictionary(items.enumerated().map { ($1.url, $0) }) { first, _ in first }
+            let files = items.enumerated().filter { $0.element.version == nil }
+            positions = Dictionary(files.map { ($1.url, $0) }) { first, _ in first }
+            versionPositions = Self.versionPositions(of: items)
             photosMoved()
         }
-        let inserted = IndexSet(inserting.compactMap { positions[$0.url] })
-        let changed = IndexSet(updated.compactMap { positions[$0] })
+        let inserted = IndexSet(inserting.compactMap { place(of: $0.address) })
+        let changed = IndexSet(updated.compactMap(place(of:)))
         publish(LibraryDiff(removed: removed, inserted: inserted, updated: changed))
         for row in inserted.union(changed) where probing && items[row].needsSummary {
             probeSidecars(in: row ..< row + 1, generation: generation)

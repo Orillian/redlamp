@@ -20,14 +20,16 @@ import Synchronization
 final class LibraryFolderList: Sendable {
     /// How the photos changed since the last change delivered.
     struct Change: Sendable {
-        /// Every photo, in order, each one's index, and their IDs in the index: the first change.
+        /// Every photo, in order, each file's own row's index by its URL, and their IDs in the index: the first
+        /// change.
         var all: (items: [LibraryItem], positions: [URL: Int], ids: ContiguousArray<Int64>)?
-        var removed: [URL] = []
+        /// Files' own rows and versions' (LIB-48), by address.
+        var removed: [PhotoAddress] = []
         var inserted: [LibraryItem] = []
-        /// Photos still shown under the same URL whose row changed.
+        /// Photos still shown under the same address whose row changed.
         var updated: [LibraryItem] = []
-        /// The index's IDs of the photos `inserted` and `updated`, by URL.
-        var ids: [URL: Int64] = [:]
+        /// The index's IDs of the photos `inserted` and `updated`, by address.
+        var ids: [PhotoAddress: Int64] = [:]
         /// The content keys of the photos in `all` and `inserted` that have one, and of those in `updated` whose
         /// key changed.
         var keys: [URL: ContentKey] = [:]
@@ -41,6 +43,7 @@ final class LibraryFolderList: Sendable {
     /// A filtered or sorted list in its order, and how it differs from the list handed over before.
     struct Ordered: Sendable {
         var items: [LibraryItem]
+        /// Each file's own row's index, by its URL.
         var positions: [URL: Int]
         /// The photos' IDs in the index, in the list's order.
         var ids: ContiguousArray<Int64>
@@ -256,7 +259,7 @@ extension LibraryFolderList {
         let path: String
         let includesSubfolders: Bool
         private var previous: PhotoList?
-        private var shown: [Int64: URL] = [:]
+        private var shown: [Int64: PhotoAddress] = [:]
         private var folders: [Int64: String] = [:]
         /// Every photo of the folder, filtered or not, and their content keys, by ID.
         private(set) var items: [Int64: LibraryItem] = [:]
@@ -289,8 +292,10 @@ extension LibraryFolderList {
             }
             let ids = items.keys.sorted()
             let ordered = Self.ordered(ids.compactMap { items[$0] })
-            let byURL = Dictionary(ids.compactMap { id in items[id].map { ($0.url, id) } }) { first, _ in first }
-            let made = ordered.compactMap { byURL[$0.url] }
+            let byAddress = Dictionary(ids.compactMap { id in items[id].map { ($0.address, id) } }) { first, _ in
+                first
+            }
+            let made = ordered.compactMap { byAddress[$0.address] }
             order = made
             return made
         }
@@ -324,8 +329,8 @@ extension LibraryFolderList {
             touched.formUnion(removed)
             touched.formUnion(changed)
             for id in removed {
-                if let url = shown.removeValue(forKey: id) {
-                    change.removed.append(url)
+                if let photo = shown.removeValue(forKey: id) {
+                    change.removed.append(photo)
                 }
                 forget(id)
             }
@@ -343,19 +348,20 @@ extension LibraryFolderList {
                 }
                 item.renderedEdit = read.2[id]
                 // A photo shown under the same URL with the same content (a culling batch's thousands) sends no key.
-                if let key = row.contentKey.flatMap(ContentKey.init(data:)), before != item.url || keys[id] != key {
+                if let key = row.contentKey.flatMap(ContentKey.init(data:)),
+                   before?.url != item.url || keys[id] != key {
                     change.keys[item.url] = key
                     keys[id] = key
                     urlKeys[item.url] = key
                 }
-                moved = moved || before.map { $0 != item.url } ?? false
-                shown[id] = item.url
-                change.ids[item.url] = id
-                if items[id]?.url != item.url {
+                moved = moved || before.map { $0 != item.address } ?? false
+                shown[id] = item.address
+                change.ids[item.address] = id
+                if items[id]?.address != item.address {
                     order = nil
                 }
                 items[id] = item
-                if before == item.url {
+                if before == item.address {
                     change.updated.append(item)
                 } else {
                     if let before {
@@ -396,7 +402,8 @@ extension LibraryFolderList {
                 let renderer = EditRenders.renderer
                 guard includesSubfolders else {
                     let edits = try reader.standingPhotoEdits(inFolders: [top.id], renderer: renderer)
-                    return try (reader.photos(inFolder: top.id), [top.id: top.path], edits)
+                    let rows = try reader.photos(inFolder: top.id) + reader.versions(inFolder: top.id)
+                    return (rows, [top.id: top.path], edits)
                 }
                 let below = path == "/" ? "/" : path + "/"
                 var folders: [Int64: String] = [:]
@@ -417,25 +424,32 @@ extension LibraryFolderList {
             var change = Change()
             var listed: [LibraryItem] = []
             listed.reserveCapacity(list.count)
-            var ids: [URL: Int64] = [:]
+            var ids: [PhotoAddress: Int64] = [:]
+            var versions: [(id: Int64, item: LibraryItem)] = []
             for row in rows where list.contains(row.id) {
                 guard var item = item(row) else { continue }
                 item.renderedEdit = edits[row.id]
-                shown[row.id] = item.url
+                shown[row.id] = item.address
                 items[row.id] = item
-                ids[item.url] = row.id
+                ids[item.address] = row.id
                 if let key = row.contentKey.flatMap(ContentKey.init(data:)) {
                     change.keys[item.url] = key
                     keys[row.id] = key
                 }
-                listed.append(item)
+                if row.version == nil {
+                    listed.append(item)
+                } else {
+                    versions.append((row.id, item))
+                }
             }
+            // A file's versions in the order they were added, which their IDs keep.
+            listed += versions.sorted { $0.id < $1.id }.map(\.item)
             listed = Self.ordered(listed)
-            order = listed.compactMap { ids[$0.url] }
+            order = listed.compactMap { ids[$0.address] }
             urlKeys = change.keys
             var positions: [URL: Int] = [:]
             positions.reserveCapacity(listed.count)
-            for (index, item) in listed.enumerated() where positions[item.url] == nil {
+            for (index, item) in listed.enumerated() where item.version == nil && positions[item.url] == nil {
                 positions[item.url] = index
             }
             change.all = (listed, positions, ContiguousArray(order ?? []))
@@ -451,11 +465,10 @@ extension LibraryFolderList {
             )
         }
 
-        /// The photo of `row` as Folders shows it, under the folder's URL; nil for a photo outside it, and for a
-        /// version of a file's edit (LIB-48), which only the library's sources list until a folder's photos are
-        /// told apart by more than their URLs.
+        /// The photo of `row` as Folders shows it, under the folder's URL, a version of a file's edit (LIB-48) at its
+        /// file's; nil for a photo outside it.
         func item(_ row: PhotoRecord) -> LibraryItem? {
-            guard row.version == nil, let directory = folders[row.folder] else { return nil }
+            guard let directory = folders[row.folder] else { return nil }
             let relative: String
             if directory == path {
                 relative = row.name
@@ -510,14 +523,19 @@ extension LibraryFolderList {
         }
 
         /// `items` in Folders' order: each folder's photos by name, a folder before its subfolders,
-        /// subfolders in Finder's order (`LibraryItem.walkPrecedes`), each folder ranked once.
+        /// subfolders in Finder's order (`LibraryItem.walkPrecedes`), each folder ranked once; a file's versions
+        /// after it, in the order `items` has them.
         static func ordered(_ items: [LibraryItem]) -> [LibraryItem] {
             let folders = Set(items.map(\.folderPath)).sorted(by: foldersPrecede)
             let ranks = Dictionary(folders.enumerated().map { ($1, $0) }) { first, _ in first }
             let names = items.map(\.name)
             let order = items.indices.map { (rank: ranks[items[$0].folderPath] ?? 0, index: $0) }
                 .sorted { lhs, rhs in
-                    lhs.rank != rhs.rank ? lhs.rank < rhs.rank : FileOrder.precedes(names[lhs.index], names[rhs.index])
+                    guard lhs.rank == rhs.rank else { return lhs.rank < rhs.rank }
+                    let (left, right) = (names[lhs.index], names[rhs.index])
+                    guard left == right else { return FileOrder.precedes(left, right) }
+                    let (first, second) = (items[lhs.index].version == nil, items[rhs.index].version == nil)
+                    return first != second ? first : lhs.index < rhs.index
                 }
             return order.map { items[$0.index] }
         }
@@ -618,8 +636,8 @@ private extension LibraryFolderList {
             for id in ids {
                 guard let item = mapping.items[id] else { continue }
                 let index = items.count
-                // A URL listed twice keeps its first place.
-                if let earlier = positions.updateValue(index, forKey: item.url) {
+                // A file listed twice keeps its first place; its versions (LIB-48) have places of their own.
+                if item.version == nil, let earlier = positions.updateValue(index, forKey: item.url) {
                     positions[item.url] = earlier
                     continue
                 }
