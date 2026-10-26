@@ -901,7 +901,7 @@ Each item names the [tracker](docs/research/research-tracker.md) rows behind it 
 - [x] **Export dialog:** JPEG, HEIC, AVIF, PNG and TIFF, a file size limit, 8, 10 or 16 bits, sRGB or Display P3, resizing, metadata, presets and Export with Previous, developed at full resolution and downscaled last <!-- tracker: EDT-15, EDT-13 -->
 - [x] **Command palette** (⌘K): every action, Develop slider and picker from the keyboard, and a slider bar that adjusts by key <!-- tracker: UX-07 -->
 - [x] **Folders,** as in Lightroom Classic: remembered folders as a tree with counts, and a filmstrip that follows the disk and stays fast with any number of photos <!-- tracker: UX-08 -->
-- [ ] Versions of a photo, as Lightroom's virtual copies, kept in its one sidecar <!-- tracker: EDT-09 -->
+- [x] Versions of a photo, as Lightroom's virtual copies, kept in its one sidecar <!-- tracker: EDT-09 -->
 - [x] Edge-aware Highlights and Shadows, and edge-refined Dehaze <!-- tracker: TON-05, TON-27 -->
 - [x] Red, green and blue curves in the Tone Curve, as Lightroom's point curve has <!-- tracker: TON-40 -->
 - [x] **Film effects for recipes:** halation (the red glow around bright lights), bloom and diffusion, film grain that varies with density and scales with output size, and light leaks, dust and scratches, and frames, with Mood recipes built on them <!-- tracker: TON-17, TON-18, TON-19, TON-25 -->
