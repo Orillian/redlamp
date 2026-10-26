@@ -721,6 +721,8 @@ public final class EditorModel {
     @ObservationIgnored public private(set) lazy var libraryPanels = LibraryPanels(model: self)
     /// Library's left-hand Library and Collections sections, and which of their sources is shown (LIB-23).
     @ObservationIgnored public private(set) lazy var librarySources = LibrarySources(model: self)
+    /// The albums imports from Apple Photos follow, and the new photos in them (LIB-55).
+    @ObservationIgnored public private(set) lazy var applePhotosFollower = ApplePhotosFollower(model: self)
     #if DEBUG || REDLAMP_PROFILING
         /// `filmstrip=shown` in a capture script, and scenarios that click on the floating filmstrip: it stays up
         /// with a photo selected, as it does while the pointer is over it. The events scenarios send through the

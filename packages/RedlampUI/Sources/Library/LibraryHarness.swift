@@ -7,6 +7,7 @@ import RedlampLibrary
 @_spi(Harness) public enum LibrarySurface: String, CaseIterable, Identifiable, Sendable {
     case importPhotos = "import-photos"
     case lightroom
+    case applePhotos = "apple-photos"
     case newCollection = "new-collection"
     case newCollectionSet = "new-collection-set"
     case renameCollection = "rename-collection"
@@ -33,6 +34,7 @@ import RedlampLibrary
         switch self {
         case .importPhotos: ShortcutAction.importPhotos.title
         case .lightroom: ShortcutAction.importFromLightroom.title
+        case .applePhotos: ShortcutAction.importFromApplePhotos.title
         case .newCollection: ShortcutAction.newCollection.title
         case .newCollectionSet: ShortcutAction.newCollectionSet.title
         case .renameCollection: "Rename Collection…"
@@ -61,13 +63,18 @@ import RedlampLibrary
     public var destination: URL
     public var backup: URL
     public var catalog: URL?
+    /// A simulated Photos library's folder, with a manifest for each access: `manifest-authorized.json` and the rest.
+    public var applePhotos: URL?
+    /// The access the Apple Photos window finds.
+    public var applePhotosAccess = ApplePhotosAccess.authorized
 
-    public init(photos: URL, card: URL, destination: URL, backup: URL, catalog: URL?) {
+    public init(photos: URL, card: URL, destination: URL, backup: URL, catalog: URL?, applePhotos: URL? = nil) {
         self.photos = photos
         self.card = card
         self.destination = destination
         self.backup = backup
         self.catalog = catalog
+        self.applePhotos = applePhotos
     }
 
     public static let collectionSet = "Travel"
@@ -143,6 +150,16 @@ import RedlampLibrary
                 await shown { LightroomWindowController.current }?.choose(catalog: catalog)
             }
             return true
+        case .applePhotos:
+            guard let folder = fixture.applePhotos, let library = try? SimulatedPhotosLibrary(
+                manifest: folder.appending(path: "manifest-\(fixture.applePhotosAccess.rawValue).json"),
+            ) else { return false }
+            simulateApplePhotos(library)
+            guard ApplePhotosActions.open(model: self),
+                  let window = await shown({ ApplePhotosWindowController.current })
+            else { return false }
+            window.prepare(destination: fixture.destination, folders: "{album}", names: "{name}")
+            return true
         case .newCollection: return CollectionSheets.create(.collection, model: self)
         case .newCollectionSet: return CollectionSheets.create(.set, model: self)
         case .renameCollection: return collection.map { CollectionSheets.rename($0, model: self) } ?? false
@@ -177,7 +194,8 @@ import RedlampLibrary
         }
     }
 
-    /// Closes the sheet over `window` with its Cancel button, and the import and Lightroom Classic windows.
+    /// Closes the sheet over `window` with its Cancel button, and the import, Lightroom Classic and Apple Photos
+    /// windows.
     func closeHarnessSurface(over window: NSWindow?) {
         if let sheet = window?.attachedSheet, let content = sheet.contentView,
            let cancel = Self.button(keyEquivalent: "\u{1B}", in: content) {
@@ -185,6 +203,7 @@ import RedlampLibrary
         }
         ImportWindowController.current?.close()
         LightroomWindowController.current?.close()
+        ApplePhotosWindowController.current?.close()
     }
 
     private static func button(keyEquivalent: String, in view: NSView) -> NSButton? {

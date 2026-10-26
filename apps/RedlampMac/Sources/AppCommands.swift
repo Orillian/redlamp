@@ -56,6 +56,7 @@ struct AppCommands: Commands {
             item(.openFolder, perform: onOpen)
             item(.importPhotos)
             item(.importFromLightroom)
+            item(.importFromApplePhotos)
             item(.importKeywords)
             item(.exportKeywords)
             Divider()

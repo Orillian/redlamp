@@ -28,6 +28,7 @@ enum BuiltInScenes {
         catalog.register(.libraryLightroom)
         catalog.register(.libraryLightroomStates)
         catalog.register(.libraryLightroomPlayground)
+        catalog.register(.libraryApplePhotos)
         catalog.register(.librarySheets)
         return catalog
     }

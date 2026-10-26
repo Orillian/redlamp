@@ -89,6 +89,8 @@ final class ImportWindowModel {
     let importer: Importer
     /// Shows the photos copied in Library, selected.
     var showInLibrary: @MainActor ([URL]) -> Void = { _ in }
+    /// The photo the example names while no source holds one: in the Apple Photos window, its first photo (LIB-54).
+    var exampleStandIn: (@MainActor () -> (ImportPhoto, ImportSource)?)?
     /// Ejects a card's volume.
     var ejector: @Sendable (ImportSource) async throws -> Void = { try await ImportCards.eject($0) }
     var onChange: ((Change) -> Void)?
@@ -192,6 +194,12 @@ final class ImportWindowModel {
                 notify(.status)
             }
         }
+        loadCompletions()
+    }
+
+    /// Loads the library's keywords, for completing those typed in To, and its metadata presets: all To needs where
+    /// it chooses an import's destination with no sources, as the Apple Photos window's does (LIB-54).
+    func loadCompletions() {
         if let index = library.index {
             let keywords = LibraryKeywords(index: index, paths: library.paths, live: library.live)
             Task {
@@ -781,11 +789,11 @@ extension ImportWindowModel {
                 }
             }
         }
-        return nil
+        return sources.isEmpty ? exampleStandIn?() : nil
     }
 
     /// Names the example photo again, off the main thread, as the plan would.
-    private func updateExample() {
+    func updateExample() {
         exampleTask?.cancel()
         guard folderError == nil, namesError == nil, let (photo, source) = exampleCandidate else {
             if example != nil || examplePhoto != nil {

@@ -579,6 +579,11 @@
                         LightroomWindowController.current == nil
                     }
                 })
+            case .importFromApplePhotos:
+                ActionCheck(action: action, observe: { _ in windows() }, restore: { app in
+                    try app.main { _ in ApplePhotosWindowController.current?.close() }
+                    try app.wait("the Apple Photos window to close") { _ in ApplePhotosWindowController.current == nil }
+                })
             case .convertLightroomEdits: .sheet(action)
             case .sendFeedback: .sheet(action)
             case .testCamera:

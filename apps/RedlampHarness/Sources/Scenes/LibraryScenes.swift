@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import RedlampLibrary
 @_spi(Harness) import RedlampUI
 import SwiftUI
 
@@ -28,6 +29,24 @@ extension HarnessScene {
         }
     }
 
+    static var libraryApplePhotos: HarnessScene {
+        HarnessScene(
+            id: "library-apple-photos",
+            title: "Apple Photos",
+            symbol: "photo.on.rectangle.angled",
+            synopsis: "Import from Apple Photos on a simulated Photos library, in each state from asking for access on",
+            section: .library,
+        ) {
+            LibraryScene(
+                surfaces: [.applePhotos],
+                states: [
+                    .notAsked, .denied, .restricted, .limited, .opened, .reviewed, .importing, .imported, .undone,
+                    .minimum,
+                ],
+            )
+        }
+    }
+
     static var librarySheets: HarnessScene {
         HarnessScene(
             id: "library-sheets",
@@ -37,7 +56,8 @@ extension HarnessScene {
             section: .library,
         ) {
             LibraryScene(
-                surfaces: LibrarySurface.allCases.filter { $0 != .importPhotos && $0 != .lightroom }, states: [.opened],
+                surfaces: LibrarySurface.allCases.filter { ![.importPhotos, .lightroom, .applePhotos].contains($0) },
+                states: [.opened],
             )
         }
     }
@@ -46,6 +66,7 @@ extension HarnessScene {
 /// What a surface shows when it opens.
 enum LibrarySurfaceState: String, CaseIterable, Identifiable {
     case opened, noCatalog = "no-catalog", finished, interrupted, imported, undone, minimum
+    case notAsked = "not-asked", denied, restricted, limited, reviewed, importing
 
     var id: String {
         rawValue
@@ -60,6 +81,12 @@ enum LibrarySurfaceState: String, CaseIterable, Identifiable {
         case .imported: "Imported"
         case .undone: "Undone"
         case .minimum: "At its minimum size"
+        case .notAsked: "Not asked"
+        case .denied: "Denied"
+        case .restricted: "Restricted"
+        case .limited: "Limited"
+        case .reviewed: "Review"
+        case .importing: "Importing"
         }
     }
 }
@@ -105,11 +132,22 @@ final class LibrarySceneState {
         if state == .noCatalog {
             fixture.catalog = nil
         }
+        fixture.applePhotosAccess = switch state {
+        case .notAsked: .notDetermined
+        case .denied: .denied
+        case .restricted: .restricted
+        case .limited: .limited
+        default: .authorized
+        }
         guard await model.openHarnessSurface(surface, fixture: fixture) else {
             status = "\(surface.title) didn't open: it needs a selection, a collection or a keyword the library lacks"
             return
         }
         status = "\(surface.title): \(state.title)"
+        if surface == .applePhotos, [.reviewed, .importing, .imported, .undone].contains(state) {
+            await photos(state)
+            return
+        }
         switch state {
         case .finished:
             await ImportWindowController.current?.importAndWait()
@@ -125,13 +163,39 @@ final class LibrarySceneState {
             else { return }
             window.pressUndoImport()
         case .minimum:
-            for window in [ImportWindowController.current?.window, LightroomWindowController.current?.window] {
+            for window in [
+                ImportWindowController.current?.window, LightroomWindowController.current?.window,
+                ApplePhotosWindowController.current?.window,
+            ] {
                 guard let window else { continue }
                 window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true)
             }
-        case .opened, .noCatalog:
+        case .opened, .noCatalog, .notAsked, .denied, .restricted, .limited, .reviewed, .importing:
             break
         }
+    }
+
+    /// The Apple Photos window taken to `state`: Review, an import's progress as it downloads from iCloud, the import
+    /// done, or taken back.
+    private func photos(_ state: LibrarySurfaceState) async {
+        func reach(_ phase: String) async -> ApplePhotosWindowController? {
+            for _ in 0 ..< 600 where ApplePhotosWindowController.current?.phase != phase {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            return ApplePhotosWindowController.current?.phase == phase ? ApplePhotosWindowController.current : nil
+        }
+        guard let window = await reach("choosing") else { return }
+        if state == .importing {
+            window.show(ApplePhotosImport.Progress(
+                stage: .staging, photos: 1240, done: 312, bytes: 3_100_000_000, written: 780_000_000, downloading: 3,
+            ))
+            return
+        }
+        window.press(named: "review")
+        guard await reach("reviewing") != nil, state != .reviewed else { return }
+        window.press(named: "importPhotos")
+        guard await reach("imported") != nil, state == .undone else { return }
+        window.press(named: "undo")
     }
 
     private func until(_ condition: () -> Bool) async -> LightroomWindowController? {
@@ -146,6 +210,7 @@ final class LibrarySceneState {
             window.isVisible && window.canBecomeMain && window.sheetParent == nil
                 && !(window.windowController is ImportWindowController)
                 && !(window.windowController is LightroomWindowController)
+                && !(window.windowController is ApplePhotosWindowController)
         }
     }
 }

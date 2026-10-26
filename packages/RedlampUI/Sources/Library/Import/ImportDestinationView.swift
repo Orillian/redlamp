@@ -12,6 +12,10 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
     let model: ImportWindowModel
     /// Asks for a folder: the destination, or the backup.
     var onChooseFolder: ((_ backup: Bool) -> Void)?
+    /// The Card section, Eject after Import and each destination's count: an import from Apple Photos has none.
+    private let showsCard: Bool
+    /// What the example says while there's no photo to name.
+    private let noExample: String
 
     private let destination = NSTextField(labelWithString: "")
     private let folders = NamingTemplateField(
@@ -42,8 +46,12 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
     private var textFields: [String: NSTextField] = [:]
     private var shownPhase: ImportWindowModel.Phase?
 
-    init(model: ImportWindowModel) {
+    init(
+        model: ImportWindowModel, showsCard: Bool = true, noExample: String = "Choose a photo to see where it goes.",
+    ) {
         self.model = model
+        self.showsCard = showsCard
+        self.noExample = noExample
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -103,7 +111,7 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
         let destinationRow = Self.row([destination, choose])
         let backupRow = Self.row([backup, backupChoose])
         self.backupRow = backupRow
-        let sections: [[NSView]] = [
+        var sections: [[NSView]] = [
             [title, Self.heading("Destination"), destinationRow],
             [Self.heading("Folders")] + folderRows,
             [Self.heading("Names")] + nameRows + [texts],
@@ -112,8 +120,10 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
             [Self.heading("Files"), rawOnly, rawNote],
             [Self.heading("Keywords"), keywords],
             [Self.heading("Metadata Preset"), presets, presetNote],
-            [Self.heading("Card"), ejects, destinations],
         ]
+        if showsCard {
+            sections.append([Self.heading("Card"), ejects, destinations])
+        }
         let stack = NSStackView(views: sections.flatMap(\.self))
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -125,8 +135,9 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
             }
         }
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 16, right: 16)
-        for field in [destinationRow, example, backupRow, keywords, presets, destinations] as [NSView] + folderRows
-            + nameRows {
+        let fields: [NSView] = [destinationRow, example, backupRow, keywords, presets]
+            + (showsCard ? [destinations] : []) + folderRows + nameRows
+        for field in fields {
             field.translatesAutoresizingMaskIntoConstraints = false
             field.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         }
@@ -197,7 +208,7 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
         names.show(error: model.namesError)
         updateTexts()
         example.stringValue = model.example ?? (model.folderError ?? model.namesError).map { _ in "—" }
-            ?? "Choose a photo to see where it goes."
+            ?? noExample
         example.font = model.example == nil ? .systemFont(ofSize: 11) : .monospacedSystemFont(
             ofSize: 11,
             weight: .regular,

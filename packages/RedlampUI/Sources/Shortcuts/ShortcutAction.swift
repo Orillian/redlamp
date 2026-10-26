@@ -179,7 +179,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
 
     /// File & Edit
     case openFolder, importPhotos, export, exportWithPrevious, mergeFocusStack, editFocusStack, showShortcuts
-    case importFromLightroom, convertLightroomEdits
+    case importFromLightroom, importFromApplePhotos, convertLightroomEdits
     case filmLooks
     case commandPalette, sendFeedback
     case testCamera
@@ -240,7 +240,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .openFolder, .importPhotos, .export, .exportWithPrevious, .mergeFocusStack, .editFocusStack,
              .showShortcuts, .filmLooks, .commandPalette, .sendFeedback:
             .file
-        case .importFromLightroom:
+        case .importFromLightroom, .importFromApplePhotos:
             .file
         case .testCamera:
             .file
@@ -427,6 +427,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .openFolder: "Open Folder…"
         case .importPhotos: "Import Photos…"
         case .importFromLightroom: "Import from Lightroom Classic…"
+        case .importFromApplePhotos: "Import from Apple Photos…"
         case .convertLightroomEdits: "Convert Lightroom Edits…"
         case .export: "Export…"
         case .exportWithPrevious: "Export with Previous"
@@ -613,7 +614,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .export: [.char("e", shift: true, command: true)]
         case .exportWithPrevious: [.char("e", shift: true, option: true, command: true)]
         case .mergeFocusStack, .editFocusStack, .sendFeedback: []
-        case .importFromLightroom: []
+        case .importFromLightroom, .importFromApplePhotos: []
         case .convertLightroomEdits: []
         case .showShortcuts: [.char("/", command: true)]
         case .filmLooks: [.char("l", shift: true, command: true)]

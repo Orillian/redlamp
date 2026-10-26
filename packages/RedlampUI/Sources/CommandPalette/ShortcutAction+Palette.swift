@@ -193,6 +193,7 @@ extension ShortcutAction {
         .autoAdvance: ["advance", "next photo", "caps lock", "culling", "move on"],
         .openFolder: ["import", "open", "folder", "photos"],
         .importPhotos: ["import", "card", "memory card", "sd", "camera", "copy", "ingest", "dcim", "backup"],
+        .importFromApplePhotos: ["import", "apple photos", "photos library", "icloud", "albums", "iphone", "migrate"],
         .export: ["save", "jpeg", "heic", "avif", "png", "tiff", "export"],
         .exportWithPrevious: ["save", "again", "repeat", "last", "export"],
         .mergeFocusStack: ["focus stacking", "stack", "merge", "depth of field", "macro", "bracketing"],
@@ -359,6 +360,7 @@ extension ShortcutAction {
         case .autoAdvance: "arrow.right.to.line"
         case .openFolder: "folder"
         case .importPhotos: "sdcard"
+        case .importFromApplePhotos: "photo.on.rectangle.angled"
         case .export: "square.and.arrow.up"
         case .exportWithPrevious: "square.and.arrow.up.on.square"
         case .mergeFocusStack: "square.stack.3d.down.right"

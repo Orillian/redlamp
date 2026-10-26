@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// (`LibraryPaths.standard` is the app's library). Its photos are copies of three raw fixtures and small JPEGs, some
 /// with long names and one pair byte for byte the same; beside them a card to import from, holding copies of some of
 /// them and photos the library doesn't have, and a Lightroom Classic catalog naming a folder the library doesn't
-/// have, the library's own folder and a folder that has moved.
+/// have, the library's own folder and a folder that has moved; and a simulated Apple Photos library.
 @MainActor
 enum HarnessLibrary {
     private static let base = FileManager.default.temporaryDirectory
@@ -26,6 +26,7 @@ enum HarnessLibrary {
         try? makePhotos(in: photos, card: card)
         var made = fixture
         made.catalog = try? makeCatalog(library: photos)
+        made.applePhotos = try? makeApplePhotos()
         return made
     }()
 
@@ -102,6 +103,54 @@ enum HarnessLibrary {
             directoryHint: .isDirectory,
         )
         return try LightroomScratchCatalog.make(of: lightroom, tag: "harness", otherRoots: [photos, moved])
+    }
+
+    /// A simulated Photos library (LIB-54) of small JPEGs: Selects, the folder Trips with Lisbon and a long-named
+    /// album, a smart album and a shared one, over favourites, a photo edited in Photos, one only in iCloud, a video,
+    /// a hidden photo and a shared album's copy; with a manifest for each access, `manifest-<access>.json`.
+    private static func makeApplePhotos() throws -> URL {
+        let folder = folder("Apple Photos")
+        for number in 1 ... 8 {
+            try jpeg(60 + number).write(to: folder.appending(path: String(format: "IMG_%04d.JPG", number)))
+        }
+        func photo(_ number: Int, _ albums: [String], _ extra: [String: Any] = [:]) -> [String: Any] {
+            let name = String(format: "IMG_%04d.JPG", number)
+            return ["id": "harness-\(number)", "albums": albums, "resources": [
+                ["kind": "photo", "name": name, "file": name, "inCloud": number == 3],
+            ]].merging(extra) { $1 }
+        }
+        let long = "Lisbon, Alfama at dusk from the Miradouro de Santa Luzia"
+        var edited = photo(4, ["album-lisbon"], ["edited": true])
+        edited["resources"] = [
+            ["kind": "photo", "name": "IMG_0004.JPG", "file": "IMG_0004.JPG"],
+            ["kind": "fullSizePhoto", "name": "FullSizeRender.jpeg", "file": "IMG_0008.JPG"],
+        ]
+        let assets: [[String: Any]] = [
+            photo(1, ["album-selects", "album-lisbon", "smart-favourites"], ["favorite": true]),
+            photo(2, ["album-selects", "smart-favourites"], ["favorite": true]),
+            photo(3, ["album-lisbon"]), edited, photo(5, ["album-long"]), photo(6, ["album-lisbon"], ["hidden": true]),
+            photo(7, ["shared-family"], ["source": "cloudShared"]),
+            ["id": "harness-video", "mediaType": "video", "albums": ["album-lisbon"], "resources": [
+                ["kind": "other", "name": "IMG_0009.MOV", "type": "com.apple.quicktime-movie"],
+            ]],
+        ]
+        for access in ["authorized", "notDetermined", "denied", "restricted", "limited"] {
+            let manifest: [String: Any] = [
+                "format": SimulatedPhotosLibrary.format, "version": 1, "access": access, "grants": "authorized",
+                "collections": [
+                    ["id": "album-selects", "title": "Selects", "kind": "album"],
+                    ["id": "folder-trips", "title": "Trips", "kind": "folder"],
+                    ["id": "album-lisbon", "title": "Lisbon", "kind": "album", "parent": "folder-trips"],
+                    ["id": "album-long", "title": long, "kind": "album", "parent": "folder-trips"],
+                    ["id": "smart-favourites", "title": "Favourites", "kind": "smartAlbum"],
+                    ["id": "shared-family", "title": "Family", "kind": "sharedAlbum"],
+                ],
+                "assets": assets,
+            ]
+            try JSONSerialization.data(withJSONObject: manifest)
+                .write(to: folder.appending(path: "manifest-\(access).json"))
+        }
+        return folder
     }
 
     /// A 96 × 64 JPEG of its own colour, taken on 14 September 2026 from 18:00, `number` minutes apart, by the

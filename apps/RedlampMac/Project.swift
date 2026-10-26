@@ -24,6 +24,9 @@ let appInfoPlist: [String: Plist.Value] = [
     // Which build this is (`AppDistribution`): `developer-id` in the direct download as
     // `mise run release` builds it, `app-store` in the App Store's, empty in builds from source.
     "RedlampDistribution": "$(REDLAMP_DISTRIBUTION)",
+    // Import from Apple Photos (LIB-54) reads Photos, and only reads it (DEC-106).
+    "NSPhotoLibraryUsageDescription":
+        "Redlamp copies the photos in the albums you choose into your folders. It never changes your Photos library.",
     // Sidecars are packages (edit.json plus mask bitmaps), shown as one file.
     "UTExportedTypeDeclarations": [
         [
@@ -112,6 +115,8 @@ let project = Project(
             infoPlist: .dictionary(appInfoPlist.merging(directInfoPlist) { $1 }),
             sources: ["Sources/**"],
             resources: ["Resources/**"],
+            // With the hardened runtime, reading Photos needs its entitlement (LIB-54).
+            entitlements: .file(path: "Redlamp.entitlements"),
             dependencies: appDependencies + [
                 Module.automation.dependency,
                 // The CLI in Contents/Helpers loads its frameworks from the app's, so the app

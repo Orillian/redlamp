@@ -25,6 +25,7 @@
             + FolderAccessScenarios.all
             + LightroomScenarios.all
             + LightroomSidecarScenarios.all
+            + ApplePhotosScenarios.all
             + LibraryPanelScenarios.all
             + HealthScenarios.all
             + MissingPhotosScenarios.all

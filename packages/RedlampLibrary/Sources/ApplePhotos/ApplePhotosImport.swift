@@ -62,6 +62,19 @@ public final class ApplePhotosImport: Sendable {
         public var written: Int64
         /// Files Photos is downloading from iCloud now.
         public var downloading: Int
+
+        public init(
+            stage: Stage, photos: Int, done: Int, failed: Int = 0, bytes: Int64? = nil, written: Int64 = 0,
+            downloading: Int = 0,
+        ) {
+            self.stage = stage
+            self.photos = photos
+            self.done = done
+            self.failed = failed
+            self.bytes = bytes
+            self.written = written
+            self.downloading = downloading
+        }
     }
 
     public struct Outcome: Sendable, Hashable {
