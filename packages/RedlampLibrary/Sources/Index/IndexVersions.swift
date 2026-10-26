@@ -15,16 +15,21 @@ extension LibraryIndex.Writer {
     ]
 
     /// What `setVersions` changed: the versions' rows added, written again and removed.
-    struct VersionRows: Sendable, Hashable {
-        var inserted: [Int64] = []
-        var updated: [Int64] = []
-        var removed: [Int64] = []
+    public struct VersionRows: Sendable, Hashable {
+        public var inserted: [Int64] = []
+        public var updated: [Int64] = []
+        public var removed: [Int64] = []
+
+        /// Every row it names.
+        public var all: [Int64] {
+            inserted + updated + removed
+        }
     }
 
     /// Gives the file whose own row is `photo` a row for each of `versions` and no others, each with its version's
     /// organising fields, keywords and collections and the file's fields as its row has them now.
     @discardableResult
-    func setVersions(_ versions: [VersionSummary], ofPhoto photo: Int64) throws -> VersionRows {
+    public func setVersions(_ versions: [VersionSummary], ofPhoto photo: Int64) throws -> VersionRows {
         guard let file = try self.photo(id: photo), file.version == nil else { return VersionRows() }
         let had = try self.versions(folder: file.folder, name: file.name)
         let wanted = Set(versions.map(\.id))
@@ -43,6 +48,23 @@ extension LibraryIndex.Writer {
             }
         }
         return rows
+    }
+
+    /// `setVersions` for the file of `photo`, its own row or a version's, unless its versions' rows are already
+    /// `versions` under their names: what a sidecar the library has written holds of its versions, which the batch,
+    /// or a writer before it, may have added, renamed or removed.
+    @discardableResult
+    func followVersions(_ versions: [VersionSummary], ofFileOf photo: Int64) throws -> VersionRows {
+        guard let row = try self.photo(id: photo) else { return VersionRows() }
+        let had = try self.versions(folder: row.folder, name: row.name)
+        let names = Dictionary(versions.map { ($0.id, $0.name) }) { first, _ in first }
+        let rows = Dictionary(had.compactMap { row in row.version.map { ($0, row.versionName ?? "") } }) { first, _ in
+            first
+        }
+        guard names != rows else { return VersionRows() }
+        guard let file = row.version == nil ? row.id : try self.photo(folder: row.folder, name: row.name)?.id
+        else { return VersionRows() }
+        return try setVersions(versions, ofPhoto: file)
     }
 
     /// Gives the versions of `photo`'s file the file's fields as `photo`'s row has them; returns the versions' rows.
@@ -121,5 +143,15 @@ extension PhotoRecord {
         otherFields = []
         edited = version.hasEdits
         LibraryIndexer.Run.place(metadata, in: &self)
+    }
+}
+
+extension VersionSummary {
+    /// What the library shows of `version`, as `SidecarStore.summary(for:)` reads it from its sidecar.
+    init(_ version: PhotoVersion) {
+        self.init(
+            id: version.id, name: version.name, created: version.created, hasEdits: !version.recipe.isPristine,
+            metadata: version.metadata ?? PhotoMetadata(),
+        )
     }
 }

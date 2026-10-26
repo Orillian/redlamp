@@ -131,9 +131,9 @@ final class LibraryCore: Sendable {
 
     // MARK: - Redlamp's own writes
 
-    /// Brings `photo`'s row in step with its sidecar as `store` reads it now, and tells the open lists:
-    /// FSEvents doesn't report Redlamp's own writes on this Mac. A photo the index doesn't hold is left
-    /// to the indexer. A change to its rating, flag, label or mark reaches its `.xmp` when they're written.
+    /// Brings `photo`'s row and its versions' rows in step with its sidecar as `store` reads it now, and tells
+    /// the open lists: FSEvents doesn't report Redlamp's own writes on this Mac. A photo the index doesn't hold
+    /// is left to the indexer. A change to its rating, flag, label or mark reaches its `.xmp` when they're written.
     func sidecarSaved(_ photo: URL, store: SidecarStore) {
         serially { [self, index, live] in
             let summary = store.summary(for: photo)
@@ -142,7 +142,7 @@ final class LibraryCore: Sendable {
             guard summary != nil || !FileManager.default.fileExists(atPath: sidecar.path) else { return }
             let modified = summary == nil ? nil : (try? URL(fileURLWithPath: sidecar.path)
                 .resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            let saved = try? await index.write { writer -> (id: Int64, culled: Bool)? in
+            let saved = try? await index.write { writer -> (id: Int64, culled: Bool, versions: [Int64])? in
                 guard var row = try LibraryService.photo(at: photo, in: writer) else { return nil }
                 let before = row
                 row.rating = summary?.metadata.rating ?? 0
@@ -153,12 +153,13 @@ final class LibraryCore: Sendable {
                 row.edited = summary?.hasEdits ?? false
                 row.sidecarModified = summary == nil ? nil : modified ?? Date()
                 try writer.upsertPhotos([row])
+                let versions = try writer.setVersions(summary?.versions ?? [], ofPhoto: row.id)
                 let culled = row.rating != before.rating || row.flag != before.flag || row.label != before.label
                     || row.customLabel != before.customLabel || row.marked != before.marked
-                return (row.id, culled)
+                return (row.id, culled, versions.all)
             }
             if let saved = saved ?? nil {
-                live.photosChanged([saved.id])
+                live.photosChanged([saved.id] + saved.versions)
                 if saved.culled {
                     changed([saved.id])
                 }

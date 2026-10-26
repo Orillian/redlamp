@@ -386,4 +386,34 @@ struct LibraryServiceTests {
         try await eventually { library.isShownFromLibrary }
         #expect(library.isShownFromLibrary)
     }
+
+    @Test func `a version made, renamed or removed in Develop gets, changes or loses its row once it's saved`(
+    ) async throws {
+        defer { cleanUp() }
+        try photos(["IMG_1.JPG"])
+        let photo = photo("IMG_1.JPG")
+        let (library, service) = try await indexedLibrary()
+        let index = try #require(service.core).index
+        let versions = { @Sendable () async throws -> [String?] in
+            try await index.read { reader in
+                try LibraryService.photo(at: photo, in: reader)
+                    .map { try reader.versions(folder: $0.folder, name: $0.name).map(\.versionName) } ?? []
+            }
+        }
+        let model = EditorModel(engine: StubEngine(), library: library)
+        try await open(photo, in: model)
+        model.setValue(.exposure, 0.5)
+        model.createVersion()
+        let version = try #require(model.openVersion)
+        try await SourcesSandbox.eventually { try await versions() == ["Copy 1"] }
+        #expect(try await versions() == ["Copy 1"])
+
+        model.renameVersion(version, to: "Black and white")
+        try await SourcesSandbox.eventually { try await versions() == ["Black and white"] }
+        #expect(try await versions() == ["Black and white"])
+
+        model.removeVersion(version)
+        try await SourcesSandbox.eventually { try await versions().isEmpty }
+        #expect(try await versions().isEmpty)
+    }
 }

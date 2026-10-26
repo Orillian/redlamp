@@ -197,9 +197,9 @@ public final class LibraryMetadata: Sendable {
     }
 
     /// Writes the sidecars of photos `pending` (places in `batch`) in batches off the caller, logging
-    /// each; then records their dates in the index, so the indexer doesn't read them again, and puts
-    /// back the index's fields of photos whose sidecars couldn't be written. Returns how many it wrote,
-    /// and why it couldn't write the others, by path.
+    /// each; then records their dates in the index, so the indexer doesn't read them again, gives their
+    /// files' versions rows as they leave them, and puts back the index's fields of photos whose sidecars
+    /// couldn't be written. Returns how many it wrote, and why it couldn't write the others, by path.
     private func writeSidecars(
         _ batch: MetadataBatch, _ pending: [Int], log: MetadataJournal.Log, report: (@Sendable (Int, Int) -> Void)?,
     ) async throws -> (written: Int, skipped: [String: String]) {
@@ -227,7 +227,11 @@ public final class LibraryMetadata: Sendable {
             var dates: [(Int64, Date?)] = []
             var edits: [(Int64, Bool)] = []
             var restored: [(Int64, MetadataValues, Set<XMPField>)] = []
+            var followed: [(photo: Int64, versions: [VersionSummary])] = []
             for result in results {
+                if let versions = result.versions {
+                    followed.append((result.photo, versions))
+                }
                 switch result.outcome {
                 case let .written(date, edited):
                     written += 1
@@ -244,8 +248,8 @@ public final class LibraryMetadata: Sendable {
                     break
                 }
             }
-            let (stamped, edited, putBack) = (dates, edits, restored)
-            try await index.write { writer in
+            let (stamped, edited, putBack, left) = (dates, edits, restored, followed)
+            let rows = try await index.write { writer -> [Int64] in
                 for (photo, date) in stamped {
                     try writer.setSidecarModified(date, forPhoto: photo)
                 }
@@ -255,8 +259,9 @@ public final class LibraryMetadata: Sendable {
                 for (photo, values, others) in putBack {
                     try writer.setMetadata(values, forPhoto: photo, others: others)
                 }
+                return try Self.follow(left, writer)
             }
-            live?.photosChanged(edited.map(\.0) + putBack.map(\.0))
+            live?.photosChanged(edited.map(\.0) + putBack.map(\.0) + rows)
             if let stop, done.value >= stop {
                 throw ForcedQuit()
             }
@@ -303,6 +308,29 @@ public final class LibraryMetadata: Sendable {
 
         let photo: Int64
         let outcome: Outcome
+        /// The versions of its sidecar as the batch left it, on the first of the photos whose edits the sidecar
+        /// holds; nil when it couldn't be left so.
+        var versions: [VersionSummary]?
+    }
+
+    /// The versions of the sidecar `result` leaves as its change asked, written or found so already; nil when it was
+    /// left otherwise.
+    static func versions(leftBy result: SidecarBatchResult) -> [VersionSummary]? {
+        switch (result.outcome, result.change) {
+        case let (.saved, .save(sidecar)), let (.saved, .saveOrRemove(sidecar)):
+            sidecar.versions.map(VersionSummary.init)
+        case (.kept, _):
+            (result.sidecar?.versions ?? []).map(VersionSummary.init)
+        default:
+            nil
+        }
+    }
+
+    /// Makes the rows of each file's versions follow its sidecar's, the file given by one of its photos (LIB-48):
+    /// the indexer doesn't read a sidecar the library wrote, whose date is in the index. Returns the rows changed.
+    static func follow(_ versions: [(photo: Int64, versions: [VersionSummary])], _ writer: LibraryIndex.Writer) throws
+        -> [Int64] {
+        try versions.flatMap { try writer.followVersions($0.versions, ofFileOf: $0.photo).all }
     }
 
     /// Writes the sidecars of `places` as a batch (`SidecarStore.change`), `width` at a time, each logged once
@@ -336,13 +364,16 @@ public final class LibraryMetadata: Sendable {
             return .saveOrRemove(changed)
         } done: { result in
             let (path, members) = sidecars[result.index]
-            for place in members {
+            let left = Self.versions(leftBy: result)
+            for (number, place) in members.enumerated() {
                 let photo = batch.photos[place]
                 do {
                     let outcome = try logged(
                         result, photo, place: place, version: versions[photo.id], of: batch, at: path, log: log,
                     )
-                    results.withLock { $0.append(SidecarResult(photo: photo.id, outcome: outcome)) }
+                    results.withLock {
+                        $0.append(SidecarResult(photo: photo.id, outcome: outcome, versions: number == 0 ? left : nil))
+                    }
                     report(done.add())
                 } catch {
                     failure.withLock { $0 = $0 ?? error }

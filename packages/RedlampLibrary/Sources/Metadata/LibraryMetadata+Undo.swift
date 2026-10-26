@@ -123,8 +123,8 @@ public extension LibraryMetadata {
     }
 
     /// Puts back what `batch` did, as its log says: the sidecars it wrote (keeping what changed in
-    /// them since), the index of every one of its photos, and the definitions. Running it again after
-    /// a forced quit changes nothing it already put back.
+    /// them since), the index of every one of its photos and of their files' versions, and the
+    /// definitions. Running it again after a forced quit changes nothing it already put back.
     internal func rollBack(_ batch: MetadataBatch, logged: MetadataJournal.Progress) async throws {
         let writing = try await index.photoWrites.begin(index.withFileRows(batch.photos.map(\.id)))
         defer { writing.end() }
@@ -140,6 +140,7 @@ public extension LibraryMetadata {
             change.before == change.after ? nil : paths[batch.photos[place].id].map { ((place, change), $0) }
         })
         let edited = Mutex<[Int64: Bool]>([:])
+        let left = Mutex<[(photo: Int64, versions: [VersionSummary])]>([])
         try await LibraryIndex.offCaller {
             store.change(sidecars.map { URL(fileURLWithPath: $0.path) }) { number, sidecar in
                 guard var restored = sidecar else { return .keep }
@@ -158,10 +159,14 @@ public extension LibraryMetadata {
                 guard touched else { return .keep }
                 restored.modified = Date()
                 return .saveOrRemove(restored)
-            } done: { _ in }
+            } done: { result in
+                guard let versions = Self.versions(leftBy: result), let place = sidecars[result.index].places.first?.0
+                else { return }
+                left.withLock { $0.append((batch.photos[place].id, versions)) }
+            }
         }
-        let editedNow = edited.withLock { $0 }
-        let existing = try await index.write { writer -> [Int64] in
+        let (editedNow, leftNow) = (edited.withLock { $0 }, left.withLock { $0 })
+        let changed = try await index.write { writer -> [Int64] in
             var found: [Int64] = []
             for photo in batch.photos where try writer.photo(id: photo.id) != nil {
                 try writer.setMetadata(photo.index, forPhoto: photo.id, others: photo.others)
@@ -170,9 +175,9 @@ public extension LibraryMetadata {
                 }
                 found.append(photo.id)
             }
-            return found
+            return try found + Self.follow(leftNow, writer)
         }
-        live?.photosChanged(existing)
+        live?.photosChanged(changed)
         try await LibraryIndex.offCaller { try log.state(.rolledBack) }
     }
 }
