@@ -162,7 +162,7 @@ struct MoveToTrashTests {
         try await withShoot { sandbox, model, _ in
             let photo = { (name: String) in sandbox.photo("Shoot/\(name)") }
             model.select(photo("IMG_0002.JPG"))
-            #expect(model.moveToTrash(photo("IMG_0004.JPG")))
+            #expect(model.moveToTrash(PhotoAddress(url: photo("IMG_0004.JPG"))))
             try await sandbox.eventually { !FileManager.default.fileExists(atPath: photo("IMG_0004.JPG").path) }
             await model.filesMade()
             #expect(model.selection == photo("IMG_0002.JPG"), "the photo selected stays")

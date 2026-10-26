@@ -47,12 +47,6 @@ public extension EditorModel {
         return true
     }
 
-    /// Move to Trash for the file at `url`, its own edit.
-    @discardableResult
-    func moveToTrash(_ url: URL) -> Bool {
-        moveToTrash(PhotoAddress(url: url))
-    }
-
     /// Whether Move to Trash can run: a photo is active, the library is open, Recently Trashed isn't shown, and
     /// nothing holds the editor.
     var canMoveToTrash: Bool {

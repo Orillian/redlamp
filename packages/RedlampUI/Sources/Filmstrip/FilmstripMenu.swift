@@ -15,8 +15,8 @@ enum FilmstripMenu {
         menu(for: PhotoAddress(url: photo), model: model, culling: culling)
     }
 
-    /// `address` is the cell's photo, a file's own edit or one of its versions (LIB-48): culling reaches it, and what
-    /// acts on files reaches its file.
+    /// `address` is the cell's photo, a file's own edit or one of its versions (LIB-48): culling, copying and pasting
+    /// settings and Move to Trash reach it, and what acts on files reaches its file.
     static func menu(for address: PhotoAddress, model: EditorModel, culling: Bool = false) -> NSMenu? {
         let photo = address.url
         if let trashed = TrashMenu.menu(for: photo, model: model) {
@@ -45,15 +45,15 @@ enum FilmstripMenu {
         } else if !model.isModalDialogOpen {
             var items = [
                 NSMenuItem(title: ShortcutAction.copySettings.title) {
-                    Task { await model.chooseSettingsToCopy(from: photo) }
+                    Task { await model.chooseSettingsToCopy(from: address) }
                 },
                 NSMenuItem(title: ShortcutAction.copySettingsAgain.title) {
-                    Task { await model.copySettings(from: photo) }
+                    Task { await model.copySettings(from: address) }
                 },
             ]
             if model.hasClipboard {
                 items.append(NSMenuItem(title: ShortcutAction.pasteSettings.title) {
-                    model.pasteSettings(onto: photo)
+                    model.pasteSettings(onto: address)
                 })
             }
             add(items, to: menu)
@@ -61,7 +61,7 @@ enum FilmstripMenu {
                 add([NSMenuItem(title: ShortcutAction.undoSync.title) { model.perform(.undoSync) }], to: menu)
             }
             if model.canMoveToTrash {
-                add([trash(photo, model: model)], to: menu)
+                add([trash(address, model: model)], to: menu)
             }
         }
         return menu.items.isEmpty ? nil : menu
@@ -78,8 +78,8 @@ enum FilmstripMenu {
         return item
     }
 
-    /// Move to Trash for `photo` alone, which isn't selected.
-    private static func trash(_ photo: URL, model: EditorModel) -> NSMenuItem {
+    /// Move to Trash for `photo` alone, which isn't selected: a version alone leaves its file and other versions.
+    private static func trash(_ photo: PhotoAddress, model: EditorModel) -> NSMenuItem {
         let item = NSMenuItem(title: ShortcutAction.moveToTrash.title) {
             model.moveToTrash(photo)
             model.activity.record(.action, ShortcutAction.moveToTrash.title)
