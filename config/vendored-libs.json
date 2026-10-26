@@ -1,9 +1,9 @@
 {
   "LibRaw": {
-    "version": "3b20539d3faa766a370e93a529a3b87edffbf0f6",
-    "license": "CDDL-1.0 (LibRaw is dual-licensed LGPL-2.1 / CDDL-1.0; Redlamp uses it under CDDL-1.0). Redlamp's fork, pdcgomes/redlamp-libraw: LibRaw master 7bfffe2 plus the changes its REDLAMP.md lists (CAM-30)",
-    "url": "https://github.com/pdcgomes/redlamp-libraw/archive/3b20539d3faa766a370e93a529a3b87edffbf0f6.tar.gz",
-    "sha256": "2c98d641b777d9a67dd8c716a6e5cfd4479648057eae267e08e3b5c4899c5145"
+    "version": "f4956c404fba0c6035ce9e06353d4b4ffe068fc7",
+    "license": "CDDL-1.0 (LibRaw is dual-licensed LGPL-2.1 / CDDL-1.0; Redlamp uses it under CDDL-1.0). Redlamp's fork, pdcgomes/redlamp-libraw: LibRaw master 2caab57 plus the changes its REDLAMP.md lists (CAM-30)",
+    "url": "https://github.com/pdcgomes/redlamp-libraw/archive/f4956c404fba0c6035ce9e06353d4b4ffe068fc7.tar.gz",
+    "sha256": "316b25600f0d8cc00518464f5558060beb756ffa7fa619a02a0bbe877bf8686e"
   },
   "libjxl": {
     "version": "0.12.0",

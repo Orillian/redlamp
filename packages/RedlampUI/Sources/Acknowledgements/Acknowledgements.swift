@@ -68,10 +68,10 @@ public enum Acknowledgements {
     """
 
     public static let libRaw = Component(
-        name: "LibRaw", version: "Redlamp's fork, commit 3b20539",
+        name: "LibRaw", version: "Redlamp's fork, commit f4956c4",
         use: "Reads raw files from cameras.", licence: "CDDL-1.0",
         source: URL(
-            string: "https://github.com/pdcgomes/redlamp-libraw/tree/3b20539d3faa766a370e93a529a3b87edffbf0f6",
+            string: "https://github.com/pdcgomes/redlamp-libraw/tree/f4956c404fba0c6035ce9e06353d4b4ffe068fc7",
         )!,
         note: """
         LibRaw is available under the LGPL-2.1 or the CDDL-1.0; Redlamp uses it under the CDDL-1.0. \

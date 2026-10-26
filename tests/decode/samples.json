@@ -85,6 +85,17 @@
       "source": "raw.pixls.us"
     },
     {
+      "file": "Fujifilm_X-E5.RAF",
+      "camera": "Fujifilm X-E5",
+      "mode": "14bit lossy compressed (3:2)",
+      "covers": "The X-T5's 40 MP X-Trans 5 sensor in a body LibRaw's master has no colour matrix for, given one by Redlamp's fork (CAM-21)",
+      "url": "https://raw.pixls.us/getfile.php/8509/nice/Fujifilm%20-%20X-E5%20-%2014bit%20lossy%20compressed%20%283%3A2%29.RAF",
+      "sha256": "28f56cc9784164209e92fae209bdcc78267bd692aa2fb964595485f7e93692ab",
+      "megabytes": 28.4,
+      "license": "CC0-1.0",
+      "source": "raw.pixls.us"
+    },
+    {
       "file": "Canon_EOS-R5-Mark-II.CR3",
       "camera": "Canon EOS R5 Mark II",
       "mode": "CRAW (3:2)",
