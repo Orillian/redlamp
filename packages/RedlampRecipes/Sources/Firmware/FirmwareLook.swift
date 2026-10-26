@@ -285,12 +285,11 @@
             return SIMD3(SRGB.encode(wide.x), SRGB.encode(wide.y), SRGB.encode(wide.z))
         }
 
-        /// Redlamp's correction to one simulation's output: OKLab lightness added at L 0.2, 0.4,
-        /// 0.6 and 0.8, in hundredths, none at black and white and linear between, and chroma
-        /// changed by a percentage.
+        /// Redlamp's correction to one simulation's output: OKLab lightness L shifted by the sum of
+        /// `lightness[k - 1]` hundredths of sin(kπL) for k from 1 to 4, which leaves black and white
+        /// and bends smoothly between, and chroma changed by `chroma` percent.
         struct OutputCorrection: Sendable {
             static let luma = SIMD3<Double>(Luma.rec709)
-            static let knots = [0, 0.2, 0.4, 0.6, 0.8, 1]
 
             var lightness: [Double]
             var chroma: Double
@@ -298,7 +297,10 @@
             /// Linear sRGB in and out, within 0...1.
             func callAsFunction(_ linear: SIMD3<Double>) -> SIMD3<Double> {
                 var lab = OKLab.fromLinearSRGB(simd_max(linear, .zero))
-                lab.x += Interpolation.linear(lab.x, Self.knots, [0] + lightness.map { $0 / 100 } + [0])
+                let l = min(max(lab.x, 0), 1)
+                for (k, amount) in lightness.enumerated() {
+                    lab.x += amount / 100 * sin(Double(k + 1) * .pi * l)
+                }
                 lab.y *= 1 + chroma / 100
                 lab.z *= 1 + chroma / 100
                 return simd_clamp(OKLab.toLinearSRGB(lab), .zero, SIMD3(repeating: 1))
@@ -311,32 +313,33 @@
 
         /// Redlamp's corrections to the model's output, fitted per simulation on a donated set of
         /// 13 Fujifilm X-E5 raws with the camera's own JPEG of each in every simulation, at its
-        /// own D-Range (DR100, 200 and 400) and 5500 K: the OKLab distance to the camera's JPEG at
-        /// flat points, each frame's exposure matched to the camera's midtones, the input at
-        /// `exposure` with `black` taken out. Held out by leaving each frame out in turn, the mean
-        /// over the simulations goes from 1.74 to 1.58 (OKLab × 100), and Nostalgic Neg's from
-        /// 3.46 to 2.29, the camera's shadows being deeper and its colours less saturated.
+        /// own D-Range (DR100, 200 and 400) and 5500 K: least squares on the OKLab distance to the
+        /// camera's JPEG at the profiler's flat points, each frame's exposure matched to the
+        /// camera's midtones, with the input at `exposure` and `black` taken out, then rounded to
+        /// two significant digits. Held out by leaving each frame out in turn, with `black` the
+        /// mean over the simulations goes from 1.71 to 1.51 (OKLab × 100), and Nostalgic Neg's,
+        /// whose shadows the camera renders deeper and whose colours less saturated, from 3.4 to 2.3.
         static let corrections: [FirmwareSimulation: OutputCorrection] = [
-            .standard: .init(lightness: [-1.8, 0.58, -1.0, 0.82], chroma: -0.67),
-            .vividSlide: .init(lightness: [0.45, 1.7, -1.5, 0.70], chroma: 2.6),
-            .softSlide: .init(lightness: [-2.1, 0.52, -1.1, 0.80], chroma: 2.7),
-            .chrome: .init(lightness: [-0.35, 1.6, -2.0, 0.53], chroma: 1.0),
-            .negativeHigh: .init(lightness: [-0.22, 1.6, -1.8, 0.86], chroma: -4.4),
-            .negativeStandard: .init(lightness: [-0.41, 1.4, -1.6, 0.68], chroma: -4.5),
-            .negativeClassic: .init(lightness: [-2.2, -0.13, -1.1, -0.95], chroma: 0.17),
-            .negativeNostalgic: .init(lightness: [-5.5, -4.7, 0.69, 1.4], chroma: -23),
-            .cinema: .init(lightness: [-1.8, 0.33, -0.81, 0.94], chroma: -2.8),
-            .bleach: .init(lightness: [-2.3, -0.32, -1.7, 1.1], chroma: -2.6),
-            .monochrome: .init(lightness: [-1.9, 0.63, -1.2, 1.1], chroma: 0),
-            .monochromeYellow: .init(lightness: [-1.3, 0.82, -1.0, 1.1], chroma: 0),
-            .monochromeRed: .init(lightness: [-1.1, 1.0, -0.81, 0.78], chroma: 0),
-            .monochromeGreen: .init(lightness: [-2.2, 0.41, -1.3, 1.3], chroma: 0),
-            .sepia: .init(lightness: [-1.7, 0.73, -1.2, 1.1], chroma: 25),
-            .acros: .init(lightness: [-1.9, 0.29, -0.95, 1.0], chroma: 0),
-            .acrosYellow: .init(lightness: [-1.5, 0.34, -0.72, 0.85], chroma: 0),
-            .acrosRed: .init(lightness: [-1.4, 0.76, -0.45, 0.67], chroma: 0),
-            .acrosGreen: .init(lightness: [-2.1, 0.065, -0.91, 1.2], chroma: 0),
-            .realaAce: .init(lightness: [4.4, -1.2, 0.89, 1.9], chroma: -0.69),
+            .standard: .init(lightness: [-0.48, -0.79, -0.4, -1.2], chroma: -0.67),
+            .vividSlide: .init(lightness: [0.34, 0.44, 0.32, -1.1], chroma: 2.7),
+            .softSlide: .init(lightness: [-0.55, -0.85, -0.42, -1.2], chroma: 2.7),
+            .chrome: .init(lightness: [-0.18, 0.27, 0.018, -1.4], chroma: 1),
+            .negativeHigh: .init(lightness: [0.082, 0.18, 0.14, -1.3], chroma: -4.4),
+            .negativeStandard: .init(lightness: [-0.11, 0.019, -0.042, -1.3], chroma: -4.5),
+            .negativeClassic: .init(lightness: [-1.2, -0.34, -0.79, -0.73], chroma: 0.17),
+            .negativeNostalgic: .init(lightness: [-2.9, -4.1, -1.1, -0.28], chroma: -23),
+            .cinema: .init(lightness: [-0.51, -0.97, -0.44, -1.1], chroma: -2.8),
+            .bleach: .init(lightness: [-1.2, -1, -0.21, -1.2], chroma: -2.6),
+            .monochrome: .init(lightness: [-0.47, -0.87, -0.33, -1.3], chroma: 0),
+            .monochromeYellow: .init(lightness: [-0.21, -0.64, -0.23, -1.2], chroma: 0),
+            .monochromeRed: .init(lightness: [-0.071, -0.46, -0.34, -1.1], chroma: 0),
+            .monochromeGreen: .init(lightness: [-0.63, -1, -0.31, -1.3], chroma: 0),
+            .sepia: .init(lightness: [-0.41, -0.79, -0.31, -1.3], chroma: 25),
+            .acros: .init(lightness: [-0.5, -0.88, -0.27, -1], chroma: 0),
+            .acrosYellow: .init(lightness: [-0.34, -0.72, -0.24, -0.92], chroma: 0),
+            .acrosRed: .init(lightness: [-0.094, -0.58, -0.38, -0.93], chroma: 0),
+            .acrosGreen: .init(lightness: [-0.57, -1.1, -0.22, -0.97], chroma: 0),
+            .realaAce: .init(lightness: [1.4, 0.52, 2.1, 0.86], chroma: -0.69),
         ]
 
         private static let cache = DefinitionCache()
