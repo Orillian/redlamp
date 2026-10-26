@@ -112,7 +112,10 @@ public struct EditRecipe: Sendable, Hashable {
     /// at its minimum over a patch and blurred over a tenth of the frame), toward the airlight tinted
     /// as scattered light is (`Haze.veil`), instead of an even grey blend, so the far distance and
     /// bright unsaturated things fog over while texture and dark saturated things nearby keep their
-    /// own, and the result reads as haze rather than a white layer.
+    /// own, and the result reads as haze rather than a white layer. A linear raw the camera
+    /// white-balanced, as Sony's YCbCr ARWs and Nikon's sRAW NEFs are, is balanced once, as shot
+    /// (`RawRevision.fourth`), where it was balanced again and turned pink. Brush and AI masks past
+    /// an edit's 32nd raster are drawn (`MaskResources.sliceLimit`), where they covered nothing.
     /// A new version records its references for the process-stability gate (`ProcessStabilityTests`).
     public static let currentProcessVersion = 18
     public static let linearPointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)]

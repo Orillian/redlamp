@@ -10,17 +10,31 @@ public enum RawRevision: Int, Sendable, Hashable, Comparable {
     /// Process 15: clipped highlights keep the colour of what's around them (CAM-31), as they do
     /// in every later revision.
     case second
-    /// Process 16 on: values below black are kept through the demosaic, for noise reduction to
-    /// average, and clamped after it (DN-12).
+    /// Processes 16 and 17: values below black are kept through the demosaic, for noise reduction
+    /// to average, and clamped after it (DN-12), as they are in every later revision.
     case third
+    /// Process 18 on: a linear raw the camera white-balanced (`DecodedImage.balancedInCamera`) is
+    /// balanced once, as shot, and its noise measured before that balance (#480).
+    case fourth
 
     public init(processVersion: Int) {
-        self = processVersion >= 16 ? .third : processVersion >= 15 ? .second : .first
+        self = switch processVersion {
+        case 18...: .fourth
+        case 16...: .third
+        case 15: .second
+        default: .first
+        }
     }
 
     /// Whether the raw stages keep values below black, to be clamped after the detail stage.
     public var keepsBelowBlack: Bool {
         self >= .third
+    }
+
+    /// Whether a linear raw the camera white-balanced keeps that balance. Before, it was balanced
+    /// again, which turned Sony's YCbCr ARWs and Nikon's sRAW NEFs pink.
+    public var keepsCameraBalance: Bool {
+        self >= .fourth
     }
 
     /// New edits'.

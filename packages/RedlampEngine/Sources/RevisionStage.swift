@@ -7,8 +7,9 @@ import Synchronization
 /// (`SessionBuilder.variant(of:at:)`). The variant stands in for the photo for that edit
 /// everywhere after it: its retouched copies, Detail, the develop kernel, its masks and Auto.
 ///
-/// A photo nothing clipped in builds the same pyramid at every revision and serves every edit, so
-/// it has no variants. Its state is behind `lock`: renders ask on the render queue, Auto elsewhere.
+/// A photo serves every edit whose revision builds the same pyramid for it: one nothing clipped
+/// in, with nothing below black, serves every edit, and has no variants. Its state is behind
+/// `lock`: renders ask on the render queue, Auto elsewhere.
 final class RevisionStage: @unchecked Sendable {
     private let builder: SessionBuilder
     private let lock = NSLock()
@@ -38,7 +39,7 @@ final class RevisionStage: @unchecked Sendable {
         guard !photo.serves(revision) else { return photo }
         lock.lock()
         defer { lock.unlock() }
-        if let variant = variants.first(where: { $0.photo === photo && $0.rawRevision == revision }) {
+        if let variant = variants.first(where: { $0.photo === photo && $0.serves(revision) }) {
             return variant
         }
         guard let variant = try builder.variant(of: photo, at: revision) else { return photo }
@@ -60,9 +61,12 @@ final class RevisionStage: @unchecked Sendable {
     func keep(for recipes: [EditRecipe], of session: ImageSession) -> [ImageSession] {
         let photo = session.photo
         let revisions = Set(recipes.map(\.rawRevision))
+        let unused = { (variant: ImageSession) in
+            variant.photo === photo && !revisions.contains(where: variant.serves)
+        }
         return lock.withLock {
-            let dropped = variants.filter { $0.photo === photo && !revisions.contains($0.rawRevision) }
-            variants.removeAll { $0.photo === photo && !revisions.contains($0.rawRevision) }
+            let dropped = variants.filter(unused)
+            variants.removeAll(where: unused)
             return dropped
         }
     }

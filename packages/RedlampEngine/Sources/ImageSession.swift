@@ -65,6 +65,9 @@ final class ImageSession: @unchecked Sendable {
     let lensProfiles: LensProfileResolver?
     /// The raw revision its pyramid was built at (`RawRevision`).
     let rawRevision: RawRevision
+    /// The raw revisions whose stages build the photo's pyramid differently from the revision
+    /// before (`SessionBuilder.pyramid`); empty when every revision builds the same one.
+    let rawChanges: Set<RawRevision>
     /// What another raw revision builds a different pyramid from, kept for the photo's edits at
     /// that revision (`RevisionStage`); nil when every revision builds the same one.
     let rawSource: RawSource?
@@ -74,7 +77,7 @@ final class ImageSession: @unchecked Sendable {
     /// The session this one builds again at an older raw revision (see `RevisionStage`).
     private let variantOf: ImageSession?
 
-    /// The decoded image and its noise model, as the photo's pyramid was built from them.
+    /// The decoded image, and the noise model the photo's pyramid was built with.
     struct RawSource {
         let decoded: DecodedImage
         let noise: NoiseModel
@@ -91,10 +94,16 @@ final class ImageSession: @unchecked Sendable {
         original.variantOf ?? original
     }
 
-    /// Whether an edit at `revision` renders from this session's pixels.
+    /// Whether an edit at `revision` renders from this session's pixels: no revision between the
+    /// two changes the photo.
     func serves(_ revision: RawRevision) -> Bool {
         let original = original
-        return revision == original.rawRevision || (original.rawSource == nil && original.variantOf == nil)
+        return original.builtRevision(for: revision) == original.builtRevision(for: original.rawRevision)
+    }
+
+    /// The earliest revision that builds the pyramid `revision` builds for the photo.
+    private func builtRevision(for revision: RawRevision) -> RawRevision {
+        rawChanges.filter { $0 <= revision }.max() ?? .first
     }
 
     init(
@@ -102,6 +111,7 @@ final class ImageSession: @unchecked Sendable {
         decoded: DecodedImage,
         pyramid: any MTLTexture,
         rawRevision: RawRevision,
+        rawChanges: Set<RawRevision>,
         rawSource: RawSource?,
         colorModel: CameraColorModel?,
         balanceMultipliers: SIMD3<Double>,
@@ -126,6 +136,7 @@ final class ImageSession: @unchecked Sendable {
         self.embeddedMattes = embeddedMattes
         self.lensProfiles = lensProfiles
         self.rawRevision = rawRevision
+        self.rawChanges = rawChanges
         self.rawSource = rawSource
         self.noiseGain = noiseGain
         dngProfile = decoded.isRaw ? decoded.dngProfile : nil
@@ -168,10 +179,14 @@ final class ImageSession: @unchecked Sendable {
         variantOf = nil
     }
 
-    /// `photo` built again at an older raw revision: `pyramid`, and the maps made from it, in place
-    /// of its own. The calibration, the noise model and the embedded profile are the photo's; what
-    /// is measured from its pixels (the airlight, the chromatic aberration) is its own.
-    init(variantOf photo: ImageSession, revision: RawRevision, pyramid: any MTLTexture, maps: ImageMaps) {
+    /// `photo` built again at another raw revision: `pyramid`, and the maps made from it, in place
+    /// of its own. The calibration and the embedded profile are the photo's; what is measured from
+    /// its pixels (the airlight, the chromatic aberration) is its own, and so is `noise`, which
+    /// differs from the photo's only for a raw the camera balanced (`RawRevision.fourth`).
+    init(
+        variantOf photo: ImageSession, revision: RawRevision, noise: NoiseModel, pyramid: any MTLTexture,
+        maps: ImageMaps,
+    ) {
         info = photo.info
         isRaw = photo.isRaw
         self.pyramid = pyramid
@@ -185,7 +200,7 @@ final class ImageSession: @unchecked Sendable {
         balanceMultipliers = photo.balanceMultipliers
         baselineExposure = photo.baselineExposure
         analysis = maps.analysis
-        noise = photo.noise
+        self.noise = noise.scaled(by: SIMD3<Float>(photo.balanceMultipliers))
         sensor = photo.sensor
         repairedPixels = photo.repairedPixels
         airlight = maps.airlight
@@ -204,6 +219,7 @@ final class ImageSession: @unchecked Sendable {
         embeddedMattes = photo.embeddedMattes
         lensProfiles = photo.lensProfiles
         rawRevision = revision
+        rawChanges = photo.rawChanges
         rawSource = nil
         chromaticAberration = LateralChromaticAberration.Cache()
         retouchedFrom = nil
@@ -248,6 +264,7 @@ final class ImageSession: @unchecked Sendable {
         embeddedMattes = original.embeddedMattes
         lensProfiles = original.lensProfiles
         rawRevision = original.rawRevision
+        rawChanges = original.rawChanges
         rawSource = nil
         chromaticAberration = original.chromaticAberration
         retouchedFrom = original

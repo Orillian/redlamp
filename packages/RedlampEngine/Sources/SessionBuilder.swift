@@ -52,9 +52,11 @@ struct SessionBuilder {
         let files = files
         let mattes = Prefetch(on: .global(qos: .userInitiated)) { files.embeddedMattes(in: url) }
         let balance = Self.balance(decoded)
-        let noise = decoded.noise
+        let taken = Self.taken(decoded, at: revision)
+        let noise = taken.noise
         let noiseGain = try noiseGainTexture(decoded)
-        let built = try pyramid(decoded, revision: revision, balance: balance, noise: noise, noiseGain: noiseGain)
+        let built = try pyramid(taken, revision: revision, balance: balance, noise: noise, noiseGain: noiseGain)
+        let changes = decoded.balancedInCamera ? built.changes.union([.fourth]) : built.changes
         let pyramid = built.pyramid
         let maps = try Self.maps(of: pyramid, airlight: nil, device: device, queue: queue, kernels: kernels)
         let colorModel = decoded.isRaw ? decoded.xyzToCamera.flatMap(CameraColorModel.init(xyzToCameraRowMajor:)) : nil
@@ -72,7 +74,8 @@ struct SessionBuilder {
             decoded: decoded,
             pyramid: pyramid,
             rawRevision: revision,
-            rawSource: built.dependsOnRevision ? ImageSession.RawSource(decoded: decoded, noise: noise) : nil,
+            rawChanges: changes,
+            rawSource: changes.isEmpty ? nil : ImageSession.RawSource(decoded: decoded, noise: noise),
             colorModel: colorModel,
             balanceMultipliers: balance,
             analysis: maps.analysis,
@@ -105,21 +108,33 @@ struct SessionBuilder {
     /// photo's own pyramid.
     func variant(of photo: ImageSession, at revision: RawRevision) throws -> ImageSession? {
         guard let source = photo.rawSource else { return nil }
-        let decoded = source.decoded
+        let decoded = Self.taken(source.decoded, at: revision)
+        // A raw the camera balanced has variants only across the fourth revision, which measures
+        // its noise differently.
+        let noise = source.decoded.balancedInCamera ? decoded.noise : source.noise
         let built = try pyramid(
-            decoded, revision: revision, balance: Self.balance(decoded), noise: source.noise,
-            noiseGain: photo.noiseGain,
+            decoded, revision: revision, balance: Self.balance(decoded), noise: noise, noiseGain: photo.noiseGain,
         )
         let maps = try Self.maps(of: built.pyramid, airlight: nil, device: device, queue: queue, kernels: kernels)
-        return ImageSession(variantOf: photo, revision: revision, pyramid: built.pyramid, maps: maps)
+        return ImageSession(variantOf: photo, revision: revision, noise: noise, pyramid: built.pyramid, maps: maps)
+    }
+
+    /// `decoded` as the raw stages at `revision` take it. Before the fourth, a linear raw the camera
+    /// balanced is taken for one it didn't, so it's balanced again and its noise is measured on
+    /// its balanced samples, as Redlamp did then (#480).
+    static func taken(_ decoded: DecodedImage, at revision: RawRevision) -> DecodedImage {
+        guard decoded.balancedInCamera, !revision.keepsCameraBalance else { return decoded }
+        var unbalanced = decoded
+        unbalanced.balancedInCamera = false
+        return unbalanced
     }
 
     /// A mipmapped pyramid of `decoded` through the raw stages at `revision`; the buffer counting
-    /// repaired photosites, and whether a stage that differs between revisions changed the pyramid.
+    /// repaired photosites, and the revisions whose stages change it from the revision before.
     private func pyramid(
         _ decoded: DecodedImage, revision: RawRevision, balance: SIMD3<Double>, noise: NoiseModel,
         noiseGain: any MTLTexture,
-    ) throws -> (pyramid: any MTLTexture, repairedCount: any MTLBuffer, dependsOnRevision: Bool) {
+    ) throws -> (pyramid: any MTLTexture, repairedCount: any MTLBuffer, changes: Set<RawRevision>) {
         let width = decoded.width
         let height = decoded.height
         let levels = Int(log2(Double(max(width, height)))) + 1
@@ -145,10 +160,10 @@ struct SessionBuilder {
         if let error = commands.error {
             throw EngineError.renderFailed(error.localizedDescription)
         }
-        // Revisions build different pyramids where a photosite clipped (revision 2 rebuilds it
-        // otherwise) or was below black (revision 3 keeps it).
+        // Revision 2 rebuilds a photosite that clipped otherwise, and revision 3 keeps one below
+        // black; a photo with either is taken to change at both, as it was before revision 4.
         let anyBelowBlack = belowBlack.contents().load(as: UInt32.self) != 0
-        return (pyramid, repairedCount, highlights != nil || anyBelowBlack)
+        return (pyramid, repairedCount, highlights != nil || anyBelowBlack ? [.second, .third] : [])
     }
 
     /// The maps made from the photo's own pixels, from `pyramid` with its mipmaps: its analysis
@@ -218,7 +233,8 @@ struct SessionBuilder {
     /// A frame for focus stacking: level 0 only (no mipmaps, analysis or haze map), full resolution,
     /// in camera RGB balanced by `balance(_:)`, exactly as a session's pyramid holds it. Its raw
     /// stages are the first revision's: a stack's merge is cached and shared by all its edits, so
-    /// a later revision would change older edits whenever the cache is merged again.
+    /// a later revision would change older edits whenever the cache is merged again. A linear raw
+    /// the camera balanced keeps that balance all the same, as from the fourth (#480).
     func demosaic(_ decoded: DecodedImage) throws -> DemosaicedFrame {
         try Self.checkGainMaps(decoded)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
