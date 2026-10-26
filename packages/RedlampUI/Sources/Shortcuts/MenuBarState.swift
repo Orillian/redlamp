@@ -41,6 +41,8 @@ import RedlampLibrary
         public internal(set) var openVersion: UUID?
         public internal(set) var canOpenVersions = false
         public internal(set) var canChangeVersions = false
+        /// Rename Version… renames the version open in Develop, or in Library the active photo when it's a version.
+        public internal(set) var canRenameVersion = false
     }
 
     public private(set) var shown = Shown()
@@ -147,6 +149,7 @@ import RedlampLibrary
         shown.openVersion = model.openVersion
         shown.canOpenVersions = model.canOpenVersions
         shown.canChangeVersions = model.canChangeVersions
+        shown.canRenameVersion = model.canRenameVersion
         return shown
     }
 

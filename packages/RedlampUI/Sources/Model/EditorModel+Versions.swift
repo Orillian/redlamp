@@ -58,14 +58,30 @@ public extension EditorModel {
 
     /// Gives version `id` the name `name`, without spaces at its ends; an empty name changes nothing.
     func renameVersion(_ id: UUID, to name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canChangeVersions, !name.isEmpty, let index = openSidecar.versions.firstIndex(where: { $0.id == id }),
+        guard canChangeVersions else { return }
+        renameOpenPhotosVersion(id, to: name)
+    }
+
+    /// Gives the open photo's version `id` the name `name`, without spaces at its ends, in either module, as Library
+    /// renames a version (LIB-48); false when that changes nothing: an empty name, the name it has, or a version the
+    /// photo doesn't have.
+    @discardableResult
+    internal func renameOpenPhotosVersion(_ id: UUID, to name: String) -> Bool {
+        guard info != nil, opening == nil, !isReadOnly, let name = Self.versionName(name),
+              let index = openSidecar.versions.firstIndex(where: { $0.id == id }),
               openSidecar.versions[index].name != name
-        else { return }
+        else { return false }
         activity.record(.edit, "Renamed version “\(openSidecar.versions[index].name)” as “\(name)”")
         openSidecar.versions[index].name = name
         versions = Self.versions(of: openSidecar)
         saveNow()
+        return true
+    }
+
+    /// `typed` as a version's name, without spaces at its ends; nil for an empty one, which names nothing.
+    nonisolated static func versionName(_ typed: String) -> String? {
+        let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 
     /// Removes version `id`, with its snapshots and history; the photo's own edit opens in its place when it's open.
@@ -161,28 +177,9 @@ public extension EditorModel {
 
     /// Rename Version…: asks for the version's new name in a sheet over the editor.
     func chooseVersionName(_ id: UUID) {
-        guard canChangeVersions, let version = openSidecar.version(id),
-              let window = EditorWindowController.frontWindow
-        else { return }
-        let alert = NSAlert()
-        alert.messageText = "Rename “\(version.name)”"
-        alert.informativeText = "The version's new name."
-        let field = NSTextField(string: version.name)
-        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-        field.setAccessibilityIdentifier("versions.rename.name")
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        isModalDialogOpen = true
-        alert.beginSheetModal(for: window) { [weak self] response in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.isModalDialogOpen = false
-                if response == .alertFirstButtonReturn {
-                    self.renameVersion(id, to: field.stringValue)
-                }
-            }
+        guard canChangeVersions, let version = openSidecar.version(id) else { return }
+        askForVersionName(version.name) { [weak self] name in
+            self?.renameVersion(id, to: name)
         }
     }
 

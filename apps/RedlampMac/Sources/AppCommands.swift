@@ -149,35 +149,34 @@ struct AppCommands: Commands {
         versionItems
     }
 
-    /// The open photo's edits, its own and its versions, to open, and the version open to rename or remove (EDT-09).
+    /// The open photo's edits, its own and its versions, to open, and the version open to rename or remove (EDT-09);
+    /// in Library, the active photo renamed when it's a version (LIB-48).
     @ViewBuilder private var versionItems: some View {
         let shown = menu.shown
         Menu("Versions") {
-            Toggle(EditorModel.originalName, isOn: Binding(
-                get: { menu.shown.openVersion == nil },
-                set: {
-                    if $0 {
-                        model.showVersion(nil)
-                    }
-                },
-            ))
-            ForEach(shown.versions) { version in
-                Toggle(version.name, isOn: Binding(
-                    get: { menu.shown.openVersion == version.id },
+            if shown.canOpenVersions {
+                Toggle(EditorModel.originalName, isOn: Binding(
+                    get: { menu.shown.openVersion == nil },
                     set: {
                         if $0 {
-                            model.showVersion(version.id)
+                            model.showVersion(nil)
                         }
                     },
                 ))
-            }
-            Divider()
-            Button("Rename Version…") {
-                if let open = menu.shown.openVersion {
-                    model.chooseVersionName(open)
+                ForEach(shown.versions) { version in
+                    Toggle(version.name, isOn: Binding(
+                        get: { menu.shown.openVersion == version.id },
+                        set: {
+                            if $0 {
+                                model.showVersion(version.id)
+                            }
+                        },
+                    ))
                 }
+                Divider()
             }
-            .disabled(shown.openVersion == nil || !shown.canChangeVersions)
+            Button("Rename Version…") { model.chooseVersionName() }
+                .disabled(!shown.canRenameVersion)
             Button("Remove Version…") {
                 if let open = menu.shown.openVersion {
                     model.confirmRemovingVersion(open)
@@ -185,7 +184,7 @@ struct AppCommands: Commands {
             }
             .disabled(shown.openVersion == nil || !shown.canChangeVersions)
         }
-        .disabled(!shown.canOpenVersions)
+        .disabled(!shown.canOpenVersions && !shown.canRenameVersion)
     }
 
     /// Focus stacks, stacks, and moving through the photos.

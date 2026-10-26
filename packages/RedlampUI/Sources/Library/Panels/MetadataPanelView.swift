@@ -8,12 +8,17 @@ import UniformTypeIdentifiers
 /// as mixed, each edited on every one of them as one change with Undo; metadata presets applied, made, edited
 /// and deleted; and the capture time, edited with Edit Capture Time…. The fields are a form as the system lays
 /// one out (LIB-45), in groups: what the photos show, who made them and owns them, where they were taken, and
-/// when; Tab and Shift-Tab go from field to field.
+/// when; Tab and Shift-Tab go from field to field. While the active photo is a version (LIB-48), Lightroom Classic's
+/// Copy Name comes first: the version's name, which typing in renames it.
 final class MetadataPanelView: PanelStackView, NSTextFieldDelegate {
     private let model: EditorModel
     private let panels: LibraryPanels
     private let summary = PanelControls.note("")
     private let presets = NSPopUpButton(frame: .zero, pullsDown: true)
+    let copyName = PanelControls.field()
+    private(set) var copyNameRow: NSGridRow?
+    /// The version Copy Name shows, which it renames.
+    private(set) var copyNameVersion: PhotoAddress?
     private var fields: [MetadataPreset.Field: NSTextField] = [:]
     private let captured = PanelControls.label("—")
     private let editTime: NSButton
@@ -40,8 +45,10 @@ final class MetadataPanelView: PanelStackView, NSTextFieldDelegate {
         presets.controlSize = .regular
         presets.font = PanelControls.font
         presets.setAccessibilityIdentifier("metadata.presets")
-        var rows: [(label: String?, control: NSView)] = [("Preset", presets)]
-        var starts: [Int] = []
+        copyName.delegate = self
+        copyName.setAccessibilityIdentifier("metadata.copyName")
+        var rows: [(label: String?, control: NSView)] = [("Preset", presets), ("Copy Name", copyName)]
+        var starts = [1]
         for group in Self.groups {
             starts.append(rows.count)
             for field in group {
@@ -61,8 +68,10 @@ final class MetadataPanelView: PanelStackView, NSTextFieldDelegate {
         for start in starts {
             form.row(at: start).topPadding = 8
         }
+        copyNameRow = form.row(at: 1)
+        copyNameRow?.isHidden = true
         form.cell(for: editTime)?.xPlacement = .leading
-        let ordered = Self.groups.joined().compactMap { fields[$0] }
+        let ordered = [copyName] + Self.groups.joined().compactMap { fields[$0] }
         for (field, next) in zip(ordered, ordered.dropFirst() + ordered.prefix(1)) {
             field.nextKeyView = next
         }
@@ -103,7 +112,24 @@ final class MetadataPanelView: PanelStackView, NSTextFieldDelegate {
                 guard let self else { return }
                 showPresets(panels.presets)
             },
+            Tracker { [weak self] in
+                guard let self else { return }
+                showCopyName(of: model.activeVersion)
+            },
         ]
+    }
+
+    /// Copy Name shows `version`'s name, its row hidden for no version.
+    private func showCopyName(of version: PhotoAddress?) {
+        let name = version.flatMap(model.versionName(of:))
+        if let copyNameRow, copyNameRow.isHidden != (name == nil) {
+            copyNameRow.isHidden = name == nil
+            rowsChanged()
+        }
+        // The field being typed in keeps what's typed, and the version it renames.
+        guard copyName.currentEditor() == nil else { return }
+        copyNameVersion = name == nil ? nil : version
+        Self.set(copyName, to: name ?? "")
     }
 
     /// The selection's fields, each control set only when what it shows changes: a held arrow key shows another
@@ -198,13 +224,22 @@ final class MetadataPanelView: PanelStackView, NSTextFieldDelegate {
     // MARK: - Editing
 
     func controlTextDidEndEditing(_ notification: Notification) {
-        guard let text = notification.object as? NSTextField,
-              let field = fields.first(where: { $0.value === text })?.key
-        else { return }
+        guard let text = notification.object as? NSTextField else { return }
+        if text === copyName {
+            return renameVersion(to: text.stringValue)
+        }
+        guard let field = fields.first(where: { $0.value === text })?.key else { return }
         if case .mixed = panels.selection.fields[field], text.stringValue.isEmpty {
             return
         }
         panels.set(field, to: text.stringValue)
+    }
+
+    /// Gives the version Copy Name shows the name `typed`; a name that changes nothing, such as an empty one, gives
+    /// the field its name back.
+    private func renameVersion(to typed: String) {
+        guard let version = copyNameVersion, !model.renameVersion(version, to: typed) else { return }
+        Self.set(copyName, to: model.versionName(of: version) ?? "")
     }
 }
 
