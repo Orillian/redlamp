@@ -58,7 +58,8 @@ final class PhotoPanelView: PanelStackView {
         tracker = Tracker { [weak self] in
             guard let self else { return }
             _ = model.library.revision
-            let item = model.selection.flatMap(model.library.item(for:))
+            let library = model.library
+            let item = model.activeAddress.flatMap(library.index(of:)).map { library.items[$0] }
             for field in Field.allCases {
                 guard let value = values[field] else { continue }
                 let text = item.map { Self.value(field, of: $0) } ?? "—"

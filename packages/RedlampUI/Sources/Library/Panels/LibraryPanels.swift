@@ -11,7 +11,7 @@ public struct PanelSelection: Sendable, Equatable {
     public var count = 0
     /// Those the library has, by their IDs in its index, in order.
     public var ids: [Int64] = []
-    /// The active photo's ID, when the library has it.
+    /// The active photo's ID, a version's own row when a version is active (LIB-48), when the library has it.
     public var activeID: Int64?
     /// How many of them have each keyword.
     public var keywords: [KeywordPath: Int] = [:]
@@ -213,7 +213,7 @@ public final class LibraryPanels {
         let library = model.library
         let snapshot = SelectionSnapshot(
             selection: model.photoSelection, list: library.photoList, items: library.items,
-            active: model.selection.flatMap(library.index(of:)), indexed: library.showsIndexIDs,
+            active: model.activeAddress.flatMap(library.index(of:)), indexed: library.showsIndexIDs,
         )
         let ids = photoIDs
         reading = Task { [weak self] in
