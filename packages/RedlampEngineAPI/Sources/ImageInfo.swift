@@ -78,6 +78,10 @@ public struct ImageInfo: Codable, Sendable, Hashable {
     /// A raw's BaselineExposure (0 when it states none), which an estimated exposure anchor
     /// carries when it renders (`ExposureAnchor.stops(baseline:)`); nil for bitmaps.
     public var baselineExposure: Double?
+    /// The stops the camera underexposed the raw by for a setting that brightens its own JPEG back
+    /// by as much: Fujifilm's DR200 and DR400, one and two stops (CAM-35). Added to every look's
+    /// exposure from process 19; nil where the file states none.
+    public var exposureShift: Double?
     /// What the raw decode measured, for the camera bench (CAM-14); nil for bitmaps.
     public var diagnostics: DecodeDiagnostics?
 

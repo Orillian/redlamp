@@ -116,8 +116,11 @@ public struct EditRecipe: Sendable, Hashable {
     /// white-balanced, as Sony's YCbCr ARWs and Nikon's sRAW NEFs are, is balanced once, as shot
     /// (`RawRevision.fourth`), where it was balanced again and turned pink. Brush and AI masks past
     /// an edit's 32nd raster are drawn (`MaskResources.sliceLimit`), where they covered nothing.
+    /// 19: a raw the camera underexposed for its D-Range opens as bright as at DR100: the stops its
+    /// file records (`ImageInfo.exposureShift`, Fujifilm's DR200 and DR400) are added to every
+    /// look's exposure (`ImageSession.baseExposure(for:)`, CAM-35).
     /// A new version records its references for the process-stability gate (`ProcessStabilityTests`).
-    public static let currentProcessVersion = 18
+    public static let currentProcessVersion = 19
     public static let linearPointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)]
 
     /// Sidecars written before process versions existed are version 1.

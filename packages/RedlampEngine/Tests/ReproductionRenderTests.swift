@@ -121,6 +121,30 @@ struct ReproductionRenderTests {
         }
     }
 
+    @Test func `from process 19 a raw underexposed for its D-Range renders as bright as at DR100`() throws {
+        // A DR200 raw: the camera put every tone a stop lower.
+        let row = Self.greyRow.map { $0 / 2 }
+        func session(shift: Double?) throws -> ImageSession {
+            try makeRaw(width: Self.block * row.count, height: Self.block, exposureShift: shift) { x, _ in
+                SIMD3(repeating: row[x / Self.block])
+            }
+        }
+        func at(_ process: Int) -> EditRecipe {
+            var recipe = Self.reproduction()
+            recipe.processVersion = process
+            return recipe
+        }
+        let dr200 = try session(shift: 1)
+        let before = try patches(render(at(18), session: dr200), count: row.count)
+        let after = try patches(render(at(19), session: dr200), count: row.count)
+        for (value, (old, new)) in zip(row, zip(before, after)) {
+            #expect(abs(old.y - value) <= 0.0001 + 0.003 * value, "process 18 renders \(value) at \(old)")
+            #expect(abs(new.y - 2 * value) <= 0.0001 + 0.006 * value, "process 19 renders \(value) at \(new)")
+        }
+        let unstated = try session(shift: nil)
+        #expect(try render(at(19), session: unstated) == render(at(18), session: unstated), "no shift, no change")
+    }
+
     @Test func `without an anchor a grey the typical camera meters renders at 18%`() throws {
         let metered = Float(0.18 * pow(2, -ExposureAnchor.typicalStops))
         let session = try makeRaw(width: Self.block, height: Self.block) { _, _ in SIMD3(repeating: metered) }
@@ -249,7 +273,8 @@ struct ReproductionRenderTests {
 
     /// A linear raw whose camera RGB is linear sRGB, balanced as shot.
     private func makeRaw(
-        width: Int, height: Int, baselineExposure: Double = 0, color: (Int, Int) -> SIMD3<Float>,
+        width: Int, height: Int, baselineExposure: Double = 0, exposureShift: Double? = nil,
+        color: (Int, Int) -> SIMD3<Float>,
     ) throws -> ImageSession {
         let black: Float = 512
         let white: Float = 16383
@@ -263,15 +288,16 @@ struct ReproductionRenderTests {
                 }
             }
         }
+        var info = ImageInfo(
+            url: URL(fileURLWithPath: "/synthetic-reproduction.dng"),
+            pixelSize: PixelSize(width: width, height: height), isRaw: true, sensorDescription: "synthetic",
+        )
+        info.exposureShift = exposureShift
         var decoded = DecodedImage(
             width: width, height: height, layout: .linearRGB, samples: samples,
             blackLevels: [black, black, black], whiteLevel: white,
             asShotMultipliers: SIMD3(1, 1, 1), cameraToSRGB: [1, 0, 0, 0, 1, 0, 0, 0, 1], xyzToCamera: nil,
-            orientation: 0, baselineExposure: baselineExposure,
-            info: ImageInfo(
-                url: URL(fileURLWithPath: "/synthetic-reproduction.dng"),
-                pixelSize: PixelSize(width: width, height: height), isRaw: true, sensorDescription: "synthetic",
-            ),
+            orientation: 0, baselineExposure: baselineExposure, info: info,
         )
         decoded.noiseProfile = DetailStageTests.noise
         return try SessionBuilder(device: device, queue: queue, kernels: kernels).build(decoded)

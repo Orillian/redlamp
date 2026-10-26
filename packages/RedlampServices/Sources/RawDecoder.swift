@@ -153,6 +153,7 @@ enum RawDecoder {
         let file = data ?? (try? Data(contentsOf: url, options: .alwaysMapped))
         info.cropFactor = CropFactor.of(raw) { file.flatMap { CropFactor.focalPlane($0, url: url) } }
         lensIdentity(raw, into: &info)
+        info.exposureShift = fujifilmDynamicRangeStops(raw)
         info.diagnostics = diagnostics(
             raw, url: url, blackLevels: blackLevels, nominalWhite: nominalWhite, white: whiteLevel,
             xyzToCamera: xyzToCamera, mosaic: mosaic,
@@ -243,6 +244,23 @@ enum RawDecoder {
             }
         }
         return nil
+    }
+
+    /// The stops a Fujifilm camera underexposed a RAF by for its D-Range, which its JPEG brightens
+    /// back: one at DR200, two at DR400. From the maker note's D-Range, manual or automatic; where
+    /// it has neither (D-Range Priority), from the raw exposure bias, whole stops below the −0.72
+    /// X-Trans bodies record at DR100. Nil for a DNG, whose BaselineExposure already carries it.
+    static func fujifilmDynamicRangeStops(_ raw: UnsafePointer<libraw_data_t>) -> Double? {
+        guard raw.pointee.idata.dng_version == 0 else { return nil }
+        // LibRaw leaves 0xffff in a field the maker note lacks, and far below -10 in the bias.
+        let fuji = raw.pointee.makernotes.fuji
+        let manual = fuji.DynamicRangeSetting == 1 ? fuji.DevelopmentDynamicRange : 0
+        if let percent = [manual, fuji.AutoDynamicRange].first(where: { (100 ... 1600).contains($0) }) {
+            return log2(Double(percent) / 100)
+        }
+        let bias = Double(fuji.ExpoMidPointShift)
+        guard bias.isFinite, abs(bias) <= 10 else { return nil }
+        return max(0, (-0.72 - bias).rounded())
     }
 
     /// LibRaw reports a large negative sentinel when a file has no DNG BaselineExposure.
