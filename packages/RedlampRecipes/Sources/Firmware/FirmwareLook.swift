@@ -170,14 +170,15 @@
     /// Base Looks baked from the firmware model: Redlamp's scene light through the model into a
     /// scene-referred table, which takes the place of Redlamp's tone curve.
     public enum FirmwareLook {
-        /// Bumped when the bake changes.
-        public static let bakeVersion = 1
+        /// Bumped when the bake changes: 2, black and white at DR200 and DR400 takes PROVIA's
+        /// change in tone gain; 3, Redlamp's corrections (`black`, `corrections`).
+        public static let bakeVersion = 3
         public static let tableSize = 33
         /// Stops added to Redlamp's scene light before the model: the model expects a raw
         /// developer's linear output, and Redlamp's scene light is scaled differently. Swept with
-        /// `profile --evaluate --firmware-exposure` on the Standard pairs, it's where the median
-        /// photo needs no more exposure to match the camera's midtones.
-        public static let exposure = 0.8
+        /// `profile --evaluate --firmware-exposure` on the Standard pairs at process 19, it's where
+        /// the median photo needs no more exposure to match the camera's midtones.
+        public static let exposure = 0.6
 
         public static func id(_ settings: FirmwareLookSettings) -> String {
             let settings = settings.clamped
@@ -226,15 +227,22 @@
         }
 
         /// Each point's scene light in linear Rec.709, below zero clipped and the exposure added,
-        /// through the model; its display sRGB back to display Rec.2020 with the sRGB transfer.
-        static func table(_ settings: FirmwareLookSettings, model: FirmwareFilmModel, size: Int = tableSize) throws
-            -> LookTable {
+        /// through the model and Redlamp's corrections to it; its display sRGB back to display
+        /// Rec.2020 with the sRGB transfer. `corrected: false` leaves the corrections out.
+        static func table(
+            _ settings: FirmwareLookSettings,
+            model: FirmwareFilmModel,
+            size: Int = tableSize,
+            corrected: Bool = true,
+        ) throws -> LookTable {
             let rendering = try model.rendering(
                 settings.simulation.modelName, color: settings.color, dr: settings.dynamicRange,
                 highlight: settings.highlight, shadow: settings.shadow, warmCool: Double(settings.warmCool),
                 magentaGreen: Double(settings.magentaGreen),
             )
             let gain = exp2(settings.exposure)
+            let correction = corrected ? corrections[settings.simulation] : nil
+            let black = corrected ? Self.black : 0
             let slices = parallelMap(size) { b in
                 var slice = [Float]()
                 slice.reserveCapacity(size * size * 3)
@@ -244,7 +252,9 @@
                         let out = point(
                             SIMD3<Double>(SceneLogEncoding.decode(encoded)),
                             gain: gain,
+                            black: black,
                             rendering: rendering,
+                            correction: correction,
                         )
                         slice += [Float(out.x), Float(out.y), Float(out.z)]
                     }
@@ -257,14 +267,77 @@
         static func point(
             _ scene: SIMD3<Double>,
             gain: Double,
+            black: Double = 0,
             rendering: FirmwareFilmModel.Rendering,
+            correction: OutputCorrection? = nil,
         ) -> SIMD3<Double> {
-            let linear = simd_max(ColorMatrices.rec2020ToSRGB * scene, .zero) * gain
+            var linear = simd_max(ColorMatrices.rec2020ToSRGB * scene, .zero) * gain
+            let luminance = simd_dot(linear, OutputCorrection.luma)
+            if black > 0, luminance > 0 {
+                linear *= max(luminance - black, 0) / luminance
+            }
             let display = rendering(linear)
-            let light = SIMD3(SRGB.decode(display.x), SRGB.decode(display.y), SRGB.decode(display.z))
+            var light = SIMD3(SRGB.decode(display.x), SRGB.decode(display.y), SRGB.decode(display.z))
+            if let correction {
+                light = correction(light)
+            }
             let wide = simd_max(ColorMatrices.sRGBToRec2020 * light, .zero)
             return SIMD3(SRGB.encode(wide.x), SRGB.encode(wide.y), SRGB.encode(wide.z))
         }
+
+        /// Redlamp's correction to one simulation's output: OKLab lightness added at L 0.2, 0.4,
+        /// 0.6 and 0.8, in hundredths, none at black and white and linear between, and chroma
+        /// changed by a percentage.
+        struct OutputCorrection: Sendable {
+            static let luma = SIMD3<Double>(Luma.rec709)
+            static let knots = [0, 0.2, 0.4, 0.6, 0.8, 1]
+
+            var lightness: [Double]
+            var chroma: Double
+
+            /// Linear sRGB in and out, within 0...1.
+            func callAsFunction(_ linear: SIMD3<Double>) -> SIMD3<Double> {
+                var lab = OKLab.fromLinearSRGB(simd_max(linear, .zero))
+                lab.x += Interpolation.linear(lab.x, Self.knots, [0] + lightness.map { $0 / 100 } + [0])
+                lab.y *= 1 + chroma / 100
+                lab.z *= 1 + chroma / 100
+                return simd_clamp(OKLab.toLinearSRGB(lab), .zero, SIMD3(repeating: 1))
+            }
+        }
+
+        /// Subtracted from the model's input luminance, keeping its chromaticity: the cameras'
+        /// shadows are deeper than the model's in every simulation. Fitted with `corrections`.
+        static let black = 0.005
+
+        /// Redlamp's corrections to the model's output, fitted per simulation on a donated set of
+        /// 13 Fujifilm X-E5 raws with the camera's own JPEG of each in every simulation, at its
+        /// own D-Range (DR100, 200 and 400) and 5500 K: the OKLab distance to the camera's JPEG at
+        /// flat points, each frame's exposure matched to the camera's midtones, the input at
+        /// `exposure` with `black` taken out. Held out by leaving each frame out in turn, the mean
+        /// over the simulations goes from 1.74 to 1.58 (OKLab × 100), and Nostalgic Neg's from
+        /// 3.46 to 2.29, the camera's shadows being deeper and its colours less saturated.
+        static let corrections: [FirmwareSimulation: OutputCorrection] = [
+            .standard: .init(lightness: [-1.8, 0.58, -1.0, 0.82], chroma: -0.67),
+            .vividSlide: .init(lightness: [0.45, 1.7, -1.5, 0.70], chroma: 2.6),
+            .softSlide: .init(lightness: [-2.1, 0.52, -1.1, 0.80], chroma: 2.7),
+            .chrome: .init(lightness: [-0.35, 1.6, -2.0, 0.53], chroma: 1.0),
+            .negativeHigh: .init(lightness: [-0.22, 1.6, -1.8, 0.86], chroma: -4.4),
+            .negativeStandard: .init(lightness: [-0.41, 1.4, -1.6, 0.68], chroma: -4.5),
+            .negativeClassic: .init(lightness: [-2.2, -0.13, -1.1, -0.95], chroma: 0.17),
+            .negativeNostalgic: .init(lightness: [-5.5, -4.7, 0.69, 1.4], chroma: -23),
+            .cinema: .init(lightness: [-1.8, 0.33, -0.81, 0.94], chroma: -2.8),
+            .bleach: .init(lightness: [-2.3, -0.32, -1.7, 1.1], chroma: -2.6),
+            .monochrome: .init(lightness: [-1.9, 0.63, -1.2, 1.1], chroma: 0),
+            .monochromeYellow: .init(lightness: [-1.3, 0.82, -1.0, 1.1], chroma: 0),
+            .monochromeRed: .init(lightness: [-1.1, 1.0, -0.81, 0.78], chroma: 0),
+            .monochromeGreen: .init(lightness: [-2.2, 0.41, -1.3, 1.3], chroma: 0),
+            .sepia: .init(lightness: [-1.7, 0.73, -1.2, 1.1], chroma: 25),
+            .acros: .init(lightness: [-1.9, 0.29, -0.95, 1.0], chroma: 0),
+            .acrosYellow: .init(lightness: [-1.5, 0.34, -0.72, 0.85], chroma: 0),
+            .acrosRed: .init(lightness: [-1.4, 0.76, -0.45, 0.67], chroma: 0),
+            .acrosGreen: .init(lightness: [-2.1, 0.065, -0.91, 1.2], chroma: 0),
+            .realaAce: .init(lightness: [4.4, -1.2, 0.89, 1.9], chroma: -0.69),
+        ]
 
         private static let cache = DefinitionCache()
 

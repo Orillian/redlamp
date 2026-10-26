@@ -13,6 +13,21 @@ public enum OKLab {
         )
     }
 
+    /// Linear sRGB from OKLab, the inverse of `fromLinearSRGB`.
+    public static func toLinearSRGB(_ lab: SIMD3<Double>) -> SIMD3<Double> {
+        var l = lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z
+        var m = lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z
+        var s = lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z
+        l = l * l * l
+        m = m * m * m
+        s = s * s * s
+        return SIMD3(
+            4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+            -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+            -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+        )
+    }
+
     /// OKLab of linear sRGB in Float, with the cone responses clamped at zero, so a colour
     /// outside the gamut has no negative cube root.
     public static func fromLinearSRGB(_ c: SIMD3<Float>) -> SIMD3<Float> {

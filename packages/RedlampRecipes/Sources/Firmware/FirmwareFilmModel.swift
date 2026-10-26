@@ -139,17 +139,31 @@
         }
 
         /// The tone stage's gain curve for a dynamic range and Highlight and Shadow Tone: the
-        /// highlight and shadow curves combined relative to the neutral one, in units of 1.
+        /// highlight and shadow curves combined relative to the neutral one, in units of 1. A
+        /// black-and-white simulation whose curves are the same at every dynamic range takes the
+        /// change PROVIA's make from DR100, which the cameras' own JPEGs at DR200 and DR400 show.
         public func toneGain(_ simulation: String, dr: Int = 100, highlight: Double = 0, shadow: Double = 0) throws
             -> [Double] {
             guard let curves = simulations[simulation] else { throw LoadError.invalid("simulation \(simulation)") }
-            guard let index = constants.drIndex[String(dr)], let set = curves.gains[String(index)] else {
-                throw LoadError.invalid("dynamic range \(dr)")
-            }
+            let set = try gains(curves, dr: dr)
             let neutral = try curve(set, "H", tone: 0)
             let high = try curve(set, "H", tone: highlight)
             let low = try curve(set, "S", tone: shadow)
-            return (0 ..< neutral.count).map { high[$0] * low[$0] / max(neutral[$0], 1) / constants.gainUnit }
+            let gain = (0 ..< neutral.count).map { high[$0] * low[$0] / max(neutral[$0], 1) / constants.gainUnit }
+            guard curves.isMonochrome, dr != 100, let standard = simulations[FirmwareSimulation.standard.modelName],
+                  try neutral == curve(gains(curves, dr: 100), "H", tone: 0)
+            else { return gain }
+            let from = try curve(gains(standard, dr: 100), "H", tone: 0)
+            let to = try curve(gains(standard, dr: dr), "H", tone: 0)
+            guard from.count == gain.count, to.count == gain.count else { return gain }
+            return gain.indices.map { gain[$0] * to[$0] / max(from[$0], 1) }
+        }
+
+        private func gains(_ curves: Simulation, dr: Int) throws -> [String: [String: [Double]]] {
+            guard let index = constants.drIndex[String(dr)], let set = curves.gains[String(index)] else {
+                throw LoadError.invalid("dynamic range \(dr)")
+            }
+            return set
         }
 
         private func curve(_ set: [String: [String: [Double]]], _ side: String, tone: Double) throws -> [Double] {
