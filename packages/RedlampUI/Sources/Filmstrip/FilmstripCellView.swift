@@ -143,15 +143,15 @@ final class FilmstripCellView: NSView {
         badges.hasImage = thumbnail.contents != nil
         badges.uneditedPreview = showsUneditedPreview
         layer?.opacity = item.metadata.flag == .reject ? 0.45 : 1
-        setAccessibilityLabel(item.name)
-        setAccessibilityIdentifier("filmstrip.\(item.url.lastPathComponent)")
+        setAccessibilityLabel(item.title)
+        setAccessibilityIdentifier("filmstrip.\(item.accessibilityName)")
         describe()
     }
 
     /// The tooltip and what VoiceOver reads after the name, as the grid's cells say them.
     private func describe() {
         let suggested = isFocusSuggested ? "suggested for a focus stack" : nil
-        toolTip = [item?.name, suggested].compactMap(\.self).joined(separator: ", ")
+        toolTip = [item?.title, suggested].compactMap(\.self).joined(separator: ", ")
         setAccessibilityValue(suggested)
     }
 
@@ -250,7 +250,8 @@ final class FilmstripCellView: NSView {
 }
 
 /// The cell's badges: edited, flag or reject, stars, colour or custom label, the mark, focus stack or a focus stack
-/// suggested, a stack's count and a pair's extensions (LIB-28), and a cloud for photos only in iCloud Drive.
+/// suggested, a stack's count and a pair's extensions (LIB-28), a version's mark (LIB-48), and a cloud for photos only
+/// in iCloud Drive.
 final class FilmstripBadgesView: LayerDrawnView {
     var item: LibraryItem? {
         didSet {
@@ -293,6 +294,7 @@ final class FilmstripBadgesView: LayerDrawnView {
         var metadata = PhotoMetadata()
         var stack = false
         var cloud = false
+        var version = false
     }
 
     private func badges(_ item: LibraryItem?) -> Badges? {
@@ -302,6 +304,7 @@ final class FilmstripBadgesView: LayerDrawnView {
                 metadata: $0.metadata,
                 stack: SupportedFormats.isStack($0.url),
                 cloud: !$0.isLocal,
+                version: $0.version != nil,
             )
         }
     }
@@ -365,6 +368,9 @@ final class FilmstripBadgesView: LayerDrawnView {
                 weight: uneditedPreview ? .bold : .semibold, color: white.opacity(0.85),
                 centeredAt: CGPoint(x: circle.midX, y: circle.midY), scale: scale,
             )
+        }
+        if badges.version, let image = GridBadges.image(.version, scale: scale) {
+            drawUpright(image, in: CGRect(x: 4, y: rect.height - 33, width: 16, height: 16), context)
         }
         if badges.metadata.rating > 0 {
             let count = CGFloat(badges.metadata.rating)

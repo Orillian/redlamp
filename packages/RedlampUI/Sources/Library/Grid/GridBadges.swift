@@ -34,6 +34,8 @@ enum GridBadges {
         case proposedPick, proposedReject
         /// A soft frame's sharpness against its burst's sharpest ("38% softer"), or "Soft" in a cell too small.
         case softness(String, compact: Bool)
+        /// A version of its file's edit (LIB-48), as Lightroom Classic's page curl marks a virtual copy.
+        case version
 
         /// Drawn on the cell's tile rather than over its photo, so in the theme's colours: an expanded cell's footer
         /// slots, and the cloud of a photo without a thumbnail.
@@ -48,7 +50,7 @@ enum GridBadges {
         var size: CGSize {
             switch self {
             case .pick, .reject, .stack, .edited, .uneditedPreview, .mark, .flagSlot, .markSlot, .focusSuggestion,
-                 .proposedPick, .proposedReject:
+                 .proposedPick, .proposedReject, .version:
                 CGSize(width: 16, height: 16)
             case .cloud: CGSize(width: 24, height: 24)
             case let .rating(stars): CGSize(width: GridBadges.ratingWidth(stars), height: 14)
@@ -271,6 +273,9 @@ enum GridBadges {
         case .mark:
             drawDisc(size, in: context)
             Symbol.draw("circle.fill", pointSize: 7.5, color: white.opacity(0.95), centeredAt: middle, scale: scale)
+        case .version:
+            drawDisc(size, in: context)
+            Symbol.draw("doc.on.doc.fill", pointSize: 7.5, color: white.opacity(0.95), centeredAt: middle, scale: scale)
         case let .ratingSlots(stars):
             for index in 0 ..< 5 {
                 Symbol.draw(

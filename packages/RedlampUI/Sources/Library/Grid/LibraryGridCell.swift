@@ -21,7 +21,7 @@ final class LibraryGridCell {
     private var badges: [Badge: CALayer] = [:]
 
     private enum Badge: Hashable {
-        case flag, stack, edited, rating, cloud, mark, stackCount, pairText, proposal, softness
+        case flag, stack, edited, rating, cloud, mark, stackCount, pairText, proposal, softness, version
     }
 
     /// The dashed frame of a photo a Library Health check's batch acts on (LIB-40).
@@ -293,6 +293,7 @@ final class LibraryGridCell {
         set(.mark, shows && metadata.mark ? .mark : slots ? .markSlot : nil, centre: geometry.mark)
         let edited: GridBadges.Kind = showsUneditedPreview ? .uneditedPreview : .edited
         set(.edited, shows && item?.hasEdits == true ? edited : nil, centre: geometry.edited)
+        set(.version, shows && item?.version != nil ? .version : nil, centre: geometry.version)
         let rating: GridBadges.Kind? = slots ? .ratingSlots(metadata.rating)
             : shows && metadata.rating > 0 ? .rating(metadata.rating) : nil
         set(.rating, rating, left: geometry.rating)

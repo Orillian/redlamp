@@ -163,6 +163,13 @@ struct GridCellGeometry: Equatable {
         style == .expanded ? CGPoint(x: size - inset - 41, y: footerMidY) : CGPoint(x: size - 12, y: size - 12)
     }
 
+    /// A version's badge (LIB-48): at the thumbnail's lower left in an expanded cell, the mark's opposite corner; in a
+    /// compact cell, whose corners the other badges take, above the rating.
+    var version: CGPoint {
+        style == .expanded ? CGPoint(x: image.minX + 10, y: image.maxY - 10)
+            : CGPoint(x: Self.corner, y: size - Self.corner - 19)
+    }
+
     /// Where a compact cell shows a stack's count `width` points wide: along its top, left of the mark, and of a
     /// focus stack's badge `besideDocument`.
     func stackCount(width: CGFloat, besideDocument: Bool) -> CGRect {
