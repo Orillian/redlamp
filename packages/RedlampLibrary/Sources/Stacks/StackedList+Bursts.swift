@@ -1,16 +1,19 @@
 import Foundation
 
 /// Lists whose found bursts start open (DEC-64): every frame of a burst the library finds by itself has its cell, the
-/// burst marked as one by its first cell's badge, until it's closed; pairs and stacks made by hand start closed. A view
-/// says so as it makes its list and as the list changes, whatever `StackedList.opensFoundBursts` says.
+/// burst marked as one by its first cell's badge, until it's closed. So does a pair holding versions, each version
+/// beside its photo (LIB-48); other pairs and stacks made by hand start closed. A view says so as it makes its list and
+/// as the list changes, whatever `StackedList.opensFoundBursts` says.
 public extension StackedList {
-    /// `list` with `stacks` shown, every stack closed but, with `opensBursts`, the bursts.
+    /// `list` with `stacks` shown, every stack closed but, with `opensBursts`, the bursts and the pairs holding
+    /// versions.
     init(_ list: PhotoList, stacks: Stacks, opensBursts: Bool) {
         self.init(list, stacks: stacks, open: false, bursts: opensBursts)
     }
 
     /// This list after its list or its stacks changed, as `updated(list:stacks:changed:selection:)` makes it, with
-    /// `opensBursts` a burst none of whose photos was in a burst or a manual stack here coming open.
+    /// `opensBursts` a burst none of whose photos was in a burst or a manual stack here coming open, and a pair
+    /// holding versions none of whose photos was in one here.
     func updated(
         list newList: PhotoList? = nil, stacks newStacks: Stacks? = nil, changed: [Int64] = [], opensBursts: Bool,
         selection: inout StackSelection,

@@ -21,16 +21,19 @@ public struct Stacks: Sendable, RandomAccessCollection {
     let groupOf: ContiguousArray<Int32>
     /// For each photo ID: the first focus suggestion holding it, -1 for none.
     let suggestionOf: ContiguousArray<Int32>
+    /// The pairs holding versions of their photos' edits (LIB-48), a bit each by stack.
+    let versioned: RowBits
 
     public init() {
         self.init(members: [], starts: [0], kinds: [], ids: [:], pairs: 0, groups: 0, photos: 0)
     }
 
     /// Stacks `members` and `starts` hold, the first `pairs` of them pairs and the next `groups`
-    /// bursts and manual stacks, for photos with IDs below `photos`.
+    /// bursts and manual stacks, for photos with IDs below `photos`, the pairs of `versioned` holding
+    /// versions.
     init(
         members: ContiguousArray<Int64>, starts: ContiguousArray<Int32>, kinds: ContiguousArray<Stack.Kind>,
-        ids: [Int32: UUID], pairs: Int, groups: Int, photos: Int,
+        ids: [Int32: UUID], pairs: Int, groups: Int, photos: Int, versioned: [Int] = [],
     ) {
         let (pairs, groups, suggestions) = (0 ..< pairs, pairs ..< pairs + groups, pairs + groups ..< kinds.count)
         var pairOf = ContiguousArray<Int32>(repeating: -1, count: photos)
@@ -70,6 +73,11 @@ public struct Stacks: Sendable, RandomAccessCollection {
         self.pairOf = pairOf
         self.groupOf = groupOf
         self.suggestionOf = suggestionOf
+        var bits = RowBits(rows: kinds.count)
+        for pair in versioned {
+            bits.insert(pair)
+        }
+        self.versioned = bits
     }
 
     public var startIndex: Int {
@@ -118,6 +126,14 @@ public struct Stacks: Sendable, RandomAccessCollection {
     /// stack; nil when it's in neither.
     public func kind(ofStackHolding photo: Int64) -> Stack.Kind? {
         groupIndex(of: photo).map { kinds[$0] }
+    }
+
+    /// Whether the stack whose top photo is `top`, its pair with `pair` and otherwise its burst or manual stack,
+    /// starts open as the library finds stacks: a burst (DEC-64), and a pair holding versions of its photos' edits,
+    /// so each version shows beside its photo until the pair is closed (LIB-48). The others start closed.
+    public func startsOpen(top: Int64, pair: Bool) -> Bool {
+        guard let stack = pair ? pairIndex(of: top) : groupIndex(of: top) else { return false }
+        return startsOpen(stack)
     }
 
     /// A focus suggestion holding `photo`.
@@ -169,7 +185,7 @@ public struct Stacks: Sendable, RandomAccessCollection {
         }
         var made = (
             members: ContiguousArray<Int64>(), starts: ContiguousArray<Int32>([0]),
-            kinds: ContiguousArray<Stack.Kind>(), ids: [Int32: UUID](), pairs: 0, groups: 0,
+            kinds: ContiguousArray<Stack.Kind>(), ids: [Int32: UUID](), pairs: 0, groups: 0, versioned: [Int](),
         )
         for stack in 0 ..< count where kept[stack] {
             for photo in members(of: stack) {
@@ -178,6 +194,9 @@ public struct Stacks: Sendable, RandomAccessCollection {
             made.starts.append(Int32(made.members.count))
             if let uuid = ids[Int32(stack)] {
                 made.ids[Int32(made.kinds.count)] = uuid
+            }
+            if versioned.contains(stack) {
+                made.versioned.append(made.kinds.count)
             }
             made.kinds.append(kinds[stack])
             if pairs.contains(stack) {
@@ -188,7 +207,7 @@ public struct Stacks: Sendable, RandomAccessCollection {
         }
         return Stacks(
             members: made.members, starts: made.starts, kinds: made.kinds, ids: made.ids, pairs: made.pairs,
-            groups: made.groups, photos: Int((made.members.max() ?? -1) + 1),
+            groups: made.groups, photos: Int((made.members.max() ?? -1) + 1), versioned: made.versioned,
         )
     }
 
@@ -198,10 +217,15 @@ public struct Stacks: Sendable, RandomAccessCollection {
             array.capacity * MemoryLayout<T>.stride
         }
         return bytes(members) + bytes(starts) + bytes(kinds) + bytes(pairOf) + bytes(groupOf) + bytes(suggestionOf)
-            + ids.capacity * 24
+            + ids.capacity * 24 + versioned.wordCount * MemoryLayout<UInt64>.stride
     }
 
     // MARK: - Lookups
+
+    /// Whether stack `stack` starts open as the library finds stacks (`startsOpen(top:pair:)`).
+    func startsOpen(_ stack: Int) -> Bool {
+        kinds[stack] == .burst || pairs.contains(stack) && versioned.contains(stack)
+    }
 
     func members(of stack: Int) -> ArraySlice<Int64> {
         members[memberRange(of: stack)]

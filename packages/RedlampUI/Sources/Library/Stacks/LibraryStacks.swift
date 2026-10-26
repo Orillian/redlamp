@@ -34,7 +34,8 @@ import RedlampLibrary
     struct Openness: Codable, Equatable, Sendable {
         /// How a source's stacks start.
         enum Start: String, Codable, Sendable {
-            /// As the library finds them: bursts open (DEC-64), pairs and stacks made by hand closed.
+            /// As the library finds them: bursts and pairs holding versions open (DEC-64, LIB-48), other pairs and
+            /// stacks made by hand closed.
             case found
             /// Every one open: Open All Stacks was the last asked for.
             case open
@@ -331,7 +332,7 @@ import RedlampLibrary
     /// Whether the stack whose top photo is `top`, a raw and its JPEG with `pair`, starts open as `start` says.
     nonisolated static func startsOpen(top: Int64, pair: Bool, in stacks: Stacks, start: Openness.Start) -> Bool {
         switch start {
-        case .found: !pair && stacks.kind(ofStackHolding: top) == .burst
+        case .found: stacks.startsOpen(top: top, pair: pair)
         case .open: true
         case .closed: false
         }

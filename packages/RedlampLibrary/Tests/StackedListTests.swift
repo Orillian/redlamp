@@ -82,6 +82,38 @@ struct StackedListTests {
         #expect(found.badges(of: id("far")).stack?.isOpen == false)
     }
 
+    @Test func `a pair holding versions starts open as found bursts do, and one closed stays closed as the list changes`(
+    ) throws {
+        var library = StackLibrary()
+        let (raw, jpeg) = library.addPair("IMG_0001", at: 1000)
+        let copy = library.add("IMG_0001.CR3", at: 1000, version: true)
+        let (plain, _) = library.addPair("IMG_0002", at: 2000)
+        let tiff = library.add("Pano.TIF", at: 3000)
+        let stacks = library.find()
+        #expect(stacks.startsOpen(top: raw, pair: true) && !stacks.startsOpen(top: plain, pair: true))
+        let largest = try #require(library.list.ids.max())
+        #expect(stacks.relabelled(above: largest) { $0 }.startsOpen(top: raw, pair: true))
+        #expect(StackedList(library.list, stacks: stacks, opensBursts: false).badges(of: raw).pair?.isOpen == false)
+
+        var stacked = StackedList(library.list, stacks: stacks, opensBursts: true)
+        #expect(stacked.badges(of: raw).pair?.isOpen == true && stacked.badges(of: plain).pair?.isOpen == false)
+        #expect(Array(stacked.prefix(3)) == [raw, copy, jpeg], "the version beside its photo, and the pair's JPEG")
+        _ = stacked.close(raw)
+
+        library.add("IMG_0002.CR3", at: 2000, version: true)
+        library.add("Pano.TIF", at: 3000, version: true)
+        var selection = StackSelection()
+        let (again, _) = stacked.updated(
+            list: library.list,
+            stacks: library.find(),
+            opensBursts: true,
+            selection: &selection,
+        )
+        #expect(again.badges(of: raw).pair?.isOpen == false, "closed, it stays closed")
+        #expect(again.badges(of: plain).pair?.isOpen == true, "a pair given a version since opens")
+        #expect(again.badges(of: tiff).pair?.isOpen == true, "and so does a file given one")
+    }
+
     @Test func `stacks relabelled with a view's own IDs show its list as the library's IDs show the library's`() throws {
         let (library, choices, ids) = Self.library()
         let id = { (name: String) in ids[name]! }

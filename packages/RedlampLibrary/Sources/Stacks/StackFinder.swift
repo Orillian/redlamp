@@ -107,6 +107,7 @@ public enum StackFinder {
 
         var found = Found()
         for result in results {
+            found.versioned += result.versioned.map { found.pairs.count + $0 }
             found.pairs.append(result.pairs)
             found.bursts.append(result.bursts)
             found.focus.append(result.focus)
@@ -129,7 +130,7 @@ public enum StackFinder {
         }
         return Stacks(
             members: all.members, starts: all.starts, kinds: kinds, ids: stackIDs, pairs: found.pairs.count,
-            groups: found.bursts.count + manual.count, photos: photos,
+            groups: found.bursts.count + manual.count, photos: photos, versioned: found.versioned,
         )
     }
 
@@ -284,6 +285,8 @@ extension StackFinder {
         var pairs = Table()
         var bursts = Table()
         var focus = Table()
+        /// The pairs holding versions, by their place in `pairs`.
+        var versioned: [Int] = []
     }
 
     /// The column store's columns finding reads by row, the names by ID and the choices' bits, through
@@ -452,10 +455,15 @@ extension StackFinder {
                     )
                 }
                 var choice: UInt8 = 0
+                var versioned = false
                 for member in members {
                     let row = Int(rows[Int(member)])
                     found.pairs.add(columns.ids[row])
                     choice = choice == 0 ? columns.flag(ofRow: row) : choice
+                    versioned = versioned || columns.version(ofRow: row) != 0
+                }
+                if versioned {
+                    found.versioned.append(found.pairs.count)
                 }
                 found.pairs.end()
                 frames.append(members[0])

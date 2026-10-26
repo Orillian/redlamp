@@ -41,7 +41,8 @@ public struct StackedList: Sendable, RandomAccessCollection {
     private(set) var shown: RowBits
     public private(set) var count: Int
 
-    /// Whether a list shows the bursts it finds open until they're closed. Pairs and manual stacks start closed.
+    /// Whether a list shows the bursts it finds, and the pairs holding versions, open until they're closed. Other
+    /// pairs and manual stacks start closed.
     public static let opensFoundBursts = false
 
     /// `list` with `stacks` shown, every one open, or each as its kind starts (`opensFoundBursts`).
@@ -52,7 +53,7 @@ public struct StackedList: Sendable, RandomAccessCollection {
     init(_ list: PhotoList, stacks: Stacks, open: Bool, bursts: Bool) {
         var opened = RowBits(rows: stacks.count, filled: open)
         if !open, bursts {
-            for stack in stacks.groups where stacks.kinds[stack] == .burst {
+            for stack in stacks.indices where stacks.startsOpen(stack) {
                 opened.insert(stack)
             }
         }
@@ -681,7 +682,8 @@ public struct StackedList: Sendable, RandomAccessCollection {
     }
 
     /// `list` with `stacks`, the stacks open here open there: those holding an open one's top photo. With
-    /// `bursts`, a burst none of whose photos was in a burst or manual stack here opens too.
+    /// `bursts`, a burst none of whose photos was in a burst or manual stack here opens too, and a pair holding
+    /// versions none of whose photos was in one here, so a version made since shows beside its photo.
     func remade(list: PhotoList, stacks: Stacks, bursts: Bool = opensFoundBursts) -> StackedList {
         var open = RowBits(rows: stacks.count)
         opened.forEach { stack in
@@ -696,6 +698,15 @@ public struct StackedList: Sendable, RandomAccessCollection {
             for stack in stacks.groups where stacks.kinds[stack] == .burst
                 && !stacks.members(of: stack).contains(where: { self.stacks.groupIndex(of: $0) != nil }) {
                 open.insert(stack)
+            }
+            let before = self.stacks
+            stacks.versioned.forEach { pair in
+                if !stacks.members(of: pair).contains(where: { photo in
+                    before.pairIndex(of: photo).map(before.versioned.contains) ?? false
+                }) {
+                    open.insert(pair)
+                }
+                return true
             }
         }
         return StackedList(list, stacks: stacks, opened: open)
