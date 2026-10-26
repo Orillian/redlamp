@@ -160,8 +160,12 @@ extension EditorModel {
         fileSteps.enqueue { [weak self] in
             guard let self else { return }
             guard let batch = step.batch else {
-                // Its own batch made nothing to take back.
-                fileSteps.redo.removeAll { $0 === step }
+                if step.versions.isEmpty {
+                    // Its own batch made nothing to take back.
+                    fileSteps.redo.removeAll { $0 === step }
+                } else {
+                    await putBack(step.versions)
+                }
                 return
             }
             let run = await showingProgress("Undo " + step.title) { relay, stop in
@@ -169,6 +173,7 @@ extension EditorModel {
                     await service.undoFiles(batch, photos: ids, progress: { relay.send($0) }, stop: stop)
                 }
             }
+            await putBack(step.versions)
             if let error = run.error {
                 activity.record(.error, "Undo \(step.title) wasn't done: \(error)")
             } else if run.stopped {
@@ -199,6 +204,13 @@ extension EditorModel {
         activity.record(.action, "Redo \(step.title)")
         fileSteps.enqueue { [weak self] in
             guard let self else { return }
+            if !step.versions.isEmpty {
+                step.versions = await removeVersions(of: step.versions.map(\.address))
+            }
+            // A step to the Trash that took only versions has no files to move again.
+            if step.isTrash, step.photos.isEmpty {
+                return
+            }
             let run = await showingProgress("Redo " + step.title) { relay, stop in
                 await self.perform(step, undoing: false) {
                     let progress: @Sendable (FileProgress) -> Void = { relay.send($0) }
@@ -513,6 +525,8 @@ final class LibraryFileStep {
     var active: URL?
     /// Its turn in Library's Undo and Redo (`EditorModel+LibraryUndo`).
     var turn = 0
+    /// The versions a step to the Trash took out of their files' sidecars, their files staying (LIB-48).
+    var versions: [RemovedVersion] = []
 
     init(kind: Kind, photos: [(id: Int64, from: String, to: String?)]) {
         self.kind = kind
@@ -527,7 +541,12 @@ final class LibraryFileStep {
         case .rename: "Rename \(photos)"
         case let .move(_, folder): "Move \(photos) to \(folder.lastPathComponent)"
         case let .copy(_, folder): "Copy \(photos) to \(folder.lastPathComponent)"
-        case .trash: "Move \(photos) to the Trash"
+        case .trash where versions.isEmpty: "Move \(photos) to the Trash"
+        case .trash:
+            [
+                count == 0 ? nil : "Move \(photos) to the Trash",
+                "Remove \(versions.count) Version\(versions.count == 1 ? "" : "s")",
+            ].compactMap(\.self).joined(separator: " and ")
         }
     }
 

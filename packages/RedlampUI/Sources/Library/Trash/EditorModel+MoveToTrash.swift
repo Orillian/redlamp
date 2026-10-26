@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 
 /// Move to Trash (LIB-46), as Lightroom Classic's Remove Photo and the Finder's Move to Trash: the photo being edited,
@@ -20,12 +21,18 @@ import RedlampLibrary
 ///   records it; an alert says why when nothing went.
 public extension EditorModel {
     /// Moves the photos Move to Trash takes for `photo` to the Trash: the selection when `photo` is in it or isn't
-    /// given, and `photo` alone when it isn't. False when Move to Trash can't run now.
+    /// given, and `photo` alone when it isn't. In Develop with a version open, that version alone, unless `photo` is
+    /// another file. False when Move to Trash can't run now.
     @discardableResult
-    func moveToTrash(_ photo: URL? = nil) -> Bool {
+    func moveToTrash(_ photo: PhotoAddress? = nil) -> Bool {
         guard canMoveToTrash, let core = library.service?.core else { return false }
-        let alone = photo.flatMap { photo in
-            photo != selection && library.photoID(of: photo).map(photoSelection.contains) != true ? photo : nil
+        let editing = module == .develop ? openPhoto.flatMap { open in
+            open.version != nil && (photo == nil || photo?.url == open.url) ? open : nil
+        } : nil
+        let alone = editing ?? photo.flatMap { photo in
+            let selected = library.photoID(of: photo).map(photoSelection.contains) == true
+                || photoSelection.isEmpty && photo == selection.map { PhotoAddress(url: $0) }
+            return selected ? nil : photo
         }
         Task { [self] in
             let ids: [Int64] = if let alone {
@@ -38,6 +45,12 @@ public extension EditorModel {
             }
         }
         return true
+    }
+
+    /// Move to Trash for the file at `url`, its own edit.
+    @discardableResult
+    func moveToTrash(_ url: URL) -> Bool {
+        moveToTrash(PhotoAddress(url: url))
     }
 
     /// Whether Move to Trash can run: a photo is active, the library is open, Recently Trashed isn't shown, and
@@ -61,43 +74,83 @@ public extension EditorModel {
 }
 
 extension EditorModel {
-    /// Moves photos `ids` to the Trash with their pairs, as one batch with Undo: shown at once, then made in its turn
-    /// among Library's file steps, with its progress and Stop in the grid's toolbar. Why it didn't happen, or nil once
-    /// it has.
+    /// Moves photos `ids` to the Trash with their pairs and all their versions, as one batch with Undo: shown at once,
+    /// then made in its turn among Library's file steps, with its progress and Stop in the grid's toolbar. A version
+    /// among them without its file is taken out of its file's sidecar in the same step, the file and its other
+    /// versions staying (LIB-48). Why it didn't happen, or nil once it has.
     @discardableResult
     func trash(_ ids: [Int64]) async -> String? {
         guard let service = library.service, let core = service.core, service.isReady else {
             return "The library isn't open"
         }
         guard !ids.isEmpty else { return "The library hasn't read these photos yet" }
-        let all = await (try? core.files.withPairs(ids)) ?? ids
+        let addresses = await service.addresses(of: ids)
+        let files = ids.filter { addresses[$0]?.version == nil }
+        let all = files.isEmpty ? [] : await (try? core.files.withPairs(files)) ?? files
         let before = await service.paths(of: all)
         let photos = all.compactMap { id -> (id: Int64, from: String, to: String?)? in
             before[id].map { (id, $0, nil) }
         }
-        guard !photos.isEmpty else { return nil }
+        let going = Set(before.values)
+        let versions = ids.compactMap { addresses[$0] }.filter { $0.version != nil && !going.contains($0.url.path) }
+        guard !photos.isEmpty || !versions.isEmpty else { return nil }
         let step = LibraryFileStep(kind: .trash(all), photos: photos)
         push(step)
-        let run = await fileSteps.make { [self] in
-            await showingProgress("Moving to the Trash") { relay, stop in
-                await perform(step, undoing: false) {
-                    await service.trash(all, progress: { relay.send($0) }, stop: stop)
+        var run = LibraryService.FileRun()
+        if !photos.isEmpty {
+            run = await fileSteps.make { [self] in
+                await showingProgress("Moving to the Trash") { relay, stop in
+                    await perform(step, undoing: false) {
+                        await service.trash(all, progress: { relay.send($0) }, stop: stop)
+                    }
                 }
             }
+            record(run, of: step)
         }
-        record(run, of: step)
-        if run.batch != nil, run.error == nil {
-            undoNotice.say(Self.trashed(step))
+        if !versions.isEmpty {
+            step.versions = await fileSteps.make { [self] in await removeVersions(of: versions) }
+            let kept = fileSteps.undo.contains { $0 === step }
+            if !step.versions.isEmpty, !kept {
+                step.keep([])
+                push(step)
+            } else if step.versions.isEmpty, step.batch == nil, kept {
+                fileSteps.undo.removeAll { $0 === step }
+            }
+            if !step.versions.isEmpty {
+                activity.record(.action, Self.removing(step.versions, capitalised: true))
+            }
         }
-        return run.error
+        if step.batch != nil && run.error == nil || !step.versions.isEmpty {
+            undoNotice.say(Self.trashed(step, error: run.error))
+        }
+        if let error = run.error {
+            return error
+        }
+        return photos.isEmpty && step.versions.isEmpty ? "The versions' sidecars can't be written now" : nil
     }
 
-    /// What the notice says once `step`'s photos are in the Trash.
-    private static func trashed(_ step: LibraryFileStep) -> String {
-        guard step.photos.count == 1, let photo = step.photos.first else {
-            return "Moved \(step.photos.count) Photos to the Trash"
+    /// What the notice says once `step`'s photos are in the Trash and its versions removed; with `error`, the photos
+    /// didn't go.
+    private static func trashed(_ step: LibraryFileStep, error: String? = nil) -> String {
+        let moved: String? = if step.batch == nil || error != nil {
+            nil
+        } else if step.photos.count == 1, let photo = step.photos.first {
+            "Moved \((photo.from as NSString).lastPathComponent) to the Trash"
+        } else {
+            "Moved \(step.photos.count) Photos to the Trash"
         }
-        return "Moved \((photo.from as NSString).lastPathComponent) to the Trash"
+        let removed = step.versions.isEmpty ? nil : removing(step.versions, capitalised: moved == nil)
+        return [moved, removed].compactMap(\.self).joined(separator: " and ")
+    }
+
+    /// What removing `versions` did, in the words the notice uses for photos: "removed version “Copy 1” of
+    /// DSCF1234.RAF", "removed 3 Versions".
+    private static func removing(_ versions: [RemovedVersion], capitalised: Bool) -> String {
+        let removed = capitalised ? "Removed" : "removed"
+        guard versions.count == 1, let version = versions.first else {
+            return "\(removed) \(versions.count) Versions"
+        }
+        return "\(removed) version “\(version.version.name)” of \(version.url.lastPathComponent)"
     }
 
     /// Why Move to Trash moved nothing, said in an alert.

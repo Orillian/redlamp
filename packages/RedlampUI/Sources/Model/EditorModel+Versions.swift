@@ -80,6 +80,30 @@ public extension EditorModel {
         saveNow()
     }
 
+    /// Takes the open photo's versions `ids` out of its sidecar, in either module, as Move to Trash does (LIB-48); the
+    /// photo's own edit opens in place of one of them that's open. Returns each with its place, for Undo.
+    internal func removeVersions(_ ids: Set<UUID>) -> [RemovedVersion] {
+        guard let url = info?.url, opening == nil, !isReadOnly,
+              openSidecar.versions.contains(where: { ids.contains($0.id) })
+        else { return [] }
+        if let open = openVersion, ids.contains(open) {
+            switchEdit(to: nil)
+        }
+        let removed = openSidecar.takeVersions(ids, of: url)
+        versions = Self.versions(of: openSidecar)
+        saveNow()
+        return removed
+    }
+
+    /// Puts `removed` back among the open photo's versions, each under its ID at its place, as Undo of Move to Trash
+    /// does.
+    internal func putBackVersions(_ removed: [RemovedVersion]) {
+        guard info != nil, opening == nil, !isReadOnly else { return }
+        openSidecar.putBack(removed)
+        versions = Self.versions(of: openSidecar)
+        saveNow()
+    }
+
     /// Opens `url` in the version `version`, or in its own edit when it has no such version: a version as the
     /// library addresses it (`PhotoAddress`). A version the library lists is a photo of its own, selected alone
     /// unless `keepingSelection` (LIB-48).

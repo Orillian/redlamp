@@ -1,4 +1,5 @@
 import Foundation
+import RedlampDocument
 import RedlampLibrary
 import Synchronization
 
@@ -84,6 +85,19 @@ extension LibraryService {
     func paths(of ids: [Int64]) async -> [Int64: String] {
         guard let core else { return [:] }
         return await Self.paths(of: ids, in: core.index)
+    }
+
+    /// The addresses of photos `ids`, as the index has them: the file's URL, and for a version's row its version
+    /// (LIB-48).
+    func addresses(of ids: [Int64]) async -> [Int64: PhotoAddress] {
+        guard let core else { return [:] }
+        return await (try? core.index.read { reader in
+            try reader.photosWithPaths(ids).reduce(into: [Int64: PhotoAddress]()) { addresses, found in
+                addresses[found.photo.id] = PhotoAddress(
+                    url: URL(fileURLWithPath: found.folder + "/" + found.photo.name), version: found.photo.version,
+                )
+            }
+        }) ?? [:]
     }
 
     private func runFiles(
