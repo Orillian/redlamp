@@ -147,13 +147,13 @@ enum RecipeCommands {
 
     static func show(_ context: Context) throws {
         guard let spec = context.arguments.positional.first else { throw CLIError(description: "show needs a recipe") }
-        let recipe = try firmwareLookRecipe(spec, context) ?? context.library.exportable(context.library.resolve(spec))
+        let recipe = try context.library.exportable(firmwareLookRecipe(spec, context) ?? context.library.resolve(spec))
         try print(String(decoding: RecipeFile.encode(recipe), as: UTF8.self))
     }
 
     /// A firmware look's id (`local/firmware/acros/dr200_…`), while the model is on, as the model's own
-    /// recipe for its simulation baked at the settings the id spells out, the look in it: it stays on
-    /// this Mac, so it isn't exportable.
+    /// recipe for its simulation at the settings the id spells out. The look stays on this Mac, so the
+    /// recipe printed names it, and `render` bakes it again (`withFirmwareLook`).
     static func firmwareLookRecipe(_ spec: String, _ context: Context) throws -> Recipe? {
         guard let model = context.library.firmwareModel,
               let settings = FirmwareLook.settings(for: BaseLookReference(id: spec, name: spec)) else { return nil }
@@ -205,13 +205,23 @@ enum RecipeCommands {
         guard let image = arguments.positional.first, let spec = arguments.value("--recipe"),
               let output = arguments.value("--output")
         else { throw CLIError(description: "render needs <image> --recipe <recipe> -o <out>") }
-        let recipe = try context.library.resolvingCard(context.library.resolve(spec))
+        let recipe = try withFirmwareLook(context.library.resolvingCard(context.library.resolve(spec)), context)
         let rendered = try await context.renderer().render(
             recipe, image: URL(fileURLWithPath: image), maxLongEdge: arguments.int("--size"),
             amount: arguments.double("--amount") ?? 100, sixteenBit: arguments.has("--16bit"),
         )
         try ImageFile.write(rendered, to: URL(fileURLWithPath: output), protecting: [URL(fileURLWithPath: image)])
         print("\(recipe.name) → \(output) \(rendered.width)x\(rendered.height)")
+    }
+
+    /// The recipe with its firmware look baked in, while the model is on, when it names one it doesn't carry.
+    static func withFirmwareLook(_ recipe: Recipe, _ context: Context) throws -> Recipe {
+        guard let model = context.library.firmwareModel, let look = recipe.baseLook,
+              !recipe.embeddedBaseLooks.contains(where: { $0.matches(look) }),
+              let settings = FirmwareLook.settings(for: look) else { return recipe }
+        var baked = recipe
+        try baked.embeddedBaseLooks.append(FirmwareLook.package(settings, model: model))
+        return baked
     }
 
     static func contactSheet(_ context: Context) async throws {
