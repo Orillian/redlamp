@@ -68,7 +68,7 @@
             let sidecar = SidecarStore(locator: .besidePhotos).load(for: first)?.metadata
             try app.expect(
                 sidecar?.flag == .pick && sidecar?.collections == ["E2E/E2E Trip", "E2E Selects"]
-                    && sidecar?.applePhotos?.id == ApplePhotosScratch.asset(0),
+                    && sidecar?.applePhotos?.id == photos.asset(0),
                 "the first photo's sidecar: \(String(describing: sidecar))",
             )
 
@@ -86,6 +86,8 @@
     /// in an album, E2E Trip, inside a folder, E2E, and an album beside it, E2E Selects; and a destination.
     struct ApplePhotosScratch: Sendable {
         let scratch: ImportScratch
+        /// The run's own, in its assets' local identifiers: an earlier scenario's record never names them.
+        let tag = UUID().uuidString.prefix(8)
 
         init(_ app: RunningApp) throws {
             scratch = try ImportScratch(app, photos: 3)
@@ -95,8 +97,8 @@
             scratch.destination
         }
 
-        static func asset(_ number: Int) -> String {
-            "E2E\(number)-0000-4000-8000-000000000000/L0/001"
+        func asset(_ number: Int) -> String {
+            "E2E\(number)-\(tag)-4000-8000-000000000000/L0/001"
         }
 
         /// Where the import copies photo `number` in `album`, as `{album}/{name}` names it.
@@ -109,14 +111,14 @@
         func simulate(_ app: RunningApp, _ albums: [Int: [String]], access: String = "authorized") throws {
             var assets: [[String: Any]] = albums.keys.sorted().map { number in
                 [
-                    "id": Self.asset(number), "favorite": number == 0, "albums": albums[number] ?? [],
+                    "id": asset(number), "favorite": number == 0, "albums": albums[number] ?? [],
                     "resources": [[
                         "kind": "photo", "name": scratch.names[number], "file": "Card/" + scratch.names[number],
                         "inCloud": number == 2,
                     ]],
                 ]
             }
-            assets.append(["id": "E2E-video", "mediaType": "video", "albums": ["album-trip"], "resources": [
+            assets.append(["id": "E2E-video-\(tag)", "mediaType": "video", "albums": ["album-trip"], "resources": [
                 ["kind": "other", "name": "IMG_0099.MOV", "type": "com.apple.quicktime-movie"],
             ]])
             let manifest: [String: Any] = [
@@ -190,7 +192,29 @@
             try waitInPhotosWindow("\(identifier) shown and enabled") { window in
                 window.control(identifier).map { $0.shown && $0.enabled } ?? false
             }
-            try click(identifier, inWindowTitled: ApplePhotosWindowController.title)
+            let location = try inPhotosWindow { controller -> NSPoint in
+                guard let window = controller.window, let content = window.contentView,
+                      let control = Views.shown(identifier, in: window) ?? Views.accessible(identifier, in: window)
+                else { throw ScenarioFailure("\(identifier) isn't in the Apple Photos window") }
+                window.makeKeyAndOrderFront(nil)
+                content.layoutSubtreeIfNeeded()
+                let frame = control.convert(control.bounds, to: nil)
+                return NSPoint(x: frame.midX, y: frame.midY)
+            }
+            post { _ in
+                guard let window = ApplePhotosWindowController.current?.window else { return }
+                let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
+                    NSEvent.mouseEvent(
+                        with: type, location: location, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1,
+                    )
+                }
+                guard events.count == 2 else { return }
+                // The button tracks the press, and takes the release from the queue as the mouse's.
+                NSApp.postEvent(events[1], atStart: false)
+                window.sendEvent(events[0])
+            }
             pause(0.2)
         }
     }
