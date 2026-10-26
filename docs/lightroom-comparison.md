@@ -196,7 +196,7 @@ A high-level list of the features photographers know from Lightroom, and where R
 | --- | --- | --- | --- | --- | --- | --- |
 | History and unlimited undo | Yes | Done | | | | The last 20 editing sessions are kept with the photo |
 | Snapshots | Yes | Done | | | | |
-| Virtual copies and versions | Yes | In progress | | P2 | EDT-09, LIB-48, EDT-23 | Versions of a photo in its one sidecar, each with its own edit, history, snapshots and metadata: Develop makes, opens, renames and removes them, and a catalog's virtual copies come across as versions; each a photo of its own in the library, with its own rating, label and collections, as Lightroom Classic's virtual copies are, not yet |
+| Virtual copies and versions | Yes | Done | | | EDT-09, LIB-48 | Versions of a photo in its one sidecar, each with its own edit, history, snapshots and metadata: Develop makes, opens, renames and removes them, and a catalog's virtual copies come across as versions (EDT-23); each is a photo of its own in the library, as Lightroom Classic's virtual copies are, with its own rating, flag, label, keywords and collections, shown beside its photo in an open stack, found by Copy Status, compared, synced and exported as itself, renamed in the Metadata panel's Copy Name and removed alone |
 | Before and after | Yes | Done | | | | Three layouts |
 | Before and after: your choice of layout, Copy and Swap | Yes | Undecided | | | UX-31 | Left/right or top/bottom by choice, Copy Before's or After's settings, and Swap; Redlamp orients side by side from the photo's shape |
 | Reference view | Yes | Planned | | P4 | UX-34 | |

@@ -173,6 +173,23 @@ CREATE TABLE photo_edits (photo INTEGER PRIMARY KEY, sidecar_modified REAL NOT N
 -- missing bit, out of every list but Library Health's Missing Photos
 ALTER TABLE photos ADD COLUMN missing_since REAL;            -- while state has the missing bit
 CREATE INDEX photos_missing ON photos (folder) WHERE state & 1 != 0;
+-- version 12 (LIB-06): the lens's widest aperture at the photo's focal length and the focal length in 35 mm
+-- terms, for the traits Wide Open, Telephoto and Ultra Wide, filled from what the index has; photos it can't
+-- fill are read again for them
+ALTER TABLE photos ADD COLUMN widest_aperture REAL;          -- an f-number
+ALTER TABLE photos ADD COLUMN focal35 REAL;                  -- millimetres
+CREATE INDEX photos_lens_unread ON photos (folder) WHERE indexed = 2 AND state = 0;
+-- version 13 (LIB-15): the colour a photo's sidecar gives its custom label
+ALTER TABLE photos ADD COLUMN custom_label_color TEXT;       -- a LabelColor's name
+-- version 14 (LIB-42): what the soft-frame measure found in a photo's largest embedded preview, by content key
+CREATE TABLE photo_sharpness (content_key BLOB PRIMARY KEY, version INTEGER NOT NULL,
+  focus INTEGER NOT NULL, score REAL NOT NULL DEFAULT 0, cells BLOB) WITHOUT ROWID;
+-- version 15 (LIB-48, EDT-09): a row for each version of a photo beside its file's own, with the file's folder
+-- and name and the version's UUID, empty for the file's own row; photos is made again without its
+-- UNIQUE (folder, name), every row copied under its ID, with two more columns:
+--   version TEXT NOT NULL DEFAULT '', version_name TEXT
+CREATE UNIQUE INDEX photos_place ON photos (folder, name, version);
+CREATE INDEX photos_versions ON photos (folder) WHERE version != '';
 ```
 
 - **Snapshots and integrity.** While the index changes, a snapshot is taken with `VACUUM INTO` at most every 30 minutes, the last three kept (`LibraryPaths.snapshots`). `PRAGMA quick_check` runs in the background lane at launch once a week. A damaged index is replaced by its newest good snapshot and reconciled with the disks (LIB-08); with no snapshot, it's rebuilt.
@@ -188,7 +205,7 @@ SQLite alone scans a million rows in tens to hundreds of milliseconds for a comb
 | folder | `Int32` | 4 |
 | captured (seconds) | `Int64` | 8 |
 | camera, lens | `UInt16` each | 4 |
-| rating (3 bits), flag (2), label (3), marked, edited | packed `UInt16` | 2 |
+| rating (3 bits), flag (2), label (3), marked, edited, the five details `has` asks about, version (bit 15, LIB-48) | packed `UInt16` | 2 |
 | ISO, aperture, focal length (bucketed), file kind | `UInt16`, `UInt8`, `UInt16`, `UInt8` | 6 |
 | name order | `Int32` (rank in the Finder's order, `FileOrder`'s key) | 4 |
 
@@ -218,6 +235,7 @@ text     := word | quoted                                  -- matches name, fold
 | `label` | `red`, `yellow`, `green`, `blue`, `purple`, `none` (neither a colour nor a custom name), a custom label's name, or a label set's name for its colour | `label:red,blue`, `label:Hero`, `label:approved` |
 | `marked` | `yes`, `no` | `marked:yes` |
 | `edited` | `yes`, `no` | `edited:no` |
+| `version` | `yes`, `no`: a version of a photo or a file's own edit (LIB-48), as Lightroom's Copy Status; the filter bar's Versions and Originals | `version:yes`, `version:no` |
 | `kw` (`keyword`) | a keyword or a path; a parent matches its children | `kw:birds`, `kw:"Places/Portugal"` |
 | `camera`, `lens` | substring of the name | `camera:"X-T5"`, `lens:35` |
 | `iso`, `f`, `focal`, `shutter` | numbers, ranges | `iso<=800`, `f:1.4..2.8`, `focal:24..70` |
