@@ -120,6 +120,22 @@ public final class ApplePhotosImport: Sendable {
         try record.load().lastImport
     }
 
+    /// The new photos in the albums followed (LIB-55): the census of every album followed, with the last import's
+    /// settings, leaving the assets the record names; and those settings, which import them. Nil while no album is
+    /// followed or no import is left to take its settings from. Throws while Redlamp may not read Photos.
+    public func followedNews() async throws -> (settings: Settings, census: ApplePhotosCensus)? {
+        let current = try record.load()
+        guard !current.followed.isEmpty, let last = current.lastImport else { return nil }
+        var settings = last.settings
+        settings.collections = current.followed.map(\.id)
+        settings.follows = true
+        let census = try await ApplePhotosCensus.make(
+            photos, choosing: settings.collections, includesHidden: settings.includesHidden,
+            imported: Set(current.assets.keys),
+        )
+        return (settings, census)
+    }
+
     // MARK: - Importing
 
     /// Runs the import `settings` describes, from `census` when it's given (the report shown), as the type
