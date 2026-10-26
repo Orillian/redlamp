@@ -149,6 +149,10 @@ struct ApplePhotosWindowTests {
         let window = try await Self.window(SimulatedPhotosLibrary(manifest: Self.manifest(in: sandbox)), model: model)
         defer { window.close() }
         try await sandbox.eventually { window.phase == "choosing" }
+        try await sandbox.eventually {
+            window.window?.contentView?.layoutSubtreeIfNeeded()
+            return window.control("photos.album.shared-family") != nil
+        }
         #expect(window.chosen == ["album-selects", "album-lisbon", "album-porto"], "every album, none smart or shared")
         let screen = window.model.screen
         #expect(screen.groups.map(\.title) == ["Albums", "Smart Albums", "Shared Albums"])

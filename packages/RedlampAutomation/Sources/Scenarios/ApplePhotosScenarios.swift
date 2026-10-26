@@ -82,15 +82,27 @@
         }
     }
 
-    /// A simulated Photos library over copies of the run's raws, each with a content key of its own (`ImportScratch`),
+    /// A simulated Photos library over copies of the run's raws, each with a content key of its own,
     /// in an album, E2E Trip, inside a folder, E2E, and an album beside it, E2E Selects; and a destination.
     struct ApplePhotosScratch: Sendable {
         let scratch: ImportScratch
         /// The run's own, in its assets' local identifiers: an earlier scenario's record never names them.
         let tag = UUID().uuidString.prefix(8)
 
+        /// The copies end in a box of a length of their own besides: the card import leaves out photos the library
+        /// has, by content key, and an earlier scenario's scratch holds copies of the same raws.
         init(_ app: RunningApp) throws {
             scratch = try ImportScratch(app, photos: 3)
+            for name in scratch.names {
+                let handle = try FileHandle(forWritingTo: scratch.card.appending(path: name))
+                try handle.seekToEnd()
+                let length = 16 + Int.random(in: 1 ..< 65536)
+                var box = withUnsafeBytes(of: UInt32(length).bigEndian) { Data($0) }
+                box.append(contentsOf: Array("free".utf8))
+                box.append(Data(count: length - 8))
+                try handle.write(contentsOf: box)
+                try handle.close()
+            }
         }
 
         var destination: URL {
