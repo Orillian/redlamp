@@ -135,7 +135,7 @@ final class PhotoDetailsCache {
         let wanted = items.filter { known[$0.url] == nil && !asked.contains($0.url) && $0.isLocal }.map(\.url)
         guard !wanted.isEmpty else { return }
         asked.formUnion(wanted)
-        let core = library.isShownFromLibrary ? library.service?.core : nil
+        let core = library.isShownFromLibrary && !LibraryPhotoFrames.readsHeaders ? library.service?.core : nil
         let scheduler = library.scheduler
         Task { [weak self] in
             let read: [URL: PhotoDetails] = if let core {
