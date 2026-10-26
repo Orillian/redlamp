@@ -557,6 +557,38 @@
       0.6871
     ]
   },
+  "Nikon_D810_sRAW.NEF" : {
+    "asShotMultipliers" : [
+      2.1602,
+      1,
+      1.1836
+    ],
+    "baselineExposure" : 0,
+    "blackLevels" : [
+      0,
+      0,
+      0
+    ],
+    "height" : 2456,
+    "layout" : "linear RGB",
+    "make" : "Nikon",
+    "model" : "D810",
+    "orientation" : 0,
+    "sampleChecksum" : "ff001cb4a3ed243b",
+    "whiteLevel" : 16383,
+    "width" : 3680,
+    "xyzToCamera" : [
+      0.9369,
+      -0.3195,
+      -0.0791,
+      -0.4488,
+      1.243,
+      0.2301,
+      -0.0893,
+      0.1796,
+      0.6872
+    ]
+  },
   "Nikon_Z-6III_HE-star.NEF" : {
     "asShotMultipliers" : [
       1.9219,
@@ -1259,6 +1291,38 @@
     "sampleChecksum" : "64140337539b3c23",
     "whiteLevel" : 16383,
     "width" : 7028,
+    "xyzToCamera" : [
+      0.746,
+      -0.2365,
+      -0.0588,
+      -0.5687,
+      1.3442,
+      0.2474,
+      -0.0624,
+      0.1156,
+      0.6584
+    ]
+  },
+  "Sony_ILCE-7M4_M-lossless.ARW" : {
+    "asShotMultipliers" : [
+      2.3682,
+      1,
+      1.7734
+    ],
+    "baselineExposure" : 0,
+    "blackLevels" : [
+      1024,
+      1024,
+      1024
+    ],
+    "height" : 3080,
+    "layout" : "linear RGB",
+    "make" : "Sony",
+    "model" : "ILCE-7M4",
+    "orientation" : 0,
+    "sampleChecksum" : "faccc4839307b6ce",
+    "whiteLevel" : 17536,
+    "width" : 4624,
     "xyzToCamera" : [
       0.746,
       -0.2365,
