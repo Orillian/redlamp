@@ -62,7 +62,7 @@ extension EditRenderFixture {
 /// alone; and its cells, the loupe and Develop's placeholder show its own edit.
 @MainActor
 extension EditRendersTests {
-    @Test func `a photo's versions with edits of their own are each rendered with theirs, recorded under their own rows`(
+    @Test func `a photo's versions with edits of their own are each rendered with theirs, on screen first, each recorded under its row`(
     ) async throws {
         let fixture = EditRenderFixture()
         defer { fixture.cleanUp() }
@@ -75,11 +75,19 @@ extension EditRendersTests {
         let photos = [nil, first, second].map { PhotoAddress(url: url, version: $0) }
         let exposures = [1.0, -1, 0.5]
         let digests = try exposures.map(EditRenderFixture.digest(exposure:))
+        let renders = fixture.renders
+        try await fixture.eventually { photos.allSatisfy { renders.known[$0] != nil } }
+        fixture.model.select(photos[1])
+        let shown = try #require(fixture.library.index(of: photos[2]))
+        renders.show(shown ..< shown + 1, in: .grid)
 
-        fixture.renders.isRunning = true
-        try await fixture.eventually { fixture.renders.statistics.rendered == 3 }
-        #expect(fixture.renders.statistics.rendered == 3 && fixture.renders.statistics.failed == 0)
-        #expect(fixture.engine.rendered.withLock { $0.map { $0.recipe[.exposure] } }.sorted() == exposures.sorted())
+        renders.isRunning = true
+        try await fixture.eventually { renders.statistics.rendered == 3 }
+        #expect(renders.statistics.rendered == 3 && renders.statistics.failed == 0)
+        #expect(
+            fixture.engine.rendered.withLock { $0.map { $0.recipe[.exposure] } } == [-1, 0.5, 1],
+            "the active version, then the one on screen, then the file's own",
+        )
         #expect(fixture.engine.opened.withLock { $0 } == [url, url, url], "the file, once for each of its edits")
         let key = try #require(fixture.key("IMG_1.JPG"))
         #expect(fixture.store.edits(of: key) == Set(digests), "three renders of the one file")
