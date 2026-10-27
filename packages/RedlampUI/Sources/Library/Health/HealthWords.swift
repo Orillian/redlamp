@@ -63,8 +63,8 @@ enum HealthWords {
             "They can't be read, are empty, aren't images or end before their data does. Nothing is repaired, and "
                 + "each file's sidecar and .xmp go with it."
         case .missing:
-            "Their files went from their folders outside Redlamp. Locate… finds each again, and Remove from Library "
-                + "takes it out."
+            "Their files went from their folders outside Redlamp, or they're no longer in Apple Photos. Locate… finds "
+                + "a file again, and Remove from Library takes a photo out."
         case .extensions:
             "Each gets the extension of the format it holds, as IMG_1.JPG holding HEIC becomes IMG_1.HEIC, its "
                 + "sidecar, .xmp and pair following."

@@ -148,4 +148,41 @@ struct MissingPhotosTests {
             "C relinked beside it, A still missing",
         )
     }
+
+    @Test func `a photo deleted in Apple Photos is listed by the Missing check with Remove and no Locate…`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["Shoot/A.JPG"])
+        let model = try await sandbox.open()
+        let sources = model.librarySources
+        let core = try #require(sandbox.service?.core)
+        let photos = SimulatedPhotosLibrary(
+            collections: [ApplePhotosCollection(id: "album-trip", title: "Trip", kind: .album)],
+            assets: [ApplePhotosAsset(
+                id: "8A1F0001-0000-4000-8000-000000000001/L0/001", cloud: "cloud-0001",
+                created: Date(timeIntervalSince1970: 1_760_000_000), albums: ["album-trip"],
+                resources: [ApplePhotosResource(kind: .photo, type: "public.jpeg", originalFilename: "IMG_0001.JPG")],
+            )],
+        )
+        let indexer = ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
+        try await indexer.keep(["album-trip"])
+        try await sandbox.counts { $0.count(of: .allPhotographs) == 2 }
+        photos.delete(["8A1F0001-0000-4000-8000-000000000001/L0/001"])
+        #expect(try await indexer.update().missing.count == 1)
+        try await sandbox.counts { $0.count(of: .health(.missing)) == 1 && $0.count(of: .allPhotographs) == 1 }
+
+        #expect(sources.show(.health(.missing)))
+        try await sandbox
+            .eventually { !sources.isListing && model.items.count == 1 && model.healthProposals.marked == 1 }
+        let shown = try #require(model.items.first?.url)
+        let mark = try #require(model.healthProposals.mark(for: shown))
+        #expect(mark.word == "Missing" && mark.sentence.hasPrefix("no longer in Apple Photos since "))
+        #expect(mark.sentence.hasSuffix(": Remove from Library takes it out, and Photos isn't changed"))
+        model.select(shown)
+        #expect(!model.canPerform(.locateMissingPhoto) && model.canPerform(.removeMissingPhotos))
+        #expect(model.perform(.removeMissingPhotos))
+        await model.healthChangesMade()
+        try await sandbox.counts { $0.count(of: .health(.missing)) == nil }
+    }
 }

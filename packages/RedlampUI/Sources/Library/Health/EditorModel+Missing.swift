@@ -92,12 +92,24 @@ extension EditorModel {
     }
 
     var canLocateMissingPhoto: Bool {
+        canActOnMissingPhotos && !activeDeletedInPhotos
+    }
+
+    var canRemoveMissingPhotos: Bool {
+        canActOnMissingPhotos
+    }
+
+    private var canActOnMissingPhotos: Bool {
         !isModalDialogOpen && showsMissingPhotos && selection != nil && library.service?.isReady == true
             && healthProposals.offer?.hasFindings == true
     }
 
-    var canRemoveMissingPhotos: Bool {
-        canLocateMissingPhoto
+    /// The active photo is no longer in Apple Photos (LIB-61): there's no file of its own for Locate… to find.
+    private var activeDeletedInPhotos: Bool {
+        guard let selection, case .notInPhotos = healthProposals.mark(for: selection)?.finding.reason else {
+            return false
+        }
+        return true
     }
 
     /// Relinks the missing photo `id`, shown at `shown`, where it was, to the file at `url` once Locate… finds it's the

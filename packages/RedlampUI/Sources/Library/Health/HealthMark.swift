@@ -58,7 +58,7 @@ struct HealthMark: Hashable, Sendable {
         case nil:
             switch finding.reason {
             case .wrongExtension: (proposal, word) = (.none, "Name Taken")
-            case .missing: (proposal, word) = (.none, "Missing")
+            case .missing, .notInPhotos: (proposal, word) = (.none, "Missing")
             default: (proposal, word) = (.none, damage ?? "Found")
             }
         }
@@ -92,6 +92,8 @@ struct HealthMark: Hashable, Sendable {
                 return "\(reason): nothing is proposed, as its format's name is taken in its folder"
             case .missing:
                 return "\(reason): Locate… finds it again, and Remove from Library takes it out"
+            case .notInPhotos:
+                return "\(reason): Remove from Library takes it out, and Photos isn't changed"
             default:
                 return "\(reason): nothing is proposed, as it isn't damaged"
             }
