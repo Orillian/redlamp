@@ -829,6 +829,7 @@ extension LibraryGridView {
             photoID(ofItem: index).map { model.stackBadges(of: $0, in: stacks) }
         } ?? (nil, nil)
         cell.isFocusSuggested = suggestedFrames.contains(item.url)
+        cell.isInCloud = thumbnails.isInCloud(item)
         cell.healthMark = proposals.mark(for: item.url)
         cell.softFrame = softFrames.mark(of: photoID(ofItem: index), url: item.url)
         cell.isMenuTarget = index == menuItem

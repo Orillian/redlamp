@@ -51,6 +51,8 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
     private var marked = PhotoSelection()
     /// The thumbnails read ahead, by photo: a file's own or one of its versions (LIB-48).
     private var prefetching: [PhotoAddress: UInt64] = [:]
+    /// The rows on screen when it last scrolled.
+    private var shownRows = 0 ..< 0
     /// The items waiting for a large source's rows, by row (`showRead`).
     private var unread: [Int: FilmstripItem] = [:]
     /// Shown again: it goes back to the filmstrip's place once laid out.
@@ -445,6 +447,7 @@ final class FilmstripStripView: NSView, NSCollectionViewDataSource, NSCollection
         item.cell.configure(photo, image: shown?.image, edit: shown?.edit, longEdge: shown?.longEdge ?? 0)
         item.cell.stackBadges = stackBadges(ofItem: index)
         item.cell.isFocusSuggested = suggestedFrames.contains(photo.url)
+        item.cell.isInCloud = model.thumbnailLoader.isInCloud(photo)
         item.cell.isSelected = photo.address == selected
         item.cell.isInSelection = photo.address != selected && marked.contains(model.library.photoIDs[row])
         item.cell.isDropTarget = dropTarget != nil && model.library.photoIDs[row] == dropTarget
@@ -518,12 +521,13 @@ extension FilmstripStripView {
                 return
             }
         }
-        item.request = model.thumbnailLoader.request(photo, lane: .onScreen) { [weak item] image in
+        item.request = model.thumbnailLoader.request(photo, lane: .onScreen) { [weak item, weak self] image in
             guard let item, item.cell.item?.address == photo.address else { return }
             item.request = nil
             if let image {
                 item.cell.setImage(image, edit: edit, longEdge: longEdge)
             }
+            item.cell.isInCloud = self?.model.thumbnailLoader.isInCloud(photo) ?? false
         }
     }
 
@@ -547,12 +551,18 @@ extension FilmstripStripView {
         }
     }
 
-    /// What's on screen: kept in memory, and its badges read first.
+    /// What's on screen: kept in memory, its badges read first, and with a screen either side prepared by Photos for
+    /// the photos left there (LIB-59).
     @objc private func scrolled() {
         let rows = collectionView.indexPathsForVisibleItems().compactMap { row(ofItem: $0.item) }
         guard let first = rows.min(), let last = rows.max() else { return }
         model.library.showRows(first ..< last + 1, in: "filmstrip")
         model.thumbnailLoader.protected = Set(rows.compactMap { model.library.items.row($0)?.url })
+        if shownRows != first ..< last + 1 {
+            shownRows = first ..< last + 1
+            let near = max(first - shownRows.count, 0) ..< min(last + 1 + shownRows.count, model.library.items.count)
+            model.thumbnailLoader.cache(near.compactMap { model.library.items.row($0) })
+        }
         for run in LibraryGridView.runs(of: rows) {
             model.library.prioritize(run)
         }

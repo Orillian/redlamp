@@ -6,7 +6,9 @@ import RedlampLibrary
 /// Photos' previews at screen size, for the Library loupe and for Develop until a photo's render lands:
 /// for a photo the library shows, its store's preview tier (LIB-09), made there first when it has none,
 /// or its render of the photo's edit once `renders` has made it (LIB-17); for any other, its embedded
-/// preview. They're decoded off the main thread. The last few stay in memory, kept by the file and the edit
+/// preview. A photo left in Apple Photos has its preview made from Photos' largest image on this Mac, or its
+/// thumbnail where Photos has none at that size without iCloud (LIB-59), its original or not.
+/// They're decoded off the main thread. The last few stay in memory, kept by the file and the edit
 /// they show, which a file's own photo and its versions with that edit share (LIB-48).
 /// Asking for one photo's drops what's waiting for another's, and held arrow keys read the next ones ahead
 /// (`prefetch`, LIB-16), each step dropping what the one before asked for and hasn't started: decoding is
@@ -97,7 +99,7 @@ public final class PhotoPreviews {
         if asked != key {
             cancel()
         }
-        guard item.isLocal, !item.isSettling else {
+        guard isReadable(item) else {
             completion(nil)
             return
         }
@@ -137,7 +139,7 @@ public final class PhotoPreviews {
             scheduler.cancel(job(key))
         }
         ahead = wanted
-        for (place, (item, key)) in zip(items, keys).enumerated() where item.isLocal && !item.isSettling {
+        for (place, (item, key)) in zip(items, keys).enumerated() where isReadable(item) {
             let lane: WorkScheduler.Lane = place < soon ? .onScreen : .lookAhead
             if decoding[key] != nil {
                 scheduler.promote(job(key), to: lane)
@@ -154,6 +156,13 @@ public final class PhotoPreviews {
 
     private func key(_ item: LibraryItem) -> Key {
         Key(url: item.url, edit: renders?.shownEdit(for: item))
+    }
+
+    /// Whether `item`'s preview can be read: its file is on this Mac, or it's left in Apple Photos, whose image it
+    /// comes
+    /// from.
+    private func isReadable(_ item: LibraryItem) -> Bool {
+        (item.isLocal || library?(item)?.0.isInApplePhotos(item.url) == true) && !item.isSettling
     }
 
     /// The preview of `key` in memory, if it still matches the file.
@@ -214,6 +223,14 @@ public final class PhotoPreviews {
             return thumbnails.image(
                 for: key, tier: .preview, edit: edit, size: item.size, modified: item.modified, pixelSize: pixelSize,
             )
+        }
+        if let (thumbnails, key) = store, thumbnails.isInApplePhotos(item.url) {
+            return thumbnails.fromPhotos(
+                item.url, key: key, tier: .preview, size: item.size, modified: item.modified, pixelSize: pixelSize,
+            ).image ?? thumbnails.fromPhotos(
+                item.url, key: key, tier: .grid, size: item.size, modified: item.modified,
+                pixelSize: PhotoStore.Tier.grid.pixelSize,
+            ).image
         }
         if let (thumbnails, key) = store {
             let tier = PhotoStore.Tier.preview

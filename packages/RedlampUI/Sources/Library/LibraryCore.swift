@@ -84,12 +84,13 @@ final class LibraryCore: Sendable {
 
     /// Opens the index (restoring its newest good snapshot when it's damaged, checking it first when
     /// `check`), loads the column store and opens the thumbnail store. `thumbnail` is the engine's
-    /// `decodeThumbnail(for:maxPixelSize:)`, which the store's thumbnails of raws come from; `migrating`
-    /// hears, before the index opens, that opening it brings its schema up to date first. The indexer runs its work on
-    /// `scheduler`.
+    /// `decodeThumbnail(for:maxPixelSize:)`, which the store's thumbnails of raws come from, and `photos` Photos'
+    /// images, which those of photos left in Apple Photos come from; `migrating` hears, before the index opens, that
+    /// opening it brings its schema up to date first. The indexer runs its work on `scheduler`.
     static func open(
         paths: LibraryPaths, check: Bool, thumbnail: @escaping @Sendable (URL, Int) -> CGImage?,
-        migrating: @Sendable () async -> Void = {}, scheduler: WorkScheduler = LibraryIndexer.scheduler,
+        photos: any ApplePhotosImages = ApplePhotosSourceImages(), migrating: @Sendable () async -> Void = {},
+        scheduler: WorkScheduler = LibraryIndexer.scheduler,
     ) async throws -> (core: LibraryCore, outcome: LibraryIndex.OpenOutcome) {
         raiseFileLimit()
         if needsMigrating(paths.index) {
@@ -102,9 +103,13 @@ final class LibraryCore: Sendable {
         try await engine.load()
         let store = PhotoStore(root: paths.store)
         let locator = await (try? LibrarySidecars(index: index, paths: paths).locator()) ?? .besidePhotos
+        let thumbnails = StoreThumbnails(
+            store: store, thumbnail: thumbnail,
+            photos: ApplePhotosThumbnailMaker(store: store, index: index, paths: paths, images: photos),
+        )
         let core = LibraryCore(
-            paths: paths, index: index, engine: engine, store: store,
-            thumbnails: StoreThumbnails(store: store, thumbnail: thumbnail), locator: locator, scheduler: scheduler,
+            paths: paths, index: index, engine: engine, store: store, thumbnails: thumbnails, locator: locator,
+            scheduler: scheduler,
         )
         core.xmpSettings = await (try? core.xmp.settings()) ?? XMPSettings()
         return (core, outcome)

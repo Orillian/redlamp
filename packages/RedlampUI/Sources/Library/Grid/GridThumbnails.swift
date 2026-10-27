@@ -10,7 +10,8 @@ import RedlampLibrary
 /// as it is rather than converting it on the main thread as it commits. An edited photo's, once `renders`
 /// has rendered its edit, is that render's tier (LIB-17). Kept in memory by the file and the edit they show,
 /// which a file's photos with that edit, its own and its versions' (LIB-48), share, within a byte budget, the
-/// photos on screen last to go.
+/// photos on screen last to go. A photo left in Apple Photos has its tiers made from Photos' images (LIB-59), with
+/// those on screen and a screen either side prepared by Photos ahead (`cache`).
 @MainActor
 final class GridThumbnails {
     /// The long edges thumbnails are decoded at; a cell takes the smallest at least as large as its image.
@@ -62,6 +63,12 @@ final class GridThumbnails {
     /// Bumped when the cache is emptied: decodes started before then are dropped.
     private var generation = 0
     private var windowClosing: LibraryObservation?
+    /// The photos left in Apple Photos whose thumbnails Photos had none of without iCloud when last asked: their
+    /// cells show the cloud mark.
+    private var inCloud: Set<URL> = []
+    /// Photos prepares the pictures of what's on and near the screen: this grid's window of them, while it has one.
+    private let photosWindow = "grid \(UUID().uuidString)"
+    private var cachingIn: StoreThumbnails?
 
     init(
         scheduler: WorkScheduler, packs: ThumbnailPacks, budget: Int = 64 << 20,
@@ -77,8 +84,44 @@ final class GridThumbnails {
         windowClosing = renders?.observeWindowClosing { [weak self] in self?.trim(to: 0) }
     }
 
+    isolated deinit {
+        if let cachingIn {
+            let window = photosWindow
+            scheduler.submit(.lookAhead) { cachingIn.photos?.cache([], tier: .grid, window: window) }
+        }
+    }
+
     var memoryUsed: Int {
         used
+    }
+
+    /// Whether Photos had none of `item`'s thumbnail without iCloud when last asked: a photo left in Apple Photos whose
+    /// cell shows the cloud mark.
+    func isInCloud(_ item: LibraryItem) -> Bool {
+        inCloud.contains(item.url)
+    }
+
+    /// Has Photos prepare the thumbnails at `edge` of those of `items`, the photos on screen and a screen either side,
+    /// left in Apple Photos with none in the store, for the requests their cells make (LIB-59); what the last call
+    /// asked for and these leave out is let go.
+    func cache(_ items: [LibraryItem], edge: Int) {
+        var thumbnails: StoreThumbnails?
+        var photos: [(url: URL, key: ContentKey, size: Int64, modified: Date)] = []
+        for item in items {
+            guard let (store, key) = store(item), store.isInApplePhotos(item.url) else { continue }
+            thumbnails = store
+            photos.append((item.url, key, item.size, item.modified))
+        }
+        guard let target = thumbnails ?? cachingIn else { return }
+        cachingIn = photos.isEmpty ? nil : target
+        let (window, tier, wanted) = (photosWindow, Self.tier(forEdge: edge), photos)
+        scheduler
+            .submit(.lookAhead, key: "\(window) cache") { target.photos?.cache(wanted, tier: tier, window: window) }
+    }
+
+    /// The store's tier a thumbnail at `edge` is decoded from: the grid's up to its size, the preview's beyond.
+    nonisolated static func tier(forEdge edge: Int) -> PhotoStore.Tier {
+        edge > PhotoStore.Tier.grid.pixelSize ? .preview : .grid
     }
 
     /// The edit `item`'s thumbnails show: its edit's digest once that's rendered, nil for its embedded
@@ -132,7 +175,9 @@ final class GridThumbnails {
             completion(image)
             return id
         }
-        guard item.isLocal, !item.isSettling else {
+        let store = store(item)
+        // A photo left in Apple Photos has its thumbnail from Photos, its original on this Mac or not.
+        guard item.isLocal || store?.0.isInApplePhotos(item.url) == true, !item.isSettling else {
             completion(nil)
             return id
         }
@@ -145,11 +190,13 @@ final class GridThumbnails {
         }
         waiting[key] = [id: completion]
         lanes[key] = lane
-        let (store, packs, decode, space, generation) = (store(item), packs, decode, colorSpace, generation)
+        let (packs, decode, space, generation) = (packs, decode, colorSpace, generation)
         scheduler.submit(lane, key: Self.job(key)) {
-            let image = Self.load(item, edge: edge, store: store, edit: key.edit, packs: packs, decode: decode)
-                .flatMap { Self.drawn($0, in: space) }
-            Task { @MainActor [weak self] in self?.finish(key, item, image, generation: generation) }
+            let loaded = Self.load(item, edge: edge, store: store, edit: key.edit, packs: packs, decode: decode)
+            let image = loaded.image.flatMap { Self.drawn($0, in: space) }
+            Task { @MainActor [weak self] in
+                self?.finish(key, item, image, inCloud: loaded.inCloud, generation: generation)
+            }
         }
         return id
     }
@@ -176,11 +223,16 @@ final class GridThumbnails {
         "grid:\(key.edge):" + (key.edit.map { "\($0):" } ?? "") + key.url.path
     }
 
-    private func finish(_ key: Key, _ item: LibraryItem, _ image: CGImage?, generation: Int) {
+    private func finish(_ key: Key, _ item: LibraryItem, _ image: CGImage?, inCloud: Bool, generation: Int) {
         lanes[key] = nil
         let completions = waiting.removeValue(forKey: key) ?? [:]
         for id in completions.keys {
             requested.removeValue(forKey: id)
+        }
+        if inCloud {
+            self.inCloud.insert(item.url)
+        } else if image != nil {
+            self.inCloud.remove(item.url)
         }
         if let image, generation == self.generation {
             insert(image, for: key, item)
@@ -225,36 +277,56 @@ final class GridThumbnails {
     // MARK: - Decoding
 
     /// The photo's thumbnail at most `edge` pixels on its long edge; with `edit`, the store's render of it,
-    /// or nil when it has none. It blocks: only ever off the main thread.
+    /// or nil when it has none. For a photo left in Apple Photos, whether Photos had none without iCloud. It
+    /// blocks: only ever off the main thread.
     nonisolated static func load(
         _ item: LibraryItem, edge: Int, store: (StoreThumbnails, ContentKey)?, edit: EditDigest? = nil,
         packs: ThumbnailPacks, decode: @escaping @Sendable (URL, Int) -> CGImage?,
-    ) -> CGImage? {
+    ) -> (image: CGImage?, inCloud: Bool) {
         if let edit {
-            guard let (thumbnails, key) = store else { return nil }
-            let tier: PhotoStore.Tier = edge > PhotoStore.Tier.grid.pixelSize ? .preview : .grid
-            return thumbnails.image(
+            guard let (thumbnails, key) = store else { return (nil, false) }
+            let tier = Self.tier(forEdge: edge)
+            return (thumbnails.image(
                 for: key, tier: tier, edit: edit, size: item.size, modified: item.modified,
                 pixelSize: min(edge, tier.pixelSize),
-            )
+            ), false)
         }
         if let (thumbnails, key) = store {
             let grid = PhotoStore.Tier.grid.pixelSize
-            if edge > grid, let preview = preview(item, edge: edge, thumbnails: thumbnails, key: key, decode: decode) {
-                return preview
+            if thumbnails.isInApplePhotos(item.url) {
+                return fromPhotos(item, edge: edge, thumbnails: thumbnails, key: key)
             }
-            return thumbnails.image(
+            if edge > grid, let preview = preview(item, edge: edge, thumbnails: thumbnails, key: key, decode: decode) {
+                return (preview, false)
+            }
+            return (thumbnails.image(
                 for: item.url, key: key, size: item.size, modified: item.modified, pixelSize: min(edge, grid),
-            )
+            ), false)
         }
         if edge <= edges[0] {
             if let jpeg = packs.jpeg(for: item.url, size: item.size, modified: item.modified),
                let image = StoreThumbnails.decode(jpeg, pixelSize: edge) {
-                return image
+                return (image, false)
             }
             return ThumbnailLoader.load(item, packs: packs, decode: decode)
         }
-        return decode(item.url, edge)
+        return (decode(item.url, edge), false)
+    }
+
+    /// A photo left in Apple Photos (LIB-59): the store's grid tier up to its size and its preview tier beyond, made
+    /// there from Photos' images first, the grid tier where Photos has no preview without iCloud.
+    private nonisolated static func fromPhotos(
+        _ item: LibraryItem, edge: Int, thumbnails: StoreThumbnails, key: ContentKey,
+    ) -> (image: CGImage?, inCloud: Bool) {
+        let grid = PhotoStore.Tier.grid.pixelSize
+        if edge > grid, let preview = thumbnails.fromPhotos(
+            item.url, key: key, tier: .preview, size: item.size, modified: item.modified, pixelSize: edge,
+        ).image {
+            return (preview, false)
+        }
+        return thumbnails.fromPhotos(
+            item.url, key: key, tier: .grid, size: item.size, modified: item.modified, pixelSize: min(edge, grid),
+        )
     }
 
     /// From the store's preview tier, made there first when it has none.

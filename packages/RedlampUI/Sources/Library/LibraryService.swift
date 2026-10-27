@@ -65,6 +65,7 @@ public final class LibraryService {
     @ObservationIgnored private weak var currentList: LibraryFolderList?
     @ObservationIgnored private let defaults: UserDefaults?
     @ObservationIgnored private let thumbnail: @Sendable (URL, Int) -> CGImage?
+    @ObservationIgnored private let photos: any ApplePhotosImages
     /// Where the library's indexer runs its work.
     @ObservationIgnored private let indexerScheduler: WorkScheduler
     @ObservationIgnored private(set) var core: LibraryCore?
@@ -111,18 +112,21 @@ public final class LibraryService {
     static let xmpWaitingKey = "library.xmpWaiting"
 
     /// `sidecars` is the placement Folders and the editor read and write sidecars through; `thumbnail`
-    /// the engine's `decodeThumbnail(for:maxPixelSize:)`. `defaults` keeps the sidecar locator between
-    /// launches, so photos opened before the index is reach their sidecars. `indexerScheduler` is where the indexer
-    /// runs its work: the app's, whose background lane waits in Low Power Mode and while the Mac is hot.
+    /// the engine's `decodeThumbnail(for:maxPixelSize:)`, and `photos` Photos' images, which the store's of photos
+    /// left in Apple Photos are made from (LIB-59): by default `ApplePhotosSource`'s. `defaults` keeps the sidecar
+    /// locator between launches, so photos opened before the index is reach their sidecars. `indexerScheduler` is
+    /// where the indexer runs its work: the app's, whose background lane waits in Low Power Mode and while the Mac is
+    /// hot.
     public init(
         paths: LibraryPaths = .standard, sidecars: SidecarPlacement, defaults: UserDefaults? = nil,
-        indexerScheduler: WorkScheduler = LibraryIndexer.scheduler,
+        indexerScheduler: WorkScheduler = LibraryIndexer.scheduler, photos: (any ApplePhotosImages)? = nil,
         thumbnail: @escaping @Sendable (URL, Int) -> CGImage?,
     ) {
         self.paths = paths
         self.sidecars = sidecars
         self.defaults = defaults
         self.indexerScheduler = indexerScheduler
+        self.photos = photos ?? ApplePhotosSourceImages()
         self.thumbnail = thumbnail
         filters = LibraryFilters(defaults: defaults, presetsURL: paths.root.appending(path: "Filter Presets.json"))
         if let defaults, let saved = SidecarLocator.saved(in: defaults) {
@@ -166,14 +170,15 @@ extension LibraryService {
         self.roots = Self.paths(roots)
         removesOthers = removingOthers
         guard opening == nil, core == nil else { return }
-        let (paths, thumbnail, scheduler) = (paths, thumbnail, indexerScheduler)
+        let (paths, thumbnail, photos, scheduler) = (paths, thumbnail, photos, indexerScheduler)
         let check = defaults?.bool(forKey: Self.damagedKey) ?? false
         let migrating: @Sendable () async -> Void = { [weak self] in await self?.indexMigrating() }
         opening = Task { [weak self] in
             let opened = await Task.detached(priority: .userInitiated) { () -> Result<LibraryCore, any Error> in
                 do {
                     let (core, outcome) = try await LibraryCore.open(
-                        paths: paths, check: check, thumbnail: thumbnail, migrating: migrating, scheduler: scheduler,
+                        paths: paths, check: check, thumbnail: thumbnail, photos: photos, migrating: migrating,
+                        scheduler: scheduler,
                     )
                     if outcome != .opened {
                         Self.log

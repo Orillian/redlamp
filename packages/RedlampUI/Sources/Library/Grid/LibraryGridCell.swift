@@ -56,6 +56,21 @@ final class LibraryGridCell {
         }
     }
 
+    /// A photo left in Apple Photos that Photos has no thumbnail of without iCloud (LIB-59): its placeholder shows
+    /// the cloud mark, as a file only in iCloud Drive's does.
+    var isInCloud = false {
+        didSet {
+            if isInCloud != oldValue {
+                showBadges(of: item)
+            }
+        }
+    }
+
+    /// The cloud mark is shown, for the tests.
+    var showsCloud: Bool {
+        badges[.cloud].map { !$0.isHidden } ?? false
+    }
+
     /// What the cell shows of the stacks it's the first cell of (LIB-28): a burst's or a stack made by hand's
     /// count, and a raw and its JPEG's other extensions.
     var stackBadges: (count: GridBadges.Kind?, pair: GridBadges.Kind?) = (nil, nil) {
@@ -187,7 +202,7 @@ final class LibraryGridCell {
         self.edge = edge
         let marked = showsUneditedPreview
         shownEdit = image == nil ? nil : edit
-        if item?.isLocal == false || showsUneditedPreview != marked {
+        if item?.isLocal == false || isInCloud || showsUneditedPreview != marked {
             showBadges(of: item)
         }
     }
@@ -297,7 +312,7 @@ final class LibraryGridCell {
         let rating: GridBadges.Kind? = slots ? .ratingSlots(metadata.rating)
             : shows && metadata.rating > 0 ? .rating(metadata.rating) : nil
         set(.rating, rating, left: geometry.rating)
-        set(.cloud, item?.isLocal == false && thumbnail.contents == nil ? .cloud : nil, centre: CGPoint(
+        set(.cloud, (item?.isLocal == false || isInCloud) && thumbnail.contents == nil ? .cloud : nil, centre: CGPoint(
             x: geometry.image.midX, y: geometry.image.midY,
         ))
         showStackBadges(besideDocument: shows && badges[.stack]?.isHidden == false)

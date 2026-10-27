@@ -53,6 +53,13 @@ final class FilmstripCellView: NSView {
         }
     }
 
+    /// A photo left in Apple Photos that Photos has no thumbnail of without iCloud (LIB-59): marked with the cloud,
+    /// as a photo only in iCloud Drive is.
+    var isInCloud: Bool {
+        get { badges.isInCloud }
+        set { badges.isInCloud = newValue }
+    }
+
     /// A click, with the modifier keys held (⌘ and ⇧ select several photos): VoiceOver's press.
     var onClick: ((NSEvent.ModifierFlags) -> Void)?
     /// A press on the cell, with the modifier keys held, and the drag and release that follow it, which the strip
@@ -251,7 +258,7 @@ final class FilmstripCellView: NSView {
 
 /// The cell's badges: edited, flag or reject, stars, colour or custom label, the mark, focus stack or a focus stack
 /// suggested, a stack's count and a pair's extensions (LIB-28), a version's mark (LIB-48), and a cloud for photos only
-/// in iCloud Drive.
+/// in iCloud Drive, and those left in Apple Photos that Photos has no thumbnail of without iCloud (LIB-59).
 final class FilmstripBadgesView: LayerDrawnView {
     var item: LibraryItem? {
         didSet {
@@ -276,7 +283,14 @@ final class FilmstripBadgesView: LayerDrawnView {
 
     var hasImage = false {
         didSet {
-            guard hasImage != oldValue, item?.isLocal == false else { return }
+            guard hasImage != oldValue, item?.isLocal == false || isInCloud else { return }
+            setNeedsContentDisplay()
+        }
+    }
+
+    var isInCloud = false {
+        didSet {
+            guard isInCloud != oldValue else { return }
             setNeedsContentDisplay()
         }
     }
@@ -385,7 +399,7 @@ final class FilmstripBadgesView: LayerDrawnView {
                 )
             }
         }
-        if badges.cloud, !hasImage {
+        if badges.cloud || isInCloud, !hasImage {
             Symbol.draw(
                 "icloud.and.arrow.down", pointSize: 14, color: white.opacity(0.6),
                 centeredAt: CGPoint(x: rect.midX, y: rect.midY), scale: scale,

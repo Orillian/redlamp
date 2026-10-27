@@ -16,7 +16,8 @@ import Synchronization
 /// requests for one file and edit share a decode. A request can be promoted (its cell
 /// scrolled into view) or
 /// cancelled (it scrolled away), held arrow keys read the photos ahead (`prefetch`), and photos iCloud
-/// Drive hasn't downloaded are never read. Warming
+/// Drive hasn't downloaded are never read. A photo left in Apple Photos has its thumbnail from Photos'
+/// image, through the store (LIB-59), with those on and near the screen prepared by Photos ahead (`cache`). Warming
 /// decodes a folder's thumbnails into its pack on the background lane, without keeping them in
 /// memory; the library's photos are left to the indexer.
 @MainActor
@@ -61,6 +62,11 @@ public final class ThumbnailLoader {
     private var warming = 0
     private var warmGeneration = 0
     private var pressure: (any DispatchSourceMemoryPressure)?
+    /// The photos left in Apple Photos whose thumbnails Photos had none of without iCloud when last asked.
+    private var inCloud: Set<URL> = []
+    /// Photos prepares the pictures of what's on and near the screen: this loader's window of them, while it has one.
+    private let photosWindow = "thumbnails \(UUID().uuidString)"
+    private var cachingIn: StoreThumbnails?
 
     /// A photo's thumbnail showing `edit`'s render, or with none its embedded preview, decoded at `longEdge`.
     private struct Key: Hashable {
@@ -97,6 +103,10 @@ public final class ThumbnailLoader {
 
     isolated deinit {
         pressure?.cancel()
+        if let cachingIn {
+            let window = photosWindow
+            scheduler.submit(.lookAhead) { cachingIn.photos?.cache([], tier: .grid, window: window) }
+        }
     }
 
     /// Bytes of decoded thumbnails held.
@@ -152,6 +162,36 @@ public final class ThumbnailLoader {
         Key(url: item.url, edit: renders?.shownEdit(for: item), longEdge: longEdge)
     }
 
+    /// Whether `item`'s thumbnail can be read: its file is on this Mac, or it's left in Apple Photos, whose image it
+    /// comes from.
+    private func isReadable(_ item: LibraryItem, store: (StoreThumbnails, ContentKey)?) -> Bool {
+        (item.isLocal || store?.0.isInApplePhotos(item.url) == true) && !item.isSettling
+    }
+
+    /// Whether Photos had none of `item`'s thumbnail without iCloud when last asked: a photo left in Apple Photos whose
+    /// cell shows the cloud mark.
+    public func isInCloud(_ item: LibraryItem) -> Bool {
+        inCloud.contains(item.url)
+    }
+
+    /// Has Photos prepare the thumbnails of those of `items`, the photos on screen and a screen either side, left in
+    /// Apple Photos with none in the store, for the requests their cells make (LIB-59); what the last call asked for
+    /// and these leave out is let go.
+    public func cache(_ items: [LibraryItem]) {
+        var thumbnails: StoreThumbnails?
+        var photos: [(url: URL, key: ContentKey, size: Int64, modified: Date)] = []
+        for item in items where !hasThumbnail(item) {
+            guard let (store, key) = library?(item), store.isInApplePhotos(item.url) else { continue }
+            thumbnails = store
+            photos.append((item.url, key, item.size, item.modified))
+        }
+        guard let target = thumbnails ?? cachingIn else { return }
+        cachingIn = photos.isEmpty ? nil : target
+        let (window, wanted) = (photosWindow, photos)
+        scheduler
+            .submit(.lookAhead, key: "\(window) cache") { target.photos?.cache(wanted, tier: .grid, window: window) }
+    }
+
     /// Asks for `item`'s thumbnail; `completion` gets it on the main thread (nil if it can't be
     /// made, the photo isn't downloaded, or the request is cancelled). Returns an id for `cancel`.
     @discardableResult
@@ -165,7 +205,8 @@ public final class ThumbnailLoader {
             completion(image)
             return id
         }
-        guard item.isLocal, !item.isSettling else {
+        let store = library?(item)
+        guard isReadable(item, store: store) else {
             completion(nil)
             return id
         }
@@ -177,12 +218,12 @@ public final class ThumbnailLoader {
         }
         waiting[key] = [id: completion]
         lanes[key] = lane
-        let (packs, decode, store) = (packs, decode, library?(item))
+        let (packs, decode) = (packs, decode)
         scheduler.submit(lane, key: job(key)) {
-            let image = Self.load(
+            let loaded = Self.load(
                 item, store: store, edit: key.edit, longEdge: key.longEdge, packs: packs, decode: decode,
             )
-            Task { @MainActor [weak self] in self?.finish(key, item, image) }
+            Task { @MainActor [weak self] in self?.finish(key, item, loaded.image, inCloud: loaded.inCloud) }
         }
         return id
     }
@@ -218,7 +259,7 @@ public final class ThumbnailLoader {
             prefetching[photo] = nil
             cancel(id)
         }
-        for (place, item) in items.enumerated() where item.isLocal && !item.isSettling {
+        for (place, item) in items.enumerated() where isReadable(item, store: library?(item)) {
             let lane: WorkScheduler.Lane = place < soon ? .onScreen : .lookAhead
             let photo = item.address
             guard prefetching[photo] == nil else {
@@ -270,11 +311,16 @@ public final class ThumbnailLoader {
         keyPrefix + "thumb:\(key.longEdge):" + (key.edit.map { "\($0):" } ?? "") + key.url.path
     }
 
-    private func finish(_ key: Key, _ item: LibraryItem, _ image: CGImage?) {
+    private func finish(_ key: Key, _ item: LibraryItem, _ image: CGImage?, inCloud: Bool) {
         lanes[key] = nil
         let completions = waiting.removeValue(forKey: key) ?? [:]
         for id in completions.keys {
             requested.removeValue(forKey: id)
+        }
+        if inCloud {
+            self.inCloud.insert(item.url)
+        } else if image != nil {
+            self.inCloud.remove(item.url)
         }
         if let image {
             insert(image, for: key, item)
@@ -289,6 +335,8 @@ public final class ThumbnailLoader {
     /// From the library's store, else from the pack, else decoded from the photo and added to the
     /// pack; with `edit`, the store's render of it, or nil when it has none; at most `longEdge` on its long edge.
     /// The packs hold the smallest cells' thumbnails, so a larger one outside the library is decoded from the photo.
+    /// A photo left in Apple Photos has only the store's, made from Photos' image (LIB-59), with whether Photos had
+    /// none without iCloud.
     /// A thumbnail to keep is always one decoded from a JPEG, the store's, the pack's or its own: ImageIO holds
     /// those pixels in purgeable memory, which the system can take back (ImageIO decodes them again when drawn) and
     /// doesn't count against the app, so a thumbnail costs about 33 KB of footprint rather than its
@@ -296,29 +344,34 @@ public final class ThumbnailLoader {
     nonisolated static func load(
         _ item: LibraryItem, store: (StoreThumbnails, ContentKey)? = nil, edit: EditDigest? = nil,
         longEdge: Int = pixelSize, packs: ThumbnailPacks, decode: (URL, Int) -> CGImage?, keep: Bool = true,
-    ) -> CGImage? {
+    ) -> (image: CGImage?, inCloud: Bool) {
         if let edit {
-            guard let (thumbnails, key) = store else { return nil }
-            return thumbnails.image(
+            guard let (thumbnails, key) = store else { return (nil, false) }
+            return (thumbnails.image(
                 for: key, tier: .grid, edit: edit, size: item.size, modified: item.modified, pixelSize: longEdge,
+            ), false)
+        }
+        if let (thumbnails, key) = store, thumbnails.isInApplePhotos(item.url) {
+            return thumbnails.fromPhotos(
+                item.url, key: key, tier: .grid, size: item.size, modified: item.modified, pixelSize: longEdge,
             )
         }
         if let (thumbnails, key) = store, let image = thumbnails.image(
             for: item.url, key: key, size: item.size, modified: item.modified, pixelSize: longEdge,
         ) {
-            return image
+            return (image, false)
         }
         let packed = longEdge <= pixelSize
         if packed, let jpeg = packs.jpeg(for: item.url, size: item.size, modified: item.modified),
            let image = ThumbnailPacks.decode(jpeg) {
-            return image
+            return (image, false)
         }
-        guard let image = decode(item.url, longEdge) else { return nil }
-        guard let jpeg = ThumbnailPacks.encode(image) else { return image }
+        guard let image = decode(item.url, longEdge) else { return (nil, false) }
+        guard let jpeg = ThumbnailPacks.encode(image) else { return (image, false) }
         if packed {
             packs.store(jpeg, for: item.url, size: item.size, modified: item.modified)
         }
-        return keep ? ThumbnailPacks.decode(jpeg) ?? image : image
+        return (keep ? ThumbnailPacks.decode(jpeg) ?? image : image, false)
     }
 
     // MARK: - Memory

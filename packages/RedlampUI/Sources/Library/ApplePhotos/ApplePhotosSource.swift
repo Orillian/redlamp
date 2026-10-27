@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import RedlampLibrary
+import Synchronization
 
 /// Where the app reads Apple Photos (LIB-54): PhotoKit, or, for the harness and the regression suite, which
 /// can't be given access to Photos, a simulated library over a manifest (`SimulatedPhotosLibrary`).
@@ -8,14 +9,22 @@ import RedlampLibrary
 enum ApplePhotosSource {
     private static let photoKit = PhotoKitLibrary()
     private static var simulated: (any ApplePhotosLibrary)?
+    private nonisolated static let simulatedImages = Mutex<(any ApplePhotosImages)?>(nil)
 
     static var library: any ApplePhotosLibrary {
         simulated ?? photoKit
     }
 
+    /// Photos' images of its pictures, which the store's of photos left in Photos are made from (LIB-59), read from
+    /// any thread: PhotoKit's, or the simulated library's while one stands in.
+    nonisolated static var images: any ApplePhotosImages {
+        simulatedImages.withLock { $0 } ?? PhotoKitImages.shared
+    }
+
     /// Reads `library` in place of Photos from now on; nil for Photos again.
     static func simulate(_ library: (any ApplePhotosLibrary)?) {
         simulated = library
+        simulatedImages.withLock { $0 = library as? any ApplePhotosImages }
     }
 
     /// System Settings › Privacy & Security › Photos, where Redlamp's access is given.
@@ -28,6 +37,18 @@ enum ApplePhotosSource {
         if let url = privacySettings {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// Photos' images as `ApplePhotosSource` gives them as each is asked for, for the library, which outlives a simulated
+/// library standing in (LIB-59).
+struct ApplePhotosSourceImages: ApplePhotosImages {
+    func image(of asset: String, version: ApplePhotosImageVersion, size: Int) -> ApplePhotosImage {
+        ApplePhotosSource.images.image(of: asset, version: version, size: size)
+    }
+
+    func cache(_ pictures: Set<ApplePhotosPicture>, size: Int, window: String) {
+        ApplePhotosSource.images.cache(pictures, size: size, window: window)
     }
 }
 

@@ -13,12 +13,13 @@ extension LibraryGridView {
             thumbnails.cancel(id)
         }
         let edit = thumbnails.edit(for: item)
-        let request = thumbnails.request(item, edge: edge, lane: .onScreen) { [weak cell] image in
+        let request = thumbnails.request(item, edge: edge, lane: .onScreen) { [weak cell, weak self] image in
             guard let cell, cell.item?.id == item.id else { return }
             cell.request = nil
             if let image {
                 cell.setImage(image, edge: edge, edit: edit)
             }
+            cell.isInCloud = self?.thumbnails.isInCloud(item) ?? false
         }
         if cell.image == nil || cell.edge < edge || cell.shownEdit != edit, cell.item?.id == item.id {
             cell.request = request
@@ -63,10 +64,16 @@ extension LibraryGridView {
         let items = model.items
         let edge = edge
         var wanted = Set<PhotoAddress>()
-        for index in near where !shown.contains(index) {
+        var window: [LibraryItem] = []
+        for index in near {
             guard let row = row(ofItem: index), let item = items.row(row) else { continue }
+            let held = thumbnails.cached(item, edge: edge) != nil
+            if !held {
+                window.append(item)
+            }
+            guard !shown.contains(index) else { continue }
             wanted.insert(item.id)
-            guard prefetching[item.id] == nil, thumbnails.cached(item, edge: edge) == nil else { continue }
+            guard prefetching[item.id] == nil, !held else { continue }
             prefetching[item.id] = thumbnails.request(item, edge: edge, lane: .lookAhead) { [weak self] _ in
                 self?.prefetching.removeValue(forKey: item.id)
             }
@@ -75,6 +82,7 @@ extension LibraryGridView {
             prefetching.removeValue(forKey: photo)
             thumbnails.cancel(id)
         }
+        thumbnails.cache(window, edge: edge)
     }
 
     // MARK: - Expanded cells' text
