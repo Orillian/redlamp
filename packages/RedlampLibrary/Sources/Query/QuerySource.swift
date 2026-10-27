@@ -598,10 +598,11 @@ public extension IndexQueries {
 }
 
 extension IndexQueries {
-    /// The small tables, without the folders of roots marked removed.
+    /// The small tables, without the folders of roots marked removed, nor the Apple Photos root's, whose photos lists
+    /// hold but whose folders are one per asset (LIB-58).
     func queryNames() throws -> QueryNames {
         var folders: [Int64: String] = [:]
-        let leftOut = try removedFolders()
+        let leftOut = try removedFolders().union(foldersOutsideFolderRoots())
         try database.cached("SELECT id, path FROM folders").forEachRow { row in
             let id = row.int64(at: 0)
             if !leftOut.contains(id) {

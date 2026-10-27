@@ -10,6 +10,7 @@ extension LibraryIndex {
         createVersion1, migrateToVersion2, migrateToVersion3, migrateToVersion4, migrateToVersion5,
         migrateToVersion6, migrateToVersion7, migrateToVersion8, migrateToVersion9, migrateToVersion10,
         migrateToVersion11, migrateToVersion12, migrateToVersion13, migrateToVersion14, migrateToVersion15,
+        migrateToVersion16,
     ]
 
     /// The version of the schema this build makes and opens.
@@ -139,6 +140,15 @@ extension LibraryIndex {
             try database.execute(object.sql)
         }
         try database.execute(schemaVersion15Index)
+    }
+
+    /// Adds no column to an index that has it already, one set back to an earlier version.
+    static func migrateToVersion16(_ database: SQLiteDatabase) throws {
+        let column = try database.prepare("SELECT 1 FROM pragma_table_info('roots') WHERE name = 'kind'")
+        if try column.first({ _ in true }) == nil {
+            try database.execute(schemaVersion16)
+        }
+        try database.execute(schemaVersion16Tables)
     }
 
     /// Brings `database` up to the last version `migrations` knows, one step per transaction.
@@ -398,6 +408,28 @@ extension LibraryIndex {
     static let schemaVersion15Index = """
     CREATE UNIQUE INDEX IF NOT EXISTS photos_place ON photos (folder, name, version);
     CREATE INDEX IF NOT EXISTS photos_versions ON photos (folder) WHERE version != '';
+    """
+
+    /// Photos left in Apple Photos (LIB-58, DEC-107): a root of the Photos kind, whose folders are one per asset,
+    /// named for its asset key, below Redlamp's cache, where the asset's original lands when it's downloaded, its
+    /// sidecars on this Mac. Adding the column rewrites no row.
+    static let schemaVersion16 = """
+    ALTER TABLE roots ADD COLUMN kind INTEGER NOT NULL DEFAULT 0;  -- 0 a folder, 1 Apple Photos
+    """
+
+    /// Each row of a Photos root's asset (`photo_assets`): its local and cloud identifiers, its asset key, which of
+    /// its files it is, its content version (when its picture last changed), its pixel size and subtypes, and its
+    /// favourite as last read; and the albums kept in place that hold it (`photo_albums`), by Photos' local
+    /// identifier. They go with their photos.
+    static let schemaVersion16Tables = """
+    CREATE TABLE IF NOT EXISTS photo_assets (photo INTEGER PRIMARY KEY, local_id TEXT NOT NULL, cloud_id TEXT,
+      asset_key TEXT NOT NULL, resource INTEGER NOT NULL, content_version REAL NOT NULL, width INTEGER,
+      height INTEGER, subtypes INTEGER NOT NULL DEFAULT 0, favorite INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0);  -- photo is photos.id; resource: ApplePhotosRow.Resource
+    CREATE INDEX IF NOT EXISTS photo_assets_local ON photo_assets (local_id);
+    CREATE TABLE IF NOT EXISTS photo_albums (album TEXT NOT NULL, photo INTEGER NOT NULL,
+      PRIMARY KEY (album, photo)) WITHOUT ROWID;  -- photo is photos.id
+    CREATE INDEX IF NOT EXISTS photo_albums_photo ON photo_albums (photo);
     """
 }
 

@@ -56,7 +56,7 @@ struct QuerySQL: Sendable, Hashable {
                 if QueryText.isSearchable(text) {
                     alternatives.append(textMatch(QueryText.match(text)))
                 }
-                alternatives.append("p.folder IN (SELECT id FROM folders WHERE redlamp_contains(path, \(bind(text))))")
+                alternatives.append(Self.inFolders(matching: bind(text)))
                 alternatives.append(Self.named("camera", "cameras", bind(text)))
                 alternatives.append(Self.named("lens", "lenses", bind(text)))
                 for column in ["creator"] + PlaceCodes.Part.allCases.map(\.column) {
@@ -186,7 +186,7 @@ struct QuerySQL: Sendable, Hashable {
             case .lens:
                 return Self.named("lens", "lenses", bind(text))
             case .folder:
-                return "p.folder IN (SELECT id FROM folders WHERE redlamp_contains(path, \(bind(text))))"
+                return Self.inFolders(matching: bind(text))
             case .name:
                 return textMatch(QueryText.match(text, in: .name))
             case .title:
@@ -219,6 +219,15 @@ struct QuerySQL: Sendable, Hashable {
 
         private static func named(_ column: String, _ table: String, _ parameter: String) -> String {
             "(p.\(column) IS NOT NULL AND p.\(column) IN (SELECT id FROM \(table) WHERE redlamp_contains(name, \(parameter))))"
+        }
+
+        /// Photos in a folder whose path holds the text: the folders of folder roots alone, as the Apple Photos root's
+        /// paths are Redlamp's cache's (LIB-58).
+        private static func inFolders(matching parameter: String) -> String {
+            """
+            p.folder IN (SELECT id FROM folders WHERE redlamp_contains(path, \(parameter)) \
+            AND root IN (SELECT id FROM roots WHERE kind = 0))
+            """
         }
 
         private mutating func bind(_ text: String) -> String {

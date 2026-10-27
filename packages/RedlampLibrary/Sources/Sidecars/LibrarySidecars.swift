@@ -142,10 +142,10 @@ public struct LibrarySidecars: Sendable {
         "library.sidecars.path.\(root)"
     }
 
-    /// Every root, as the locator knows it.
+    /// Every root, the Apple Photos root among them, as the locator knows it.
     static func locatorRoots(_ reader: some IndexQueries) throws -> [SidecarLocator.Root] {
         let volumes = try Dictionary(reader.volumes().map { ($0.id, $0.uuid) }) { first, _ in first }
-        return try reader.roots().compactMap { root in
+        return try reader.allRoots().compactMap { root in
             guard let volume = volumes[root.volume] else { return nil }
             return try SidecarLocator.Root(
                 path: root.path, volume: volume,

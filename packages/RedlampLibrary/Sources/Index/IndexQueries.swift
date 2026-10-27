@@ -33,8 +33,30 @@ public extension IndexQueries {
         return try statement.first(VolumeRecord.init)
     }
 
+    /// The folders added to the library: never the Apple Photos root, which nothing lists, watches, bookmarks or
+    /// writes to as a folder (LIB-58).
     func roots() throws -> [RootRecord] {
+        try database.cached("SELECT \(IndexColumns.root) FROM roots WHERE kind = 0 ORDER BY path").map(RootRecord.init)
+    }
+
+    /// Every root, the Apple Photos root among them: for what places sidecars, which it keeps on this Mac.
+    func allRoots() throws -> [RootRecord] {
         try database.cached("SELECT \(IndexColumns.root) FROM roots ORDER BY path").map(RootRecord.init)
+    }
+
+    /// The Apple Photos root (LIB-58); nil before an album is kept in place.
+    func applePhotosRoot() throws -> RootRecord? {
+        try database.cached("SELECT \(IndexColumns.root) FROM roots WHERE kind = 1 ORDER BY id LIMIT 1")
+            .first(RootRecord.init)
+    }
+
+    /// The folders of the roots that aren't folders: one per asset of the Apple Photos root, which folder lists,
+    /// folder search and Folders' counts leave out.
+    func foldersOutsideFolderRoots() throws -> Set<Int64> {
+        var folders = Set<Int64>()
+        try database.cached("SELECT id FROM folders WHERE root IN (SELECT id FROM roots WHERE kind != 0)")
+            .forEachRow { folders.insert($0.int64(at: 0)) }
+        return folders
     }
 
     func folder(id: Int64) throws -> FolderRecord? {
@@ -191,11 +213,14 @@ public extension IndexQueries {
     }
 
     /// Photos per folder, for folders with any, but those missing from their folders, which only Library Health's
-    /// Missing check lists (DEC-59).
+    /// Missing check lists (DEC-59), and the Apple Photos root's (LIB-58).
     func photoCountsByFolder() throws -> [Int64: Int] {
         var counts: [Int64: Int] = [:]
         try database.cached("SELECT folder, count(*) FROM photos GROUP BY folder").forEachRow { row in
             counts[row.int64(at: 0)] = row.int(at: 1)
+        }
+        for folder in try foldersOutsideFolderRoots() {
+            counts[folder] = nil
         }
         // The missing photos are few, and indexed apart: counting the rest would read every row.
         let missing = try database.cached("""
@@ -312,7 +337,7 @@ extension SQLiteStatement {
 /// The column lists the records are read from, in the order their initializers read them.
 enum IndexColumns {
     static let volume = "id, uuid, name, kind, event_database, last_event"
-    static let root = "id, volume, path, bookmark, sidecars"
+    static let root = "id, volume, path, bookmark, sidecars, kind"
     static let folder = "id, root, parent, path, signature, indexed_signature, listed_at"
     static let photo = photo(prefix: "")
 
@@ -350,6 +375,7 @@ extension RootRecord {
         self.init(
             id: row.int64(at: 0), volume: row.int64(at: 1), path: row.string(at: 2) ?? "", bookmark: row.data(at: 3),
             sidecars: Sidecars(rawValue: row.int(at: 4)) ?? .besidePhotos,
+            kind: Kind(rawValue: row.int(at: 5)) ?? .folder,
         )
     }
 }

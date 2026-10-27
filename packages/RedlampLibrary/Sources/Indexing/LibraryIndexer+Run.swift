@@ -148,12 +148,13 @@ extension LibraryIndexer {
         /// loads their folders, clears the offline mark of those that answer again, and queues the
         /// first folders to list.
         private func prepare(_ request: Request) async throws -> [VolumeWork] {
-            let (settings, merged) = try await indexer.index.read { reader in
-                try (XMPSettings(reader), XMPMergeRecord.exist(in: reader))
+            let (settings, merged, applePhotos) = try await indexer.index.read { reader in
+                try (XMPSettings(reader), XMPMergeRecord.exist(in: reader), reader.applePhotosRoot()?.path)
             }
             state.withLock { state in
                 state.conventions = settings.conventions
                 state.hasMergeRecords = merged
+                state.applePhotos = applePhotos
             }
             let roots: [String]
             switch request {
@@ -161,7 +162,12 @@ extension LibraryIndexer {
                 roots = paths
             case let .folders(changes):
                 let known = try await indexer.index.read { try $0.roots().map(\.path) }
-                roots = Array(Set(changes.compactMap { change in Self.root(of: change.path, among: known) })).sorted()
+                roots = Array(Set(changes.compactMap { change in
+                    applePhotos.map { LibraryIndexer.Priorities.holds($0, change.path) } == true ? nil : Self.root(
+                        of: change.path,
+                        among: known,
+                    )
+                })).sorted()
             }
             var byVolume: [String: (info: VolumeInfo, io: VolumeIO, roots: [String])] = [:]
             for root in roots {
@@ -377,6 +383,9 @@ extension LibraryIndexer {
     /// What a run keeps while it goes.
     struct RunState: Sendable {
         var volumes: [VolumeWork] = []
+        /// The Apple Photos root, whose folders are Redlamp's cache's (LIB-58): never walked, even in a folder that
+        /// holds it.
+        var applePhotos: String?
         /// The index's folders under the run's roots, as the run started, by path.
         var folders: [String: FolderRecord] = [:]
         var paths: [Int64: String] = [:]
@@ -505,6 +514,7 @@ extension LibraryIndexer.Run {
             var paths = Set<String>()
             for subfolder in subfolders {
                 let path = item.path + "/" + subfolder.name
+                guard state.applePhotos.map({ LibraryIndexer.Priorities.holds($0, path) }) != true else { continue }
                 paths.insert(path)
                 guard item.recursive || state.folders[path] == nil,
                       state.queued.insert(path).inserted else { continue }

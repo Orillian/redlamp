@@ -37,12 +37,19 @@ public struct VolumeRecord: Sendable, Hashable {
     }
 }
 
-/// A folder added to the library, with everything under it.
+/// A folder added to the library, with everything under it, or the photos of Apple Photos' albums kept in place.
 public struct RootRecord: Sendable, Hashable {
     /// Where the root's sidecars are kept (DEC-43).
     public enum Sidecars: Int, Sendable, Hashable, CaseIterable {
         case besidePhotos = 0
         case onThisMac = 1
+    }
+
+    public enum Kind: Int, Sendable, Hashable, CaseIterable {
+        case folder = 0
+        /// Photos left in Apple Photos (LIB-58): a folder per asset in Redlamp's cache, which holds an asset's
+        /// original only once it's downloaded. It's never listed, watched or written to as a folder is.
+        case applePhotos = 1
     }
 
     public var id: Int64
@@ -51,13 +58,18 @@ public struct RootRecord: Sendable, Hashable {
     /// A security-scoped bookmark to the folder.
     public var bookmark: Data?
     public var sidecars: Sidecars
+    public var kind: Kind
 
-    public init(id: Int64 = 0, volume: Int64, path: String, bookmark: Data? = nil, sidecars: Sidecars = .besidePhotos) {
+    public init(
+        id: Int64 = 0, volume: Int64, path: String, bookmark: Data? = nil, sidecars: Sidecars = .besidePhotos,
+        kind: Kind = .folder,
+    ) {
         self.id = id
         self.volume = volume
         self.path = path
         self.bookmark = bookmark
         self.sidecars = sidecars
+        self.kind = kind
     }
 }
 

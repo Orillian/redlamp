@@ -70,17 +70,25 @@ public extension LibraryIndex.Writer {
     /// (`IndexIDs`).
     @discardableResult
     func upsertRoot(_ root: RootRecord) throws -> Int64 {
+        // A folder's row leaves `kind` to its default, so it's written as before schema 16, on an index of any version.
+        let existing = try database.cached("SELECT 1 FROM roots WHERE path = ?")
+        try existing.bind(root.path, at: 1)
+        let kind: (column: String, value: String, update: String) = root.kind == .folder
+            ? ("", "", "") : (", kind", ", ?", ", kind = excluded.kind")
         let statement = try database.cached("""
-        INSERT INTO roots (volume, path, bookmark, sidecars, id) VALUES (?, ?, ?, ?, ?)
+        INSERT INTO roots (volume, path, bookmark, sidecars, id\(kind.column)) VALUES (?, ?, ?, ?, ?\(kind.value))
         ON CONFLICT (path) DO UPDATE SET volume = excluded.volume, bookmark = excluded.bookmark,
-          sidecars = excluded.sidecars
+          sidecars = excluded.sidecars\(kind.update)
         RETURNING id
         """)
         try statement.bind(root.volume, at: 1)
         try statement.bind(root.path, at: 2)
         try statement.bind(root.bookmark, at: 3)
         try statement.bind(root.sidecars.rawValue, at: 4)
-        try statement.bind(self.root(path: root.path) == nil ? newID(of: .roots) : nil, at: 5)
+        try statement.bind(existing.first { _ in true } == nil ? newID(of: .roots) : nil, at: 5)
+        if root.kind != .folder {
+            try statement.bind(root.kind.rawValue, at: 6)
+        }
         return try returnedID(statement)
     }
 
