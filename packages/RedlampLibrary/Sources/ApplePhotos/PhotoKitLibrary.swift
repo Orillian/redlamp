@@ -1,3 +1,8 @@
+#if canImport(AppKit)
+    import AppKit
+#else
+    import UIKit
+#endif
 import Foundation
 import Photos
 import Synchronization
@@ -162,11 +167,25 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         #if compiler(>=6.4)
             cloud.archivalStringValue
         #else
-            guard cloud.responds(to: NSSelectorFromString("archivalStringValue")),
-                  let archival = cloud.value(forKey: "archivalStringValue") as? String
-            else { return cloud.stringValue }
-            return archival
+            undeclared("archivalStringValue", of: cloud) ?? cloud.stringValue
         #endif
+    }
+
+    /// When the asset was last edited or reverted (`adjustmentTimestamp`, macOS 15), which the macOS 26 SDK doesn't
+    /// declare either.
+    static func adjusted(_ asset: PHAsset) -> Date? {
+        #if compiler(>=6.4)
+            asset.adjustmentTimestamp
+        #else
+            undeclared("adjustmentTimestamp", of: asset)
+        #endif
+    }
+
+    /// A property Apple documents for every macOS Redlamp runs on that the macOS 26 SDK doesn't declare, read by its
+    /// name; nil where the object hasn't it.
+    private static func undeclared<Value>(_ key: String, of object: NSObject) -> Value? {
+        guard object.responds(to: NSSelectorFromString(key)) else { return nil }
+        return object.value(forKey: key) as? Value
     }
 
     private static func asset(_ asset: PHAsset, cloud: String?, albums: [String]) -> ApplePhotosAsset {
@@ -200,7 +219,8 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
                     id: burst, isKey: asset.representsBurst, isUserPick: asset.burstSelectionTypes.contains(.userPick),
                 )
             },
-            source: source, hasAdjustments: asset.hasAdjustments, albums: albums,
+            source: source, hasAdjustments: asset.hasAdjustments, adjusted: adjusted(asset),
+            modified: asset.modificationDate, albums: albums,
             resources: PHAssetResource.assetResources(for: asset).map(resource),
         )
         if #available(macOS 27, iOS 27, *) {
@@ -250,6 +270,8 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         }
         return ApplePhotosResource(
             kind: kind, type: resource.contentType.identifier, originalFilename: resource.originalFilename,
+            pixelWidth: resource.pixelWidth > 0 ? resource.pixelWidth : nil,
+            pixelHeight: resource.pixelHeight > 0 ? resource.pixelHeight : nil,
         )
     }
 
@@ -308,7 +330,114 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         }
     }
 
+    public func assets(withIDs ids: [String]) async throws -> [ApplePhotosAsset] {
+        try requireAccess()
+        guard !ids.isEmpty else { return [] }
+        var found: [PHAsset] = []
+        PHAsset.fetchAssets(withLocalIdentifiers: ids, options: Self.fetchOptions(allBursts: true))
+            .enumerateObjects { asset, _, _ in found.append(asset) }
+        let clouds = cloudIdentifiers(found.map(\.localIdentifier))
+        return found.map { Self.asset($0, cloud: clouds[$0.localIdentifier], albums: []) }
+    }
+
+    // MARK: - Images
+
+    /// Asked of Photos in its best quality on this Mac, so the handler is called once, without the network: an asset
+    /// whose images are all in iCloud gives none.
+    public func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage? {
+        try requireAccess()
+        guard let found = PHAsset.fetchAssets(
+            withLocalIdentifiers: [asset],
+            options: Self.fetchOptions(allBursts: true),
+        )
+        .firstObject
+        else { throw ApplePhotosError.notFound(asset) }
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = false
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .fast
+        options.version = version == .current ? .current : .original
+        let request = Mutex<PHImageRequestID?>(nil)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CGImage?, any Error>) in
+                let id = PHImageManager.default().requestImage(
+                    for: found, targetSize: CGSize(width: size, height: size), contentMode: .aspectFit,
+                    options: options,
+                ) { image, info in
+                    if info?[PHImageCancelledKey] as? Bool == true {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        continuation.resume(returning: image.flatMap(Self.cgImage))
+                    }
+                }
+                request.withLock { $0 = id }
+            }
+        } onCancel: {
+            if let id = request.withLock({ $0 }) {
+                PHImageManager.default().cancelImageRequest(id)
+            }
+        }
+    }
+
+    #if canImport(AppKit)
+        private static func cgImage(_ image: NSImage) -> CGImage? {
+            image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+    #else
+        private static func cgImage(_ image: UIImage) -> CGImage? {
+            image.cgImage
+        }
+    #endif
+
     // MARK: - Changes
+
+    public func changeToken() -> Data? {
+        guard access().canRead else { return nil }
+        return try? NSKeyedArchiver.archivedData(
+            withRootObject: PHPhotoLibrary.shared().currentChangeToken, requiringSecureCoding: true,
+        )
+    }
+
+    public func changes(since token: Data) async throws -> ApplePhotosChanges {
+        try requireAccess()
+        guard let since = try? NSKeyedUnarchiver.unarchivedObject(ofClass: PHPersistentChangeToken.self, from: token)
+        else { throw ApplePhotosError.expiredToken }
+        let result: PHPersistentChangeFetchResult
+        do {
+            result = try PHPhotoLibrary.shared().fetchPersistentChanges(since: since)
+        } catch let error as PHPhotosError
+            where [.persistentChangeTokenExpired, .persistentChangeDetailsUnavailable].contains(error.code) {
+            throw ApplePhotosError.expiredToken
+        }
+        var changes = ApplePhotosChanges(token: token)
+        var last: PHPersistentChangeToken?
+        for change in result {
+            do {
+                let assets = try change.changeDetails(for: .asset)
+                changes.inserted.formUnion(assets.insertedLocalIdentifiers)
+                changes.updated.formUnion(assets.updatedLocalIdentifiers)
+                changes.deleted.formUnion(assets.deletedLocalIdentifiers)
+                for type in [PHObjectType.assetCollection, .collectionList] {
+                    let collections = try change.changeDetails(for: type)
+                    changes.collections.formUnion(collections.insertedLocalIdentifiers)
+                    changes.collections.formUnion(collections.updatedLocalIdentifiers)
+                    changes.collections.formUnion(collections.deletedLocalIdentifiers)
+                }
+            } catch {
+                throw ApplePhotosError.expiredToken
+            }
+            last = change.changeToken
+        }
+        changes.inserted.subtract(changes.deleted)
+        changes.updated.subtract(changes.deleted.union(changes.inserted))
+        if let last, let archived = try? NSKeyedArchiver.archivedData(
+            withRootObject: last,
+            requiringSecureCoding: true,
+        ) {
+            changes.token = archived
+        }
+        return changes
+    }
 
     public func changes() -> AsyncStream<Void> {
         let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))

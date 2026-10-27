@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Synchronization
 
 /// A Photos library read from a manifest of collections and assets over files in folders (LIB-54), for the
@@ -10,11 +12,12 @@ import Synchronization
 /// stands, and `grants` what asking gives while it's `notDetermined`, both `authorized` by default. A collection is
 /// `{"id", "title", "kind": "album" | "smartAlbum" | "sharedAlbum" | "folder", "parent"}`. An asset is
 /// `{"id", "cloud", "created", "location": {"latitude", "longitude"}, "favorite", "hidden", "mediaType",
-/// "subtypes", "burst": {"id", "key", "userPick"}, "source", "edited", "rating", "caption", "keywords",
-/// "albums": [collection IDs], "resources": [{"kind", "type", "name", "file", "inCloud"}]}`, every key but
-/// `id` optional. A resource's `file` is a path from the manifest's folder; `inCloud` makes writing it report
-/// a download. An asset without `created` was taken when its first original file records, in the zone it
-/// records or this Mac's: a date unchanged in Photos.
+/// "subtypes", "burst": {"id", "key", "userPick"}, "source", "edited", "adjusted", "modified", "rating", "caption",
+/// "keywords", "albums": [collection IDs], "imagesInCloud", "resources": [{"kind", "type", "name", "file",
+/// "inCloud"}]}`, every key but `id` optional. A resource's `file` is a path from the manifest's folder; `inCloud`
+/// makes writing it report a download. An asset without `created` was taken when its first original file records,
+/// in the zone it records or this Mac's: a date unchanged in Photos. Its images are made from its files, but for
+/// one `imagesInCloud`, whose Photos keeps none on this Mac.
 public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     public static let format = "app.redlamp.simulated-photos"
 
@@ -52,6 +55,9 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             var burst: Burst?
             var source: ApplePhotosAsset.Source?
             var edited: Bool?
+            var adjusted: Date?
+            var modified: Date?
+            var imagesInCloud: Bool?
             var rating: Int?
             var caption: String?
             var keywords: [String]?
@@ -68,19 +74,47 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         var assets: [Asset]
     }
 
-    /// Where the manifest is; its files' paths are from its folder.
-    public let manifest: URL
+    /// Where the manifest is, its files' paths from its folder; nil for a library made in memory.
+    public let manifest: URL?
     public let fields: Set<ApplePhotosField>
     private let tree: [ApplePhotosCollection]
     private let assets: [ApplePhotosAsset]
     /// Each asset's resources' files, by asset ID and resource name, and whether each is only in iCloud.
     private let files: [String: [String: (url: URL, inCloud: Bool)]]
+    /// The assets whose Photos keeps no image on this Mac.
+    private let imagesInCloud: Set<String>
     private let state: Mutex<State>
 
     private struct State {
         var access: ApplePhotosAccess
         var granted: ApplePhotosAccess
         var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
+        /// The changes recorded, as Photos' persistent history keeps them: a token is how many there were.
+        var history: [ApplePhotosChanges] = []
+        /// The tokens below it have expired.
+        var kept = 0
+    }
+
+    /// A library of `assets` in `collections`, with no files, as PhotoKit on `macOS` gives them: for measuring the
+    /// index at scale.
+    public init(collections: [ApplePhotosCollection], assets: [ApplePhotosAsset], macOS: Int = 26) {
+        manifest = nil
+        fields = Set(ApplePhotosField.everywhere + (macOS >= 27 ? ApplePhotosField.fromMacOS27 : []))
+        var counts: [String: Int] = [:]
+        for asset in assets {
+            for album in asset.albums {
+                counts[album, default: 0] += 1
+            }
+        }
+        tree = collections.map { collection in
+            var counted = collection
+            counted.estimatedCount = collection.kind == .folder ? nil : counts[collection.id] ?? 0
+            return counted
+        }
+        self.assets = assets
+        files = [:]
+        imagesInCloud = []
+        state = Mutex(State(access: .authorized, granted: .authorized))
     }
 
     /// The library `manifest` describes; `macOS` stands in for the manifest's own, for a test of what each
@@ -120,6 +154,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             )
         }
         var files: [String: [String: (url: URL, inCloud: Bool)]] = [:]
+        imagesInCloud = Set(read.assets.filter { $0.imagesInCloud == true }.map(\.id))
         assets = read.assets.map { entry in
             var resources: [ApplePhotosResource] = []
             for resource in entry.resources ?? [] {
@@ -141,8 +176,9 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
                 burst: entry.burst.map {
                     ApplePhotosAsset.Burst(id: $0.id, isKey: $0.key ?? false, isUserPick: $0.userPick ?? false)
                 },
-                source: entry.source ?? .library, hasAdjustments: entry.edited ?? false,
-                rating: given(.rating) ? entry.rating ?? 0 : nil, caption: given(.caption) ? entry.caption : nil,
+                source: entry.source ?? .library, hasAdjustments: entry.edited ?? false, adjusted: entry.adjusted,
+                modified: entry.modified ?? entry.adjusted, rating: given(.rating) ? entry.rating ?? 0 : nil,
+                caption: given(.caption) ? entry.caption : nil,
                 keywords: given(.keywords) ? entry.keywords ?? [] : nil, albums: entry.albums ?? [],
                 resources: resources,
             )
@@ -241,6 +277,69 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         for observer in state.withLock({ Array($0.observers.values) }) {
             observer.yield()
         }
+    }
+
+    public func assets(withIDs ids: [String]) async throws -> [ApplePhotosAsset] {
+        try requireAlbums()
+        let wanted = Set(ids)
+        return assets.filter { wanted.contains($0.id) }.map { asset in
+            var found = asset
+            found.albums = []
+            return found
+        }
+    }
+
+    public func changeToken() -> Data? {
+        Data(String(state.withLock(\.history.count)).utf8)
+    }
+
+    public func changes(since token: Data) async throws -> ApplePhotosChanges {
+        try requireAlbums()
+        return try state.withLock { state in
+            guard let since = Int(String(decoding: token, as: UTF8.self)), since >= state.kept,
+                  since <= state.history.count
+            else { throw ApplePhotosError.expiredToken }
+            var changes = ApplePhotosChanges(token: Data(String(state.history.count).utf8))
+            for change in state.history[since...] {
+                changes.inserted.formUnion(change.inserted)
+                changes.updated.formUnion(change.updated)
+                changes.deleted.formUnion(change.deleted)
+                changes.collections.formUnion(change.collections)
+            }
+            return changes
+        }
+    }
+
+    /// Records a change in Photos' history, by local identifier, and tells those listening; `expiring` forgets the
+    /// history before it, so the tokens given before expire.
+    public func recordChange(
+        inserted: Set<String> = [], updated: Set<String> = [], deleted: Set<String> = [],
+        collections: Set<String> = [], expiring: Bool = false,
+    ) {
+        state.withLock { state in
+            state.history.append(ApplePhotosChanges(
+                inserted: inserted, updated: updated, deleted: deleted, collections: collections, token: Data(),
+            ))
+            if expiring {
+                state.kept = state.history.count
+            }
+        }
+        simulateChange()
+    }
+
+    /// Made from the file of the picture asked for, Photos' edit for the current one, as Photos makes its own.
+    public func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage? {
+        try requireAlbums()
+        guard let found = assets.first(where: { $0.id == asset }) else { throw ApplePhotosError.notFound(asset) }
+        guard !imagesInCloud.contains(asset) else { return nil }
+        let resource = version == .current ? found.edit ?? found.resource(.photo) : found.resource(.photo)
+        guard let resource, let url = files[asset]?[resource.originalFilename]?.url,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: max(size, 1),
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ] as CFDictionary)
     }
 
     /// Reading albums needs full access: PhotoKit gives a limited app none.

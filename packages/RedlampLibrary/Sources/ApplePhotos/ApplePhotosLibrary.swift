@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Whether Redlamp may read Photos, as PhotoKit says (`PHAuthorizationStatus` for read and write, which
@@ -69,12 +70,20 @@ public struct ApplePhotosResource: Sendable, Hashable, Codable {
     public var originalFilename: String
     /// In bytes, when the library says.
     public var size: Int64?
+    /// Its size in pixels, when the library says.
+    public var pixelWidth: Int?
+    public var pixelHeight: Int?
 
-    public init(kind: Kind, type: String, originalFilename: String, size: Int64? = nil) {
+    public init(
+        kind: Kind, type: String, originalFilename: String, size: Int64? = nil, pixelWidth: Int? = nil,
+        pixelHeight: Int? = nil,
+    ) {
         self.kind = kind
         self.type = type
         self.originalFilename = originalFilename
         self.size = size
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
     }
 }
 
@@ -137,6 +146,10 @@ public struct ApplePhotosAsset: Sendable, Hashable, Identifiable {
     public var source: Source
     /// Edited in Photos.
     public var hasAdjustments: Bool
+    /// When it was last edited or reverted in Photos (`adjustmentTimestamp`); nil for one never edited.
+    public var adjusted: Date?
+    /// When its picture or its fields last changed in Photos (`modificationDate`).
+    public var modified: Date?
     /// From macOS 27: 0 to 5 stars, nil when PhotoKit doesn't say.
     public var rating: Int?
     public var caption: String?
@@ -148,8 +161,9 @@ public struct ApplePhotosAsset: Sendable, Hashable, Identifiable {
     public init(
         id: String, cloud: String? = nil, created: Date? = nil, location: Location? = nil, isFavorite: Bool = false,
         isHidden: Bool = false, mediaType: MediaType = .image, subtypes: Set<Subtype> = [], burst: Burst? = nil,
-        source: Source = .library, hasAdjustments: Bool = false, rating: Int? = nil, caption: String? = nil,
-        keywords: [String]? = nil, albums: [String] = [], resources: [ApplePhotosResource] = [],
+        source: Source = .library, hasAdjustments: Bool = false, adjusted: Date? = nil, modified: Date? = nil,
+        rating: Int? = nil, caption: String? = nil, keywords: [String]? = nil, albums: [String] = [],
+        resources: [ApplePhotosResource] = [],
     ) {
         self.id = id
         self.cloud = cloud
@@ -162,6 +176,8 @@ public struct ApplePhotosAsset: Sendable, Hashable, Identifiable {
         self.burst = burst
         self.source = source
         self.hasAdjustments = hasAdjustments
+        self.adjusted = adjusted
+        self.modified = modified
         self.rating = rating
         self.caption = caption
         self.keywords = keywords
@@ -192,6 +208,42 @@ public struct ApplePhotosAsset: Sendable, Hashable, Identifiable {
     public var isRaw: Bool {
         !isPair && resource(.photo).map(ApplePhotosNames.isRaw) == true
     }
+
+    /// When its picture as Photos shows it last changed (LIB-58): its last edit or revert in Photos, or when it was
+    /// taken for one never edited. A favourite, an album or a caption leaves it as it is, so its images aren't made
+    /// again for those.
+    public var contentVersion: Date {
+        adjusted ?? (hasAdjustments ? modified : nil) ?? created ?? Date(timeIntervalSince1970: 0)
+    }
+}
+
+/// What changed in Photos since a change token (`PHPersistentChange`), by local identifier, and the token after it.
+public struct ApplePhotosChanges: Sendable, Hashable {
+    public var inserted: Set<String>
+    public var updated: Set<String>
+    public var deleted: Set<String>
+    /// Albums, smart albums and folders added, changed or removed.
+    public var collections: Set<String>
+    public var token: Data
+
+    public init(
+        inserted: Set<String> = [], updated: Set<String> = [], deleted: Set<String> = [],
+        collections: Set<String> = [], token: Data,
+    ) {
+        self.inserted = inserted
+        self.updated = updated
+        self.deleted = deleted
+        self.collections = collections
+        self.token = token
+    }
+}
+
+/// Which of an asset's pictures an image shows (`PHImageRequestOptionsVersion`).
+public enum ApplePhotosImageVersion: String, Sendable, Hashable, Codable {
+    /// As Photos shows it, its edit included.
+    case current
+    /// The original, without Photos' edit.
+    case original
 }
 
 /// Why reading Photos failed.
@@ -204,6 +256,8 @@ public enum ApplePhotosError: Error, Sendable, Hashable, CustomStringConvertible
     case unavailable(String, String)
     /// A simulated library's manifest that can't be read.
     case unreadableManifest(String)
+    /// Photos no longer has the changes since the token: what's chosen is compared whole instead.
+    case expiredToken
 
     public var description: String {
         switch self {
@@ -213,6 +267,7 @@ public enum ApplePhotosError: Error, Sendable, Hashable, CustomStringConvertible
         case let .notFound(id): "Photos no longer has \(id)"
         case let .unavailable(name, message): "Photos couldn't give \(name): \(message)"
         case let .unreadableManifest(message): "the simulated library's manifest can't be read: \(message)"
+        case .expiredToken: "Photos no longer has its changes since Redlamp last read them"
         }
     }
 }
@@ -242,6 +297,16 @@ public protocol ApplePhotosLibrary: Sendable {
     ) async throws
     /// A notice each time Photos changes, until the stream is let go.
     func changes() -> AsyncStream<Void>
+    /// The assets `ids` names by local identifier, as `assets(in:)` gives them but with no albums, those Photos no
+    /// longer has left out (LIB-58).
+    func assets(withIDs ids: [String]) async throws -> [ApplePhotosAsset]
+    /// Photos' change token now, archived, for `changes(since:)` across launches; nil where Photos gives none.
+    func changeToken() -> Data?
+    /// What changed since `token`; throws `ApplePhotosError.expiredToken` once Photos no longer has the history.
+    func changes(since token: Data) async throws -> ApplePhotosChanges
+    /// The asset's picture at about `size` pixels on its long side, from what Photos keeps on this Mac, never
+    /// downloading: nil when Photos has none without iCloud.
+    func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage?
 }
 
 /// The collection tree as an import uses it: folders' albums, each album's path in Redlamp's collection
