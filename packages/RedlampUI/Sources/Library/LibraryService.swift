@@ -160,6 +160,11 @@ extension LibraryService {
         core?.engine
     }
 
+    /// The cache of originals of photos kept in Apple Photos (LIB-60), once the library is open.
+    public var originals: ApplePhotosOriginals? {
+        core?.originals
+    }
+
     // MARK: - Launch and quit
 
     /// Opens the library off the main thread, then follows `roots`; returns at once. With `removingOthers`, once

@@ -85,6 +85,8 @@ final class JudgingOverlay {
     /// the photo sensor clipping couldn't read.
     private var pointsAsked: URL?
     private var peakingAsked: ShownPhoto?
+    /// The photo kept in Apple Photos whose original downloads for its peaking (LIB-60).
+    private var peakingDownload: URL?
     private var clippingFailed: ShownPhoto?
     /// The recipe of the edit shown, read from its sidecar for sensor clipping and the AF point.
     private var recipe: (edit: EditDigest, recipe: EditRecipe?)?
@@ -427,6 +429,20 @@ final class JudgingOverlay {
             guard let shown = shownImage(), max(shown.width, shown.height) >= Self.smallestPeakingSource else { return }
             source = { shown }
         } else {
+            if model.library.needsDownload(url) {
+                // Peaking reads the photo itself: one kept in Apple Photos downloads its original first (LIB-60).
+                guard peakingDownload != url, let originals = model.originals else { return }
+                peakingDownload = url
+                Task { [weak self] in
+                    let arrived = await (try? originals.local(url, priority: .open)) != nil
+                    guard let self, peakingDownload == url else { return }
+                    peakingDownload = nil
+                    if arrived, self.url == url, model.libraryJudging.showsPeaking {
+                        requestPeaking()
+                    }
+                }
+                return
+            }
             let engine = model.engine
             source = { engine.decodeThumbnail(for: url, maxPixelSize: FocusPeaking.longestEdge) }
         }

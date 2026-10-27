@@ -81,8 +81,25 @@ public final class BatchExport {
     /// The library's fields for a photo, or with a version's metadata, the version's over its file's, which go with it
     /// under the settings' metadata policy.
     @ObservationIgnored var fields: @MainActor (URL, PhotoMetadata?) async -> ExportMetadata.Fields? = { _, _ in nil }
-    /// Waited for as each photo's export starts (tests hold a photo here).
-    @ObservationIgnored var beforeExporting: @MainActor (URL) async -> Void = { _ in }
+    /// Waited for as each photo's export starts: a photo kept in Apple Photos has its original downloaded from iCloud
+    /// here (LIB-60), whose failure is the photo's. Tests hold a photo here.
+    @ObservationIgnored var beforeExporting: @MainActor (URL) async throws -> Void = { _ in }
+    /// Told as each photo's export ends, written or not.
+    @ObservationIgnored var afterExporting: @MainActor (URL) -> Void = { _ in }
+    /// Why a file may not be written where its export goes, nil where it may: in Redlamp's cache of originals from
+    /// Apple Photos, beside a photo kept there, nothing is ever written (LIB-60).
+    @ObservationIgnored var refusing: @MainActor (URL) -> String? = { _ in nil }
+    /// Whether a photo's original has to be downloaded from iCloud before it's exported (LIB-60).
+    @ObservationIgnored var needsDownload: @MainActor (URL) -> Bool = { _ in false }
+    /// Asked to download the originals of the photos to export next, so each is there as its turn comes.
+    @ObservationIgnored var downloadAhead: @MainActor ([URL]) -> Void = { _ in }
+    /// Cancel stops the downloads of the batch's photos too.
+    @ObservationIgnored var cancelDownloads: @MainActor ([URL]) -> Void = { _ in }
+    /// The batch's photos downloaded from iCloud and in all, while it has any to download (LIB-60).
+    public private(set) var downloads: Progress?
+    /// The photos downloaded ahead of the one being exported.
+    static let downloadsAhead = 3
+    @ObservationIgnored private var downloading: [URL] = []
 
     /// A job, its targets to export, and the edits it took for them when it was asked for.
     private struct Queued {
@@ -118,10 +135,11 @@ public final class BatchExport {
         }
     }
 
-    /// Stops the batch after the photo being written, and drops those waiting.
+    /// Stops the batch after the photo being written, and drops those waiting, with the downloads from iCloud.
     public func cancel() {
         queue = []
         task?.cancel()
+        cancelDownloads(downloading)
     }
 
     /// Returns once the batches asked for so far have taken `url`'s edit.
@@ -137,6 +155,9 @@ public final class BatchExport {
         let (job, photos) = (queued.job, queued.photos)
         var report = Report(skipped: job.targets.count - photos.count, total: job.targets.count)
         progress = Progress(done: 0, total: photos.count)
+        downloading = photos.map(\.photo).filter(needsDownload)
+        let waiting = Set(downloading)
+        downloads = downloading.isEmpty ? nil : Progress(done: 0, total: downloading.count)
         let edits = await queued.edits.value
         let engine = photos.isEmpty ? nil : makeEngine()
         for (index, target) in photos.enumerated() {
@@ -144,20 +165,33 @@ public final class BatchExport {
                 report.cancelled = photos.count - index
                 break
             }
+            let next = photos[(index + 1)...].prefix(Self.downloadsAhead).map(\.photo).filter(waiting.contains)
+            downloadAhead((waiting.contains(target.photo) ? [target.photo] : []) + next)
             do {
                 guard let engine else { throw Problem("Redlamp couldn't start its export engine.") }
-                // A task of its own, which Cancel doesn't reach: the photo under way is finished.
+                // A task of its own, which Cancel doesn't reach: the photo under way is finished, once its original
+                // is here.
                 let edit = edits[index]
                 try await Task {
                     try await write(target, edit: edit, settings: job.settings, engine: engine)
                 }.value
                 report.written.append(target.url)
+            } catch is CancellationError {
+                afterExporting(target.photo)
+                report.cancelled = photos.count - index
+                break
             } catch {
                 report.failures.append(Failure(photo: target.photo, reason: Self.reason(error)))
+            }
+            afterExporting(target.photo)
+            if waiting.contains(target.photo) {
+                downloads?.done += 1
             }
             await engine?.releaseResources()
             progress = Progress(done: index + 1, total: photos.count)
         }
+        downloading = []
+        downloads = nil
         show(Self.summary(of: report))
         job.done(report)
     }
@@ -236,7 +270,10 @@ public final class BatchExport {
         _ target: ExportNames.Target, edit: Edit, settings: ExportSettings, engine: any EditingEngine,
     ) async throws {
         let url = target.photo
-        await beforeExporting(url)
+        if let reason = refusing(target.url) {
+            throw Problem(reason)
+        }
+        try await beforeExporting(url)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw Problem("It isn't there any more: it was moved, renamed or deleted while it waited.")
         }

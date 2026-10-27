@@ -98,6 +98,11 @@ public final class EditorModel {
 
     public private(set) var isLoading = false
     public internal(set) var errorMessage: String?
+    /// The photo kept in Apple Photos whose original downloads from iCloud for Develop to open it (LIB-60): shown from
+    /// its preview with the download's ring until it arrives, its sliders off.
+    public internal(set) var download: OriginalDownload?
+    /// The original of the photo open, kept from the cache's budget while it's open.
+    @ObservationIgnored private var heldOriginal: URL?
     /// The photo is in a format Redlamp doesn't read yet (`EngineError.notSupportedYet`), so its
     /// message asks for the format rather than offering a bug report.
     public internal(set) var formatNotSupportedYet = false
@@ -719,6 +724,8 @@ public final class EditorModel {
     @ObservationIgnored public let previews: PhotoPreviews
     /// Edited photos' thumbnails and previews, rendered with their edits in the background (LIB-17).
     @ObservationIgnored public let editRenders: EditRenders
+    /// The downloads of originals of photos kept in Apple Photos, as the filmstrip shows them (LIB-60).
+    @ObservationIgnored public let downloads = OriginalDownloads()
     /// The grid's thumbnail size and cell style, the loupe's zoom, and each source's view as last left.
     @ObservationIgnored public private(set) lazy var libraryViews = LibraryViewState(defaults: library.defaults)
     /// Library's right-hand panels: keywording, the keyword list and metadata (LIB-21, LIB-22).
@@ -915,6 +922,7 @@ public final class EditorModel {
         }
         activityRecorder = ActivityRecorder(model: self)
         editRenders.editor = self
+        downloads.arrived = { [weak editRenders] url in editRenders?.originalArrived(url) }
     }
 
     // MARK: - Opening a photo (folders: EditorModel+Library)
@@ -1056,6 +1064,9 @@ public final class EditorModel {
             }
             return
         }
+        if let originals, originals.owns(url), !originals.isLocal(url) {
+            return openFromCloud(url, keepingSelection: keepingSelection, originals: originals)
+        }
         leave(for: url, keepingSelection: keepingSelection, ready: false)
         showPlaceholder(for: url)
         openTask = Task { [engine] in
@@ -1074,6 +1085,67 @@ public final class EditorModel {
                 errorMessage = error.localizedDescription
                 formatNotSupportedYet = (error as? EngineError)?.notSupportedYetTracker != nil
             }
+        }
+    }
+
+    /// Develop on a photo kept in Apple Photos whose original isn't on this Mac (LIB-60): its preview at once, with the
+    /// download's ring, and the photo opens as any photo does once its original arrives. Cancel leaves it on its
+    /// preview
+    /// with Download Again; a failure, iCloud out of reach among them, says so with Try Again.
+    private func openFromCloud(_ url: URL, keepingSelection: Bool, originals: ApplePhotosOriginals) {
+        leave(for: url, keepingSelection: keepingSelection, ready: false)
+        showPlaceholder(for: url)
+        isLoading = false
+        showPreview(of: url)
+        download = OriginalDownload(url: url, state: .downloading(nil))
+        openTask = Task {
+            do {
+                try await originals.local(url, priority: .open) { progress in
+                    Task { @MainActor [weak self] in
+                        guard self?.download?.url == url, self?.download?.isDownloading == true else { return }
+                        self?.download?.state = .downloading(progress)
+                    }
+                }
+                guard selection == url, download?.url == url else { return }
+                open(url, keepingSelection: true)
+            } catch is CancellationError {
+                guard selection == url, download?.url == url else { return }
+                download?.state = .cancelled
+            } catch {
+                guard selection == url, download?.url == url else { return }
+                download?.state = .failed(error as? ApplePhotosOriginals.Failure ?? .failed(error.localizedDescription))
+                activity.record(.photo, "\(activity.alias(for: url))'s original didn't download from iCloud")
+            }
+        }
+    }
+
+    /// Develop's Cancel on a download: the photo stays on its preview, with Download Again.
+    func cancelDownload() {
+        guard let download, download.isDownloading else { return }
+        library.originals?.cancel([download.url])
+    }
+
+    /// Download Again, or Try Again after a failure.
+    func downloadAgain() {
+        guard let url = download?.url, download?.isDownloading == false, selection == url else { return }
+        openTask?.cancel()
+        open(url, keepingSelection: true)
+    }
+
+    /// Keeps the original of the photo `opened` from the cache's budget while it's open, and has the next photo in the
+    /// filmstrip's order downloaded ahead where it's kept in Apple Photos (decision 4).
+    private func holdOriginal(of opened: URL) {
+        guard let originals else { return }
+        if heldOriginal != opened {
+            heldOriginal.map(originals.release)
+            heldOriginal = nil
+            if originals.owns(opened) {
+                originals.hold(opened)
+                heldOriginal = opened
+            }
+        }
+        if let ahead = photoAhead(of: opened, comingFrom: previousSelection), originals.owns(ahead) {
+            originals.request([ahead], priority: .ahead)
         }
     }
 
@@ -1164,6 +1236,13 @@ public final class EditorModel {
         }
         if errorMessage != nil {
             errorMessage = nil
+        }
+        if download != nil {
+            download = nil
+        }
+        if let held = heldOriginal, held != url {
+            library.originals?.release(held)
+            heldOriginal = nil
         }
         if formatNotSupportedYet {
             formatNotSupportedYet = false
@@ -1427,6 +1506,7 @@ public final class EditorModel {
         let sidecar = Self.applying(unsaved, to: read.sidecar)
         unsavedSessions = Self.sessions(in: unsaved)
         info = opened
+        holdOriginal(of: opened.url)
         recordOpening(opened, edited: sidecar != nil)
         availableAIMaskKinds = []
         Task { await refreshAvailableMasks() }

@@ -63,6 +63,7 @@ extension EditorModel {
         case .renamePhotos: renamePhotos()
         case .moveToFolder: moveToFolder()
         case .copyToFolder: copyToFolder()
+        case .downloadOriginals: downloadOriginals()
         case .moveToTrash: moveToTrash()
         default: nil
         }
@@ -71,9 +72,24 @@ extension EditorModel {
     func canPerformFileShortcut(_ action: ShortcutAction) -> Bool? {
         switch action {
         case .renamePhotos, .moveToFolder, .copyToFolder: canRenamePhotos
+        case .downloadOriginals: canDownloadOriginals
         case .moveToTrash: canMoveToTrash
         default: nil
         }
+    }
+
+    /// Download Originals (LIB-60): the originals of the photos selected that are kept in Apple Photos, and aren't on
+    /// this Mac, downloaded from iCloud, the filmstrip showing how far they've come.
+    func downloadOriginals() -> Bool {
+        guard canDownloadOriginals, let originals else { return false }
+        originals.request(photos: selectedIDs, priority: .request)
+        return true
+    }
+
+    /// Whether a photo selected whose row is read is kept in Apple Photos with its original only in iCloud.
+    var canDownloadOriginals: Bool {
+        guard let originals = library.originals else { return false }
+        return selectedPhotos.contains { originals.owns($0) && !originals.isLocal($0) }
     }
 
     /// The renames and moves Undo and Redo take back and make again.

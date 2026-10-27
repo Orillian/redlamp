@@ -20,6 +20,7 @@ struct FilmstripView: View {
                     FilmstripFolder()
                     FilmstripCount()
                     FilmstripExport()
+                    FilmstripDownloads()
                     FilmstripSync()
                     FilmstripSuggestion()
                     Spacer()
@@ -123,6 +124,7 @@ struct FilmstripStatus: View {
         if !FilmstripPreference.shared.showsInfoLine, hasAny {
             HStack(spacing: 8) {
                 FilmstripExport()
+                FilmstripDownloads()
                 FilmstripSync()
                 FilmstripSuggestion()
                 FilmstripStackButton()
@@ -140,7 +142,7 @@ struct FilmstripStatus: View {
     }
 
     private var hasAny: Bool {
-        model.batchExport.progress != nil || model.batchExport.summary != nil
+        model.batchExport.progress != nil || model.batchExport.summary != nil || !model.downloads.statuses.isEmpty
             || model.settingsSync.progress != nil || model.isMultiSelecting || model.settingsSync.report != nil
             || !model.stackSuggestions.isEmpty || model.selection.map(SupportedFormats.isStack) == true
             || model.module == .develop && !model.versions.isEmpty
@@ -192,6 +194,10 @@ private struct FilmstripExport: View {
             ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
                 .frame(width: 80)
             Text("Exporting: \(progress.done) of \(progress.total)")
+            if let downloads = model.batchExport.downloads, downloads.done < downloads.total {
+                Text("Downloading \(downloads.done + 1) of \(downloads.total) from iCloud")
+                    .automationIdentifier("filmstrip.export.downloads")
+            }
             Button("Cancel") { model.batchExport.cancel() }
                 .buttonStyle(.link)
                 .help("Stop after the photo being written; the files written stay")
@@ -200,6 +206,25 @@ private struct FilmstripExport: View {
             Text(summary)
                 .foregroundStyle(Theme.tertiaryLabel)
                 .lineLimit(1)
+        }
+    }
+}
+
+/// The originals of photos kept in Apple Photos downloading from iCloud, with Cancel All (LIB-60).
+private struct FilmstripDownloads: View {
+    @Environment(EditorModel.self) private var model
+
+    var body: some View {
+        let count = model.downloads.statuses.count
+        if count > 0 {
+            ProgressView(value: model.downloads.fraction)
+                .frame(width: 80)
+            Text(count == 1 ? "Downloading 1 original from iCloud" : "Downloading \(count) originals from iCloud")
+                .automationIdentifier("filmstrip.downloads")
+            Button("Cancel All") { model.downloads.cancelAll() }
+                .buttonStyle(.link)
+                .help("Stop downloading originals from iCloud; those downloaded stay")
+                .automationIdentifier("filmstrip.downloads.cancel")
         }
     }
 }

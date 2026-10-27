@@ -140,7 +140,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
     case keywordSet1, keywordSet2, keywordSet3, keywordSet4, keywordSet5, keywordSet6, keywordSet7, keywordSet8
     case keywordSet9
     case importKeywords, exportKeywords, editCaptureTime
-    case renamePhotos, moveToFolder, copyToFolder, keywordPainter, moveEditsAndMetadata
+    case renamePhotos, moveToFolder, copyToFolder, downloadOriginals, keywordPainter, moveEditsAndMetadata
     case acceptHealthProposals, keepAnyway, listAgain, locateMissingPhoto, removeMissingPhotos
 
     // View
@@ -207,8 +207,9 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
              .removeFromStack, .splitStack, .moveUpInStack, .moveDownInStack,
              .keywordSet1, .keywordSet2, .keywordSet3, .keywordSet4, .keywordSet5, .keywordSet6, .keywordSet7,
              .keywordSet8, .keywordSet9, .importKeywords, .exportKeywords, .editCaptureTime, .renamePhotos,
-             .moveToFolder, .copyToFolder, .keywordPainter, .moveEditsAndMetadata, .acceptHealthProposals, .keepAnyway,
-             .listAgain, .locateMissingPhoto, .removeMissingPhotos, .convertLightroomEdits:
+             .moveToFolder, .copyToFolder, .downloadOriginals, .keywordPainter, .moveEditsAndMetadata,
+             .acceptHealthProposals, .keepAnyway, .listAgain, .locateMissingPhoto, .removeMissingPhotos,
+             .convertLightroomEdits:
             .library
         case .beforeAfter, .nextCompareLayout, .previousCompareLayout,
              .toggleZoom, .zoomIn, .zoomOut, .clipping, .rawClipping, .colorAssessment, .labReadout, .infoOverlay,
@@ -321,6 +322,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .renamePhotos: "Rename Photos…"
         case .moveToFolder: "Move to Folder…"
         case .copyToFolder: "Copy to Folder…"
+        case .downloadOriginals: "Download Originals"
         case .keywordPainter: "Keyword Painter"
         case .moveEditsAndMetadata: "Move Edits and Metadata…"
         case .acceptHealthProposals: "Accept Health Proposals…"
@@ -508,8 +510,8 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .moveUpInStack: [.char("[", shift: true)]
         case .moveDownInStack: [.char("]", shift: true)]
         case .renamePhotos: [KeyCombo(.function(2))]
-        case .moveToFolder, .copyToFolder, .moveEditsAndMetadata, .acceptHealthProposals, .keepAnyway, .listAgain,
-             .locateMissingPhoto, .removeMissingPhotos: []
+        case .moveToFolder, .copyToFolder, .downloadOriginals, .moveEditsAndMetadata, .acceptHealthProposals,
+             .keepAnyway, .listAgain, .locateMissingPhoto, .removeMissingPhotos: []
         // Lightroom Classic's Enable Painting.
         case .keywordPainter: [.char("k", option: true, command: true)]
         case .beforeAfter: [.char("\\")]

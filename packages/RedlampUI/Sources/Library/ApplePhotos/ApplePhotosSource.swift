@@ -7,12 +7,18 @@ import Synchronization
 /// can't be given access to Photos, a simulated library over a manifest (`SimulatedPhotosLibrary`).
 @MainActor
 enum ApplePhotosSource {
-    private static let photoKit = PhotoKitLibrary()
-    private static var simulated: (any ApplePhotosLibrary)?
+    private nonisolated static let photoKit = PhotoKitLibrary()
+    private nonisolated static let simulated = Mutex<(any ApplePhotosLibrary)?>(nil)
     private nonisolated static let simulatedImages = Mutex<(any ApplePhotosImages)?>(nil)
 
     static var library: any ApplePhotosLibrary {
-        simulated ?? photoKit
+        current
+    }
+
+    /// The library read now, from any thread: what the originals cache downloads from as each download starts
+    /// (LIB-60).
+    nonisolated static var current: any ApplePhotosLibrary {
+        simulated.withLock { $0 } ?? photoKit
     }
 
     /// Photos' images of its pictures, which the store's of photos left in Photos are made from (LIB-59), read from
@@ -23,7 +29,7 @@ enum ApplePhotosSource {
 
     /// Reads `library` in place of Photos from now on; nil for Photos again.
     static func simulate(_ library: (any ApplePhotosLibrary)?) {
-        simulated = library
+        simulated.withLock { $0 = library }
         simulatedImages.withLock { $0 = library as? any ApplePhotosImages }
     }
 

@@ -62,6 +62,24 @@ struct LibrarySettings: View {
             Section {
                 Toggle("Import new photos from followed albums automatically", isOn: $applePhotos.importsAutomatically)
                     .accessibilityIdentifier("settings.library.apple-photos.automatic")
+                Picker("Keep downloaded originals up to", selection: Binding(
+                    get: { model.originals?.budget ?? ApplePhotosOriginals.defaultBudget },
+                    set: { model.setOriginalsBudget($0) },
+                )) {
+                    ForEach(LibrarySettingsModel.originalsBudgets, id: \.self) { bytes in
+                        Text(LibrarySettingsModel.size(bytes)).tag(bytes)
+                    }
+                }
+                .accessibilityIdentifier("settings.library.apple-photos.budget")
+                LabeledContent("Downloaded originals") {
+                    HStack(spacing: 8) {
+                        Text(model.originalsUsed)
+                            .accessibilityIdentifier("settings.library.apple-photos.used")
+                        Button("Empty Cache") { model.emptyOriginals() }
+                            .disabled(model.originals.map { $0.files == 0 } ?? true)
+                            .accessibilityIdentifier("settings.library.apple-photos.empty")
+                    }
+                }
             } header: {
                 Text("Apple Photos")
             } footer: {
@@ -69,7 +87,9 @@ struct LibrarySettings: View {
                     "Each import from Apple Photos follows the albums it chose, and the Library panel’s From Apple "
                         + "Photos offers the new photos in them. Turned on, they’re imported with the last import’s "
                         + "settings a minute after Photos last changes, while Redlamp runs. Nothing is removed from "
-                        + "Redlamp when a photo leaves Photos or an album.",
+                        + "Redlamp when a photo leaves Photos or an album. Photos kept in Apple Photos download their "
+                        + "originals from iCloud to be edited, seen at full size or exported; Redlamp keeps them on "
+                        + "this Mac up to the size chosen, the least recently opened removed first.",
                 )
                 .formFooter()
             }
@@ -83,7 +103,10 @@ struct LibrarySettings: View {
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
         .disabled(!model.isAvailable)
-        .task(id: model.library.state) { await model.countPhotos() }
+        .task(id: model.library.state) {
+            await model.countPhotos()
+            await model.readOriginals()
+        }
         .alert(
             model.confirming.map(model.title) ?? "",
             isPresented: Binding(get: { model.confirming != nil }, set: {
@@ -159,6 +182,51 @@ final class LibrarySettingsModel {
 
     func countPhotos() async {
         photos = await library.photoCount()
+    }
+
+    // MARK: - Originals from Apple Photos (LIB-60)
+
+    /// The budgets Settings offers for the originals downloaded from iCloud: 20 GB unless another is chosen.
+    static let originalsBudgets: [Int64] = [5, 10, 20, 50, 100, 200].map { $0 * 1_000_000_000 }
+
+    /// The originals downloaded from iCloud the library keeps, and its budget, once read.
+    private(set) var originals: ApplePhotosOriginals.Usage?
+
+    /// What they take: 3.2 GB in 84 originals.
+    var originalsUsed: String {
+        guard let originals else { return "…" }
+        guard originals.files > 0 else { return "None" }
+        return "\(Self.size(originals.bytes)) in \(originals.files) \(originals.files == 1 ? "original" : "originals")"
+    }
+
+    static func size(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    func readOriginals() async {
+        originals = await library.originals?.usage()
+    }
+
+    func setOriginalsBudget(_ bytes: Int64) {
+        guard let cache = library.originals else { return }
+        Task {
+            do {
+                try await cache.setBudget(bytes)
+            } catch {
+                failure = "The budget for originals couldn't be kept: \(error.localizedDescription)"
+            }
+            originals = await cache.usage()
+        }
+    }
+
+    /// Empty Cache: every downloaded original but the one open and those being read goes, downloaded again when it's
+    /// next needed.
+    func emptyOriginals() {
+        guard let cache = library.originals else { return }
+        Task {
+            await cache.empty()
+            originals = await cache.usage()
+        }
     }
 
     /// Writing turned on or off, as the toggle asks: to be confirmed.

@@ -105,6 +105,17 @@ public extension FolderLibrary {
         return (thumbnails, key)
     }
 
+    /// The cache of originals of photos kept in Apple Photos (LIB-60), once the library is open.
+    var originals: ApplePhotosOriginals? {
+        service?.originals
+    }
+
+    /// Whether `url` is a photo kept in Apple Photos whose original isn't on this Mac: what reads its file downloads
+    /// it first (LIB-60).
+    func needsDownload(_ url: URL) -> Bool {
+        originals.map { $0.owns(url) && !$0.isLocal(url) } ?? false
+    }
+
     /// Redlamp wrote `photo`'s sidecar: the library reads it again, since FSEvents doesn't report
     /// Redlamp's own writes on this Mac.
     func sidecarSaved(_ photo: URL) {

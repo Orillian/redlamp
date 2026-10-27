@@ -101,6 +101,25 @@ extension EditorModel {
         batchExport.fields = { [weak self] url, version in
             await Self.exportFields(of: url, core: self?.library.service?.core, version: version)
         }
+        // Photos kept in Apple Photos have their originals downloaded from iCloud as the batch comes to them (LIB-60),
+        // a few ahead, each held from the cache's budget while it's written.
+        batchExport.needsDownload = { [weak self] url in self?.library.needsDownload(url) ?? false }
+        batchExport.downloadAhead = { [weak self] urls in self?.originals?.request(urls, priority: .export) }
+        batchExport.cancelDownloads = { [weak self] urls in self?.originals?.cancel(urls) }
+        batchExport.beforeExporting = { [weak self] url in
+            guard let originals = self?.originals, originals.owns(url) else { return }
+            originals.hold(url)
+            try await originals.local(url, priority: .export)
+        }
+        batchExport.afterExporting = { [weak self] url in
+            guard let originals = self?.originals, originals.owns(url) else { return }
+            originals.release(url)
+        }
+        batchExport.refusing = { [weak self] file in
+            guard self?.library.originals?.owns(file) == true else { return nil }
+            return "It's kept in Apple Photos, so it can't be exported beside its original: choose a folder to export "
+                + "to in the Export dialog."
+        }
         settingsSync.beforeWriting = { [weak self] url in await self?.batchExport.wait(for: url) }
     }
 

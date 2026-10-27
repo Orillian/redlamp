@@ -468,7 +468,16 @@ extension EditRenders {
         guard let entry = known[photo], Self.isCurrent(entry, for: item) else {
             return reading.contains(photo) ? .nothing : .read
         }
+        // A photo kept in Apple Photos renders once its original is downloaded (LIB-60), Photos' image showing until
+        // then: `originalArrived` looks at it again.
+        guard entry.state != .unrendered || !library.needsDownload(item.url) else { return .nothing }
         return entry.state == .unrendered && !reading.contains(photo) ? .render : .nothing
+    }
+
+    /// The original of a photo kept in Apple Photos arrived (LIB-60): its edit, which waited for it, renders now.
+    func originalArrived(_ url: URL) {
+        revisit(PhotoAddress(url: url))
+        schedulePump()
     }
 
     /// The rows on screen, the active photo's first, then those within a screen of them, nearest first.

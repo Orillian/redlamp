@@ -117,6 +117,7 @@ struct AppCommands: Commands {
         item(.renamePhotos, keyed: false)
         item(.moveToFolder)
         item(.copyToFolder)
+        item(.downloadOriginals)
         item(.moveToTrash)
         Divider()
         item(.addToCollection)

@@ -24,6 +24,8 @@ final class LibraryCore: Sendable {
     let files: FileOperations
     /// Other apps' metadata (LIB-24).
     let xmp: LibraryXMP
+    /// Originals of photos kept in Apple Photos, downloaded from iCloud when they're needed (LIB-60).
+    let originals: ApplePhotosOriginals
     /// The locator when it opened.
     let locator: SidecarLocator
     private let state = Mutex(State())
@@ -80,6 +82,7 @@ final class LibraryCore: Sendable {
         sidecars = LibrarySidecars(index: index, paths: paths)
         files = FileOperations(index: index, paths: paths, live: live)
         xmp = LibraryXMP(index: index, paths: paths)
+        originals = ApplePhotosOriginals(index: index, paths: paths, live: live, photos: { ApplePhotosSource.current })
     }
 
     /// Opens the index (restoring its newest good snapshot when it's damaged, checking it first when

@@ -173,6 +173,10 @@ import UniformTypeIdentifiers
                     .glassEffect(.regular, in: .circle)
             }
 
+            if let download = model.download {
+                OriginalDownloadStatus(download: download, cancel: model.cancelDownload, again: model.downloadAgain)
+            }
+
             if let message = model.errorMessage {
                 HStack(spacing: 10) {
                     Label(message, systemImage: "exclamationmark.triangle")

@@ -168,6 +168,12 @@
                     action: action,
                     unavailable: "renames, moves and copies files: checked on copies by library.rename-photos",
                 )
+            case .downloadOriginals:
+                ActionCheck(
+                    action: action,
+                    unavailable: "needs photos kept in Apple Photos, which the app lists from LIB-62: checked on the "
+                        + "simulated library by ApplePhotosDownloadTests",
+                )
             case .keywordPainter:
                 ActionCheck(
                     action: action,

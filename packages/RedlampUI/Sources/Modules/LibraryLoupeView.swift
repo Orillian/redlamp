@@ -341,7 +341,16 @@ final class LibraryLoupeView: NSView, ThemeFollowing {
         let (engine, scheduler, space) = (model.engine, model.library.scheduler, window?.colorSpace?.cgColorSpace)
         let edge = pixelSize.map { Int(max($0.width, $0.height)) } ?? 1 << 14
         let (url, photo) = (item.url, item.address)
+        let originals = model.library.needsDownload(url) ? model.originals : nil
         loading = Task { [weak self] in
+            // A photo kept in Apple Photos downloads its original first (LIB-60), its preview shown meanwhile and the
+            // download counted in the filmstrip; one that couldn't be had is asked for again at the next zoom.
+            if let originals, await (try? originals.local(url, priority: .open)) == nil {
+                if self?.shown == photo {
+                    self?.loading = nil
+                }
+                return
+            }
             let full = try? await scheduler.run(.onScreen) {
                 engine.decodeThumbnail(for: url, maxPixelSize: edge).flatMap { GridThumbnails.drawn($0, in: space) }
             }

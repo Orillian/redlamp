@@ -280,7 +280,15 @@ final class ComparePhotoView: NSView {
         let url = photo.url
         let (engine, scheduler, space) = (model.engine, model.library.scheduler, window?.colorSpace?.cgColorSpace)
         let edge = pixelSize.map { Int(max($0.width, $0.height)) } ?? 1 << 14
+        let originals = model.library.needsDownload(url) ? model.originals : nil
         loading = Task { [weak self] in
+            // Compare's and Survey's 1:1 of a photo kept in Apple Photos downloads its original first (LIB-60).
+            if let originals, await (try? originals.local(url, priority: .open)) == nil {
+                if self?.address == photo {
+                    self?.loading = nil
+                }
+                return
+            }
             let full = try? await scheduler.run(.onScreen) {
                 engine.decodeThumbnail(for: url, maxPixelSize: edge).flatMap { GridThumbnails.drawn($0, in: space) }
             }
