@@ -205,6 +205,10 @@
                 throw ScenarioSkip("The Sky mask isn't available")
             }
             try app.pick(.sky, from: "masks.new")
+            if try app.main({ $0.offeredModels != nil }) {
+                // Sky's models aren't on this Mac: Not Now makes it from the estimate.
+                try app.tap(.identifier("masks.download.notNow"))
+            }
             try app.wait("a Sky mask", timeout: 180) { model in
                 model.selectedMask?.components.contains { $0.shape.kind == .sky } == true || model.maskMessage != nil
             }
@@ -522,7 +526,7 @@
                 return
             } else if kind.isAI {
                 try wait("the \(kind.name) mask started", timeout: 30) { model in
-                    model.aiMaskProgress != nil || model.pendingModel != nil
+                    model.aiMaskProgress != nil || model.pendingModel != nil || model.offeredModels != nil
                         || model.masks.contains { $0.components.contains { $0.shape.kind == kind } }
                 }
             } else {
