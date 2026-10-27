@@ -3,6 +3,7 @@
     import RedlampEngineAPI
     import RedlampLibrary
     @_spi(Harness) import RedlampUI
+    import Synchronization
 
     extension RunningApp {
         /// Types `text` into the open palette's search, as its field hands each change over, and waits
@@ -32,6 +33,18 @@
             try wait("\(item.title) highlighted") { $0.commandPalette?.selectedItem == item }
             try paletteKey(.submit)
         }
+
+        /// How many photos of the source shown `query` finds, its filter aside; -1 when the library can't search.
+        func photosShown(finding query: String) throws -> Int {
+            let found = Mutex(-1)
+            try run("the photos shown that \(query) finds", timeout: 30) { model in
+                guard let engine = model.library.service?.engine, let parsed = try? LibraryQuery(parsing: query),
+                      let list = try? await engine.list(model.library.photoList.source, matching: parsed)
+                else { return }
+                found.withLock { $0 = list.count }
+            }
+            return found.withLock { $0 }
+        }
     }
 
     enum PaletteLibraryScenarios {
@@ -50,19 +63,25 @@
 
             try app.press(.commandPalette)
             try app.wait("the palette") { $0.commandPalette != nil }
-            var camera: PaletteItem?
-            for typed in ["fujiflim", "nikkon", "canno", "sonny"] {
-                camera = try app.searchPalette(typed).first { $0.context == "Camera" }
-                if camera != nil {
-                    break
+            // The palette lists the library's cameras, those of photos in the folder's subfolders, which the grid
+            // doesn't show, included.
+            var camera: (row: PaletteItem, term: String)?
+            search: for typed in ["fujiflim", "nikkon", "canno", "sonny"] {
+                for row in try app.searchPalette(typed) where row.context == "Camera" {
+                    guard case let .libraryName(.camera, name) = row.kind else { continue }
+                    let term = QueryCompletion(field: .camera, value: name).term
+                    if try (1 ..< names.count).contains(app.photosShown(finding: term)) {
+                        camera = (row, term)
+                        break search
+                    }
                 }
             }
-            guard let found = camera, case let .libraryName(.camera, name) = found.kind else {
+            guard let camera else {
                 throw ScenarioFailure("No camera of the folder's found by its name with a typo")
             }
-            try app.choosePaletteRow(found)
-            let term = QueryCompletion(field: .camera, value: name).term
-            try app.wait("the camera's term in the filter, and its photos") { model in
+            try app.choosePaletteRow(camera.row)
+            let term = camera.term
+            try app.wait("the camera's term, \(term), in the filter, and its photos") { model in
                 model.libraryFilters?.filter.text == term && !model.items.isEmpty && model.items.count < names.count
             }
 
