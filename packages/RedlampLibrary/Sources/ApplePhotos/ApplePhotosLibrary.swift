@@ -215,6 +215,13 @@ public struct ApplePhotosAsset: Sendable, Hashable, Identifiable {
     public var contentVersion: Date {
         adjusted ?? (hasAdjustments ? modified : nil) ?? created ?? Date(timeIntervalSince1970: 0)
     }
+
+    /// Whether the library lists it once its album is kept in place (LIB-58): a photo with an original, not hidden in
+    /// Photos, and of a burst its key photo or a frame picked.
+    public var isListed: Bool {
+        mediaType == .image && !isHidden && burst.map { $0.isKey || $0.isUserPick } != false
+            && resource(.photo) != nil
+    }
 }
 
 /// What changed in Photos since a change token (`PHPersistentChange`), by local identifier, and the token after it.
@@ -235,6 +242,11 @@ public struct ApplePhotosChanges: Sendable, Hashable {
         self.deleted = deleted
         self.collections = collections
         self.token = token
+    }
+
+    /// Nothing changed.
+    public var isEmpty: Bool {
+        inserted.isEmpty && updated.isEmpty && deleted.isEmpty && collections.isEmpty
     }
 }
 
@@ -300,6 +312,13 @@ public protocol ApplePhotosLibrary: Sendable {
     /// The assets `ids` names by local identifier, as `assets(in:)` gives them but with no albums, those Photos no
     /// longer has left out (LIB-58).
     func assets(withIDs ids: [String]) async throws -> [ApplePhotosAsset]
+    /// The assets `ids` names, as `assets(withIDs:)` gives them, each with those of the collections `albums` names
+    /// that hold it, as `assets(in:)` gives them (LIB-61).
+    func assets(withIDs ids: [String], in albums: [String]) async throws -> [ApplePhotosAsset]
+    /// The photos the library lists of each of the collections `ids` names (`ApplePhotosAsset.isListed`), by local
+    /// identifier, without their fields or files: what following an album needs to see which joined it or left it
+    /// (LIB-61).
+    func listedIDs(in ids: [String]) async throws -> [String: Set<String>]
     /// Photos' change token now, archived, for `changes(since:)` across launches; nil where Photos gives none.
     func changeToken() -> Data?
     /// What changed since `token`; throws `ApplePhotosError.expiredToken` once Photos no longer has the history.
@@ -307,6 +326,32 @@ public protocol ApplePhotosLibrary: Sendable {
     /// The asset's picture at about `size` pixels on its long side, from what Photos keeps on this Mac, never
     /// downloading: nil when Photos has none without iCloud.
     func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage?
+}
+
+public extension ApplePhotosLibrary {
+    /// Made from `assets(in:)`, an album at a time.
+    func listedIDs(in ids: [String]) async throws -> [String: Set<String>] {
+        var listed: [String: Set<String>] = [:]
+        for id in ids {
+            listed[id] = try await Set(assets(in: [id]).filter(\.isListed).map(\.id))
+        }
+        return listed
+    }
+
+    /// Made from `assets(withIDs:)`, and `assets(in:)` an album at a time.
+    func assets(withIDs ids: [String], in albums: [String]) async throws -> [ApplePhotosAsset] {
+        var holding: [String: [String]] = [:]
+        for album in albums {
+            for asset in try await assets(in: [album]) {
+                holding[asset.id, default: []].append(album)
+            }
+        }
+        return try await assets(withIDs: ids).map { asset in
+            var found = asset
+            found.albums = holding[asset.id] ?? []
+            return found
+        }
+    }
 }
 
 /// The collection tree as an import uses it: folders' albums, each album's path in Redlamp's collection

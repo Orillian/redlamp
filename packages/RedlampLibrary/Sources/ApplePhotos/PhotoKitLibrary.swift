@@ -327,13 +327,60 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
     }
 
     public func assets(withIDs ids: [String]) async throws -> [ApplePhotosAsset] {
+        try await assets(withIDs: ids, in: [])
+    }
+
+    /// Each album is asked only for the assets `ids` names, every frame of a burst included.
+    public func assets(withIDs ids: [String], in albums: [String]) async throws -> [ApplePhotosAsset] {
         try requireAccess()
         guard !ids.isEmpty else { return [] }
         var found: [PHAsset] = []
         PHAsset.fetchAssets(withLocalIdentifiers: ids, options: Self.fetchOptions(allBursts: true))
             .enumerateObjects { asset, _, _ in found.append(asset) }
+        var holding: [String: [String]] = [:]
+        if !albums.isEmpty, !found.isEmpty {
+            let options = PHFetchOptions()
+            options.includeHiddenAssets = true
+            options.includeAllBurstAssets = true
+            options.predicate = NSPredicate(format: "localIdentifier IN %@", found.map(\.localIdentifier))
+            PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: albums, options: nil)
+                .enumerateObjects { album, _, _ in
+                    PHAsset.fetchAssets(in: album, options: options).enumerateObjects { asset, _, _ in
+                        holding[asset.localIdentifier, default: []].append(album.localIdentifier)
+                    }
+                }
+        }
         let clouds = cloudIdentifiers(found.map(\.localIdentifier))
-        return found.map { Self.asset($0, cloud: clouds[$0.localIdentifier], albums: []) }
+        return found.map {
+            Self.asset($0, cloud: clouds[$0.localIdentifier], albums: holding[$0.localIdentifier] ?? [])
+        }
+    }
+
+    /// Photos is asked for each album's photos that aren't hidden, and for the frames picked of each burst in it,
+    /// reading nothing but their identifiers.
+    public func listedIDs(in ids: [String]) async throws -> [String: Set<String>] {
+        try requireAccess()
+        guard !ids.isEmpty else { return [:] }
+        let photos = PHFetchOptions()
+        photos.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
+        let frames = PHFetchOptions()
+        frames.includeAllBurstAssets = true
+        var listed: [String: Set<String>] = [:]
+        PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: ids, options: nil)
+            .enumerateObjects { album, _, _ in
+                var held = Set<String>()
+                PHAsset.fetchAssets(in: album, options: photos).enumerateObjects { asset, _, _ in
+                    held.insert(asset.localIdentifier)
+                    guard asset.representsBurst, let burst = asset.burstIdentifier else { return }
+                    PHAsset.fetchAssets(withBurstIdentifier: burst, options: frames).enumerateObjects { frame, _, _ in
+                        if frame.burstSelectionTypes.contains(.userPick), !frame.isHidden {
+                            held.insert(frame.localIdentifier)
+                        }
+                    }
+                }
+                listed[album.localIdentifier] = held
+            }
+        return listed
     }
 
     // MARK: - Images
