@@ -2,7 +2,7 @@
 
 Many photographers keep their photos in Apple Photos, with Optimize Mac Storage leaving most originals in iCloud. 0.3.4's import copies a chosen album's originals into folders, which takes their space again and splits each photo in two. This design leaves them in Photos: the albums a photographer chooses appear in the library beside its folders, each photo known by its Photos identifiers, shown from Photos' own thumbnails and previews, its original downloaded only when it's viewed at full size, edited or exported, and Redlamp's culling, metadata and edits kept on this Mac. Copying stays a choice. Tracker: LIB-57 ([#495](https://github.com/pdcgomes/redlamp/issues/495)) and DEC-107, building on LIB-54 ([#488](https://github.com/pdcgomes/redlamp/issues/488), the import) and LIB-55 ([#489](https://github.com/pdcgomes/redlamp/issues/489), followed albums), within DEC-106 (Photos only read, through PhotoKit), DEC-43 (sidecars on this Mac), DEC-76 (the iPhone's edits), EXT-04 ([#386](https://github.com/pdcgomes/redlamp/issues/386), favourites and ratings), EXT-05 ([#487](https://github.com/pdcgomes/redlamp/issues/487), Save to Photos) and MOB-08 ([#413](https://github.com/pdcgomes/redlamp/issues/413), photos identified by more than a path).
 
-**Status (2026-10-27):** a design study, written; nothing is built. It waits on the owner's answers to [Decisions for the owner](#decisions-for-the-owner) and on the owner's census of his own library, which settles the points marked unverified below.
+**Status (2026-10-27):** a design study; nothing is built. The owner answered every decision below on 27 October, each with its recommended option (A), and the parts became LIB-58 to LIB-65 under LIB-57. It waits on the owner's census of his own library, which settles the points marked unverified below.
 
 ## Where it starts
 
@@ -164,6 +164,8 @@ On the simulated library at 50,000 assets, and checked on the owner's library by
 - **macOS 27's SDK** brings ratings, captions, keywords, `dataSize` and the persistent observer, all behind `#if compiler(>=6.4)` as LIB-54's fields are.
 
 ## Decisions for the owner
+
+**Answered (2026-10-27, the owner): A, the recommended option, on all eleven.**
 
 1. **Where do Redlamp's edits and metadata for photos left in Photos live?**
    - A. In Redlamp's store on this Mac, keyed by the photo's iCloud identifier, in the layout iCloud Drive would use. No new entitlement; only this Mac sees them; moved to iCloud Drive with Move Edits when the iPhone app starts.
