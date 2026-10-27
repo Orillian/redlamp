@@ -11,6 +11,8 @@ extension LibraryCommand {
                                   [--folders <template>] [--names <template>] [--index <path>]
                                   [--simulated <manifest>] [--json]
            redlamp library photos --undo [--index <path>] [--simulated <manifest>] [--json]
+           redlamp library photos --keep [--album <title or id>]… [--index <path>] [--simulated <manifest>] [--json]
+           redlamp library photos --list [--index <path>] [--json]
       photos   reads Apple Photos through PhotoKit, only ever reading it, asking for access the first time.
                --albums lists its albums, folders, smart albums and shared albums, each folder's indented below
                it, with Photos' estimate of the photos in each and its ID. --census reports what importing the
@@ -24,7 +26,12 @@ extension LibraryCommand {
                templates (--folders {album} puts each in a folder named after its first album), checked, and
                indexed, each photo's .redlamp sidecar holding its favourite as a pick, its albums as
                collections and where it came from; an edit's rendering stacked over its original. --undo takes
-               the last import back, its copies to the Trash. --include-hidden brings hidden photos.
+               the last import back, its copies to the Trash. --include-hidden brings hidden photos. --keep
+               keeps the albums --album names in place (LIB-58), beside those kept already, without copying
+               anything: their photos indexed from what Photos gives of them, each in a folder of Redlamp's cache
+               named for its iCloud identifier, Redlamp's edits and fields for them kept on this Mac; without
+               --album it indexes again the albums kept. --list lists the albums kept in place, with the photos
+               the library has of each, from the index alone.
                --simulated reads a simulated library's manifest (tests/fixtures/apple-photos/manifest.json)
                instead of Photos. --json prints JSON.
     """
@@ -40,9 +47,11 @@ extension LibraryCommand {
         let options = try Arguments(
             arguments, valued: ["--album", "--destination", "--folders", "--names", "--index", "--simulated"],
         )
-        let modes = ["--albums", "--census", "--apply", "--undo"].filter(options.has)
+        let modes = ["--albums", "--census", "--apply", "--undo", "--keep", "--list"].filter(options.has)
         guard modes.count == 1 else {
-            throw CLIError(description: "photos takes one of --albums, --census, --apply and --undo\n\n\(photosUsage)")
+            throw CLIError(
+                description: "photos takes one of --albums, --census, --apply, --undo, --keep and --list\n\n\(photosUsage)",
+            )
         }
         let json = options.has("--json")
         let source: any ApplePhotosLibrary = try options.value("--simulated").map {
@@ -53,6 +62,9 @@ extension LibraryCommand {
         let paths = LibraryPaths(root: indexURL.deletingLastPathComponent())
         if modes[0] == "--undo" {
             return try await undoPhotos(source, index: indexURL, json: json)
+        }
+        if modes[0] == "--list" {
+            return try await listKept(index: indexURL, json: json)
         }
         var access = source.access()
         if access == .notDetermined {
@@ -65,6 +77,15 @@ extension LibraryCommand {
         let tree = try await ApplePhotosTree(source.collections())
         if modes[0] == "--albums" {
             return try printAlbums(tree, json: json)
+        }
+        if modes[0] == "--keep" {
+            let named = try options.values("--album").map { name in
+                guard let found = tree.resolve(name) else {
+                    throw CLIError(description: "Photos has no album \(name): --albums lists them")
+                }
+                return found.id
+            }
+            return try await keepPhotos(source, albums: named, index: indexURL, json: json)
         }
         let settings = try ApplePhotosImport.Settings(
             collections: chosen(options.values("--album"), in: tree), includesHidden: options.has("--include-hidden"),
@@ -177,6 +198,63 @@ extension LibraryCommand {
         }
         if failures > 0 || outcome.state != .finished {
             throw ExitCode(1)
+        }
+    }
+
+    /// Keeps `albums` in place, or indexes again those kept when it names none, and reports what changed.
+    private static func keepPhotos(
+        _ source: any ApplePhotosLibrary, albums: [String], index url: URL, json: Bool,
+    ) async throws {
+        let index = try await LibraryIndex.open(at: url)
+        let indexer = ApplePhotosIndexer(photos: source, index: index)
+        let result = await Result { try await albums.isEmpty ? indexer.index() : indexer.keep(albums) }
+        let kept = await Result { try await indexer.albums() }
+        await index.close()
+        let outcome = try result.get()
+        let seconds = Double(outcome.elapsed.components.attoseconds) / 1e18 + Double(outcome.elapsed.components.seconds)
+        if json {
+            try print(String(decoding: JSONSerialization.data(withJSONObject: [
+                "albums": kept.get().map(\.id), "photos": outcome.assets, "inserted": outcome.inserted.count,
+                "updated": outcome.updated.count, "removed": outcome.removed.count, "unchanged": outcome.unchanged,
+                "videos": outcome.videos, "hidden": outcome.hidden, "burstFrames": outcome.frames, "seconds": seconds,
+            ], options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]), as: UTF8.self))
+        } else {
+            try print("Kept \(kept.get().count) albums in place: \(outcome.assets) photos from Apple Photos, "
+                + "\(outcome.inserted.count) rows added, \(outcome.updated.count) written again, "
+                + "\(outcome.removed.count) taken out, in \(String(format: "%.1f", seconds)) s")
+            if outcome.videos + outcome.hidden + outcome.frames > 0 {
+                print("  left out: \(outcome.videos) videos, \(outcome.hidden) hidden photos, "
+                    + "\(outcome.frames) burst frames not picked")
+            }
+        }
+    }
+
+    /// The albums kept in place, with the photos the library has of each.
+    private static func listKept(index url: URL, json: Bool) async throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CLIError(description: "no index at \(url.path)")
+        }
+        let index = try await LibraryIndex.open(at: url)
+        let result = await Result {
+            try await (
+                ApplePhotosIndexer(photos: PhotoKitLibrary(), index: index).albums(),
+                index.read { try $0.applePhotosAlbumCounts() },
+            )
+        }
+        await index.close()
+        let (albums, counts) = try result.get()
+        if json {
+            try print(String(decoding: JSONSerialization.data(withJSONObject: albums.map { album in
+                ["id": album.id, "title": album.title, "kind": album.kind.rawValue, "photos": counts[album.id] ?? 0]
+            }, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]), as: UTF8.self))
+            return
+        }
+        guard !albums.isEmpty else {
+            return print("No album is kept in place: redlamp library photos --keep --album <title> keeps one")
+        }
+        for album in albums {
+            let photos = album.kind == .folder ? "" : ", \(counts[album.id] ?? 0) photos"
+            print("\(album.title) (\(album.kind.rawValue)\(photos))  \(album.id)")
         }
     }
 

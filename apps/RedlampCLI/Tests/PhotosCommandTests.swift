@@ -140,6 +140,30 @@ struct PhotosCommandTests {
         #expect(nothing.status == 1 && nothing.errors.contains("no import from Apple Photos to undo"))
     }
 
+    @Test func `--keep keeps an album in place without copying a file, and --list lists it with its photos`(
+    ) async throws {
+        let scratch = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let index = scratch.appending(path: "Library/Index.sqlite")
+        let kept = try await Self.run(
+            ["--keep", "--album", "Trips/Lisbon", "--index", index.path, "--json"],
+            in: scratch,
+        )
+        #expect(kept.status == 0, "\(kept.errors)")
+        let report = try kept.json()
+        #expect(report["albums"] as? [String] == ["album-lisbon"] && report["photos"] as? Int == 5)
+        #expect(report["inserted"] as? Int == 6 && report["videos"] as? Int == 1 && report["hidden"] as? Int == 1)
+        let cache = scratch.appending(path: "Library/Apple Photos/System")
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: cache.path)) == nil)
+        let again = try await Self.run(["--keep", "--index", index.path], in: scratch)
+        #expect(
+            again.status == 0 && again.output.contains("0 rows added, 0 written again, 0 taken out"),
+            "\(again.output)",
+        )
+        let listed = try await Self.run(["--list", "--index", index.path], in: scratch)
+        #expect(listed.status == 0 && listed.output == "Lisbon (album, 6 photos)  album-lisbon\n", "\(listed.output)")
+    }
+
     @Test func `a missing destination, an album Photos hasn't and access refused are each said`() async throws {
         let scratch = try Self.scratch()
         defer { try? FileManager.default.removeItem(at: scratch) }
