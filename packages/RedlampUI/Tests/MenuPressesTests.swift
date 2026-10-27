@@ -22,8 +22,6 @@ struct MenuPressesTests {
         }
     }
 
-    /// At the screen's corner, and large: macOS 26 can read a queued event's place in a window just shown as though
-    /// the window were there.
     private func window() -> (NSWindow, MenuButton) {
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered,
@@ -46,12 +44,24 @@ struct MenuPressesTests {
     }
 
     /// `event` as the app's run loop handles one: taken from the queue, which makes it the current event, then sent.
+    /// AppKit takes a queued event back rebuilt from its place on the screen, and macOS 26 can read that place from
+    /// the window server's frame of a window still appearing, far outside it, where the press reaches no view: one
+    /// read elsewhere is taken again, for up to 2 s, as the run loop turns.
     private func handle(_ event: NSEvent) throws {
-        NSApp.postEvent(event, atStart: true)
-        let taken = try #require(NSApp.nextEvent(
-            matching: NSEvent.EventTypeMask(type: event.type), until: .distantPast, inMode: .default, dequeue: true,
-        ))
-        NSApp.sendEvent(taken)
+        let deadline = Date().addingTimeInterval(2)
+        while true {
+            NSApp.postEvent(event, atStart: true)
+            let taken = try #require(NSApp.nextEvent(
+                matching: NSEvent.EventTypeMask(type: event.type), until: .distantPast, inMode: .default, dequeue: true,
+            ))
+            let read = taken.locationInWindow
+            if hypot(read.x - event.locationInWindow.x, read.y - event.locationInWindow.y) < 0.5 {
+                NSApp.sendEvent(taken)
+                return
+            }
+            try #require(Date() < deadline, "an event queued at \(event.locationInWindow) is read at \(read) after 2 s")
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
     }
 
     /// The releases queued for the app, taken from the queue.
