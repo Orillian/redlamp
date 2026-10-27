@@ -117,11 +117,13 @@ import RedlampLibrary
 }
 
 @_spi(Harness) public extension EditorModel {
-    /// Reads `library` in place of Photos, in the window and in the albums followed, which are counted afresh.
+    /// Reads `library` in place of Photos, in the window, in the albums followed, which are counted afresh, and in the
+    /// albums kept in place.
     func simulateApplePhotos(_ library: (any ApplePhotosLibrary)?) {
         ApplePhotosSource.simulate(library)
         applePhotosFollower.stop()
         applePhotosFollower.start()
+        self.library.service?.followApplePhotos(ApplePhotosSource.library)
     }
 
     /// The new photos the Library panel's From Apple Photos offers.

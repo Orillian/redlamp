@@ -86,6 +86,8 @@ public final class LibraryService {
     /// read from the index again.
     @ObservationIgnored var removed: (@MainActor () -> Void)?
     @ObservationIgnored private var writingAllXMP: Task<Void, Never>?
+    /// Follows Photos' changes to the albums kept in place (`followApplePhotos`).
+    @ObservationIgnored private var followingPhotos: Task<Void, Never>?
     /// Finds where the sidecars go, then a minute on runs the index's weekly check: stopped by `close`, which the
     /// check would otherwise outlive.
     @ObservationIgnored private var checking: Task<Void, Never>?
@@ -268,6 +270,7 @@ extension LibraryService {
         }
         opening?.cancel()
         following?.cancel()
+        followingPhotos?.cancel()
         writingAllXMP?.cancel()
         checking?.cancel()
         memoryPressure?.cancel()
@@ -318,6 +321,24 @@ extension LibraryService {
     private func damaged() {
         Self.log.error("The library's index failed its check: the next launch restores it")
         defaults?.set(true, forKey: Self.damagedKey)
+    }
+
+    /// Follows Photos' changes to the albums kept in place (LIB-61), read from `photos`, once the library is open and
+    /// what a forced quit cut short is settled, until it closes; asked again, as when the regression suite reads a
+    /// simulated library in place of Photos, it follows that one instead.
+    func followApplePhotos(_ photos: any ApplePhotosLibrary) {
+        followingPhotos?.cancel()
+        whenOpened { [weak self] in
+            guard let self, let core else { return }
+            followingPhotos?.cancel()
+            let indexer = ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
+            followingPhotos = Task.detached(priority: .utility) {
+                await core.recovered()
+                await indexer.follow { error in
+                    Self.log.error("Photos' changes weren't followed: \(String(describing: error), privacy: .public)")
+                }
+            }
+        }
     }
 
     /// Network volumes are polled only while the app is in the foreground.

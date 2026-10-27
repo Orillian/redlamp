@@ -293,8 +293,9 @@ public enum ApplePhotosActions {
         ApplePhotosWindowController.show(editor: model, importing: news)
     }
 
-    /// From launch: counts the albums followed, and follows Photos' changes to them.
+    /// From launch: counts the albums followed, and follows Photos' changes to them and to the albums kept in place.
     public static func start(model: EditorModel) {
         model.applePhotosFollower.start()
+        model.library.service?.followApplePhotos(ApplePhotosSource.library)
     }
 }
