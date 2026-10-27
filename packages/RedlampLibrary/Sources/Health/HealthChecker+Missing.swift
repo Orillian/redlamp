@@ -4,19 +4,25 @@ extension HealthChecker {
     /// The photos whose files went from their folders outside Redlamp (DEC-59), each with where it was and when change
     /// tracking found its file gone, in the order of their paths; not those of roots marked removed, nor versions of
     /// photos' edits (LIB-48), which go where their files go. Nothing is proposed: Locate… finds a photo again and
-    /// Remove takes it out of the library, as the user chooses.
+    /// Remove takes it out of the library, as the user chooses. Photos deleted in Apple Photos from albums kept in
+    /// place (LIB-61) are among them, with Remove alone.
     func missing(store: ColumnStore?) async throws -> HealthFindings {
         let marked = store.map(Self.missing(in:))
-        let found = try await index.read { reader -> [(PhotoRecord, String, Void)] in
+        let (found, photos) = try await index.read { reader -> ([(PhotoRecord, String, Void)], String?) in
             let ids = try marked ?? reader.missingPhotoIDs().sorted()
             let removed = try reader.removedFolders()
-            return try reader.photosWithPaths(ids).compactMap { photo, folder in
+            return try (reader.photosWithPaths(ids).compactMap { photo, folder in
                 photo.state.contains(.missing) && photo.version == nil && !removed.contains(photo.folder)
                     ? (photo, folder, ()) : nil
-            }
+            }, reader.applePhotosRoot()?.path)
         }
         let findings = found.map { photo, folder, _ in
-            HealthFinding(photo: photo.id, check: .missing, reason: .missing(from: folder, since: photo.missingSince))
+            let inPhotos = photos.map { folder.hasPrefix($0 + "/") } ?? false
+            return HealthFinding(
+                photo: photo.id, check: .missing,
+                reason: inPhotos ? .notInPhotos(since: photo.missingSince)
+                    : .missing(from: folder, since: photo.missingSince),
+            )
         }
         return HealthFindings(check: .missing, findings: Self.byPath(findings, found))
     }

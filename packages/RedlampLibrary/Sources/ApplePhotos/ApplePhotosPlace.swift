@@ -156,6 +156,16 @@ public extension LibraryIndex.Writer {
         }
     }
 
+    /// Gives the rows of the asset with local identifier `local` the key `key` and the cloud identifier `cloud`
+    /// (LIB-61).
+    func setApplePhotosKey(_ key: String, cloud: String, ofAsset local: String) throws {
+        let statement = try database.cached("UPDATE photo_assets SET asset_key = ?, cloud_id = ? WHERE local_id = ?")
+        try statement.bind(key, at: 1)
+        try statement.bind(cloud, at: 2)
+        try statement.bind(local, at: 3)
+        try statement.run()
+    }
+
     /// Takes out the photos `ids` of the Apple Photos root with what names their assets and albums, and the folders
     /// left with no photo; returns the rows removed. Their sidecars stay, so keeping an album that holds them again
     /// brings back everything Redlamp kept of them.
@@ -204,10 +214,14 @@ public extension IndexQueries {
         }
     }
 
-    /// How many photos of the Apple Photos root each album kept in place holds, by Photos' local identifier.
+    /// How many photos of the Apple Photos root each album kept in place holds, by Photos' local identifier: not those
+    /// Photos no longer has, kept as missing (LIB-61).
     func applePhotosAlbumCounts() throws -> [String: Int] {
         var counts: [String: Int] = [:]
-        try database.cached("SELECT album, count(*) FROM photo_albums GROUP BY album").forEachRow { row in
+        try database.cached("""
+        SELECT al.album, count(*) FROM photo_albums al JOIN photos p ON p.id = al.photo
+        WHERE p.state & \(PhotoRecord.State.missing.rawValue) = 0 GROUP BY al.album
+        """).forEachRow { row in
             counts[row.string(at: 0) ?? ""] = row.int(at: 1)
         }
         return counts

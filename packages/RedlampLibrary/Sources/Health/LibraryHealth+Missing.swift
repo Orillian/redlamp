@@ -14,6 +14,8 @@ public struct MissingLocation: Sendable, Hashable {
         case anotherPhoto
         /// The photo isn't missing any more.
         case found
+        /// The photo is no longer in Apple Photos (LIB-61), and has no file of its own to find.
+        case inApplePhotos
 
         public var description: String {
             switch self {
@@ -22,6 +24,7 @@ public struct MissingLocation: Sendable, Hashable {
             case .unknownContent: "the photo was never read, so it can't be matched"
             case .anotherPhoto: "another missing photo was there, and is found there again"
             case .found: "the photo has been found already"
+            case .inApplePhotos: "the photo is no longer in Apple Photos, and only Photos can give it back"
             }
         }
     }
@@ -45,17 +48,20 @@ public extension LibraryHealth {
     /// found beside it, under their names, with their content.
     func locate(_ id: Int64, at url: URL) async throws -> MissingLocation {
         let path = LibraryIndexer.path(url)
-        let (photo, missing, inLibrary, holder) = try await index.read { reader in
+        let (photo, missing, inLibrary, holder, inPhotos) = try await index.read { reader in
             let photo = try reader.photo(id: id)
             let missing = try photo.map { try reader.missingPhotos(inFolder: $0.folder) } ?? []
+            let photos = try reader.applePhotosRoot()?.id
             return try (
                 photo,
                 missing.filter { $0.id != id },
                 reader.root(containing: path) != nil,
                 reader.photo(path: path),
+                photos != nil && photo.flatMap { try reader.folder(id: $0.folder)?.root } == photos,
             )
         }
         guard let photo, photo.state.contains(.missing) else { return MissingLocation(problem: .found) }
+        guard !inPhotos else { return MissingLocation(problem: .inApplePhotos) }
         guard inLibrary else { return MissingLocation(problem: .notInLibrary) }
         if let holder, holder.id != id, holder.state.contains(.missing) {
             return MissingLocation(problem: .anotherPhoto)

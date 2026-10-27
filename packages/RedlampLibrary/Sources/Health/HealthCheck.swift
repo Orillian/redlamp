@@ -140,11 +140,15 @@ public enum HealthReason: Sendable, Hashable, CustomStringConvertible {
     case damage(PhotoHealth.Damage)
     /// Gone from `folder`, where it was, since change tracking found its file gone at `since` (DEC-59).
     case missing(from: String, since: Date?)
+    /// No longer in Apple Photos since `since`, a photo of an album kept in place deleted there, or Photos' edit of one
+    /// reverted when it had a Redlamp edit of its own (LIB-61): there's no file of its own for Locate… to find.
+    case notInPhotos(since: Date?)
     /// Named with `ext`, holding `format`, which takes another extension.
     case wrongExtension(named: String, holds: PhotoFormat)
 
     /// "byte-identical to /Photos/A/IMG_1.JPG", "the JPEG beside IMG_1.ARW", "can't be read:
-    /// Input/output error", "gone from /Photos/A since 2026-10-10 11:08", "named .JPG, holds HEIC".
+    /// Input/output error", "gone from /Photos/A since 2026-10-10 11:08", "no longer in Apple Photos since 2026-10-27
+    /// 14:05", "named .JPG, holds HEIC".
     public var description: String {
         switch self {
         case let .duplicate(path): "byte-identical to \(path)"
@@ -153,6 +157,8 @@ public enum HealthReason: Sendable, Hashable, CustomStringConvertible {
         case let .damage(damage): damage.description
         case let .missing(folder, since):
             "gone from \(folder)" + (since.map { " since " + Self.time($0) } ?? "")
+        case let .notInPhotos(since):
+            "no longer in Apple Photos" + (since.map { " since " + Self.time($0) } ?? "")
         case let .wrongExtension(ext, format): "named .\(ext), holds \(format.title)"
         }
     }

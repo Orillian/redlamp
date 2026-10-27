@@ -14,20 +14,34 @@ import Synchronization
 /// and one for Photos' rendering of its edit, stacked over the original, which goes on top once it has a Redlamp edit;
 /// a burst gives its key photo and the frames picked, stacked. Videos and photos hidden in Photos are left out. Photos
 /// is only read (DEC-106).
+///
+/// Photos' changes are followed (LIB-61, `update()` and `follow()`): each pass keeps Photos' change token in the
+/// index's settings, and the next reads only what Photos says changed since it. A photo Photos no longer has is kept as
+/// missing (DEC-59), its sidecar with it, and listed only by Library Health's Missing; an asset that gains a cloud
+/// identifier is keyed again, its folder and sidecars moved.
 public final class ApplePhotosIndexer: Sendable {
     /// What a pass found and did.
     public struct Outcome: Sendable, Hashable {
-        /// Assets of the albums kept in place with rows in the library.
+        /// Assets of the albums kept in place the pass read and listed: all of them when it compared the albums whole,
+        /// otherwise those Photos said changed.
         public var assets = 0
         public var inserted: [Int64] = []
         public var updated: [Int64] = []
         public var removed: [Int64] = []
+        /// Rows of photos Photos no longer has, or of Photos' edits reverted that have Redlamp edits of their own, kept
+        /// as missing (DEC-59).
+        public var missing: [Int64] = []
+        /// Assets keyed again, as they gained a cloud identifier.
+        public var rekeyed = 0
         /// Assets whose rows stand as they were.
         public var unchanged = 0
         /// Left out: videos, photos hidden in Photos, and frames of bursts neither the key photo nor picked.
         public var videos = 0
         public var hidden = 0
         public var frames = 0
+        /// The albums kept were compared whole, rather than only what Photos said changed being read: the first pass,
+        /// a change to the albums kept, Photos' history since the token gone, or albums that no longer resolve.
+        public var whole = true
         /// How long the pass took, and how long until its first batch was written.
         public var elapsed = Duration.zero
         public var firstBatch: Duration?
@@ -35,9 +49,22 @@ public final class ApplePhotosIndexer: Sendable {
         public init() {}
     }
 
+    /// Where the last pass left Photos (LIB-61): its change token then, the albums the collections kept held, a
+    /// folder's albums included, so the next can read only what changed and tell when they no longer resolve, and the
+    /// format its rows were written in.
+    struct Following: Codable, Hashable {
+        var token: Data?
+        var albums: [String]
+        var format: Int?
+    }
+
     /// Assets written in one transaction.
     public static let batchSize = 1000
+    /// The format rows are written in: a pass after it changes compares the albums whole, so every row is written in
+    /// it, as only those Photos says changed would be otherwise.
+    static let rowFormat = 1
     static let albumsKey = "library.applePhotos.albums"
+    static let followingKey = "library.applePhotos.following"
 
     public let photos: any ApplePhotosLibrary
     public let index: LibraryIndex
@@ -98,25 +125,42 @@ public final class ApplePhotosIndexer: Sendable {
         return (try? JSONDecoder().decode([ApplePhotosCollection].self, from: Data(text.utf8))) ?? []
     }
 
-    private static func setChosen(_ chosen: [ApplePhotosCollection], _ writer: LibraryIndex.Writer) throws {
+    static func setChosen(_ chosen: [ApplePhotosCollection], _ writer: LibraryIndex.Writer) throws {
         try writer.setSetting(
             chosen.isEmpty ? nil : String(decoding: JSONEncoder().encode(chosen), as: UTF8.self),
             for: albumsKey,
         )
     }
 
+    static func following(_ reader: some IndexQueries) throws -> Following? {
+        guard let text = try reader.setting(followingKey) else { return nil }
+        return try? JSONDecoder().decode(Following.self, from: Data(text.utf8))
+    }
+
+    static func setFollowing(_ following: Following?, _ writer: LibraryIndex.Writer) throws {
+        try writer.setSetting(
+            following.map { String(decoding: (try? JSONEncoder().encode($0)) ?? Data(), as: UTF8.self) },
+            for: followingKey,
+        )
+    }
+
     // MARK: - Indexing
 
-    /// Indexes the albums kept in place: rows added for their new photos, written again for those whose picture,
-    /// fields, albums or sidecars changed, and taken out for those no album kept holds. One pass runs at a time, each
-    /// after the one asked for before it.
+    /// Indexes the albums kept in place, comparing them whole: rows added for their new photos, written again for those
+    /// whose picture, fields, albums or sidecars changed, taken out for those no album kept holds, and kept as missing
+    /// for those Photos no longer has. One pass runs at a time, each after the one asked for before it.
     @discardableResult
     public func index() async throws -> Outcome {
+        try await enqueue { [self] in try await pass() }
+    }
+
+    /// Runs `body` after the passes asked for before it.
+    func enqueue(_ body: @escaping @Sendable () async throws -> Outcome) async throws -> Outcome {
         let task = last.withLock { last -> Task<Outcome, any Error> in
             let previous = last
-            let task = Task { [self] in
+            let task = Task {
                 _ = await previous?.result
-                return try await pass()
+                return try await body()
             }
             last = task
             return task
@@ -128,26 +172,38 @@ public final class ApplePhotosIndexer: Sendable {
         }
     }
 
-    private func pass() async throws -> Outcome {
+    func pass() async throws -> Outcome {
         let started = ContinuousClock.now
         var outcome = Outcome()
-        let chosen = try await albums()
+        // Taken before Photos is read, so what changes while it's read is read again by the next pass.
+        let token = photos.changeToken()
+        let (chosen, before) = try await index.read { try (Self.chosen($0), Self.following($0)) }
         var assets: [ApplePhotosAsset] = []
+        var albums: [String] = []
+        var vanished: Set<String> = []
         if !chosen.isEmpty {
             let tree = try await ApplePhotosTree(photos.collections())
-            assets = try await Self.kept(photos.assets(in: tree.albums(in: chosen.map(\.id)).map(\.id)), &outcome)
+            albums = tree.albums(in: chosen.map(\.id)).map(\.id)
+            vanished = Set(before?.albums ?? []).filter { tree[$0] == nil }
+            assets = try await Self.kept(photos.assets(in: albums), &outcome)
         }
+        let following = chosen.isEmpty ? nil : Following(token: token, albums: albums, format: Self.rowFormat)
         let rootPath = LibraryIndexer.path(ApplePhotosPlace.root(in: paths))
         let making = !assets.isEmpty
         let known = try await index.write { writer -> (root: RootRecord, assets: [String: KnownAsset])? in
             if making {
                 _ = try writer.applePhotosRoot(at: rootPath)
             }
-            guard let root = try writer.applePhotosRoot() else { return nil }
+            guard let root = try writer.applePhotosRoot() else {
+                try Self.setFollowing(following, writer)
+                return nil
+            }
             return try (root, Self.knownAssets(writer))
         }
-        guard let known else { return outcome }
+        guard var known else { return outcome }
         let locator = try await LibrarySidecars(index: index, paths: paths).locator()
+        try await finishRekeying(root: known.root, locator: locator, known: &known.assets)
+        try await rekey(assets, root: known.root, locator: locator, known: &known.assets, &outcome)
         let withSidecars = Self.keysWithSidecars(root: known.root.path, locator: locator)
         for start in stride(from: 0, to: assets.count, by: Self.batchSize) {
             try Task.checkCancellation()
@@ -166,62 +222,99 @@ public final class ApplePhotosIndexer: Sendable {
         }
         outcome.assets = assets.count
         let kept = Set(assets.map(\.id))
-        try await sweep(known.assets.filter { !kept.contains($0.key) }.flatMap(\.value.rows.values), &outcome)
+        try await leave(
+            Self.left(known.assets.filter { !kept.contains($0.key) }, outcome), asking: Set(albums).union(vanished),
+            &outcome,
+        )
+        try await index.write { try Self.setFollowing(following, $0) }
         outcome.elapsed = ContinuousClock.now - started
         return outcome
     }
 
-    /// The assets that give rows: photos, not hidden, a burst's key photo and picked frames.
-    private static func kept(_ assets: [ApplePhotosAsset], _ outcome: inout Outcome) -> [ApplePhotosAsset] {
+    /// The assets the library lists (`ApplePhotosAsset.isListed`), counting those left out.
+    static func kept(_ assets: [ApplePhotosAsset], _ outcome: inout Outcome) -> [ApplePhotosAsset] {
         assets.filter { asset in
             if asset.mediaType != .image {
                 outcome.videos += 1
-                return false
-            }
-            if asset.isHidden {
+            } else if asset.isHidden {
                 outcome.hidden += 1
-                return false
-            }
-            if let burst = asset.burst, !burst.isKey, !burst.isUserPick {
+            } else if let burst = asset.burst, !burst.isKey, !burst.isUserPick {
                 outcome.frames += 1
-                return false
             }
-            return asset.resource(.photo) != nil
+            return asset.isListed
         }
     }
 
-    /// An asset as the index has it: its folder, its rows by name and the signature they were written at.
+    /// An asset as the index has it: its key, cloud identifier and folder, its rows by name, those marked missing, and
+    /// the signature they were written at.
     struct KnownAsset {
         var key: String
+        var cloud: String?
         var folder: String
+        var folderID: Int64
         var signature: Int64?
         var rows: [String: Int64]
+        var missing: Set<Int64> = []
+
+        /// The names of its rows not marked missing.
+        var listed: Set<String> {
+            Set(rows.filter { !missing.contains($0.value) }.keys)
+        }
+
+        /// Every row marked missing: Photos no longer has the asset.
+        var isMissing: Bool {
+            !rows.isEmpty && rows.values.allSatisfy(missing.contains)
+        }
     }
 
-    private static func knownAssets(_ reader: some IndexQueries) throws -> [String: KnownAsset] {
+    /// The assets the index has rows of, by local identifier: all of them, or those `ids` names.
+    static func knownAssets(_ reader: some IndexQueries, ids: Set<String>? = nil) throws -> [String: KnownAsset] {
         var known: [String: KnownAsset] = [:]
-        try reader.database.cached("""
-        SELECT a.local_id, a.asset_key, f.path, f.indexed_signature, p.name, p.id FROM photo_assets a
-        JOIN photos p ON p.id = a.photo JOIN folders f ON f.id = p.folder WHERE p.version = ''
-        """).forEachRow { row in
+        let select = """
+        SELECT a.local_id, a.asset_key, a.cloud_id, f.path, f.id, f.indexed_signature, p.name, p.id, p.state
+        FROM photo_assets a JOIN photos p ON p.id = a.photo JOIN folders f ON f.id = p.folder WHERE p.version = ''
+        """
+        let read = { (row: SQLiteStatement) in
             let local = row.string(at: 0) ?? ""
             var asset = known[local] ?? KnownAsset(
-                key: row.string(at: 1) ?? "", folder: row.string(at: 2) ?? "", signature: row.optionalInt64(at: 3),
-                rows: [:],
+                key: row.string(at: 1) ?? "", cloud: row.string(at: 2), folder: row.string(at: 3) ?? "",
+                folderID: row.int64(at: 4), signature: row.optionalInt64(at: 5), rows: [:],
             )
-            asset.rows[row.string(at: 4) ?? ""] = row.int64(at: 5)
+            let id = row.int64(at: 7)
+            asset.rows[row.string(at: 6) ?? ""] = id
+            if PhotoRecord.State(rawValue: row.int(at: 8)).contains(.missing) {
+                asset.missing.insert(id)
+            }
             known[local] = asset
+        }
+        guard let ids else {
+            try reader.database.cached(select).forEachRow(read)
+            return known
+        }
+        let statement = try reader.database.cached(select + " AND a.local_id = ?")
+        for id in ids {
+            try statement.bind(id, at: 1)
+            try statement.forEachRow(read)
         }
         return known
     }
 
-    /// The asset keys with a folder of sidecars on this Mac: only theirs are looked for.
-    private static func keysWithSidecars(root: String, locator: SidecarLocator) -> Set<String> {
+    /// The asset keys with a folder of sidecars on this Mac: only theirs are looked for. Of those `keys` names, when
+    /// it names some, so that a pass over a few assets doesn't list them all.
+    static func keysWithSidecars(root: String, locator: SidecarLocator, keys: Set<String>? = nil) -> Set<String> {
+        guard let folder = sidecarFolder(of: nil, root: root, locator: locator) else { return [] }
+        guard let keys else {
+            return Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+        }
+        return keys.filter { FileManager.default.fileExists(atPath: folder.appending(path: $0).path) }
+    }
+
+    /// The folder on this Mac holding the sidecars of the asset keyed `key`, or every asset's for nil.
+    static func sidecarFolder(of key: String?, root: String, locator: SidecarLocator) -> URL? {
         guard let folder = locator.onThisMac(URL(fileURLWithPath: root + "/key/photo"))?
-            .deletingLastPathComponent().deletingLastPathComponent(),
-            let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path)
-        else { return [] }
-        return Set(names)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        else { return nil }
+        return key.map { folder.appending(path: $0, directoryHint: .isDirectory) } ?? folder
     }
 
     // MARK: - Rows
@@ -263,14 +356,17 @@ public final class ApplePhotosIndexer: Sendable {
         let known: KnownAsset?
     }
 
-    private func write(
+    /// Writes the rows of the assets of `batch` whose rows aren't as they'd be made now. A row marked missing that the
+    /// asset gives again is found again; one of Photos' edits the asset no longer has (Revert to Original) is taken
+    /// out, or kept as missing when it has a Redlamp edit of its own.
+    func write(
         _ batch: ArraySlice<ApplePhotosAsset>, root: RootRecord, known: [String: KnownAsset], locator: SidecarLocator,
         sidecars: Set<String>, into outcome: inout Outcome,
     ) async throws {
         var changed: [Changed] = []
         for asset in batch {
             let existing = known[asset.id]
-            // An asset keeps the key its rows have until it's keyed again (LIB-61), so it's never in two folders.
+            // An asset keeps the key its rows have until it's keyed again (`rekey`), so it's never in two folders.
             let key = existing?.key ?? ApplePhotosPlace.key(cloud: asset.cloud, local: asset.id)
             let folder = existing?.folder ?? root.path + "/" + key
             let rows = Self.planned(asset)
@@ -284,7 +380,7 @@ public final class ApplePhotosIndexer: Sendable {
                 }
             }
             let signature = Self.signature(of: asset, key: key, rows: rows, sidecars: read)
-            if let existing, existing.signature == signature, Set(existing.rows.keys) == Set(rows.map(\.name)) {
+            if let existing, existing.signature == signature, existing.listed == Set(rows.map(\.name)) {
                 outcome.unchanged += 1
                 continue
             }
@@ -300,6 +396,7 @@ public final class ApplePhotosIndexer: Sendable {
         }
         var items: [LibraryIndexer.Batcher.Item] = []
         var gone: [Int64] = []
+        var reverted: [(photo: Int64, folder: Int64)] = []
         let now = Date()
         for asset in changed {
             items.append(.folder(LibraryIndexer.FolderListing(
@@ -317,13 +414,20 @@ public final class ApplePhotosIndexer: Sendable {
                 items.append(.photo(photo))
             }
             let names = Set(asset.rows.map(\.name))
-            gone += asset.known?.rows.filter { !names.contains($0.key) }.map(\.value) ?? []
+            for (name, id) in asset.known?.rows ?? [:] where !names.contains(name) {
+                guard asset.known?.missing.contains(id) != true else { continue }
+                if let record = records[id], record.edited {
+                    reverted.append((id, record.folder))
+                } else {
+                    gone.append(id)
+                }
+            }
             items.append(.complete(LibraryIndexer.FolderCompletion(
                 signature: asset.signature, counts: FolderIndexed(path: asset.folder),
             )))
         }
         let writing = index.photoWrites
-        let (writes, assets, leaving) = (items, changed, gone)
+        let (writes, assets, leaving, keeping) = (items, changed, gone, reverted)
         let written = try await index.write { writer in
             let applied = try LibraryIndexer.Batcher.apply(writes, writer, writing: writing)
             var rows: [(row: ApplePhotosRow, albums: [String])] = []
@@ -341,23 +445,90 @@ public final class ApplePhotosIndexer: Sendable {
                 }
             }
             try writer.setApplePhotosRows(rows)
-            return try (applied, writer.removeApplePhotos(leaving))
+            return try (applied, writer.removeApplePhotos(leaving), writer.markMissing(keeping, at: now))
         }
         outcome.inserted += written.0.inserted
         outcome.updated += written.0.updated
         outcome.removed += written.1
+        outcome.missing += written.2
         live?.receive(.photosInserted(written.0.inserted))
         live?.receive(.photosUpdated(written.0.updated))
         live?.receive(.photosRemoved(written.1))
+        if !written.2.isEmpty {
+            live?.receive(.photosMissing(written.2))
+        }
+    }
+
+    /// The assets the index has rows of that a pass found no longer listed, `leaving`: their rows taken out, their
+    /// sidecars kept (LIB-58), but those of assets Photos no longer has while an album that held them is still kept
+    /// (one of `asking`), which are kept as missing (DEC-59), listed only by Library Health's Missing. Photos is asked
+    /// only about those: a photo of an album no longer kept leaves with it, as do the missing ones.
+    func leave(_ leaving: [String: KnownAsset], asking albums: Set<String>, _ outcome: inout Outcome) async throws {
+        guard !leaving.isEmpty else { return }
+        let rows = leaving.values.flatMap(\.rows.values)
+        let held = try await index.read { try Self.albums(of: rows, $0) }
+        let asking = leaving.filter { _, asset in
+            asset.rows.values.contains { held[$0]?.contains(where: albums.contains) == true }
+        }
+        let asked = asking.filter { !$0.value.isMissing }.keys
+        let present = asked.isEmpty ? [] : try await Set(photos.assets(withIDs: Array(asked)).map(\.id))
+        var swept: [Int64] = []
+        var gone: [KnownAsset] = []
+        for (local, asset) in leaving {
+            if asking[local] == nil || present.contains(local) {
+                swept += asset.rows.values
+            } else if !asset.isMissing {
+                gone.append(asset)
+            }
+        }
+        try await sweep(swept, &outcome)
+        try await markMissing(gone, &outcome)
+    }
+
+    /// `assets` with the rows the pass so far wrote taken out of each: another asset given the same key took them over,
+    /// as a photo Photos gives back under a new local identifier does, found again by its name in its folder.
+    static func left(_ assets: [String: KnownAsset], _ outcome: Outcome) -> [String: KnownAsset] {
+        let written = Set(outcome.inserted + outcome.updated)
+        guard !written.isEmpty else { return assets }
+        return assets.compactMapValues { asset in
+            var left = asset
+            left.rows = asset.rows.filter { !written.contains($0.value) }
+            return left.rows.isEmpty ? nil : left
+        }
+    }
+
+    /// The albums kept in place that hold each of the photos `ids`, as the index has them.
+    private static func albums(of ids: [Int64], _ reader: some IndexQueries) throws -> [Int64: [String]] {
+        let statement = try reader.database.cached("SELECT album FROM photo_albums WHERE photo = ?")
+        var albums: [Int64: [String]] = [:]
+        for id in ids {
+            try statement.bind(id, at: 1)
+            albums[id] = try statement.map { $0.string(at: 0) ?? "" }
+        }
+        return albums
     }
 
     /// Takes out `ids`, rows of assets no album kept holds, a batch at a time.
-    private func sweep(_ ids: [Int64], _ outcome: inout Outcome) async throws {
+    func sweep(_ ids: [Int64], _ outcome: inout Outcome) async throws {
         for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
             let part = Array(ids[start ..< min(start + Self.batchSize, ids.count)])
             let removed = try await index.write { try $0.removeApplePhotos(part) }
             outcome.removed += removed
             live?.receive(.photosRemoved(removed))
+        }
+    }
+
+    /// Marks missing the rows of `assets`, which Photos no longer has (DEC-59): every list but Library Health's Missing
+    /// leaves them out, and their sidecars stay, so a photo Photos gives back returns with what Redlamp kept of it.
+    func markMissing(_ assets: [KnownAsset], _ outcome: inout Outcome) async throws {
+        let rows = assets.flatMap { asset in
+            asset.rows.values.filter { !asset.missing.contains($0) }.map { (photo: $0, folder: asset.folderID) }
+        }
+        guard !rows.isEmpty else { return }
+        let marked = try await index.write { try $0.markMissing(rows, at: Date()) }
+        outcome.missing += marked
+        if !marked.isEmpty {
+            live?.receive(.photosMissing(marked))
         }
     }
 
