@@ -13,6 +13,8 @@ extension LibraryCommand {
            redlamp library photos --undo [--index <path>] [--simulated <manifest>] [--json]
            redlamp library photos --keep [--album <title or id>]… [--index <path>] [--simulated <manifest>] [--json]
            redlamp library photos --list [--index <path>] [--json]
+           redlamp library photos --originals [--index <path>] [--json]
+           redlamp library photos --evict [--index <path>] [--json]
       photos   reads Apple Photos through PhotoKit, only ever reading it, asking for access the first time.
                --albums lists its albums, folders, smart albums and shared albums, each folder's indented below
                it, with Photos' estimate of the photos in each and its ID. --census reports what importing the
@@ -31,7 +33,9 @@ extension LibraryCommand {
                anything: their photos indexed from what Photos gives of them, each in a folder of Redlamp's cache
                named for its iCloud identifier, Redlamp's edits and fields for them kept on this Mac; without
                --album it indexes again the albums kept. --list lists the albums kept in place, with the photos
-               the library has of each, from the index alone.
+               the library has of each, from the index alone. --originals reports the cache of their originals
+               downloaded from iCloud (LIB-60): how many, the space they take and the budget Settings › Library
+               keeps them within; --evict empties it, the originals downloaded again when they're next needed.
                --simulated reads a simulated library's manifest (tests/fixtures/apple-photos/manifest.json)
                instead of Photos. --json prints JSON.
     """
@@ -47,11 +51,11 @@ extension LibraryCommand {
         let options = try Arguments(
             arguments, valued: ["--album", "--destination", "--folders", "--names", "--index", "--simulated"],
         )
-        let modes = ["--albums", "--census", "--apply", "--undo", "--keep", "--list"].filter(options.has)
+        let modes = ["--albums", "--census", "--apply", "--undo", "--keep", "--list", "--originals", "--evict"]
+            .filter(options.has)
         guard modes.count == 1 else {
-            throw CLIError(
-                description: "photos takes one of --albums, --census, --apply, --undo, --keep and --list\n\n\(photosUsage)",
-            )
+            throw CLIError(description: "photos takes one of --albums, --census, --apply, --undo, --keep, --list, "
+                + "--originals and --evict\n\n\(photosUsage)")
         }
         let json = options.has("--json")
         let source: any ApplePhotosLibrary = try options.value("--simulated").map {
@@ -65,6 +69,9 @@ extension LibraryCommand {
         }
         if modes[0] == "--list" {
             return try await listKept(index: indexURL, json: json)
+        }
+        if modes[0] == "--originals" || modes[0] == "--evict" {
+            return try await originals(source, index: indexURL, evicting: modes[0] == "--evict", json: json)
         }
         var access = source.access()
         if access == .notDetermined {
@@ -256,6 +263,40 @@ extension LibraryCommand {
             let photos = album.kind == .folder ? "" : ", \(counts[album.id] ?? 0) photos"
             print("\(album.title) (\(album.kind.rawValue)\(photos))  \(album.id)")
         }
+    }
+
+    /// Reports the cache of originals downloaded from iCloud, emptied first when `evicting`.
+    private static func originals(
+        _ source: any ApplePhotosLibrary, index url: URL, evicting: Bool, json: Bool,
+    ) async throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CLIError(description: "no index at \(url.path)")
+        }
+        let index = try await LibraryIndex.open(at: url)
+        let paths = LibraryPaths(root: url.deletingLastPathComponent())
+        let cache = ApplePhotosOriginals(index: index, paths: paths, photos: { source })
+        let evicted = evicting ? await cache.empty() : nil
+        let usage = await cache.usage()
+        await index.close()
+        let folder = ApplePhotosPlace.root(in: paths).path
+        if json {
+            var report: [String: Any] = [
+                "files": usage.files, "bytes": usage.bytes, "budget": usage.budget, "folder": folder,
+            ]
+            if let evicted {
+                report["evicted"] = ["files": evicted.files, "bytes": evicted.bytes]
+            }
+            try print(String(decoding: JSONSerialization.data(
+                withJSONObject: report, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes],
+            ), as: UTF8.self))
+            return
+        }
+        let size = { (bytes: Int64) in ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+        if let evicted {
+            print("Took \(evicted.files) originals out of the cache, \(size(evicted.bytes))")
+        }
+        print("Originals downloaded from iCloud: \(usage.files), \(size(usage.bytes)) of a budget of "
+            + "\(size(usage.budget)), in \(folder)")
     }
 
     private static func undoPhotos(_ source: any ApplePhotosLibrary, index url: URL, json: Bool) async throws {

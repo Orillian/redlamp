@@ -164,6 +164,31 @@ struct PhotosCommandTests {
         #expect(listed.status == 0 && listed.output == "Lisbon (album, 6 photos)  album-lisbon\n", "\(listed.output)")
     }
 
+    @Test func `--originals reports the cache of originals downloaded from iCloud, and --evict empties it`(
+    ) async throws {
+        let scratch = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let index = scratch.appending(path: "Library/Index.sqlite")
+        let kept = try await Self.run(["--keep", "--album", "Trips/Lisbon", "--index", index.path], in: scratch)
+        #expect(kept.status == 0, "\(kept.errors)")
+        let folder = scratch.appending(path: "Library/Apple Photos/System/0123456789abcdef0123456789abcdef")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 50000).write(to: folder.appending(path: "IMG_0001.HEIC"))
+
+        let report = try await Self.run(["--originals", "--index", index.path, "--json"], in: scratch).json()
+        #expect(report["files"] as? Int == 1 && (report["bytes"] as? Int ?? 0) >= 50000)
+        #expect(report["budget"] as? Int == 20_000_000_000)
+        let evicted = try await Self.run(["--evict", "--index", index.path], in: scratch)
+        #expect(
+            evicted.status == 0 && evicted.output.hasPrefix("Took 1 originals out of the cache"),
+            "\(evicted.output)",
+        )
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        let empty = try await Self.run(["--originals", "--index", index.path], in: scratch)
+        #expect(empty.output.hasPrefix("Originals downloaded from iCloud: 0, "), "\(empty.output)")
+        #expect(empty.output.contains("of a budget of 20 GB"), "\(empty.output)")
+    }
+
     @Test func `a missing destination, an album Photos hasn't and access refused are each said`() async throws {
         let scratch = try Self.scratch()
         defer { try? FileManager.default.removeItem(at: scratch) }
