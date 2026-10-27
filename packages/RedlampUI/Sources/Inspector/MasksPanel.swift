@@ -227,8 +227,8 @@ enum MaskKindGroup: String, CaseIterable, Identifiable {
                     }
                 }
             }
-            if model.pendingModel != nil {
-                ModelDownloadNotice(onDownload: dismiss)
+            if model.pendingModel != nil || model.offeredModels != nil {
+                ModelDownloadNotice(onProceed: dismiss)
             }
         }
         .padding(inline ? 0 : 12)
@@ -289,8 +289,8 @@ enum MaskKindGroup: String, CaseIterable, Identifiable {
     private func choose(_ kind: MaskKind) {
         let (operation, target) = (mode.operation, mode.target)
         Task {
-            if kind.isAI, await model.engine.modelNeeded(for: kind) != nil {
-                // Records the question, which this picker shows; the mask follows a yes.
+            if kind.isAI, await model.asksBeforeMaking(kind) {
+                // Records the question, which this picker shows; the mask follows the answer.
                 await model.startAIMask(kind, operation: operation, addingTo: target)
                 return
             }
@@ -321,7 +321,7 @@ struct MaskMessages: View {
 
     var body: some View {
         Group {
-            if model.pendingModel != nil {
+            if model.pendingModel != nil || model.offeredModels != nil {
                 ModelDownloadNotice()
             } else if let progress = model.modelDownloadProgress {
                 row {

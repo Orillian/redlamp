@@ -659,6 +659,14 @@ public final class EditorModel {
     public internal(set) var pendingModel: (
         model: ModelInfo, kind: MaskKind, part: PersonPart, landscape: LandscapeClass,
     )?
+    /// Models that make the chosen mask better, offered before it's made (Sky without Segment
+    /// Anything and Depth Anything 3); Not Now makes it without them.
+    public internal(set) var offeredModels: (models: [ModelInfo], kind: MaskKind)?
+    /// The user said Not Now to Sky's models: on this Mac they aren't offered again.
+    @ObservationIgnored var skyModelsDeclined = false {
+        didSet { library.defaults?.set(skyModelsDeclined, forKey: Self.skyModelsDeclinedKey) }
+    }
+
     /// The model being downloaded, 0...1.
     public internal(set) var modelDownloadProgress: Double?
     /// What a click would select while choosing an object (a low-resolution mask).
@@ -913,6 +921,7 @@ public final class EditorModel {
         }
         followLibrary()
         chosenAutoAdvance = Self.chosenAutoAdvance(in: self.library.defaults)
+        skyModelsDeclined = self.library.defaults?.bool(forKey: Self.skyModelsDeclinedKey) == true
         engine.setChosenCameraProfiles(Self.chosenCameraProfiles(in: self.library.defaults))
         let frames = engine.frames()
         framesTask = Task { [weak self] in
@@ -1319,6 +1328,9 @@ public final class EditorModel {
         }
         if pendingModel != nil {
             pendingModel = nil
+        }
+        if offeredModels != nil {
+            offeredModels = nil
         }
         // What they found was in the photo left.
         if peoplePicker != nil {

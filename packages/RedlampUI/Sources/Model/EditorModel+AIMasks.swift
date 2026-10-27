@@ -86,13 +86,20 @@ public extension EditorModel {
 
     /// Starts an AI mask, asking first when its model needs downloading (App Review 4.2.3: the
     /// size is shown and nothing downloads without consent): a People part as much as a mask
-    /// kind. Landscape opens its picker.
+    /// kind. Landscape opens its picker. Sky first offers the models that make it better.
     func startAIMask(
         _ kind: MaskKind, part: PersonPart = .entirePerson, landscape: LandscapeClass = .vegetation,
         operation: MaskOperation = .add, addingTo target: UUID? = nil,
     ) async {
         if let model = await engine.modelNeeded(for: kind, part: part) {
             pendingModel = (model, kind, part, landscape)
+            drawingOperation = operation
+            drawingTarget = target
+            return
+        }
+        let offered = await modelsToOffer(for: kind)
+        if !offered.isEmpty {
+            offeredModels = (offered, kind)
             drawingOperation = operation
             drawingTarget = target
             return
@@ -126,6 +133,62 @@ public extension EditorModel {
         } catch {
             maskMessage = "\(model.name) couldn't be downloaded: \(error)"
         }
+    }
+
+    static let skyModelsDeclinedKey = "app.redlamp.skyModelsDeclined"
+
+    /// The models to offer before making `kind`: Sky's while any is missing, until the user says
+    /// Not Now.
+    func modelsToOffer(for kind: MaskKind) async -> [ModelInfo] {
+        guard kind == .sky, !skyModelsDeclined else { return [] }
+        return await engine.modelsImproving(kind)
+    }
+
+    /// Whether picking `kind` asks first: for a model it needs, or with models that make it better.
+    func asksBeforeMaking(_ kind: MaskKind) async -> Bool {
+        if await engine.modelNeeded(for: kind) != nil {
+            return true
+        }
+        return await !modelsToOffer(for: kind).isEmpty
+    }
+
+    /// The user agreed: downloads the offered models in turn, then makes the mask with them.
+    func downloadOfferedModels() async {
+        guard let (models, kind) = offeredModels, let visit = currentVisit else { return }
+        let operation = drawingOperation
+        let target = drawingTarget
+        offeredModels = nil
+        modelDownloadProgress = 0
+        maskMessage = nil
+        defer { modelDownloadProgress = nil }
+        let total = Double(max(models.map(\.downloadBytes).reduce(0, +), 1))
+        var done = 0
+        for offered in models {
+            let (before, bytes) = (Double(done), Double(offered.downloadBytes))
+            do {
+                try await engine.downloadModel(offered.id) { fraction in
+                    Task { @MainActor [weak self] in self?.modelDownloadProgress = (before + fraction * bytes) / total }
+                }
+            } catch {
+                maskMessage = "\(offered.name) couldn't be downloaded: \(error)"
+                return
+            }
+            done += offered.downloadBytes
+        }
+        await refreshAvailableMasks()
+        modelDownloadProgress = nil
+        guard currentVisit == visit else { return }
+        await createAIMask(kind, operation: operation, addingTo: target)
+    }
+
+    /// Not Now: the mask is made with what's on this Mac, and Sky's models aren't offered here again.
+    func declineOfferedModels() async {
+        guard let (_, kind) = offeredModels else { return }
+        let operation = drawingOperation
+        let target = drawingTarget
+        offeredModels = nil
+        skyModelsDeclined = true
+        await createAIMask(kind, operation: operation, addingTo: target)
     }
 
     func declinePendingModel() {

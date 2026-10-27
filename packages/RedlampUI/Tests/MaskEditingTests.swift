@@ -335,6 +335,15 @@ final class StubEngine: EditingEngine, @unchecked Sendable {
         kind == .people && partsNeedingModel.contains(part) ? neededModel : await modelNeeded(for: kind)
     }
 
+    /// The models that make Sky better and aren't here; downloading one takes it off.
+    var improvingModels: [ModelInfo] = []
+    /// Models whose download fails.
+    var failingDownloads: Set<String> = []
+
+    func modelsImproving(_ kind: MaskKind) async -> [ModelInfo] {
+        kind == .sky ? improvingModels : []
+    }
+
     /// What Find can look for and finds, the model it still needs, and what it was last asked for.
     var things: [String] = []
     var found: [FoundThing] = []
@@ -359,9 +368,13 @@ final class StubEngine: EditingEngine, @unchecked Sendable {
     }
 
     func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
+        if failingDownloads.contains(id) {
+            throw URLError(.notConnectedToInternet)
+        }
         progress(1)
         downloaded.append(id)
         neededModel = nil
+        improvingModels.removeAll { $0.id == id }
     }
 
     func removeModel(_: String) async throws {}
@@ -976,6 +989,130 @@ struct MaskEditingTests {
         #expect(model.recipe.masks.count == 1)
         #expect(model.recipe.masks[0].components.count == 1)
         #expect(model.history.map(\.name).suffix(2) == ["New Objects", "Add to Object"])
+    }
+
+    static let skyModels = [
+        ModelInfo(
+            id: "sam2.1-tiny", name: "Segment Anything 2.1 (tiny)", purpose: "Objects", downloadBytes: 79_644_968,
+            state: .notDownloaded,
+        ),
+        ModelInfo(
+            id: "depth-anything-3-mono-large", name: "Depth Anything 3 (mono, large)", purpose: "Sky",
+            downloadBytes: 336_101_695, state: .notDownloaded,
+        ),
+    ]
+
+    /// An editor on a photo whose Sky models aren't here, and the engine behind it.
+    func editorWithoutSkyModels(
+        defaults: UserDefaults? = nil,
+    ) async throws -> (model: EditorModel, engine: StubEngine, folder: URL) {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let engine = StubEngine()
+        engine.improvingModels = Self.skyModels
+        engine.computed = [AIMask(
+            kind: .sky, provider: "stub", revision: 1, analysisHash: "h", center: ImagePoint(x: 0.5, y: 0.2),
+            bitmap: MaskBitmap(sha256: "s", width: 4, height: 4),
+        )]
+        let model = EditorModel(engine: engine, library: FolderLibrary(defaults: defaults))
+        model.select(folder.appending(path: "IMG_0004.ARW"))
+        try await eventually { model.info != nil }
+        return (model, engine, folder)
+    }
+
+    @Test func `Sky without its models offers them before making anything`() async throws {
+        let (model, engine, folder) = try await editorWithoutSkyModels()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        #expect(await model.asksBeforeMaking(.sky))
+        await model.startAIMask(.sky)
+        #expect(model.offeredModels?.models.map(\.id) == ["sam2.1-tiny", "depth-anything-3-mono-large"])
+        #expect(model.offeredModels?.kind == .sky)
+        #expect(model.recipe.masks.isEmpty)
+        #expect(engine.requests.isEmpty)
+        #expect(engine.downloaded.isEmpty)
+    }
+
+    @Test func `Not Now makes Sky without its models and isn't asked again on this Mac`() async throws {
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let (model, engine, folder) = try await editorWithoutSkyModels(defaults: defaults)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        await model.startAIMask(.sky)
+        #expect(model.offeredModels?.kind == .sky)
+        await model.declineOfferedModels()
+        #expect(model.offeredModels == nil)
+        #expect(engine.downloaded.isEmpty)
+        #expect(model.recipe.masks.count == 1)
+        #expect(model.recipe.masks.first?.components.first?.shape.kind == .sky)
+
+        #expect(await !model.asksBeforeMaking(.sky))
+        await model.startAIMask(.sky)
+        #expect(model.offeredModels == nil)
+        #expect(model.recipe.masks.count == 2)
+
+        let another = EditorModel(engine: engine, library: FolderLibrary(defaults: defaults))
+        #expect(await !another.asksBeforeMaking(.sky))
+    }
+
+    @Test func `Download fetches each offered model, then makes Sky with them`() async throws {
+        let (model, engine, folder) = try await editorWithoutSkyModels()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        await model.startAIMask(.sky)
+        await model.downloadOfferedModels()
+        #expect(engine.downloaded == ["sam2.1-tiny", "depth-anything-3-mono-large"])
+        #expect(model.offeredModels == nil)
+        #expect(model.recipe.masks.first?.components.first?.shape.kind == .sky)
+        #expect(await !model.asksBeforeMaking(.sky))
+    }
+
+    @Test func `a failed download says which, makes no Sky, and the offer comes back`() async throws {
+        let (model, engine, folder) = try await editorWithoutSkyModels()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        engine.failingDownloads = ["depth-anything-3-mono-large"]
+        await model.startAIMask(.sky)
+        await model.downloadOfferedModels()
+        #expect(engine.downloaded == ["sam2.1-tiny"])
+        #expect(model.maskMessage?.hasPrefix("Depth Anything 3 (mono, large) couldn't be downloaded") == true)
+        #expect(model.recipe.masks.isEmpty)
+
+        await model.startAIMask(.sky)
+        #expect(model.offeredModels?.models.map(\.id) == ["depth-anything-3-mono-large"])
+    }
+
+    @Test func `with its models here, or from a preset, Sky is made without asking`() async throws {
+        let (model, engine, folder) = try await editorWithoutSkyModels()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let blueSky = try #require(MaskPreset.builtIn.first { $0.name == "Blue Sky" })
+        try await eventually { model.canApply(blueSky) }
+        await model.applyMaskPreset(blueSky)
+        #expect(model.offeredModels == nil)
+        #expect(model.recipe.masks.count == 1)
+
+        engine.improvingModels = []
+        #expect(await !model.asksBeforeMaking(.sky))
+        await model.startAIMask(.sky)
+        #expect(model.offeredModels == nil)
+        #expect(model.recipe.masks.count == 2)
+    }
+
+    @Test func `the offer names Sky's models, their size together, what they find and their licence`() {
+        let models = Self.skyModels.map { model in
+            ModelInfo(
+                id: model.id, name: model.name, purpose: model.purpose, downloadBytes: model.downloadBytes,
+                state: model.state, licence: "Apache-2.0",
+            )
+        }
+        let both = ModelDownloadNotice.skyOffer(models)
+        #expect(both.hasPrefix(
+            "Sky masks are better with Segment Anything 2.1 (tiny) and Depth Anything 3 (mono, large), together a ",
+        ))
+        #expect(both.contains(" download: they find the sky that branches, wires and buildings cut off."))
+        #expect(both.contains("Without them, Sky is estimated from the photo's colours. They run on this Mac;"))
+        #expect(both.hasSuffix("You can remove them in Settings › Models. Their licence: Apache-2.0."))
+
+        let one = ModelDownloadNotice.skyOffer([models[1]])
+        #expect(one.hasPrefix("Sky masks are better with Depth Anything 3 (mono, large), a "))
+        #expect(one.contains(" download: it finds the sky"))
+        #expect(one.hasSuffix("You can remove it in Settings › Models. Its licence: Apache-2.0."))
     }
 
     @Test func `adaptive presets compute their masks and carry their adjustments`() async throws {

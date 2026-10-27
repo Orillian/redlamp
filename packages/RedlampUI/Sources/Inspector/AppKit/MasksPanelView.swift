@@ -87,7 +87,7 @@ final class MasksPanelView: ColumnView {
                 tools: MasksPanel.componentTools(model),
                 drawing: model.drawingKind != nil || model.isRefiningEdges,
                 messages: model.aiMaskProgress != nil || model.maskMessage != nil || model.pendingModel != nil
-                    || model.modelDownloadProgress != nil,
+                    || model.offeredModels != nil || model.modelDownloadProgress != nil,
                 choosingPeople: model.peoplePicker != nil,
                 choosingLandscape: model.landscapePicker != nil,
             )

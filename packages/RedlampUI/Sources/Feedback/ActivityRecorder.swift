@@ -76,6 +76,13 @@ final class ActivityRecorder {
                 log.record(.model, "Asked to download \(request)")
             }
         }
+        watch(model, { model in
+            model.offeredModels.map { "\($0.models.map(\.name).joined(separator: " and ")) for \($0.kind.name)" }
+        }) { _, offer in
+            if let offer {
+                log.record(.model, "Offered \(offer)")
+            }
+        }
         watch(model, { $0.modelDownloadProgress != nil }) { _, downloading in
             log.record(.model, downloading ? "Model download started" : "Model download ended")
         }

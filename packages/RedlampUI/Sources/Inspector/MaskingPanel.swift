@@ -261,9 +261,10 @@ struct MaskPresetsMenu: View {
 }
 
 /// An AI mask's model to download, asked before anything downloads (App Review 4.2.3: the size
-/// is shown, and nothing downloads without consent). `onDownload` runs as the download starts.
+/// is shown, and nothing downloads without consent), or Sky's models, offered before it's made.
+/// `onProceed` runs as the mask goes ahead: a download starts, or Not Now to an offer makes it.
 struct ModelDownloadNotice: View {
-    var onDownload: () -> Void = {}
+    var onProceed: () -> Void = {}
     @Environment(EditorModel.self) private var model
 
     var body: some View {
@@ -281,7 +282,7 @@ struct ModelDownloadNotice: View {
                     Button("Not Now") { model.declinePendingModel() }
                         .automationIdentifier("masks.download.notNow")
                     Button("Download") {
-                        onDownload()
+                        onProceed()
                         Task { await model.downloadPendingModel() }
                     }
                     .keyboardShortcut(.defaultAction)
@@ -289,7 +290,44 @@ struct ModelDownloadNotice: View {
                 }
                 .controlSize(.small)
             }
+        } else if let offer = model.offeredModels {
+            NoticeCard(Self.skyOffer(offer.models), tone: .info, symbol: "arrow.down.circle.fill") {
+                HStack(spacing: 6) {
+                    if let url = offer.models.lazy.compactMap(\.licenceURL).first {
+                        Link("Read the licence", destination: url).font(Theme.labelFont)
+                    }
+                    Spacer()
+                    Button("Not Now") {
+                        onProceed()
+                        Task { await model.declineOfferedModels() }
+                    }
+                    .automationIdentifier("masks.download.notNow")
+                    Button("Download") {
+                        onProceed()
+                        Task { await model.downloadOfferedModels() }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .automationIdentifier("masks.download")
+                }
+                .controlSize(.small)
+            }
         }
+    }
+
+    /// The offer of Sky's models: their names and size together, what they find, where they run.
+    static func skyOffer(_ models: [ModelInfo]) -> String {
+        let one = models.count == 1
+        let size = ByteCountFormatter.string(
+            fromByteCount: Int64(models.map(\.downloadBytes).reduce(0, +)), countStyle: .file,
+        )
+        let licences = Set(models.compactMap(\.licence)).sorted()
+        return "Sky masks are better with \(models.map(\.name).joined(separator: " and ")), "
+            + "\(one ? "a" : "together a") \(size) download: \(one ? "it finds" : "they find") the sky that "
+            + "branches, wires and buildings cut off. Without \(one ? "it" : "them"), Sky is estimated from the "
+            + "photo's colours. \(one ? "It runs" : "They run") on this Mac; your photos are never uploaded. You can "
+            + "remove \(one ? "it" : "them") in Settings › Models."
+            + (licences.isEmpty ? "" : " \(one ? "Its" : "Their") licence\(licences.count == 1 ? "" : "s"): "
+                + "\(licences.joined(separator: " and ")).")
     }
 }
 
