@@ -2,7 +2,7 @@
   "id": "sam2.1-tiny",
   "version": 1,
   "name": "Segment Anything 2.1 (tiny)",
-  "purpose": "Objects masks: click an object to select it, click again to add or remove parts.",
+  "purpose": "Objects masks: click an object to select it, click again to add or remove parts. Sky masks too, with Depth Anything 3.",
   "provider": "redlamp.sam2.1-tiny",
   "assetPack": "models.sam2.1-tiny.v1",
   "source": "https://huggingface.co/apple/coreml-sam2.1-tiny/resolve/main/",

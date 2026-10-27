@@ -11,13 +11,13 @@ sources = [
 ]
 +++
 
-AI masks are found by models that run on your Mac; photos are never uploaded. Subject, Background, Sky and most of People use models built into macOS and work straight away. Objects, Landscape, Depth Range and four People parts use models that Redlamp downloads the first time you need one, after showing you its size and asking.
+AI masks are found by models that run on your Mac; photos are never uploaded. Subject, Background and most of People use models built into macOS and work straight away. Sky works straight away too, estimated from the photo's colours, and with Segment Anything 2.1 and Depth Anything 3 it also finds the sky that branches, wires and buildings cut off: the first time you choose Sky, Redlamp offers them. Objects, Landscape, Depth Range and four People parts use models that Redlamp downloads the first time you need one, after showing you its size and asking.
 
 | Mask | Selects | Model | Download |
 | --- | --- | --- | --- |
 | Subject | The photo's main subject | Built into macOS | None |
 | Background | Everything but the subject | Built into macOS | None |
-| Sky | The sky, through branches and wires | Built into macOS, and Depth Anything 3 when downloaded | None |
+| Sky | The sky, through branches and wires | Segment Anything 2.1 (tiny) and Depth Anything 3 when downloaded; otherwise estimated from the photo's colours | None, or 415.7 MB |
 | People | Each person, or one part of each | Built into macOS; SAM 3 for four parts | None, or 988.1 MB |
 | Objects | The thing you click, box or brush | Segment Anything 2.1 (tiny) | 79.6 MB |
 | Landscape | The kinds of landscape you tick, such as Water and Vegetation | SAM 3 | 988.1 MB |
@@ -76,9 +76,11 @@ Landscape needs SAM 3; the first time, the picker asks to download it, as descri
 
 The first time a mask needs a model, the panel names it and its size, at the top of the list and, when you chose a tile, in the picker itself, for example: Objects masks use Segment Anything 2.1 (tiny), a 79.6 MB download. It runs on this Mac; your photos are never uploaded. You can remove it in Settings › Models. Click Download, or press Return, to download the model and carry on with the mask; Not Now leaves it. Nothing downloads without your say.
 
+Sky works without a download, so the first time you choose it on a Mac without Segment Anything 2.1 and Depth Anything 3, the panel offers them instead: Sky masks are better with Segment Anything 2.1 (tiny) and Depth Anything 3 (mono, large), together a 415.7 MB download: they find the sky that branches, wires and buildings cut off. Without them, Sky is estimated from the photo's colours. Download fetches both and makes the mask with them. Not Now makes it from the photo's colours, and Redlamp doesn't offer them again on that Mac. Mask presets, Update AI Masks, pasting and syncing use whatever is on the Mac without asking. You can download the models any time in Settings › Models, then choose Update AI Masks to find a photo's Sky masks again with them.
+
 | Model | Used for | Size | Licence |
 | --- | --- | --- | --- |
-| Segment Anything 2.1 (tiny) | Objects | 79.6 MB | Apache-2.0 |
+| Segment Anything 2.1 (tiny) | Objects; better Sky masks | 79.6 MB | Apache-2.0 |
 | SAM 3 | Landscape; Hair, Facial Hair, Body Skin and Clothes | 988.1 MB | SAM License |
 | Depth Anything 3 (mono, large) | Better Sky masks; Depth Range | 336.1 MB | Apache-2.0 |
 | Depth Anything V2 (small) | Depth Range on photos without a depth map | 49.8 MB | Apache-2.0 |

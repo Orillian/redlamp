@@ -1063,9 +1063,20 @@ Full detail in §4. In summary:
 
 - Available on every Mac with no download: `availableMaskKinds()` inserts `.sky` unconditionally —
   `packages/RedlampEngine/Sources/RedlampEngine+Masks.swift:259-261`. `modelID(for: .sky)` is `nil`,
-  so Sky never shows the download prompt **(inferred)**.
-- Quality improves once Depth Anything 3 is downloaded, but it is not required —
-  `RedlampEngine+Masks.swift:52-56`; `docs/lightroom-comparison.md:114`.
+  so Sky never shows the required-model prompt.
+- Made by Segment Anything 2.1 (tiny), with Depth Anything 3 when both are here; without either, by a
+  classical estimate from the photo's colours, grown from the top edge — `RedlampEngine+Masks.swift:26-60`.
+- Picking Sky while either model is missing offers them first (MSK-37), unless the user has said Not Now
+  on this Mac: `modelsImproving(.sky)` lists the missing ones that are cleared, published and fit this Mac,
+  none for a photo with an iPhone sky matte — `RedlampEngine+Models.swift`; `EditorModel+AIMasks.swift`
+  (`modelsToOffer`, `startAIMask`). The notice, in the picker and at the top of the list: **"Sky masks are
+  better with Segment Anything 2.1 (tiny) and Depth Anything 3 (mono, large), together a 415.7 MB download:
+  they find the sky that branches, wires and buildings cut off. Without them, Sky is estimated from the
+  photo's colours. They run on this Mac; your photos are never uploaded. You can remove them in Settings ›
+  Models. Their licence: Apache-2.0."**, with Read the licence, Not Now and Download — `MaskingPanel.swift`
+  (`ModelDownloadNotice.skyOffer`). Download fetches each in turn, then makes the mask; Not Now makes it
+  from the estimate and is remembered (`app.redlamp.skyModelsDeclined`). Mask presets, Update AI Masks,
+  Paste and Sync never ask.
 - Failure message: "No sky was found in this photo." — `Masks.swift:584`.
 - Controls: Feather and Edge (§5).
 - README's description of how it is built is at `README.md:130`; it is engine internals and out of
@@ -1273,7 +1284,7 @@ What each does, from the stroke model (`Masks.swift:56-71`):
 | People — Entire Person, Face Skin, Eyebrows, Eye Sclera, Iris and Pupil, Lips, Teeth | Apple Vision | none | no |
 | People — Hair | the photo's own hair matte; else SAM 3 | none / 988.1 MB | **yes**, when ticked in the People picker |
 | People — Body Skin, Facial Hair, Clothes | SAM 3 | 988.1 MB | **yes**, when ticked in the People picker |
-| Sky | Apple Vision + a classical estimate, improved by Depth Anything 3 when present | none (DA3 optional, 336.1 MB) | no |
+| Sky | Segment Anything 2.1 (tiny) and Depth Anything 3 when present; else a classical estimate, confirmed by Apple Vision | none (both optional, 415.7 MB) | offered once, with Not Now making it from the estimate |
 | Objects | Segment Anything 2.1 (tiny) | 79.6 MB | **yes** |
 | Landscape (all seven classes) | SAM 3 | 988.1 MB | **yes** |
 | Depth Range | the photo's own depth map; else Depth Anything 3 if downloaded; else Depth Anything V2 (small) | none / 49.8 MB | **yes**, unless the photo has its own depth map |
@@ -1302,7 +1313,7 @@ From the manifests in `packages/RedlampMasking/Resources/Models/` (sizes are the
 
 | Manifest | `name` (shown) | `purpose` (shown) | Size | Weights licence | `LICENSE.txt` ships? |
 | --- | --- | --- | --- | --- | --- |
-| `sam2.1-tiny.json` | Segment Anything 2.1 (tiny) | "Objects masks: click an object to select it, click again to add or remove parts." | 79,644,968 B → **79.6 MB** | Apache-2.0 | no |
+| `sam2.1-tiny.json` | Segment Anything 2.1 (tiny) | "Objects masks: click an object to select it, click again to add or remove parts. Sky masks too, with Depth Anything 3." | 79,644,968 B → **79.6 MB** | Apache-2.0 | no |
 | `sam3.json` | SAM 3 | "Landscape masks (water, vegetation, mountains, architecture, natural and artificial ground) and the People parts Vision can't give: hair, facial hair, body skin and clothes." | 988,085,795 B → **988.1 MB** | SAM License | yes |
 | `depth-anything-3-mono-large.json` | Depth Anything 3 (mono, large) | "Sky masks (with Segment Anything) and Depth Range masks, from one model." | 336,101,695 B → **336.1 MB** | Apache-2.0 | yes |
 | `depth-anything-v2-small.json` | Depth Anything V2 (small) | "Depth Range masks for photos without an embedded depth map." | 49,819,122 B → **49.8 MB** | Apache-2.0 | no |
@@ -1329,9 +1340,10 @@ OWLv2 and FLUX.2 belong to removal, not masking, but they appear in the same Set
 
 File: `packages/RedlampUI/Sources/Settings/ModelsSettings.swift`. Exact strings:
 - Empty list: **"No downloadable models."** (`:16`).
-- First section footer: **"Subject, Background, People and Sky masks use models built into macOS.
-  Others are downloaded only when you first use them. Every model runs on this Mac: photos are never
-  uploaded."** (`:23-26`).
+- First section footer: **"Subject, Background and People masks use models built into macOS. Sky is
+  estimated from the photo's colours until Segment Anything 2.1 and Depth Anything 3 are here, which find
+  the sky that branches, wires and buildings cut off. Others are downloaded only when you first use them.
+  Every model runs on this Mac: photos are never uploaded."** (`:23-28`).
 - Per row: the model's `name`, its `purpose` in caption, then **"Licence: \<licence>"** with a
   **"Read it"** link when the licence ships with the download (`:56-58`). So **"Read it" appears for
   SAM 3, Depth Anything 3, ViTMatte, OWLv2 and FLUX.2**; `sam2.1-tiny` and `depth-anything-v2-small`

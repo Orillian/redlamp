@@ -21,8 +21,10 @@ struct ModelsSettings: View {
                 }
             } footer: {
                 Text("""
-                Subject, Background, People and Sky masks use models built into macOS. Others are \
-                downloaded only when you first use them. Every model runs on this Mac: photos are never uploaded.
+                Subject, Background and People masks use models built into macOS. Sky is estimated from the \
+                photo's colours until Segment Anything 2.1 and Depth Anything 3 are here, which find the sky that \
+                branches, wires and buildings cut off. Others are downloaded only when you first use them. Every \
+                model runs on this Mac: photos are never uploaded.
                 """)
                 .formFooter()
             }
