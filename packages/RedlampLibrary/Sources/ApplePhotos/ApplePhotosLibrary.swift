@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 /// Whether Redlamp may read Photos, as PhotoKit says (`PHAuthorizationStatus` for read and write, which
@@ -323,9 +322,6 @@ public protocol ApplePhotosLibrary: Sendable {
     func changeToken() -> Data?
     /// What changed since `token`; throws `ApplePhotosError.expiredToken` once Photos no longer has the history.
     func changes(since token: Data) async throws -> ApplePhotosChanges
-    /// The asset's picture at about `size` pixels on its long side, from what Photos keeps on this Mac, never
-    /// downloading: nil when Photos has none without iCloud.
-    func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage?
 }
 
 public extension ApplePhotosLibrary {

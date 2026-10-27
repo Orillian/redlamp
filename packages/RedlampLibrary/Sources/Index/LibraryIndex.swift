@@ -273,6 +273,20 @@ public final class LibraryIndex: Sendable {
         }
     }
 
+    /// `read`, waiting for it on the calling thread: for the scheduler's lanes, whose jobs block, never from a task
+    /// or the main thread.
+    public func readAndWait<T>(_ body: (Reader) throws -> T) throws -> T {
+        let slot = readerLoad.withLock { load in
+            let slot = load.indices.min { load[$0] < load[$1] } ?? 0
+            load[slot] += 1
+            return slot
+        }
+        defer { readerLoad.withLock { $0[slot] -= 1 } }
+        return try readers[slot].runAndWait { database in
+            try database.transaction { try body(Reader(database: database)) }
+        }
+    }
+
     /// Returns once the write-ahead log has been copied into the database whole, when it has grown long, so the next
     /// write starts it again (`IndexCheckpoints.settle`): for a writer that writes without pausing, between its
     /// writes, which other writes go on around.

@@ -60,9 +60,10 @@ public final class ApplePhotosIndexer: Sendable {
 
     /// Assets written in one transaction.
     public static let batchSize = 1000
-    /// The format rows are written in: a pass after it changes compares the albums whole, so every row is written in
-    /// it, as only those Photos says changed would be otherwise.
-    static let rowFormat = 1
+    /// The format rows are written in, which their signatures hold: a pass after it changes compares the albums whole,
+    /// so every row is written in it, as only those Photos says changed would be otherwise. 2 gives each row its store
+    /// key as its content key (LIB-59).
+    static let rowFormat = 2
     static let albumsKey = "library.applePhotos.albums"
     static let followingKey = "library.applePhotos.following"
 
@@ -544,9 +545,8 @@ public final class ApplePhotosIndexer: Sendable {
         record.name = row.name
         record.kind = kind
         record.modified = contentVersion(of: row, in: asset)
-        if record.contentKey == nil {
-            record.size = row.file.size ?? 0
-        }
+        record.contentKey = ApplePhotosPlace.storeKey(asset: changed.key, resource: row.resource).data
+        record.size = row.file.size ?? 0
         record.captured = asset.created
         record.capturedOffset = nil
         record.cameraCaptured = nil
@@ -637,7 +637,8 @@ public final class ApplePhotosIndexer: Sendable {
     private static func signature(
         of asset: ApplePhotosAsset, key: String, rows: [Planned], sidecars: [String: ReadSidecar],
     ) -> Int64 {
-        var text = "\(key)|\(asset.contentVersion.timeIntervalSince1970)|\(asset.created?.timeIntervalSince1970 ?? -1)"
+        var text = "\(rowFormat)|\(key)|\(asset.contentVersion.timeIntervalSince1970)"
+            + "|\(asset.created?.timeIntervalSince1970 ?? -1)"
         text += "|\(asset.location.map { "\($0.latitude),\($0.longitude)" } ?? "")|\(asset.isFavorite)"
         text += "|\(asset.rating ?? -1)|\(asset.caption ?? "")|\((asset.keywords ?? []).joined(separator: ","))"
         text += "|\(asset.albums.sorted().joined(separator: ","))|\(asset.burst.map { "\($0.isKey)\($0.isUserPick)" } ?? "")"

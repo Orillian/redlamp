@@ -206,8 +206,11 @@ struct ApplePhotosIndexTests {
         #expect(changes.updated == [SamplePhotos.tram] && changes.token != token)
         library.recordChange(deleted: [SamplePhotos.live], expiring: true)
         await #expect(throws: ApplePhotosError.expiredToken) { try await library.changes(since: token) }
-        let image = try await library.image(of: SamplePhotos.edited, version: .current, size: 64)
-        #expect(image.map { max($0.width, $0.height) } == 64)
+        guard case let .image(image) = library.image(of: SamplePhotos.edited, version: .current, size: 64) else {
+            Issue.record("the edited photo's image")
+            return
+        }
+        #expect(max(image.width, image.height) == 64)
     }
 
     @Test func `thousands of assets are written a batch at a time, and a second pass leaves them as they were`(

@@ -1,5 +1,4 @@
 import Foundation
-import ImageIO
 import Photos
 import Synchronization
 import UniformTypeIdentifiers
@@ -7,7 +6,8 @@ import UniformTypeIdentifiers
 /// The System Photo Library through PhotoKit (LIB-54), only ever read (DEC-106): its albums, folders, smart
 /// and shared albums, their assets with their fields and files, each file written by
 /// `PHAssetResourceManager`, downloaded from iCloud where it's only there, and Photos' changes as
-/// `PHPhotoLibraryChangeObserver` hears of them.
+/// `PHPhotoLibraryChangeObserver` hears of them. Its images at a size are the app's (`PhotoKitImages`, LIB-59):
+/// `PHImageManager` gives them as `NSImage`, which the library's package doesn't use.
 public final class PhotoKitLibrary: ApplePhotosLibrary {
     public init() {}
 
@@ -381,48 +381,6 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
                 listed[album.localIdentifier] = held
             }
         return listed
-    }
-
-    // MARK: - Images
-
-    /// Asked of Photos as data in its best quality on this Mac, so the handler is called once, without the network,
-    /// and made at `size` by ImageIO, as the engine's packages don't use AppKit: an asset whose images are all in
-    /// iCloud gives none.
-    public func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage? {
-        try requireAccess()
-        guard let found = PHAsset.fetchAssets(
-            withLocalIdentifiers: [asset],
-            options: Self.fetchOptions(allBursts: true),
-        )
-        .firstObject
-        else { throw ApplePhotosError.notFound(asset) }
-        let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = false
-        options.deliveryMode = .highQualityFormat
-        options.version = version == .current ? .current : .original
-        let request = Mutex<PHImageRequestID?>(nil)
-        let data = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, any Error>) in
-                let id = PHImageManager.default().requestImageDataAndOrientation(for: found, options: options) {
-                    data, _, _, info in
-                    if info?[PHImageCancelledKey] as? Bool == true {
-                        continuation.resume(throwing: CancellationError())
-                    } else {
-                        continuation.resume(returning: data)
-                    }
-                }
-                request.withLock { $0 = id }
-            }
-        } onCancel: {
-            if let id = request.withLock({ $0 }) {
-                PHImageManager.default().cancelImageRequest(id)
-            }
-        }
-        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: max(size, 1),
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ] as CFDictionary)
     }
 
     // MARK: - Changes

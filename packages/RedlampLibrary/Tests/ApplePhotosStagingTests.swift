@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 import Synchronization
 import Testing
@@ -65,10 +64,6 @@ struct ApplePhotosStagingTests {
 
         func changes(since token: Data) async throws -> ApplePhotosChanges {
             try await base.changes(since: token)
-        }
-
-        func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage? {
-            try await base.image(of: asset, version: version, size: size)
         }
     }
 
