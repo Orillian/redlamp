@@ -263,8 +263,10 @@ public enum ApplePhotosError: Error, Sendable, Hashable, CustomStringConvertible
     case noAccess(ApplePhotosAccess)
     /// An asset or collection Photos no longer has, by its local identifier.
     case notFound(String)
-    /// An asset's file Photos couldn't give: offline, or gone.
+    /// An asset's file Photos couldn't give: gone, or its download failed.
     case unavailable(String, String)
+    /// An asset's file only in iCloud, which can't be reached (LIB-60).
+    case offline(String)
     /// A simulated library's manifest that can't be read.
     case unreadableManifest(String)
     /// Photos no longer has the changes since the token: what's chosen is compared whole instead.
@@ -277,6 +279,7 @@ public enum ApplePhotosError: Error, Sendable, Hashable, CustomStringConvertible
         case .noAccess: "Redlamp isn't allowed to read Photos: System Settings › Privacy & Security › Photos allows it"
         case let .notFound(id): "Photos no longer has \(id)"
         case let .unavailable(name, message): "Photos couldn't give \(name): \(message)"
+        case let .offline(name): "iCloud can't be reached, and \(name) is only there"
         case let .unreadableManifest(message): "the simulated library's manifest can't be read: \(message)"
         case .expiredToken: "Photos no longer has its changes since Redlamp last read them"
         }
@@ -301,7 +304,7 @@ public protocol ApplePhotosLibrary: Sendable {
     func assets(in ids: [String]) async throws -> [ApplePhotosAsset]
     /// Writes `asset`'s `resource` to `url`, where nothing is, downloading it from iCloud where it's only
     /// there; `progress` hears of the download, from 0 to 1. Cancelling the task stops it, leaving whatever
-    /// was written at `url` for the caller to remove.
+    /// was written at `url` for the caller to remove. Throws `ApplePhotosError.offline` when iCloud can't be reached.
     func write(
         _ resource: ApplePhotosResource, of asset: String, to url: URL,
         progress: @escaping @Sendable (Double) -> Void,

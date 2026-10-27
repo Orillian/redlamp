@@ -311,12 +311,17 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
                 } completionHandler: { error in
                     try? handle.close()
                     if let error = error ?? failure.withLock({ $0 }) {
-                        continuation.resume(throwing: cancelled.isSet ? CancellationError() : error)
+                        continuation.resume(throwing: cancelled.isSet
+                            ? CancellationError()
+                            : Self.isOffline(error) ? ApplePhotosError.offline(resource.originalFilename) : error)
                     } else {
                         continuation.resume()
                     }
                 }
                 request.withLock { $0 = id }
+                if cancelled.isSet {
+                    PHAssetResourceManager.default().cancelDataRequest(id)
+                }
             }
         } onCancel: {
             cancelled.set()
@@ -324,6 +329,27 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
                 PHAssetResourceManager.default().cancelDataRequest(id)
             }
         }
+    }
+
+    /// Whether `error`, or an error under it, says the network can't reach iCloud. Photos' own errors for it aren't
+    /// documented, so this reads the URL loading system's (unverified until the census).
+    static func isOffline(_ error: any Error) -> Bool {
+        let offline: Set<Int> = [
+            NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotFindHost,
+            NSURLErrorCannotConnectToHost, NSURLErrorDNSLookupFailed, NSURLErrorTimedOut, NSURLErrorDataNotAllowed,
+            NSURLErrorInternationalRoamingOff,
+        ]
+        var errors = [error as NSError]
+        while let next = errors.popLast() {
+            if next.domain == NSURLErrorDomain, offline.contains(next.code) {
+                return true
+            }
+            if let under = next.userInfo[NSUnderlyingErrorKey] as? NSError {
+                errors.append(under)
+            }
+            errors += next.userInfo[NSMultipleUnderlyingErrorsKey] as? [NSError] ?? []
+        }
+        return false
     }
 
     public func assets(withIDs ids: [String]) async throws -> [ApplePhotosAsset] {

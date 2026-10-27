@@ -14,10 +14,15 @@ import Synchronization
 /// `{"id", "cloud", "created", "location": {"latitude", "longitude"}, "favorite", "hidden", "mediaType",
 /// "subtypes", "burst": {"id", "key", "userPick"}, "source", "edited", "adjusted", "modified", "rating", "caption",
 /// "keywords", "albums": [collection IDs], "imagesInCloud", "resources": [{"kind", "type", "name", "file",
-/// "inCloud"}]}`, every key but `id` optional. A resource's `file` is a path from the manifest's folder; `inCloud`
-/// makes writing it report a download. An asset without `created` was taken when its first original file records,
-/// in the zone it records or this Mac's: a date unchanged in Photos. Its images (`ApplePhotosImages`, LIB-59) are
-/// made from its files, but for one `imagesInCloud`, whose Photos keeps none on this Mac.
+/// "inCloud", "failAfter"}]}`, every key but `id` optional. A resource's `file` is a path from the manifest's folder;
+/// `inCloud` makes writing it report a download. An asset without `created` was taken when its first original file
+/// records, in the zone it records or this Mac's: a date unchanged in Photos. Its images (`ApplePhotosImages`, LIB-59)
+/// are made from its files, but for one `imagesInCloud`, whose Photos keeps none on this Mac.
+///
+/// iCloud is simulated for files `inCloud` (LIB-60): the manifest's `"latency"` (milliseconds before a download's first
+/// byte), `"rate"` (bytes a second) and `"offline"`, which `network` changes while it runs, and a resource's
+/// `"failAfter"`, the bytes after which its download fails. Without a latency, a rate or a failure, a download is four
+/// steps of progress.
 ///
 /// Changes made in Photos are scripted (LIB-61): `insert`, `update`, `setAlbums`, `delete`, `add`, `removeCollection`,
 /// each kept in a history of changes whose tokens `expireHistory` makes expire, and told to those listening.
@@ -38,6 +43,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             var name: String
             var file: String?
             var inCloud: Bool?
+            var failAfter: Int64?
         }
 
         struct Burst: Decodable {
@@ -73,8 +79,32 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         var macOS: Int?
         var access: ApplePhotosAccess?
         var grants: ApplePhotosAccess?
+        var latency: Int?
+        var rate: Int?
+        var offline: Bool?
         var collections: [Collection]
         var assets: [Asset]
+    }
+
+    /// iCloud as the library's downloads meet it (LIB-60).
+    public struct Network: Sendable, Hashable {
+        /// iCloud can't be reached: a download of a file only in iCloud fails with `ApplePhotosError.offline`.
+        public var offline: Bool
+        /// Before a download's first byte.
+        public var latency: Duration
+        /// Bytes a second; nil for no limit.
+        public var rate: Int?
+
+        public init(offline: Bool = false, latency: Duration = .zero, rate: Int? = nil) {
+            self.offline = offline
+            self.latency = latency
+            self.rate = rate
+        }
+
+        /// A download is four steps of progress, as it was before iCloud was simulated.
+        var isStepped: Bool {
+            latency == .zero && rate == nil
+        }
     }
 
     /// Where the manifest is, its files' paths from its folder; nil for a library made in memory.
@@ -86,12 +116,17 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     /// The images of a library made in memory, which has no files.
     private let given: (@Sendable (ApplePhotosAsset, ApplePhotosImageVersion, Int) -> ApplePhotosImage)?
 
-    /// A file of an asset's, and whether it's only in iCloud.
-    private typealias File = (url: URL, inCloud: Bool)
+    /// A file of an asset's, whether it's only in iCloud, and the bytes after which its download fails.
+    private struct File {
+        var url: URL
+        var inCloud: Bool
+        var failAfter: Int64?
+    }
 
     private struct State {
         var access: ApplePhotosAccess
         var granted: ApplePhotosAccess
+        var network = Network()
         var tree: [ApplePhotosCollection]
         var assets: [ApplePhotosAsset]
         /// Each asset's resources' files, by asset ID and resource name.
@@ -173,7 +208,9 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
                     originalFilename: resource.name, size: size,
                 ))
                 if let url {
-                    files[entry.id, default: [:]][resource.name] = (url, resource.inCloud ?? false)
+                    files[entry.id, default: [:]][resource.name] = File(
+                        url: url, inCloud: resource.inCloud ?? false, failAfter: resource.failAfter,
+                    )
                 }
             }
             let given = { (field: ApplePhotosField) in version >= 27 && ApplePhotosField.fromMacOS27.contains(field) }
@@ -198,9 +235,19 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             return asset
         }
         state = Mutex(State(
-            access: read.access ?? .authorized, granted: read.grants ?? .authorized, tree: tree, assets: assets,
-            files: files, imagesInCloud: Set(read.assets.filter { $0.imagesInCloud == true }.map(\.id)),
+            access: read.access ?? .authorized, granted: read.grants ?? .authorized,
+            network: Network(
+                offline: read.offline ?? false, latency: .milliseconds(read.latency ?? 0), rate: read.rate,
+            ),
+            tree: tree, assets: assets, files: files,
+            imagesInCloud: Set(read.assets.filter { $0.imagesInCloud == true }.map(\.id)),
         ))
+    }
+
+    /// iCloud as downloads meet it now; set, it applies to downloads under way from their next chunk.
+    public var network: Network {
+        get { state.withLock(\.network) }
+        set { state.withLock { $0.network = newValue } }
     }
 
     public func access() -> ApplePhotosAccess {
@@ -263,10 +310,16 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         progress: @escaping @Sendable (Double) -> Void,
     ) async throws {
         try requireAlbums()
-        guard let file = state.withLock({ $0.files[asset]?[resource.originalFilename] }) else {
-            throw ApplePhotosError.unavailable(resource.originalFilename, "the manifest names no file for it")
+        let name = resource.originalFilename
+        guard let (file, network) = state.withLock({ state in state.files[asset]?[name].map { ($0, state.network) } })
+        else {
+            throw ApplePhotosError.unavailable(name, "the manifest names no file for it")
         }
         if file.inCloud {
+            guard !network.offline else { throw ApplePhotosError.offline(name) }
+            if !network.isStepped || file.failAfter != nil {
+                return try await download(file, named: name, to: url, after: network.latency, progress: progress)
+            }
             for step in 1 ... 4 {
                 try Task.checkCancellation()
                 progress(Double(step) / 4)
@@ -280,7 +333,51 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         do {
             try FileManager.default.copyItem(at: file.url, to: url)
         } catch {
-            throw ApplePhotosError.unavailable(resource.originalFilename, error.localizedDescription)
+            throw ApplePhotosError.unavailable(name, error.localizedDescription)
+        }
+    }
+
+    /// Chunks a second a download is written in, at the network's rate.
+    static let chunksPerSecond = 20
+
+    /// Writes `file` to `url` a chunk at a time, as iCloud gives it: its first byte after `latency`, then at the rate
+    /// the network has as each chunk goes, failing once it's offline or after the file's `failAfter` bytes.
+    private func download(
+        _ file: File, named name: String, to url: URL, after latency: Duration,
+        progress: @escaping @Sendable (Double) -> Void,
+    ) async throws {
+        let manager = FileManager.default
+        guard !manager.fileExists(atPath: url.path) else {
+            throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: file.url, options: .alwaysMapped)
+        } catch {
+            throw ApplePhotosError.unavailable(name, error.localizedDescription)
+        }
+        try await Task.sleep(for: latency)
+        guard manager.createFile(atPath: url.path, contents: nil),
+              let handle = try? FileHandle(forWritingTo: url) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        defer { try? handle.close() }
+        let limit = file.failAfter.map { Int(min(max($0, 0), Int64(data.count))) } ?? data.count
+        var written = 0
+        repeat {
+            let network = network
+            guard !network.offline else { throw ApplePhotosError.offline(name) }
+            let end = min(written + (network.rate.map { max($0 / Self.chunksPerSecond, 1) } ?? data.count), limit)
+            if let rate = network.rate {
+                try await Task.sleep(for: .seconds(Double(end - written) / Double(rate)))
+            }
+            try Task.checkCancellation()
+            try handle.write(contentsOf: data[written ..< end])
+            written = end
+            progress(data.isEmpty ? 1 : Double(written) / Double(data.count))
+        } while written < limit
+        guard limit == data.count else {
+            throw ApplePhotosError.unavailable(name, "the download from iCloud stopped after \(limit) bytes")
         }
     }
 
@@ -375,7 +472,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             state.assets.removeAll { $0.id == asset.id }
             state.assets.append(asset)
             state.places = nil
-            state.files[asset.id] = files.isEmpty ? nil : files.mapValues { ($0, false) }
+            state.files[asset.id] = files.isEmpty ? nil : files.mapValues { File(url: $0, inCloud: false) }
         }
         recordChange(inserted: [asset.id], collections: Set(asset.albums))
     }
