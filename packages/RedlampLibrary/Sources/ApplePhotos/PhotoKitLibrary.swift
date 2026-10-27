@@ -1,9 +1,5 @@
-#if canImport(AppKit)
-    import AppKit
-#else
-    import UIKit
-#endif
 import Foundation
+import ImageIO
 import Photos
 import Synchronization
 import UniformTypeIdentifiers
@@ -342,8 +338,9 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
 
     // MARK: - Images
 
-    /// Asked of Photos in its best quality on this Mac, so the handler is called once, without the network: an asset
-    /// whose images are all in iCloud gives none.
+    /// Asked of Photos as data in its best quality on this Mac, so the handler is called once, without the network,
+    /// and made at `size` by ImageIO, as the engine's packages don't use AppKit: an asset whose images are all in
+    /// iCloud gives none.
     public func image(of asset: String, version: ApplePhotosImageVersion, size: Int) async throws -> CGImage? {
         try requireAccess()
         guard let found = PHAsset.fetchAssets(
@@ -355,19 +352,16 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = false
         options.deliveryMode = .highQualityFormat
-        options.resizeMode = .fast
         options.version = version == .current ? .current : .original
         let request = Mutex<PHImageRequestID?>(nil)
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CGImage?, any Error>) in
-                let id = PHImageManager.default().requestImage(
-                    for: found, targetSize: CGSize(width: size, height: size), contentMode: .aspectFit,
-                    options: options,
-                ) { image, info in
+        let data = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, any Error>) in
+                let id = PHImageManager.default().requestImageDataAndOrientation(for: found, options: options) {
+                    data, _, _, info in
                     if info?[PHImageCancelledKey] as? Bool == true {
                         continuation.resume(throwing: CancellationError())
                     } else {
-                        continuation.resume(returning: image.flatMap(Self.cgImage))
+                        continuation.resume(returning: data)
                     }
                 }
                 request.withLock { $0 = id }
@@ -377,17 +371,12 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
                 PHImageManager.default().cancelImageRequest(id)
             }
         }
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: max(size, 1),
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ] as CFDictionary)
     }
-
-    #if canImport(AppKit)
-        private static func cgImage(_ image: NSImage) -> CGImage? {
-            image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        }
-    #else
-        private static func cgImage(_ image: UIImage) -> CGImage? {
-            image.cgImage
-        }
-    #endif
 
     // MARK: - Changes
 
