@@ -17,6 +17,22 @@ public extension RedlampEngine {
     /// SAM 3: Landscape, and the People parts Vision can't give (`SAM3Concepts.partPrecedence`).
     internal static let sam3ID = "sam3"
 
+    /// The models `modelSky` uses when they're here: Objects' Segment Anything, then Depth Anything 3.
+    internal static var skyModelIDs: [String] {
+        [modelID(for: .objects), depthAnything3ID].compactMap(\.self)
+    }
+
+    /// Of `models`, those Sky offers, in `skyModelIDs`' order: neither here nor downloading, offered
+    /// to everyone, published, and fitting this Mac.
+    internal static func skyModelsToOffer(from models: [ModelInfo]) -> [ModelInfo] {
+        skyModelIDs.compactMap { id in
+            models.first { model in
+                model.id == id && model.state == .notDownloaded && model.isCleared && model.isPublished
+                    && model.fitsThisMac
+            }
+        }
+    }
+
     func models() async -> [ModelInfo] {
         var infos: [ModelInfo] = []
         for manifest in ModelCatalog.offered {
@@ -45,6 +61,17 @@ public extension RedlampEngine {
         guard let manifest = ModelCatalog.offered.first(where: { $0.id == Self.sam3ID }) else { return nil }
         let info = await info(manifest)
         return info.state == .ready ? nil : info
+    }
+
+    /// Sky's models while any is missing; none for a photo with an iPhone's sky matte, which Sky
+    /// uses instead.
+    func modelsImproving(_ kind: MaskKind) async -> [ModelInfo] {
+        guard kind == .sky, currentSession()?.embeddedMattes.contains(.sky) != true else { return [] }
+        var infos: [ModelInfo] = []
+        for manifest in ModelCatalog.offered where Self.skyModelIDs.contains(manifest.id) {
+            await infos.append(info(manifest))
+        }
+        return Self.skyModelsToOffer(from: infos)
     }
 
     func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {

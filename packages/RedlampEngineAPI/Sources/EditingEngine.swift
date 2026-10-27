@@ -110,6 +110,10 @@ public protocol EditingEngine: AnyObject, Sendable {
     /// The model a People part needs downloaded first, if any: the parts only SAM 3 makes.
     func modelNeeded(for kind: MaskKind, part: PersonPart) async -> ModelInfo?
 
+    /// The downloadable models that make `kind` better without being needed for it, and aren't on
+    /// this Mac yet: Segment Anything 2.1 and Depth Anything 3 for Sky.
+    func modelsImproving(_ kind: MaskKind) async -> [ModelInfo]
+
     /// The downloadable models and their state.
     func models() async -> [ModelInfo]
 
@@ -260,6 +264,10 @@ public extension EditingEngine {
 
     func modelNeeded(for kind: MaskKind, part _: PersonPart) async -> ModelInfo? {
         await modelNeeded(for: kind)
+    }
+
+    func modelsImproving(_: MaskKind) async -> [ModelInfo] {
+        []
     }
 
     func pointColorInput(sampledAt _: CGPoint, radius _: Double, recipe _: EditRecipe) async -> OKLCh? {
