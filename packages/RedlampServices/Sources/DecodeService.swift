@@ -164,6 +164,7 @@ public extension DecodedImage {
         var lensCorrection: LensCorrection?
         var banding: BandingCorrection?
         var balancedInCamera: Bool
+        var colorMatrixRevision: RawRevision
 
         /// What the app relies on before it touches the samples: one per pixel and channel, a
         /// colour filter pattern that indexes itself, a black level per position the kernels
@@ -221,6 +222,7 @@ public extension DecodedImage {
             xyzToCamera: xyzToCamera, orientation: orientation, baselineExposure: baselineExposure, info: info,
             noiseProfile: noiseProfile, gainMaps: gainMaps, dngColor: dngColor, dngProfile: dngProfile,
             lensCorrection: lensCorrection, banding: banding, balancedInCamera: balancedInCamera,
+            colorMatrixRevision: colorMatrixRevision,
         ))
         var data = Data(capacity: 8 + header.count + samples.count * 2)
         withUnsafeBytes(of: UInt64(header.count).littleEndian) { data.append(contentsOf: $0) }
@@ -269,6 +271,7 @@ public extension DecodedImage {
         lensCorrection = header.lensCorrection
         banding = header.banding
         balancedInCamera = header.balancedInCamera
+        colorMatrixRevision = header.colorMatrixRevision
     }
 }
 

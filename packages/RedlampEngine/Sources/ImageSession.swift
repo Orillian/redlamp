@@ -16,12 +16,17 @@ final class ImageSession: @unchecked Sendable {
     let pyramid: any MTLTexture
     let orientation: Int
     let orientedSize: PixelSize
-    /// Balanced camera RGB to linear Rec. 2020 at the as-shot white balance.
+    /// Balanced camera RGB to linear Rec. 2020 at the as-shot white balance, by the calibration its
+    /// raw revision takes the photo with.
     let cameraToWorking: simd_float3x3
     /// DNG calibrations, when the file has them, and the as-shot colour temperature they imply.
     let dngColor: DNGColorCalibration?
     let asShotTemperature: Double
     let colorModel: CameraColorModel?
+    /// The first raw revision that develops with the camera's colour matrix
+    /// (`DecodedImage.colorMatrixRevision`). `colorModel` is the photo's, for its As Shot white balance,
+    /// Auto and the picker, but only edits from this revision render with it.
+    let colorMatrixRevision: RawRevision
     /// As-shot multipliers, green = 1.
     let asShotMultipliers: SIMD3<Double>
     /// The as-shot multipliers the pyramid was balanced with (smallest channel = 1).
@@ -159,17 +164,12 @@ final class ImageSession: @unchecked Sendable {
         self.pyramid = pyramid
         orientation = decoded.orientation
         orientedSize = decoded.orientedSize
-        let cameraToSRGB = simd_double3x3(rowMajor: decoded.cameraToSRGB)
-        dngColor = decoded.isRaw ? decoded.dngColor : nil
-        if let dngColor {
-            let neutral = 1 / decoded.asShotMultipliers
-            asShotTemperature = dngColor.temperature(ofNeutral: neutral / neutral.y)
-            cameraToWorking = dngColor.cameraToWorking(temperature: asShotTemperature)
-        } else {
-            asShotTemperature = 6504
-            cameraToWorking = (ColorMatrices.sRGBToRec2020 * cameraToSRGB).floatMatrix
-        }
+        let calibration = ImageSession.calibration(decoded)
+        dngColor = calibration.dngColor
+        asShotTemperature = calibration.asShotTemperature
+        cameraToWorking = calibration.cameraToWorking
         self.colorModel = colorModel
+        colorMatrixRevision = decoded.colorMatrixRevision
         asShotMultipliers = decoded.asShotMultipliers
         self.balanceMultipliers = balanceMultipliers
         baselineExposure = decoded.baselineExposure
@@ -179,23 +179,28 @@ final class ImageSession: @unchecked Sendable {
         variantOf = nil
     }
 
-    /// `photo` built again at another raw revision: `pyramid`, and the maps made from it, in place
-    /// of its own. The calibration and the embedded profile are the photo's; what is measured from
-    /// its pixels (the airlight, the chromatic aberration) is its own, and so is `noise`, which
-    /// differs from the photo's only for a raw the camera balanced (`RawRevision.fourth`).
+    /// `photo` built again at another raw revision from `decoded`, the photo as that revision takes
+    /// it: `pyramid`, and the maps made from it, in place of its own. The calibration is `decoded`'s,
+    /// which differs from the photo's only for a camera whose colour matrix came at a revision
+    /// between them (`RawRevision.fifth`); the colour model and the embedded profile are the
+    /// photo's; what is measured from its pixels (the airlight, the chromatic aberration) is its
+    /// own, and so is `noise`, which differs from the photo's only for a raw the camera balanced
+    /// (`RawRevision.fourth`).
     init(
-        variantOf photo: ImageSession, revision: RawRevision, noise: NoiseModel, pyramid: any MTLTexture,
-        maps: ImageMaps,
+        variantOf photo: ImageSession, decoded: DecodedImage, revision: RawRevision, noise: NoiseModel,
+        pyramid: any MTLTexture, maps: ImageMaps,
     ) {
         info = photo.info
         isRaw = photo.isRaw
         self.pyramid = pyramid
         orientation = photo.orientation
         orientedSize = photo.orientedSize
-        cameraToWorking = photo.cameraToWorking
-        dngColor = photo.dngColor
-        asShotTemperature = photo.asShotTemperature
+        let calibration = ImageSession.calibration(decoded)
+        cameraToWorking = calibration.cameraToWorking
+        dngColor = calibration.dngColor
+        asShotTemperature = calibration.asShotTemperature
         colorModel = photo.colorModel
+        colorMatrixRevision = photo.colorMatrixRevision
         asShotMultipliers = photo.asShotMultipliers
         balanceMultipliers = photo.balanceMultipliers
         baselineExposure = photo.baselineExposure
@@ -241,6 +246,7 @@ final class ImageSession: @unchecked Sendable {
         dngColor = original.dngColor
         asShotTemperature = original.asShotTemperature
         colorModel = original.colorModel
+        colorMatrixRevision = original.colorMatrixRevision
         asShotMultipliers = original.asShotMultipliers
         balanceMultipliers = original.balanceMultipliers
         baselineExposure = original.baselineExposure
@@ -322,14 +328,30 @@ final class ImageSession: @unchecked Sendable {
         return stops - (1 - min(max(recipe.baseLook.amount / 100, 0), 1)) * lift
     }
 
-    /// Per-channel gains that move the as-shot balance to the requested white balance.
+    /// Per-channel gains that move the as-shot balance to the requested white balance. An edit made
+    /// before its camera had a colour matrix keeps the as-shot balance, as it rendered without one.
     func whiteBalanceRatio(for recipe: EditRecipe) -> SIMD3<Double> {
-        guard isRaw, recipe.whiteBalanceMode != .asShot, let colorModel else { return SIMD3(1, 1, 1) }
+        guard isRaw, recipe.whiteBalanceMode != .asShot, recipe.rawRevision >= colorMatrixRevision, let colorModel
+        else { return SIMD3(1, 1, 1) }
         let target = colorModel.multipliers(for: WhiteBalanceValue(
             temperature: recipe[.temperature],
             tint: recipe[.tint],
         ))
         return target / asShotMultipliers
+    }
+
+    /// What `decoded` develops with: its DNG calibrations, when the file has them, the as-shot colour
+    /// temperature they imply, and balanced camera RGB to linear Rec. 2020 at the as-shot balance.
+    private static func calibration(
+        _ decoded: DecodedImage,
+    ) -> (dngColor: DNGColorCalibration?, asShotTemperature: Double, cameraToWorking: simd_float3x3) {
+        guard decoded.isRaw, let dngColor = decoded.dngColor else {
+            let cameraToSRGB = simd_double3x3(rowMajor: decoded.cameraToSRGB)
+            return (nil, 6504, (ColorMatrices.sRGBToRec2020 * cameraToSRGB).floatMatrix)
+        }
+        let neutral = 1 / decoded.asShotMultipliers
+        let temperature = dngColor.temperature(ofNeutral: neutral / neutral.y)
+        return (dngColor, temperature, dngColor.cameraToWorking(temperature: temperature))
     }
 
     /// Balanced camera RGB to linear Rec. 2020 for the recipe's white balance: DNG calibrations

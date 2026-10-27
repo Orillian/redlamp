@@ -118,7 +118,9 @@ public struct EditRecipe: Sendable, Hashable {
     /// an edit's 32nd raster are drawn (`MaskResources.sliceLimit`), where they covered nothing.
     /// 19: a raw the camera underexposed for its D-Range opens as bright as at DR100: the stops its
     /// file records (`ImageInfo.exposureShift`, Fujifilm's DR200 and DR400) are added to every
-    /// look's exposure (`ImageSession.baseExposure(for:)`, CAM-35).
+    /// look's exposure (`ImageSession.baseExposure(for:)`, CAM-35). A Fujifilm X-E5 raw develops with
+    /// the colour matrix Redlamp's LibRaw gives it (`RawRevision.fifth`, CAM-21), where LibRaw had none,
+    /// so its camera RGB was taken for linear sRGB and its white balance didn't change.
     /// A new version records its references for the process-stability gate (`ProcessStabilityTests`).
     public static let currentProcessVersion = 19
     public static let linearPointCurve = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 1)]

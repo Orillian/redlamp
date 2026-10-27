@@ -184,6 +184,7 @@ enum RawDecoder {
             )
         }
         decoded.banding = banding
+        decoded.colorMatrixRevision = colorMatrixRevision(raw)
         if case .linearRGB = layout, asShot.min() > 0 {
             decoded.balancedInCamera = raw.pointee.color.as_shot_wb_applied & Int32(LIBRAW_ASWB_APPLIED.rawValue) != 0
         }
@@ -261,6 +262,18 @@ enum RawDecoder {
         let bias = Double(fuji.ExpoMidPointShift)
         guard bias.isFinite, abs(bias) <= 10 else { return nil }
         return max(0, (-0.72 - bias).rounded())
+    }
+
+    /// Cameras LibRaw had no colour matrix for until Redlamp's fork gave them one (CAM-21), by LibRaw's
+    /// make and model, with the raw revision that first develops with it.
+    static let laterColorMatrices: [String: RawRevision] = ["Fujifilm X-E5": .fifth]
+
+    /// The raw revision that first develops with the camera's colour matrix (`laterColorMatrices`);
+    /// the first for a DNG, which carries its own.
+    static func colorMatrixRevision(_ raw: UnsafePointer<libraw_data_t>) -> RawRevision {
+        guard raw.pointee.idata.dng_version == 0, let make = string(rl_make(raw)), let model = string(rl_model(raw))
+        else { return .first }
+        return laterColorMatrices["\(make) \(model)"] ?? .first
     }
 
     /// LibRaw reports a large negative sentinel when a file has no DNG BaselineExposure.

@@ -56,7 +56,13 @@ struct SessionBuilder {
         let noise = taken.noise
         let noiseGain = try noiseGainTexture(decoded)
         let built = try pyramid(taken, revision: revision, balance: balance, noise: noise, noiseGain: noiseGain)
-        let changes = decoded.balancedInCamera ? built.changes.union([.fourth]) : built.changes
+        var changes = built.changes
+        if decoded.balancedInCamera {
+            changes.insert(.fourth)
+        }
+        if decoded.colorMatrixRevision > .first {
+            changes.insert(decoded.colorMatrixRevision)
+        }
         let pyramid = built.pyramid
         let maps = try Self.maps(of: pyramid, airlight: nil, device: device, queue: queue, kernels: kernels)
         let colorModel = decoded.isRaw ? decoded.xyzToCamera.flatMap(CameraColorModel.init(xyzToCameraRowMajor:)) : nil
@@ -71,7 +77,7 @@ struct SessionBuilder {
 
         return try ImageSession(
             info: info,
-            decoded: decoded,
+            decoded: taken,
             pyramid: pyramid,
             rawRevision: revision,
             rawChanges: changes,
@@ -116,17 +122,25 @@ struct SessionBuilder {
             decoded, revision: revision, balance: Self.balance(decoded), noise: noise, noiseGain: photo.noiseGain,
         )
         let maps = try Self.maps(of: built.pyramid, airlight: nil, device: device, queue: queue, kernels: kernels)
-        return ImageSession(variantOf: photo, revision: revision, noise: noise, pyramid: built.pyramid, maps: maps)
+        return ImageSession(
+            variantOf: photo, decoded: decoded, revision: revision, noise: noise, pyramid: built.pyramid, maps: maps,
+        )
     }
 
     /// `decoded` as the raw stages at `revision` take it. Before the fourth, a linear raw the camera
     /// balanced is taken for one it didn't, so it's balanced again and its noise is measured on
-    /// its balanced samples, as Redlamp did then (#480).
+    /// its balanced samples, as Redlamp did then (#480). Before the revision that brings the
+    /// camera's colour matrix, the photo is taken without it, as LibRaw opened it then (CAM-21).
     static func taken(_ decoded: DecodedImage, at revision: RawRevision) -> DecodedImage {
-        guard decoded.balancedInCamera, !revision.keepsCameraBalance else { return decoded }
-        var unbalanced = decoded
-        unbalanced.balancedInCamera = false
-        return unbalanced
+        var taken = decoded
+        if decoded.balancedInCamera, !revision.keepsCameraBalance {
+            taken.balancedInCamera = false
+        }
+        if revision < decoded.colorMatrixRevision {
+            taken.cameraToSRGB = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+            taken.xyzToCamera = nil
+        }
+        return taken
     }
 
     /// A mipmapped pyramid of `decoded` through the raw stages at `revision`; the buffer counting

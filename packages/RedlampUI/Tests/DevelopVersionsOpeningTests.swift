@@ -149,7 +149,7 @@ struct DevelopVersionsOpeningTests {
         #expect(model.openVersion == nil && model.value(.exposure) == 1 && model.photoMetadata.rating == 1)
         let rendered = photos.rendered(since: renders)
         #expect(rendered.first == 1 && !rendered.contains(-1))
-        #expect(photos.expectedRevision == .fourth, "built for the file's own edit")
+        #expect(photos.expectedRevision == .current, "built for the file's own edit")
     }
 
     @Test func `a rating given while a version opens is the version's, its file's staying as it was`() async throws {

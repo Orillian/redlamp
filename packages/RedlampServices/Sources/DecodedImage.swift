@@ -59,9 +59,9 @@ public struct DecodedImage: Sendable {
     /// Camera white-balance multipliers as shot, green = 1.
     public let asShotMultipliers: SIMD3<Double>
     /// Row-major camera RGB → linear sRGB (D65), for white-balanced camera data.
-    public let cameraToSRGB: [Double]
+    public var cameraToSRGB: [Double]
     /// Row-major XYZ → camera RGB, when the camera is calibrated.
-    public let xyzToCamera: [Double]?
+    public var xyzToCamera: [Double]?
     /// LibRaw orientation code: 0, 3 (180°), 5 (90° CCW) or 6 (90° CW).
     public let orientation: Int
     /// DNG BaselineExposure, in stops.
@@ -82,6 +82,11 @@ public struct DecodedImage: Sendable {
     /// Linear samples the camera has already multiplied by the as-shot white balance, as LibRaw
     /// says of Sony's YCbCr ARWs and Nikon's small raws (`as_shot_wb_applied`).
     public var balancedInCamera = false
+    /// The first raw revision that develops with the camera's colour matrix: the first, but for a
+    /// camera LibRaw had none for until Redlamp's fork gave it one (`RawDecoder.laterColorMatrices`).
+    /// Earlier revisions take the photo as LibRaw opened it then: its `rgb_cam` the identity, so
+    /// camera RGB is taken for linear sRGB, and no `cam_xyz`, so no colour model.
+    public var colorMatrixRevision = RawRevision.first
 
     public init(
         width: Int,

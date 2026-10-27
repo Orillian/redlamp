@@ -4,7 +4,7 @@
 /// So a raw-stage change that would render an existing edit differently adds a revision, the
 /// process version it ships in maps to it, and an older edit renders from the photo built again at
 /// its own revision.
-public enum RawRevision: Int, Sendable, Hashable, Comparable {
+public enum RawRevision: Int, Sendable, Hashable, Comparable, Codable {
     /// Processes 1 to 14.
     case first = 1
     /// Process 15: clipped highlights keep the colour of what's around them (CAM-31), as they do
@@ -13,13 +13,20 @@ public enum RawRevision: Int, Sendable, Hashable, Comparable {
     /// Processes 16 and 17: values below black are kept through the demosaic, for noise reduction
     /// to average, and clamped after it (DN-12), as they are in every later revision.
     case third
-    /// Process 18 on: a linear raw the camera white-balanced (`DecodedImage.balancedInCamera`) is
-    /// balanced once, as shot, and its noise measured before that balance (#480).
+    /// Process 18: a linear raw the camera white-balanced (`DecodedImage.balancedInCamera`) is
+    /// balanced once, as shot, and its noise measured before that balance (#480), as in every later
+    /// revision.
     case fourth
+    /// Process 19 on: a camera LibRaw had no colour matrix for until Redlamp's fork gave it one
+    /// (`DecodedImage.colorMatrixRevision`, the Fujifilm X-E5's) develops with that matrix, which
+    /// also guides its X-Trans demosaic (CAM-21). Before, its photos are taken as LibRaw opened
+    /// them without one.
+    case fifth
 
     public init(processVersion: Int) {
         self = switch processVersion {
-        case 18...: .fourth
+        case 19...: .fifth
+        case 18: .fourth
         case 16...: .third
         case 15: .second
         default: .first
