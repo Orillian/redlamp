@@ -13,7 +13,8 @@ import Synchronization
 /// An asset gives a row for its original's photo, one for a RAW+JPEG pair's raw, named after the photo so the two pair,
 /// and one for Photos' rendering of its edit, stacked over the original, which goes on top once it has a Redlamp edit;
 /// a burst gives its key photo and the frames picked, stacked. Videos and photos hidden in Photos are left out. Photos
-/// is only read (DEC-106).
+/// is only read (DEC-106): a favourite is a pick, which follows Photos' favourite until Redlamp sets or clears it
+/// (LIB-65).
 ///
 /// Photos' changes are followed (LIB-61, `update()` and `follow()`): each pass keeps Photos' change token in the
 /// index's settings, and the next reads only what Photos says changed since it. A photo Photos no longer has is kept as
@@ -62,8 +63,9 @@ public final class ApplePhotosIndexer: Sendable {
     public static let batchSize = 1000
     /// The format rows are written in, which their signatures hold: a pass after it changes compares the albums whole,
     /// so every row is written in it, as only those Photos says changed would be otherwise. 2 gives each row its store
-    /// key as its content key (LIB-59).
-    static let rowFormat = 2
+    /// key as its content key (LIB-59); 3 makes a favourite's pick the row's own rather than one of Photos' fields, so
+    /// the grid shows it (LIB-65).
+    static let rowFormat = 3
     static let albumsKey = "library.applePhotos.albums"
     static let followingKey = "library.applePhotos.following"
 
@@ -246,8 +248,8 @@ public final class ApplePhotosIndexer: Sendable {
         }
     }
 
-    /// An asset as the index has it: its key, cloud identifier and folder, its rows by name, those marked missing, and
-    /// the signature they were written at.
+    /// An asset as the index has it: its key, cloud identifier and folder, its rows by name, those marked missing,
+    /// those written while it was a favourite, and the signature they were written at.
     struct KnownAsset {
         var key: String
         var cloud: String?
@@ -256,6 +258,8 @@ public final class ApplePhotosIndexer: Sendable {
         var signature: Int64?
         var rows: [String: Int64]
         var missing: Set<Int64> = []
+        /// The rows whose favourite as last read (`photo_assets`) was set.
+        var favorites: Set<Int64> = []
 
         /// The names of its rows not marked missing.
         var listed: Set<String> {
@@ -272,7 +276,8 @@ public final class ApplePhotosIndexer: Sendable {
     static func knownAssets(_ reader: some IndexQueries, ids: Set<String>? = nil) throws -> [String: KnownAsset] {
         var known: [String: KnownAsset] = [:]
         let select = """
-        SELECT a.local_id, a.asset_key, a.cloud_id, f.path, f.id, f.indexed_signature, p.name, p.id, p.state
+        SELECT a.local_id, a.asset_key, a.cloud_id, f.path, f.id, f.indexed_signature, p.name, p.id, p.state,
+          a.favorite
         FROM photo_assets a JOIN photos p ON p.id = a.photo JOIN folders f ON f.id = p.folder WHERE p.version = ''
         """
         let read = { (row: SQLiteStatement) in
@@ -285,6 +290,9 @@ public final class ApplePhotosIndexer: Sendable {
             asset.rows[row.string(at: 6) ?? ""] = id
             if PhotoRecord.State(rawValue: row.int(at: 8)).contains(.missing) {
                 asset.missing.insert(id)
+            }
+            if row.int(at: 9) != 0 {
+                asset.favorites.insert(id)
             }
             known[local] = asset
         }
@@ -559,7 +567,9 @@ public final class ApplePhotosIndexer: Sendable {
         record.missingSince = nil
         record.indexed = 1
         let sidecar = changed.sidecars[row.name]
-        LibraryIndexer.Run.show(organising(asset, sidecar: sidecar?.summary), in: &record)
+        let read = existing.map { changed.known?.favorites.contains($0.id) == true }
+        let flag = Self.flag(of: asset, row: existing, read: read)
+        LibraryIndexer.Run.show(organising(asset, flag: flag, sidecar: sidecar?.summary), in: &record)
         if let sidecar {
             LibraryIndexer.Run.place(sidecar.summary.metadata, in: &record)
         } else {
@@ -595,16 +605,24 @@ public final class ApplePhotosIndexer: Sendable {
         return nil
     }
 
-    /// Photos' fields beside Redlamp's: a favourite as a pick (decision 8), and from macOS 27 a rating, a caption and
-    /// keywords, each standing where the photo's sidecar has nothing of its own for it.
-    private static func organising(_ asset: ApplePhotosAsset, sidecar: SidecarSummary?) -> LibraryIndexer.Run
-        .Organising {
+    /// The flag a row shows where its sidecar holds none (LIB-65): Photos' favourite as a pick (decision 8), followed
+    /// as Photos changes it while the row still shows what the favourite gave it when last read (`read`, nil for a
+    /// new row); a flag set or cleared in Redlamp since stays, until the favourite comes to agree with it.
+    private static func flag(of asset: ApplePhotosAsset, row: PhotoRecord?, read: Bool?) -> PhotoFlag? {
+        let favorite: PhotoFlag? = asset.isFavorite ? .pick : nil
+        guard let row, let read, row.flag != (read ? .pick : nil) else { return favorite }
+        return row.flag
+    }
+
+    /// Photos' fields beside Redlamp's: `flag`, a favourite's pick, the row's own, as LIB-54's import makes it the
+    /// copy's; and from macOS 27 a rating, a caption and keywords, Photos'. Each stands where the photo's sidecar has
+    /// nothing of its own for it.
+    private static func organising(
+        _ asset: ApplePhotosAsset, flag: PhotoFlag?, sidecar: SidecarSummary?,
+    ) -> LibraryIndexer.Run.Organising {
         var given = XMPFields()
+        given.flag = flag
         var present: Set<XMPField> = []
-        if asset.isFavorite {
-            given.flag = .pick
-            present.insert(.flag)
-        }
         if let rating = asset.rating, rating > 0 {
             given.rating = rating
             present.insert(.rating)
@@ -616,6 +634,9 @@ public final class ApplePhotosIndexer: Sendable {
         guard let sidecar else { return LibraryIndexer.Run.Organising(fields: given, others: present) }
         let redlamp = XMPFields(sidecar.metadata)
         var shown = redlamp
+        if !redlamp.holds(.flag) {
+            shown.take(.flag, from: given)
+        }
         var others: Set<XMPField> = []
         for field in present where !redlamp.holds(field) {
             shown.take(field, from: given)
