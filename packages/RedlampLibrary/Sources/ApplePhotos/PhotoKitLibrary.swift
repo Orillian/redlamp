@@ -149,10 +149,24 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         var clouds: [String: String] = [:]
         for (id, result) in PHPhotoLibrary.shared().cloudIdentifierMappings(forLocalIdentifiers: ids) {
             if case let .success(cloud) = result {
-                clouds[id] = cloud.stringValue
+                clouds[id] = Self.archivalString(of: cloud)
             }
         }
         return clouds
+    }
+
+    /// The identifier as Photos archives it (`archivalStringValue`, macOS 15.2), which may hold more than
+    /// `stringValue`, deprecated in macOS 27, and reads back where a `stringValue` would. The macOS 26 SDK
+    /// doesn't declare it, though every macOS Redlamp runs on has it.
+    static func archivalString(of cloud: PHCloudIdentifier) -> String {
+        #if compiler(>=6.4)
+            cloud.archivalStringValue
+        #else
+            guard cloud.responds(to: NSSelectorFromString("archivalStringValue")),
+                  let archival = cloud.value(forKey: "archivalStringValue") as? String
+            else { return cloud.stringValue }
+            return archival
+        #endif
     }
 
     private static func asset(_ asset: PHAsset, cloud: String?, albums: [String]) -> ApplePhotosAsset {
