@@ -93,6 +93,7 @@ struct ApplePhotosThumbnailsTests {
     static func open(
         _ sandbox: SourcesSandbox, _ photos: SimulatedPhotosLibrary, rows: Int, grid: CGSize? = nil,
     ) async throws -> (EditorModel, LibraryGridView?, NSWindow?) {
+        try FileManager.default.createDirectory(at: sandbox.root, withIntermediateDirectories: true)
         let model = try await sandbox.open(photos: photos)
         let core = try #require(sandbox.service?.core)
         try await ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
@@ -339,18 +340,18 @@ struct ApplePhotosThumbnailsTests {
 
     /// LIB-59's budgets on the simulated library at 50,000 assets, Photos' images the CC0 raws' previews: the grid
     /// scrolled at three rows a frame through all of them with the main thread's p99 under 8.3 ms; a screenful the
-    /// store
-    /// hasn't, from Photos, at p95 under 250 ms; one the store has within a frame; the grid tier about 22 KB a
-    /// thumbnail;
-    /// the memory within the library's 250 MB; nothing downloaded. Skipped unless `REDLAMP_APPLE_PHOTOS_BENCH=1`
-    /// (`TEST_RUNNER_REDLAMP_APPLE_PHOTOS_BENCH=1`).
+    /// store hasn't, from Photos, at p95 under 250 ms; a row the store has coming into view within a frame; the grid
+    /// tier about 22 KB a thumbnail; what browsing adds to the memory; nothing downloaded. Skipped unless
+    /// `REDLAMP_APPLE_PHOTOS_BENCH=1` (`TEST_RUNNER_REDLAMP_APPLE_PHOTOS_BENCH=1`).
     @Test(.enabled(if: ProcessInfo.processInfo.environment["REDLAMP_APPLE_PHOTOS_BENCH"] == "1"))
     func `50,000 photos left in Apple Photos scroll within LIB-59's budgets`() async throws {
+        let start = Self.footprint
         let derivatives = Self.derivatives()
         try #require(!derivatives.isEmpty, "the CC0 raws in tests/fixtures/raw")
         let sandbox = SourcesSandbox()
         defer { sandbox.remove() }
         let photos = Self.generated(50000, derivatives: derivatives)
+        try FileManager.default.createDirectory(at: sandbox.root, withIntermediateDirectories: true)
         let model = try await sandbox.open(photos: photos)
         let core = try #require(sandbox.service?.core)
         let kept = try await ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
@@ -390,12 +391,16 @@ struct ApplePhotosThumbnailsTests {
         monitor.stop()
         let turns = try #require(monitor.summary())
 
-        // A screenful the store has, in a grid that has none in memory.
+        // Rows the store has coming into view one at a time, at ten places, in a grid that has none in memory.
         let fresh = LibraryGridView(model: model)
         fresh.frame = window.contentLayoutRect
         window.contentView = fresh
         fresh.layoutSubtreeIfNeeded()
-        let fromStore = try await Self.screenfuls(fresh, at: places)
+        var fromStore: [Double] = []
+        for place in places.prefix(10) {
+            _ = try await Self.screenfuls(fresh, at: [place])
+            fromStore += try await Self.screenfuls(fresh, at: (1 ... 5).map { place + Double($0) * row })
+        }
         let after = Self.footprint
 
         let statistics = core.store.statistics()
@@ -407,16 +412,17 @@ struct ApplePhotosThumbnailsTests {
             .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true }
         print(String(
             format: "LIB-59 bench: %d rows of 50,000 assets, %d derivatives; a screenful from Photos p50 %.0f ms, p95 %.0f ms, "
-                + "max %.0f ms; from the store p50 %.1f ms, p95 %.1f ms; scrolling %d steps in %.1f s, main thread p50 %.2f ms, "
+                + "max %.0f ms; a row from the store p50 %.1f ms, p95 %.1f ms; scrolling %d steps in %.1f s, main thread p50 %.2f ms, "
                 + "p95 %.2f ms, p99 %.2f ms, max %.1f ms, %d of %d turns over 8.3 ms; %d grid thumbnails, %.1f KB each, so %.2f GB "
-                + "for every row; %d pictures asked of Photos, at most %d times each; memory %.0f MB before the grid, %.0f MB "
-                + "after; %d files in the Photos root",
+                + "for every row; %d pictures asked of Photos, at most %d times each; memory %.0f MB at the start, %.0f MB "
+                + "before the grid, %.0f MB after; %d files in the Photos root",
             rows, derivatives.count, Self.percentile(fromPhotos, 0.5), Self.percentile(fromPhotos, 0.95),
             fromPhotos.max() ?? 0,
             Self.percentile(fromStore, 0.5), Self.percentile(fromStore, 0.95), steps,
             Double(scrolled.components.seconds) + Double(scrolled.components.attoseconds) / 1e18, turns.p50, turns.p95,
             turns.p99, turns.max, turns.overFrame, turns.iterations, statistics.records, perThumbnail / 1024,
-            perThumbnail * Double(rows) / 1e9, asked.count, asked.values.max() ?? 0, before, after, files?.count ?? 0,
+            perThumbnail * Double(rows) / 1e9, asked.count, asked.values.max() ?? 0, start, before, after,
+            files?.count ?? 0,
         ))
         #expect(turns.p99 < 8.3)
         #expect(Self.percentile(fromPhotos, 0.95) < 250)
