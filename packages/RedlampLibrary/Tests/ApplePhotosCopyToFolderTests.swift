@@ -9,8 +9,9 @@ import Testing
 /// library with an index: each copy carrying its photo's sidecar from this Mac (its edit, versions, history and
 /// metadata, its collections included), Redlamp's fields standing over Photos' and no album made a collection or
 /// followed; an original only in iCloud downloaded through Redlamp's cache, counted in the progress and let go of once
-/// copied; a capture time as the library showed it; and Undo Import taking the copies back, leaving what Redlamp keeps
-/// of the photos in place as it was.
+/// copied; a capture time as the library showed it; Undo Import taking the copies back, leaving what Redlamp keeps of
+/// the photos in place as it was; and an album's copy standing in for each of its photos not copied already, which its
+/// Undo gives back.
 struct ApplePhotosCopyToFolderTests {
     /// A library keeping albums of the sample in place, with its cache of originals and an import that copies with it.
     struct Kept {
@@ -230,5 +231,41 @@ struct ApplePhotosCopyToFolderTests {
         #expect(try kept.importing.record.load().assets.isEmpty)
         #expect(try Data(contentsOf: original.appending(path: SidecarStore.editFile)) == before)
         #expect(try await kept.rows()["IMG_0001.HEIC"]?.edited == true)
+    }
+
+    @Test func `an album's copy stands in for each of its photos not copied already, and Undo gives each back with its own`(
+    ) async throws {
+        let kept = try await Self.kept(["album-lisbon"])
+        defer { kept.remove() }
+        try await kept.save(Sidecar(recipe: Self.exposure, metadata: PhotoMetadata(rating: 4)), for: "IMG_0002.JPG")
+        let tram = try await kept.importing.run(kept.settings([SamplePhotos.tram]))
+        #expect(tram.imported == 1)
+        let album = try await kept.sandbox.index.read { try $0.applePhotosAssets(inAlbum: "album-lisbon") }
+        #expect(album.count == 4, "the photo whose copy stands in isn't copied again")
+        #expect(Set(album) == [SamplePhotos.edited, SamplePhotos.live, SamplePhotos.burstKey, SamplePhotos.burstPick])
+
+        let outcome = try await kept.importing.run(kept.settings(album, naming: ["album-lisbon"]))
+        #expect(outcome.state == .finished && outcome.stagingFailures.isEmpty && outcome.imported == 4)
+        #expect(try await kept.rows().isEmpty, "no photo from Photos once their copies stand in")
+        #expect(try await ApplePhotosCopiesTests.listed(in: "album-lisbon", kept.sandbox) == [
+            "Lisbon/IMG_0001.HEIC", "Lisbon/IMG_0002.JPG", "Lisbon/IMG_0002 (Photos edit).jpeg",
+            "Lisbon/IMG_0003.HEIC", "Lisbon/IMG_0010.JPG", "Lisbon/IMG_0012.JPG",
+        ])
+        let copy = try #require(try await kept.sandbox.rows(below: kept.sandbox.destination)["Lisbon/IMG_0002.JPG"])
+        #expect(copy.rating == 4 && copy.edited, "the copy has the photo's edit")
+
+        let undone = try await kept.importing.undo()
+        defer { Self.emptyTrash(of: undone) }
+        #expect(undone.record.id == outcome.id && undone.rollbacks.map(\.state) == [.rolledBack])
+        let back = try await kept.rows()
+        #expect(Set(back.keys) == [
+            "IMG_0002.JPG", "IMG_0002 (Photos edit).jpeg", "IMG_0003.HEIC", "IMG_0010.JPG", "IMG_0012.JPG",
+        ], "the album's photos from Photos back, and the one copied before still its copy")
+        #expect(back["IMG_0002.JPG"]?.rating == 4 && back["IMG_0002.JPG"]?.edited == true, "back with its own edit")
+        #expect(try await ApplePhotosCopiesTests.listed(in: "album-lisbon", kept.sandbox) == [
+            "Lisbon/IMG_0001.HEIC", "IMG_0002.JPG", "IMG_0002 (Photos edit).jpeg", "IMG_0003.HEIC", "IMG_0010.JPG",
+            "IMG_0012.JPG",
+        ])
+        #expect(try Set(kept.importing.record.load().assets.keys) == [SamplePhotos.tram])
     }
 }

@@ -43,7 +43,7 @@ struct ApplePhotosCopiesTests {
 
     /// What album `id` lists, not missing: a copy by its path in the sandbox's folders, a photo from Photos by its
     /// name.
-    private static func listed(in id: String, _ sandbox: ImportSandbox) async throws -> Set<String> {
+    static func listed(in id: String, _ sandbox: ImportSandbox) async throws -> Set<String> {
         let folders = LibraryIndexer.path(sandbox.destination) + "/"
         return try await sandbox.index.read { reader in
             let statement = try reader.database.prepare("""
