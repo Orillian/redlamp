@@ -15,6 +15,22 @@ public extension ApplePhotosIndexer {
         try await enqueue { [self] in try await changesPass() }
     }
 
+    /// Brings the rows of the assets `ids` names up to date, as a change in Photos to them would: once Copy to Folder's
+    /// copies stand in for them, and once Undo Import has taken those copies back (LIB-63). Nothing is read while no
+    /// album is kept in place.
+    @discardableResult
+    func refresh(_ ids: Set<String>) async throws -> Outcome {
+        try await enqueue { [self] in
+            var outcome = Outcome()
+            outcome.whole = false
+            let albums = try await index.read { try Self.following($0)?.albums }
+            if let albums, !ids.isEmpty {
+                try await apply(ids, albums: albums, &outcome)
+            }
+            return outcome
+        }
+    }
+
     /// Follows Photos while Redlamp runs: `update()` at once, for what changed since the last pass, then again
     /// `settling` after each change Photos tells of, until the task is cancelled. It reads nothing while no album is
     /// kept in place or Redlamp may not read Photos: albums kept later start it again. `failed` hears of a pass that

@@ -7,7 +7,9 @@ import Synchronization
 /// stay a pair) and, for a photo edited in Photos, its rendering as `<name> (Photos edit).<ext>`. Each file is
 /// written under a hidden name and renamed once it's whole, so a file already staged is kept and a stopped
 /// import takes up where it was. A file without a capture time of its own is dated when Photos says it was
-/// taken. The card import then copies the staging folder as a folder (`ApplePhotosImport`).
+/// taken. The card import then copies the staging folder as a folder (`ApplePhotosImport`). For Copy to Folder
+/// (LIB-63), the files of photos the library keeps in place come from Redlamp's cache of originals, and each one's
+/// sidecar on this Mac is staged beside it, afresh each time (`ApplePhotosKept`).
 public struct ApplePhotosStager: Sendable {
     /// The hidden folder at a destination that holds each import's staging folder.
     public static let folderName = ".Redlamp Photos Import"
@@ -17,10 +19,16 @@ public struct ApplePhotosStager: Sendable {
     public let library: any ApplePhotosLibrary
     /// This import's staging folder.
     public let folder: URL
+    let kept: ApplePhotosKept?
 
     public init(library: any ApplePhotosLibrary, destination: URL, id: UUID) {
+        self.init(library: library, destination: destination, id: id, kept: nil)
+    }
+
+    init(library: any ApplePhotosLibrary, destination: URL, id: UUID, kept: ApplePhotosKept?) {
         self.library = library
         folder = Self.root(for: destination).appending(path: id.uuidString, directoryHint: .isDirectory)
+        self.kept = kept
     }
 
     /// The hidden folder at `destination` that holds the staging folders.
@@ -117,8 +125,9 @@ public struct ApplePhotosStager: Sendable {
         for (resource, name) in Self.files(of: asset) {
             let target = place.appending(path: name)
             if !FileManager.default.fileExists(atPath: target.path) {
-                try await write(resource, of: asset, to: target, tally: tally, report: report)
+                try await write(resource, named: name, of: asset, to: target, tally: tally, report: report)
             }
+            try kept?.stageSidecar(of: name, of: asset.id, beside: target)
             let size = (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
             tally.withLock { $0.written += size }
         }
@@ -129,8 +138,8 @@ public struct ApplePhotosStager: Sendable {
     }
 
     private func write(
-        _ resource: ApplePhotosResource, of asset: ApplePhotosAsset, to target: URL, tally: Tally<Progress>,
-        report: @escaping @Sendable () -> Void,
+        _ resource: ApplePhotosResource, named name: String, of asset: ApplePhotosAsset, to target: URL,
+        tally: Tally<Progress>, report: @escaping @Sendable () -> Void,
     ) async throws {
         let partial = target.deletingLastPathComponent().appending(path: "." + target.lastPathComponent + ".partial")
         try? FileManager.default.removeItem(at: partial)
@@ -141,12 +150,15 @@ public struct ApplePhotosStager: Sendable {
                 report()
             }
         }
+        let started: @Sendable (Double) -> Void = { _ in
+            if !downloading.exchange(true, ordering: .acquiringAndReleasing) {
+                tally.withLock { $0.downloading += 1 }
+                report()
+            }
+        }
         do {
-            try await library.write(resource, of: asset.id, to: partial) { _ in
-                if !downloading.exchange(true, ordering: .acquiringAndReleasing) {
-                    tally.withLock { $0.downloading += 1 }
-                    report()
-                }
+            if try await kept?.write(name, of: asset.id, to: partial, downloading: started) != true {
+                try await library.write(resource, of: asset.id, to: partial, progress: started)
             }
             try Task.checkCancellation()
             if let created = asset.created {

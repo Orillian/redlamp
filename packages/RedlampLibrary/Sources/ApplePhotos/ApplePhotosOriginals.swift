@@ -351,19 +351,32 @@ public final class ApplePhotosOriginals: Sendable {
         return await evict { _, _ in true }
     }
 
+    /// Takes out the originals of `urls` but those held or downloading: photos whose copies stand in for them now
+    /// (LIB-63), so nothing shows them. Returns what went.
+    @discardableResult
+    public func evict(_ urls: [URL]) async -> Usage {
+        await ready()
+        let paths = Set(urls.map(LibraryIndexer.path))
+        return await evict(choosing: { paths.contains($0) }) { _, _ in true }
+    }
+
     /// Takes out the least recently opened originals until the cache is within its budget.
     func trim() async {
         await ready()
         _ = await evict { bytes, budget in bytes > budget }
     }
 
-    /// Takes out originals not held nor downloading, the least recently opened first, while `over` says so of the
-    /// bytes kept and the budget.
-    private func evict(while over: @escaping @Sendable (Int64, Int64) -> Bool) async -> Usage {
+    /// Takes out originals not held nor downloading of those `chosen` picks, the least recently opened first, while
+    /// `over` says so of the bytes kept and the budget.
+    private func evict(
+        choosing chosen: @escaping @Sendable (String) -> Bool = { _ in true },
+        while over: @escaping @Sendable (Int64, Int64) -> Bool,
+    ) async -> Usage {
         let (taken, budget) = state.withLock { state -> ([(String, Entry)], Int64) in
             var bytes = state.bytes
             var taken: [(String, Entry)] = []
-            let candidates = state.files.filter { state.holds[$0.key] == nil && state.jobs[$0.key] == nil }
+            let candidates = state.files
+                .filter { chosen($0.key) && state.holds[$0.key] == nil && state.jobs[$0.key] == nil }
                 .sorted { $0.value.opened < $1.value.opened }
             for (path, entry) in candidates {
                 guard over(bytes, state.budget) else { break }

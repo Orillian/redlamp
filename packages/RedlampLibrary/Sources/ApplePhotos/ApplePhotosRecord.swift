@@ -83,6 +83,12 @@ public struct ApplePhotosRecord: Sendable, Hashable, Codable {
         imports.last { $0.state != .undone }
     }
 
+    /// The newest import of albums not taken back, Copy to Folder's (LIB-63) left out: what LIB-55's new photos are
+    /// imported with.
+    public var lastAlbumImport: Import? {
+        imports.last { $0.state != .undone && $0.settings.photos == nil }
+    }
+
     public func importing(_ id: UUID) -> Import? {
         imports.first { $0.id == id }
     }

@@ -161,6 +161,26 @@ public struct ApplePhotosCensus: Sendable {
         )
     }
 
+    /// The census of the assets `ids` names, as Copy to Folder takes photos kept in place (LIB-63): each with the
+    /// albums kept in place that hold it, those `named` names first, so `{album}` gives the copies their titles before
+    /// the others' (`kept`); the assets `imported` names left, and those Photos no longer has left out. Throws while
+    /// Redlamp may not read Photos.
+    public static func make(
+        _ library: any ApplePhotosLibrary, photos ids: [String], naming named: [String], kept: [String],
+        imported: Set<String> = [],
+    ) async throws -> ApplePhotosCensus {
+        let access = library.access()
+        guard access.canRead else { throw ApplePhotosError.noAccess(access) }
+        let tree = try await ApplePhotosTree(library.collections())
+        let first = tree.albums(in: named)
+        let albums = first + tree.albums(in: kept).filter { album in !first.contains { $0.id == album.id } }
+        let assets = ids.isEmpty ? [] : try await library.assets(withIDs: ids, in: albums.map(\.id))
+        return ApplePhotosCensus(
+            tree: tree, albums: albums, assets: assets, fields: library.fields, access: access, includesHidden: true,
+            imported: imported,
+        )
+    }
+
     init(
         tree: ApplePhotosTree, albums: [ApplePhotosCollection], assets: [ApplePhotosAsset],
         fields: Set<ApplePhotosField>, access: ApplePhotosAccess, includesHidden: Bool, imported: Set<String>,
