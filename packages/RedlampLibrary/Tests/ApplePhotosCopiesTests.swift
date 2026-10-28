@@ -168,6 +168,33 @@ struct ApplePhotosCopiesTests {
         #expect(try await !indexer.update().whole)
     }
 
+    @Test func `a photo Copy to Folder copies stands in at once with its edit, and Undo gives back its photo from Photos`(
+    ) async throws {
+        let kept = try await ApplePhotosCopyToFolderTests.kept(["album-lisbon"])
+        defer { kept.remove() }
+        var exposure = EditRecipe()
+        exposure[.exposure] = 0.5
+        try await kept.save(Sidecar(recipe: exposure, metadata: PhotoMetadata(rating: 3)), for: "IMG_0001.HEIC")
+
+        let copied = try await kept.importing.run(kept.settings([SamplePhotos.tram]))
+        #expect(copied.state == .finished && copied.imported == 1)
+        #expect(try await kept.rows()["IMG_0001.HEIC"] == nil, "no photo from Photos once its copy stands in")
+        let lisbon = try await Self.listed(in: "album-lisbon", kept.sandbox)
+        #expect(lisbon.contains("Lisbon/IMG_0001.HEIC") && !lisbon.contains("IMG_0001.HEIC"))
+        let copy = try #require(try await kept.sandbox.rows(below: kept.sandbox.destination)["Lisbon/IMG_0001.HEIC"])
+        #expect(copy.rating == 3 && copy.edited, "the copy has the photo's edit")
+
+        let undone = try await kept.importing.undo()
+        defer {
+            for file in undone.rollbacks.flatMap(\.trashed) {
+                try? FileManager.default.removeItem(atPath: file.to)
+            }
+        }
+        let back = try #require(try await kept.rows()["IMG_0001.HEIC"])
+        #expect(back.rating == 3 && back.edited, "back with what Redlamp kept of it")
+        #expect(try await Self.listed(in: "album-lisbon", kept.sandbox).contains("IMG_0001.HEIC"))
+    }
+
     @Test func `a copy that goes missing gives its asset its photo from Photos back, and one found or renamed stands in`(
     ) async throws {
         let sandbox = try await ImportSandbox.make()
