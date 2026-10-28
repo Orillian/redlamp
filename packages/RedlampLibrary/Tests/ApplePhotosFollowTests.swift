@@ -51,6 +51,53 @@ struct ApplePhotosFollowTests {
             == ["A/IMG_0002.JPG", "A/IMG_0010.JPG"])
     }
 
+    @Test func `a followed album kept in place, or in a folder kept, offers nothing: it follows Photos by itself`(
+    ) async throws {
+        let sandbox = try await ImportSandbox.make()
+        defer { sandbox.remove() }
+        let folder = sandbox.folder.url.appending(path: "Photos", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for name in ["IMG_0002.JPG", "IMG_0010.JPG"] {
+            try FileManager.default.copyItem(
+                at: SamplePhotos.folder.appending(path: "files/\(name)"), to: folder.appending(path: name),
+            )
+        }
+        let collections: [[String: Any]] = [
+            ["id": "folder-trips", "title": "Trips", "kind": "folder"],
+            ["id": "album-a", "title": "A", "kind": "album", "parent": "folder-trips"],
+            ["id": "album-b", "title": "B", "kind": "album"],
+        ]
+        func asset(_ number: Int, _ name: String, albums: [String]) -> [String: Any] {
+            ["id": "asset-\(number)", "created": "2026-10-0\(number)T10:00:00Z", "albums": albums, "resources": [
+                ["kind": "photo", "name": name, "file": "Photos/\(name)"],
+            ]]
+        }
+        let first = try SamplePhotos.manifest(in: sandbox.folder.url, collections: collections, assets: [
+            asset(1, "IMG_0002.JPG", albums: ["album-a"]), asset(3, "IMG_0010.JPG", albums: ["album-b"]),
+        ])
+        try await ApplePhotosImport(photos: SimulatedPhotosLibrary(manifest: first), library: sandbox.library).run(
+            ApplePhotosImport.Settings(
+                collections: ["album-a", "album-b"], copying: sandbox.settings(folders: "{album}", backup: false),
+            ),
+        )
+        let arrived = try SimulatedPhotosLibrary(manifest: SamplePhotos.manifest(
+            in: sandbox.folder.url, collections: collections, assets: [
+                asset(1, "IMG_0002.JPG", albums: ["album-a"]), asset(2, "IMG_0010.JPG", albums: ["album-a"]),
+                asset(3, "IMG_0010.JPG", albums: ["album-b"]), asset(4, "IMG_0002.JPG", albums: ["album-b"]),
+            ],
+        ))
+        let importing = ApplePhotosImport(photos: arrived, library: sandbox.library)
+        #expect(try await importing.followedNews()?.census.report.photos == 2)
+
+        let indexer = ApplePhotosIndexer(photos: arrived, index: sandbox.index, paths: sandbox.paths)
+        try await indexer.keep(["folder-trips"])
+        let news = try #require(try await importing.followedNews())
+        #expect(news.settings.collections == ["album-b"] && news.census.report.photos == 1, "only B's new photo")
+        try await indexer.keep(["album-b"])
+        #expect(try await importing.followedNews() == nil)
+        #expect(try importing.followedAlbums().map(\.id) == ["album-a", "album-b"], "still followed once copied")
+    }
+
     @Test func `followed albums of 10,000 photos are counted within 100 ms`() async throws {
         let sandbox = try await ImportSandbox.make()
         defer { sandbox.remove() }

@@ -165,20 +165,33 @@ public final class ApplePhotosImport: Sendable {
         try record.load().lastAlbumImport
     }
 
-    /// The new photos in the albums followed (LIB-55): the census of every album followed, with the last import of
-    /// albums' settings, leaving the assets the record names; and those settings, which import them. Nil while no album
-    /// is followed or no import of albums is left to take its settings from. Throws while Redlamp may not read Photos.
+    /// The new photos in the albums followed (LIB-55): the census of every album followed and not kept in place, with
+    /// the last import of albums' settings, leaving the assets the record names; and those settings, which import them.
+    /// Nil while no album is followed but those kept in place, or no import of albums is left to take its settings
+    /// from. Throws while Redlamp may not read Photos.
     public func followedNews() async throws -> (settings: Settings, census: ApplePhotosCensus)? {
         let current = try record.load()
         guard !current.followed.isEmpty, let last = current.lastAlbumImport else { return nil }
+        let followed = try await copied(current.followed)
+        guard !followed.isEmpty else { return nil }
         var settings = last.settings
-        settings.collections = current.followed.map(\.id)
+        settings.collections = followed.map(\.id)
         settings.follows = true
         let census = try await ApplePhotosCensus.make(
             photos, choosing: settings.collections, includesHidden: settings.includesHidden,
             imported: Set(current.assets.keys),
         )
         return (settings, census)
+    }
+
+    /// Those of the albums `followed` that aren't kept in place (LIB-64, decision 6): an album kept in place, or in a
+    /// folder kept, follows Photos by itself, so the albums imports follow are offered only while they're copied.
+    private func copied(_ followed: [ApplePhotosRecord.Album]) async throws -> [ApplePhotosRecord.Album] {
+        guard let index = library.index else { return followed }
+        let kept = try await index.read { try ApplePhotosIndexer.chosen($0) }.map(\.id)
+        guard !kept.isEmpty else { return followed }
+        let inPlace = try await Set(ApplePhotosTree(photos.collections()).albums(in: kept).map(\.id)).union(kept)
+        return followed.filter { !inPlace.contains($0.id) }
     }
 
     // MARK: - Importing
