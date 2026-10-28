@@ -63,7 +63,7 @@ struct ThumbnailsTests {
     @Test(.enabled(if: !raws.isEmpty))
     func `a preview is decoded in place in the mapped raw file, never copied`() throws {
         let url = try #require(Self.raws.first)
-        var file: NSData? = try NSData(contentsOf: url, options: .alwaysMapped)
+        var file: NSData? = Thumbnails.mapped(url)
         let mapped = try #require(file)
         let (preview, _) = try #require(Thumbnails.smallestPreview(in: Data(referencing: mapped), atLeast: 192))
         let bytes = try #require(Thumbnails.bytes(of: preview, in: mapped))
@@ -72,8 +72,52 @@ struct ThumbnailsTests {
         #expect(bytes.withUnsafeBytes { $0.baseAddress } == start, "a view into the mapping")
         #expect(bytes.count == preview.length)
         #expect(Array(bytes.prefix(2)) == [0xFF, 0xD8], "a JPEG, still mapped once the file is let go")
+        #expect(Thumbnails.canRead(preview, in: url))
         let outside = Thumbnails.Preview(offset: 1 << 40, length: 1, width: 192, height: 128)
         #expect(Thumbnails.bytes(of: outside, in: NSData()) == nil)
+        #expect(!Thumbnails.canRead(outside, in: url))
+        #expect(Thumbnails.mapped(Self.fixtures.appending(path: "gone.NEF")) == nil)
+    }
+
+    /// A raw copied to a disk image for the test, which takes the disk away.
+    private static let disked = fixtures.appending(path: "DSC_0750.NEF")
+
+    @discardableResult
+    private static func hdiutil(_ arguments: String...) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return -1 }
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
+    @Test(.enabled(if: FileManager.default.fileExists(atPath: disked.path) && !DecodeServiceTests.isSandboxed))
+    func `a raw whose disk goes away once it's mapped gives no thumbnail, rather than a bus error`() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "redlamp-thumbnails-\(UUID().uuidString)")
+        let image = folder.appending(path: "disk.dmg"), mount = folder.appending(path: "disk")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            Self.hdiutil("detach", "-force", mount.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        try #require(Self.hdiutil("create", "-size", "64m", "-fs", "HFS+", "-volname", "Redlamp", image.path) == 0)
+        try #require(Self.hdiutil("attach", "-nobrowse", "-mountpoint", mount.path, image.path) == 0)
+        let raw = mount.appending(path: Self.disked.lastPathComponent)
+        try FileManager.default.copyItem(at: Self.disked, to: raw)
+        // In a process of its own: a mapped page that can't be read is a bus error.
+        await #expect(processExitsWith: .success) { [raw = raw as URL, mount = mount as URL] in
+            guard let file = Thumbnails.mapped(raw),
+                  let (preview, flip) = Thumbnails.smallestPreview(in: Data(referencing: file), atLeast: 384)
+            else { exit(2) }
+            Self.hdiutil("detach", "-force", mount.path)
+            guard Thumbnails.decode(preview, flip: flip, in: file, maxPixelSize: 384) == nil,
+                  !Thumbnails.canRead(preview, in: raw),
+                  Thumbnails.smallestPreview(in: Data(referencing: file), atLeast: 384) == nil,
+                  Thumbnails.thumbnail(for: raw, maxPixelSize: 384) == nil
+            else { exit(1) }
+        }
     }
 
     @Test func `a preview a file places past its end is refused, however large its offset or length`() {

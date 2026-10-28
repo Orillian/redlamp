@@ -38,22 +38,54 @@ public enum Thumbnails {
     }
 
     /// The raw file's smallest JPEG preview at least `maxPixelSize` on its long edge, decoded at
-    /// that size and turned upright. The file is mapped once: LibRaw parses it from the mapping
-    /// and ImageIO decodes the preview straight from it. A copy of the preview (1 to 5 MB) was
-    /// most of a decode's memory, and with every core decoding, malloc kept the copies' high-water
-    /// mark in the footprint after they were freed.
+    /// that size and turned upright. The file is mapped once (`mapped(_:)`): LibRaw parses it from
+    /// the mapping and ImageIO decodes the preview straight from it. A copy of the preview (1 to 5
+    /// MB) was most of a decode's memory, and with every core decoding, malloc kept the copies'
+    /// high-water mark in the footprint after they were freed.
     static func embeddedPreview(of url: URL, maxPixelSize: Int) -> CGImage? {
-        guard let file = try? NSData(contentsOf: url, options: .alwaysMapped),
+        guard let file = mapped(url),
               let (preview, flip) = smallestPreview(in: Data(referencing: file), atLeast: maxPixelSize)
         else { return nil }
         FileTrace.note(.read, url, bytes: preview.length)
-        return decode(preview, flip: flip, in: file, maxPixelSize: maxPixelSize)
+        guard let image = decode(preview, flip: flip, in: file, maxPixelSize: maxPixelSize),
+              canRead(preview, in: url)
+        else { return nil }
+        return image
+    }
+
+    /// The file mapped read-only with `MAP_RESILIENT_MEDIA`. A page of a mapping that can't be read
+    /// (a disk that went away, an iCloud file that couldn't be downloaded) is otherwise a bus error,
+    /// which quits the app; in this one it reads as zeros, which LibRaw and ImageIO refuse.
+    static func mapped(_ url: URL) -> NSData? {
+        let descriptor = openForReading(url)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_size > 0,
+              let pages = mmap(nil, Int(info.st_size), PROT_READ, MAP_PRIVATE | MAP_RESILIENT_MEDIA, descriptor, 0),
+              pages != MAP_FAILED
+        else { return nil }
+        return NSData(bytesNoCopy: pages, length: Int(info.st_size)) { pages, length in _ = munmap(pages, length) }
+    }
+
+    /// Whether the file can still be read where `preview` ends, once it's decoded from `mapped(_:)`:
+    /// zeros read in place of what couldn't be would make a wrong thumbnail.
+    static func canRead(_ preview: Preview, in url: URL) -> Bool {
+        let descriptor = openForReading(url)
+        guard descriptor >= 0 else { return false }
+        defer { close(descriptor) }
+        var byte: UInt8 = 0
+        return pread(descriptor, &byte, 1, off_t(preview.offset + preview.length - 1)) == 1
+    }
+
+    private static func openForReading(_ url: URL) -> Int32 {
+        url.withUnsafeFileSystemRepresentation { path in path.map { open($0, O_RDONLY | O_CLOEXEC) } ?? -1 }
     }
 
     /// The largest JPEG a raw file embeds, which is the camera's own rendering, upright and at
     /// most `maxPixelSize` on its long edge: what the camera bench compares Redlamp's with.
     public static func cameraPreview(of url: URL, maxPixelSize: Int) -> CGImage? {
-        guard let file = try? NSData(contentsOf: url, options: .alwaysMapped) else { return nil }
+        guard let file = mapped(url) else { return nil }
         return cameraPreview(in: file, maxPixelSize: maxPixelSize)
     }
 
