@@ -198,9 +198,10 @@
             }
         }
 
-        /// Clicks the button or box carrying `identifier` in the Apple Photos window open now, as the mouse does. While
-        /// the app isn't active or the window isn't key, a press goes nowhere, so there the control is clicked as the
-        /// keyboard clicks it, as `click(_:inWindowTitled:)` does.
+        /// Clicks the button or box carrying `identifier` in the Apple Photos window open now, as the mouse does: a box
+        /// on its box, since a box takes a press only there and on its title, and SwiftUI stretches an album's box
+        /// across its row. While the app isn't active or the window isn't key, a press goes nowhere, so there the
+        /// control is clicked as the keyboard clicks it, as `click(_:inWindowTitled:)` does.
         func clickInPhotosWindow(_ identifier: String) throws {
             try waitInPhotosWindow("\(identifier) shown and enabled") { window in
                 window.control(identifier).map { $0.shown && $0.enabled } ?? false
@@ -214,7 +215,8 @@
                     return nil
                 }
                 content.layoutSubtreeIfNeeded()
-                let frame = control.convert(control.bounds, to: nil)
+                let box = control.cell?.imageRect(forBounds: control.bounds) ?? .zero
+                let frame = control.convert(box.isEmpty ? control.bounds : box, to: nil)
                 return NSPoint(x: frame.midX, y: frame.midY)
             }
             if let location {
