@@ -26,6 +26,10 @@ import Synchronization
 ///
 /// Changes made in Photos are scripted (LIB-61): `insert`, `update`, `setAlbums`, `delete`, `add`, `removeCollection`,
 /// each kept in a history of changes whose tokens `expireHistory` makes expire, and told to those listening.
+///
+/// An asset's `cloud` is its cloud identifier's archival text, as Redlamp records it from 0.3.5; its
+/// `"cloudStringValue"`,
+/// the text `stringValue` gave, as 0.3.4 recorded it, where the two differ. Either reads back to the asset (LIB-64).
 public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     public static let format = "app.redlamp.simulated-photos"
 
@@ -55,6 +59,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         struct Asset: Decodable {
             var id: String
             var cloud: String?
+            var cloudStringValue: String?
             var created: Date?
             var location: ApplePhotosAsset.Location?
             var favorite: Bool?
@@ -133,6 +138,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         var files: [String: [String: File]]
         /// The assets whose Photos keeps no image on this Mac.
         var imagesInCloud: Set<String>
+        /// The text each asset's cloud identifier's `stringValue` gave, where it isn't its `cloud`, by asset ID.
+        var cloudStrings: [String: String] = [:]
         var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
         /// The changes recorded, as Photos' persistent history keeps them: a token is how many there were.
         var history: [ApplePhotosChanges] = []
@@ -241,6 +248,11 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             ),
             tree: tree, assets: assets, files: files,
             imagesInCloud: Set(read.assets.filter { $0.imagesInCloud == true }.map(\.id)),
+            cloudStrings: Dictionary(read.assets.compactMap { entry in
+                entry.cloudStringValue.map { (entry.id, $0) }
+            }) {
+                first, _ in first
+            },
         ))
     }
 
@@ -414,6 +426,28 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             var found = asset
             let holding = asset.burst.flatMap { $0.isKey ? nil : keys[$0.id] } ?? asset.albums
             found.albums = holding.filter(kept.contains)
+            return found
+        }
+    }
+
+    /// A recorded cloud identifier names the asset whose `cloud` or `stringValue` text it is, as PhotoKit reads both
+    /// back.
+    public func localIDs(ofCopies copies: [String: String]) async throws -> [String: String] {
+        try requireAlbums()
+        return state.withLock { state in
+            var clouds: [String: String] = [:]
+            for asset in state.assets {
+                if let cloud = asset.cloud {
+                    clouds[cloud] = asset.id
+                }
+                if let text = state.cloudStrings[asset.id] {
+                    clouds[text] = asset.id
+                }
+            }
+            var found: [String: String] = [:]
+            for (local, cloud) in copies {
+                found[local] = state.asset(local) != nil ? local : clouds[cloud]
+            }
             return found
         }
     }

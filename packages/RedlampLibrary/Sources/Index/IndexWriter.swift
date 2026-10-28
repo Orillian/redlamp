@@ -253,7 +253,11 @@ public extension LibraryIndex.Writer {
         try removePhotos(ids).count
     }
 
-    /// Removes photos as `deletePhotos` does; returns the IDs of the rows removed, versions included.
+    /// Removes photos as `deletePhotos` does; returns the IDs of the rows removed, versions included. A copy standing
+    /// in
+    /// for an asset kept in Apple Photos leaves its albums, and its link is marked taken out, so the next pass gives
+    /// the
+    /// asset its rows from Photos back (LIB-64); a copy's link that was missing already goes.
     func removePhotos(_ ids: [Int64]) throws -> [Int64] {
         let photo = try database.cached("DELETE FROM photos WHERE id = ? RETURNING folder, name, version")
         let versions = try database.cached(
@@ -262,6 +266,11 @@ public extension LibraryIndex.Writer {
         let keywords = try database.cached("DELETE FROM photo_keywords WHERE photo = ?")
         let collections = try database.cached("DELETE FROM collection_photos WHERE photo = ?")
         let text = try database.cached("DELETE FROM photo_text WHERE rowid = ?")
+        let copyAlbums = try database.cached("""
+        DELETE FROM photo_albums WHERE photo = ?1 AND EXISTS (SELECT 1 FROM photo_copies WHERE photo = ?1)
+        """)
+        let missingCopy = try database.cached("DELETE FROM photo_copies WHERE photo = ? AND live = 0")
+        let copy = try database.cached("UPDATE photo_copies SET photo = NULL WHERE photo = ?")
         var removed: [Int64] = []
         for id in ids {
             try photo.bind(id, at: 1)
@@ -275,7 +284,7 @@ public extension LibraryIndex.Writer {
                 gone += try versions.map { $0.int64(at: 0) }
             }
             for row in gone {
-                for statement in [keywords, collections, text] {
+                for statement in [keywords, collections, text, copyAlbums, missingCopy, copy] {
                     try statement.bind(row, at: 1)
                     try statement.run()
                 }

@@ -164,6 +164,40 @@ struct PhotosCommandTests {
         #expect(listed.status == 0 && listed.output == "Lisbon (album, 6 photos)  album-lisbon\n", "\(listed.output)")
     }
 
+    @Test func `--keep after an import lists the copies in the album kept, making nothing from Photos for them`(
+    ) async throws {
+        let scratch = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let index = scratch.appending(path: "Library/Index.sqlite")
+        let pictures = scratch.appending(path: "Pictures")
+        let applied = try await Self.run(
+            [
+                "--apply",
+                "--album",
+                "Lisbon",
+                "--destination",
+                pictures.path,
+                "--folders",
+                "{album}",
+                "--index",
+                index.path,
+            ],
+            in: scratch,
+        )
+        #expect(applied.status == 0, "\(applied.errors)")
+        let kept = try await Self.run(
+            ["--keep", "--album", "Trips/Lisbon", "--index", index.path, "--json"],
+            in: scratch,
+        )
+        #expect(kept.status == 0, "\(kept.errors)")
+        let report = try kept.json()
+        #expect(report["photos"] as? Int == 5 && report["copies"] as? Int == 5 && report["inserted"] as? Int == 0)
+        let again = try await Self.run(["--keep", "--index", index.path], in: scratch)
+        #expect(again.output.contains("5 of them copied into the library before"), "\(again.output)")
+        let listed = try await Self.run(["--list", "--index", index.path], in: scratch)
+        #expect(listed.output == "Lisbon (album, 6 photos)  album-lisbon\n", "\(listed.output)")
+    }
+
     @Test func `--originals reports the cache of originals downloaded from iCloud, and --evict empties it`(
     ) async throws {
         let scratch = try Self.scratch()

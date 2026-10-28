@@ -15,18 +15,25 @@ public extension ApplePhotosIndexer {
         try await enqueue { [self] in try await changesPass() }
     }
 
-    /// Brings the rows of the assets `ids` names up to date, as a change in Photos to them would: once Copy to Folder's
-    /// copies stand in for them, and once Undo Import has taken those copies back (LIB-63). Nothing is read while no
-    /// album is kept in place.
+    /// Brings the assets `ids` names up to date, as a change in Photos to them would, with the library's copies of them
+    /// (LIB-64): after Copy to Folder has copied them (LIB-63), so their copies stand in for them, and after Undo
+    /// Import has taken the copies back, so their rows from Photos come back. The albums are compared whole where
+    /// `update()` would compare them whole. One pass runs at a time.
     @discardableResult
-    func refresh(_ ids: Set<String>) async throws -> Outcome {
-        try await enqueue { [self] in
+    func refresh(_ ids: some Sequence<String>) async throws -> Outcome {
+        let touched = Set(ids)
+        return try await enqueue { [self] in
+            let started = ContinuousClock.now
+            let (chosen, following) = try await index.read { try (Self.chosen($0), Self.following($0)) }
+            guard !chosen.isEmpty, let following, following.format == Self.rowFormat,
+                  !FileManager.default.fileExists(atPath: rekeyJournal.path)
+            else { return try await pass() }
             var outcome = Outcome()
             outcome.whole = false
-            let albums = try await index.read { try Self.following($0)?.albums }
-            if let albums, !ids.isEmpty {
-                try await apply(ids, albums: albums, &outcome)
+            if !touched.isEmpty {
+                try await apply(touched, albums: following.albums, &outcome)
             }
+            outcome.elapsed = ContinuousClock.now - started
             return outcome
         }
     }
@@ -66,6 +73,7 @@ extension ApplePhotosIndexer {
         guard !chosen.isEmpty, let following, let token = following.token, following.format == Self.rowFormat,
               !FileManager.default.fileExists(atPath: rekeyJournal.path)
         else { return try await pass() }
+        let written = recordWritten
         let changes: ApplePhotosChanges
         do {
             changes = try await photos.changes(since: token)
@@ -86,11 +94,15 @@ extension ApplePhotosIndexer {
                 try await touched.formUnion(joinedOrLeft(Array(changed)))
             }
         }
+        try await touched.formUnion(index.read { try Self.copiesChanged($0) })
+        if written != following.record {
+            try await touched.formUnion(copiesRecorded())
+        }
         if !touched.isEmpty {
             try await apply(touched, albums: following.albums, &outcome)
         }
-        if changes.token != token {
-            let next = Following(token: changes.token, albums: following.albums, format: Self.rowFormat)
+        let next = Following(token: changes.token, albums: following.albums, format: Self.rowFormat, record: written)
+        if next != following {
             try await index.write { try Self.setFollowing(next, $0) }
         }
         outcome.elapsed = ContinuousClock.now - started
@@ -122,11 +134,13 @@ extension ApplePhotosIndexer {
         return touched
     }
 
-    /// The photos the index lists in each of the albums `ids` names, by local identifier: not those marked missing.
+    /// The photos the index lists in each of the albums `ids` names, by local identifier: not those marked missing, and
+    /// those whose copies stand in for them (LIB-64), so one that leaves the album is seen to.
     private static func listed(in ids: [String], _ reader: some IndexQueries) throws -> [String: Set<String>] {
         let statement = try reader.database.cached("""
         SELECT a.local_id FROM photo_albums al JOIN photo_assets a ON a.photo = al.photo
-        JOIN photos p ON p.id = al.photo WHERE al.album = ? AND p.state & \(PhotoRecord.State.missing.rawValue) = 0
+        JOIN photos p ON p.id = al.photo WHERE al.album = ?1 AND p.state & \(PhotoRecord.State.missing.rawValue) = 0
+        UNION SELECT c.local_id FROM photo_albums al JOIN photo_copies c ON c.photo = al.photo WHERE al.album = ?1
         """)
         var listed: [String: Set<String>] = [:]
         for id in ids {
@@ -137,8 +151,8 @@ extension ApplePhotosIndexer {
     }
 
     /// Brings the rows of the assets `touched` names up to date with Photos in the albums kept, `albums`: those the
-    /// library lists written, those that left every album kept taken out, and those Photos no longer has kept as
-    /// missing.
+    /// library lists written, or their copies standing in for them, those that left every album kept taken out, and
+    /// those Photos no longer has kept as missing.
     private func apply(_ touched: Set<String>, albums: [String], _ outcome: inout Outcome) async throws {
         let fetched = try await photos.assets(withIDs: Array(touched), in: albums)
         let found = Set(fetched.map(\.id))
@@ -156,17 +170,25 @@ extension ApplePhotosIndexer {
         let locator = try await LibrarySidecars(index: index, paths: paths).locator()
         try await finishRekeying(root: known.root, locator: locator, known: &known.assets)
         try await rekey(assets, root: known.root, locator: locator, known: &known.assets, &outcome)
+        let copies = try await copies(of: assets, among: touched, readingBack: false)
         let keys = Set(assets.map { known.assets[$0.id]?.key ?? ApplePhotosPlace.key(cloud: $0.cloud, local: $0.id) })
         let withSidecars = Self.keysWithSidecars(root: known.root.path, locator: locator, keys: keys)
         for start in stride(from: 0, to: assets.count, by: Self.batchSize) {
             try Task.checkCancellation()
+            let batch = assets[start ..< min(start + Self.batchSize, assets.count)]
+            let standing = try await standing(batch, copies, locator: locator)
             try await write(
-                assets[start ..< min(start + Self.batchSize, assets.count)], root: known.root, known: known.assets,
-                locator: locator, sidecars: withSidecars, into: &outcome,
+                standing.isEmpty ? batch : ArraySlice(batch.filter { standing[$0.id] == nil }), root: known.root,
+                known: known.assets, locator: locator, sidecars: withSidecars, into: &outcome,
+            )
+            try await standIn(
+                standing, albums: Dictionary(batch.map { ($0.id, $0.albums) }) { first, _ in first },
+                evaluated: copies.linked.intersection(batch.map(\.id)), known: known.assets, &outcome,
             )
         }
         outcome.assets = assets.count
         let kept = Set(assets.map(\.id))
+        try await standIn([:], albums: [:], evaluated: copies.linked.subtracting(kept), known: [:], &outcome)
         var swept: [Int64] = []
         var gone: [KnownAsset] = []
         for (local, asset) in Self.left(known.assets.filter { !kept.contains($0.key) }, outcome) {

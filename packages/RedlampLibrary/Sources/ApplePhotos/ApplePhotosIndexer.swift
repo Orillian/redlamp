@@ -20,6 +20,9 @@ import Synchronization
 /// index's settings, and the next reads only what Photos says changed since it. A photo Photos no longer has is kept as
 /// missing (DEC-59), its sidecar with it, and listed only by Library Health's Missing; an asset that gains a cloud
 /// identifier is keyed again, its folder and sidecars moved.
+///
+/// An asset the library has a copy of in its folders, made by LIB-54's import or Copy to Folder, gets no row: its copy
+/// stands in for it, listed in its albums (LIB-64, `ApplePhotosIndexer+Copies.swift`).
 public final class ApplePhotosIndexer: Sendable {
     /// What a pass found and did.
     public struct Outcome: Sendable, Hashable {
@@ -36,6 +39,9 @@ public final class ApplePhotosIndexer: Sendable {
         public var rekeyed = 0
         /// Assets whose rows stand as they were.
         public var unchanged = 0
+        /// Assets whose copies in the library's folders stand in for them (LIB-64): listed in their albums in place of
+        /// rows made from Photos.
+        public var copies = 0
         /// Left out: videos, photos hidden in Photos, and frames of bursts neither the key photo nor picked.
         public var videos = 0
         public var hidden = 0
@@ -52,11 +58,13 @@ public final class ApplePhotosIndexer: Sendable {
 
     /// Where the last pass left Photos (LIB-61): its change token then, the albums the collections kept held, a
     /// folder's albums included, so the next can read only what changed and tell when they no longer resolve, and the
-    /// format its rows were written in.
+    /// format its rows were written in; and when Apple Photos.json was written then, so the next reads it again only
+    /// once copies may have been made or taken back (LIB-64).
     struct Following: Codable, Hashable {
         var token: Data?
         var albums: [String]
         var format: Int?
+        var record: Date?
     }
 
     /// Assets written in one transaction.
@@ -178,8 +186,9 @@ public final class ApplePhotosIndexer: Sendable {
     func pass() async throws -> Outcome {
         let started = ContinuousClock.now
         var outcome = Outcome()
-        // Taken before Photos is read, so what changes while it's read is read again by the next pass.
+        // Taken before Photos and Apple Photos.json are read, so what changes while they're read the next pass reads.
         let token = photos.changeToken()
+        let written = recordWritten
         let (chosen, before) = try await index.read { try (Self.chosen($0), Self.following($0)) }
         var assets: [ApplePhotosAsset] = []
         var albums: [String] = []
@@ -190,7 +199,8 @@ public final class ApplePhotosIndexer: Sendable {
             vanished = Set(before?.albums ?? []).filter { tree[$0] == nil }
             assets = try await Self.kept(photos.assets(in: albums), &outcome)
         }
-        let following = chosen.isEmpty ? nil : Following(token: token, albums: albums, format: Self.rowFormat)
+        let following = chosen.isEmpty
+            ? nil : Following(token: token, albums: albums, format: Self.rowFormat, record: written)
         let rootPath = LibraryIndexer.path(ApplePhotosPlace.root(in: paths))
         let making = !assets.isEmpty
         let known = try await index.write { writer -> (root: RootRecord, assets: [String: KnownAsset])? in
@@ -207,17 +217,23 @@ public final class ApplePhotosIndexer: Sendable {
         let locator = try await LibrarySidecars(index: index, paths: paths).locator()
         try await finishRekeying(root: known.root, locator: locator, known: &known.assets)
         try await rekey(assets, root: known.root, locator: locator, known: &known.assets, &outcome)
+        let copies = try await copies(of: assets, among: nil, readingBack: true)
         let withSidecars = Self.keysWithSidecars(root: known.root.path, locator: locator)
         for start in stride(from: 0, to: assets.count, by: Self.batchSize) {
             try Task.checkCancellation()
             let batch = assets[start ..< min(start + Self.batchSize, assets.count)]
+            let standing = try await standing(batch, copies, locator: locator)
             try await write(
-                batch,
+                standing.isEmpty ? batch : ArraySlice(batch.filter { standing[$0.id] == nil }),
                 root: known.root,
                 known: known.assets,
                 locator: locator,
                 sidecars: withSidecars,
                 into: &outcome,
+            )
+            try await standIn(
+                standing, albums: Dictionary(batch.map { ($0.id, $0.albums) }) { first, _ in first },
+                evaluated: copies.linked.intersection(batch.map(\.id)), known: known.assets, &outcome,
             )
             if outcome.firstBatch == nil {
                 outcome.firstBatch = ContinuousClock.now - started
@@ -225,6 +241,7 @@ public final class ApplePhotosIndexer: Sendable {
         }
         outcome.assets = assets.count
         let kept = Set(assets.map(\.id))
+        try await standIn([:], albums: [:], evaluated: copies.linked.subtracting(kept), known: [:], &outcome)
         try await leave(
             Self.left(known.assets.filter { !kept.contains($0.key) }, outcome), asking: Set(albums).union(vanished),
             &outcome,

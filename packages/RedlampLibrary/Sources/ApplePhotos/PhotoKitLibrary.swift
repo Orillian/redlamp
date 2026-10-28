@@ -382,6 +382,40 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         }
     }
 
+    /// The identifiers recorded are fetched first, reading nothing but them; only those Photos doesn't have are read
+    /// back and mapped.
+    public func localIDs(ofCopies copies: [String: String]) async throws -> [String: String] {
+        try requireAccess()
+        guard !copies.isEmpty else { return [:] }
+        var found: [String: String] = [:]
+        PHAsset.fetchAssets(withLocalIdentifiers: Array(copies.keys), options: Self.fetchOptions(allBursts: true))
+            .enumerateObjects { asset, _, _ in found[asset.localIdentifier] = asset.localIdentifier }
+        var recorded: [(cloud: PHCloudIdentifier, local: String)] = []
+        for (local, text) in copies where found[local] == nil && !text.isEmpty {
+            if let cloud = Self.cloudIdentifier(text) {
+                recorded.append((cloud, local))
+            }
+        }
+        guard !recorded.isEmpty else { return found }
+        let mappings = PHPhotoLibrary.shared().localIdentifierMappings(for: recorded.map(\.cloud))
+        for (cloud, local) in recorded {
+            if case let .success(id) = mappings[cloud] {
+                found[local] = id
+            }
+        }
+        return found
+    }
+
+    /// A cloud identifier as it was recorded, read back. `init(archivalStringValue:)` reads `stringValue`'s text too;
+    /// the macOS 26 SDK declares only `init(stringValue:)`, which reads what 0.3.4 recorded.
+    static func cloudIdentifier(_ text: String) -> PHCloudIdentifier? {
+        #if compiler(>=6.4)
+            PHCloudIdentifier(archivalStringValue: text)
+        #else
+            PHCloudIdentifier(stringValue: text)
+        #endif
+    }
+
     /// Photos is asked for each album's photos that aren't hidden, and for the frames picked of each burst in it,
     /// reading nothing but their identifiers.
     public func listedIDs(in ids: [String]) async throws -> [String: Set<String>] {

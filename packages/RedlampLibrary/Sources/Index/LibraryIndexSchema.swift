@@ -10,7 +10,7 @@ extension LibraryIndex {
         createVersion1, migrateToVersion2, migrateToVersion3, migrateToVersion4, migrateToVersion5,
         migrateToVersion6, migrateToVersion7, migrateToVersion8, migrateToVersion9, migrateToVersion10,
         migrateToVersion11, migrateToVersion12, migrateToVersion13, migrateToVersion14, migrateToVersion15,
-        migrateToVersion16,
+        migrateToVersion16, migrateToVersion17,
     ]
 
     /// The version of the schema this build makes and opens.
@@ -149,6 +149,10 @@ extension LibraryIndex {
             try database.execute(schemaVersion16)
         }
         try database.execute(schemaVersion16Tables)
+    }
+
+    static func migrateToVersion17(_ database: SQLiteDatabase) throws {
+        try database.execute(schemaVersion17)
     }
 
     /// Brings `database` up to the last version `migrations` knows, one step per transaction.
@@ -430,6 +434,19 @@ extension LibraryIndex {
     CREATE TABLE IF NOT EXISTS photo_albums (album TEXT NOT NULL, photo INTEGER NOT NULL,
       PRIMARY KEY (album, photo)) WITHOUT ROWID;  -- photo is photos.id
     CREATE INDEX IF NOT EXISTS photo_albums_photo ON photo_albums (photo);
+    """
+
+    /// Copies of photos kept in Apple Photos (LIB-64): the photos of the library's folders that LIB-54's import or Copy
+    /// to Folder copied from an asset, by its local identifier on this Mac, so an album kept in place lists the copy
+    /// standing in for the asset (`photo_albums`) and no row is made from Photos. `photo` is NULL once the copy's row
+    /// is
+    /// taken out, until a pass gives the asset its rows from Photos back; `live` is whether the copy was there and not
+    /// missing when a pass last brought its asset up to date.
+    static let schemaVersion17 = """
+    CREATE TABLE IF NOT EXISTS photo_copies (photo INTEGER, local_id TEXT NOT NULL,
+      live INTEGER NOT NULL DEFAULT 1);  -- photo is photos.id
+    CREATE UNIQUE INDEX IF NOT EXISTS photo_copies_photo ON photo_copies (photo);
+    CREATE INDEX IF NOT EXISTS photo_copies_local ON photo_copies (local_id);
     """
 }
 

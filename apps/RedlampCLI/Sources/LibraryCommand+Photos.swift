@@ -224,11 +224,16 @@ extension LibraryCommand {
                 "albums": kept.get().map(\.id), "photos": outcome.assets, "inserted": outcome.inserted.count,
                 "updated": outcome.updated.count, "removed": outcome.removed.count, "unchanged": outcome.unchanged,
                 "videos": outcome.videos, "hidden": outcome.hidden, "burstFrames": outcome.frames, "seconds": seconds,
+                "copies": outcome.copies,
             ], options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]), as: UTF8.self))
         } else {
             try print("Kept \(kept.get().count) albums in place: \(outcome.assets) photos from Apple Photos, "
                 + "\(outcome.inserted.count) rows added, \(outcome.updated.count) written again, "
                 + "\(outcome.removed.count) taken out, in \(String(format: "%.1f", seconds)) s")
+            if outcome.copies > 0 {
+                print("  \(outcome.copies) of them copied into the library before: those copies are listed in "
+                    + "their albums, and no photo is made from Photos for them")
+            }
             if outcome.videos + outcome.hidden + outcome.frames > 0 {
                 print("  left out: \(outcome.videos) videos, \(outcome.hidden) hidden photos, "
                     + "\(outcome.frames) burst frames not picked")

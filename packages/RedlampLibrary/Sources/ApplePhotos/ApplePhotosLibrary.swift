@@ -325,6 +325,13 @@ public protocol ApplePhotosLibrary: Sendable {
     func changeToken() -> Data?
     /// What changed since `token`; throws `ApplePhotosError.expiredToken` once Photos no longer has the history.
     func changes(since token: Data) async throws -> ApplePhotosChanges
+    /// This Mac's local identifiers of the assets copies were made from (LIB-64), by the local identifier each copy
+    /// recorded, given with the cloud identifier it recorded: that identifier where Photos has it, and otherwise the
+    /// asset the cloud identifier names, read back as Photos reads one recorded on another Mac or by an earlier
+    /// Redlamp,
+    /// whose `stringValue` 0.3.4 recorded. Those Photos can't find are left out. Photos maps cloud identifiers in one
+    /// batch, at a cost Apple calls high, so only those it doesn't have by their own identifier are read back.
+    func localIDs(ofCopies copies: [String: String]) async throws -> [String: String]
 }
 
 public extension ApplePhotosLibrary {
@@ -350,6 +357,11 @@ public extension ApplePhotosLibrary {
             found.albums = holding[asset.id] ?? []
             return found
         }
+    }
+
+    /// Made from `assets(withIDs:)`: those Photos has by the identifier recorded, none read back.
+    func localIDs(ofCopies copies: [String: String]) async throws -> [String: String] {
+        try await Dictionary(assets(withIDs: Array(copies.keys)).map { ($0.id, $0.id) }) { first, _ in first }
     }
 }
 

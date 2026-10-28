@@ -26,6 +26,7 @@
     {
       "id": "8A1F0002-0000-4000-8000-000000000002/L0/001",
       "cloud": "cloud-0002",
+      "cloudStringValue": "string-0002",
       "created": "2026-10-05T10:30:00Z",
       "edited": true,
       "albums": ["album-lisbon"],

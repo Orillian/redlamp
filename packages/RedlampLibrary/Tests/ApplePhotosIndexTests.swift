@@ -165,7 +165,8 @@ struct ApplePhotosIndexTests {
         #expect(roots == Set([applePhotos].compactMap(\.self)) && photos == 2)
     }
 
-    @Test func `an index of version 15 opens as 16, its roots folders, with the tables for Apple Photos`() async throws {
+    @Test func `an index of version 15 opens as the current one, its roots folders, with the tables for Apple Photos`(
+    ) async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "redlamp-index-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let url = folder.appending(path: "Index.sqlite")
@@ -176,14 +177,15 @@ struct ApplePhotosIndexTests {
         }
         await old.close()
         let index = try await LibraryIndex.open(at: url)
-        let (version, kinds, assets) = try await index.read { reader in
+        let (version, kinds, assets, copies) = try await index.read { reader in
             try (
                 reader.database.userVersion, reader.roots().map(\.kind),
                 reader.database.prepare("SELECT count(*) FROM photo_assets").first { $0.int(at: 0) },
+                reader.database.prepare("SELECT count(*) FROM photo_copies").first { $0.int(at: 0) },
             )
         }
         await index.close()
-        #expect(version == 16 && kinds == [.folder] && assets == 0)
+        #expect(version == LibraryIndex.schemaVersion && kinds == [.folder] && assets == 0 && copies == 0)
     }
 
     @Test func `an asset's key is the start of SHA-256 over its cloud identifier, or over its local one while it has none`() {

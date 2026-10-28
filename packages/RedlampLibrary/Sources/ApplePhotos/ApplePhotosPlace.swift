@@ -195,6 +195,53 @@ public extension LibraryIndex.Writer {
         }
         return removed
     }
+
+    /// Links the copies `standing` names to their assets (LIB-64), by local identifier, each listed in its asset's
+    /// albums kept, and settles the other copies linked to the assets `evaluated` names: those taken out let go, the
+    /// rest kept, in no album, with whether they're there and not missing. Returns the copies whose albums changed.
+    func setApplePhotosCopies(
+        _ standing: [(local: String, photos: [Int64], albums: [String])], evaluated: Set<String>,
+    ) throws -> [Int64] {
+        let linked = try database.cached("SELECT photo FROM photo_copies WHERE local_id = ? AND photo IS NOT NULL")
+        let unlink = try database.cached("DELETE FROM photo_copies WHERE local_id = ?")
+        let link = try database.cached("""
+        INSERT OR REPLACE INTO photo_copies (photo, local_id, live) VALUES (?1, ?2,
+          EXISTS (SELECT 1 FROM photos WHERE id = ?1 AND state & \(PhotoRecord.State.missing.rawValue) = 0))
+        """)
+        let held = try database.cached("SELECT album FROM photo_albums WHERE photo = ?")
+        let clear = try database.cached("DELETE FROM photo_albums WHERE photo = ?")
+        let album = try database.cached("INSERT OR IGNORE INTO photo_albums (album, photo) VALUES (?, ?)")
+        var wanted: [String: (photos: Set<Int64>, albums: Set<String>)] = [:]
+        for copy in standing {
+            wanted[copy.local] = (Set(copy.photos), Set(copy.albums))
+        }
+        var changed: [Int64] = []
+        for local in evaluated.union(wanted.keys) {
+            try linked.bind(local, at: 1)
+            let before = try Set(linked.map { $0.int64(at: 0) })
+            try unlink.bind(local, at: 1)
+            try unlink.run()
+            let now = wanted[local]
+            for photo in before.union(now?.photos ?? []).sorted() {
+                let albums = now?.photos.contains(photo) == true ? now?.albums ?? [] : []
+                try held.bind(photo, at: 1)
+                if try Set(held.map { $0.string(at: 0) ?? "" }) != albums {
+                    try clear.bind(photo, at: 1)
+                    try clear.run()
+                    for id in albums {
+                        try album.bind(id, at: 1)
+                        try album.bind(photo, at: 2)
+                        try album.run()
+                    }
+                    changed.append(photo)
+                }
+                try link.bind(photo, at: 1)
+                try link.bind(local, at: 2)
+                try link.run()
+            }
+        }
+        return changed
+    }
 }
 
 public extension IndexQueries {
