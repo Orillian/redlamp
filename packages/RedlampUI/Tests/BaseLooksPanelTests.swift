@@ -311,6 +311,61 @@ struct BaseLooksPanelTests {
         #expect(model.recipeAmount == 80 && model.history.count == steps + 2, "a typed Amount is a step of its own")
     }
 
+    @Test func `Basic's Base Look Amount is the panels' slider row, which a double-click returns to 100`(
+    ) async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try await openEditor()
+        model.expandedPanels = [.basic]
+        _ = NSApplication.shared
+        let panel = BasicPanelView.make(model: model)
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 316, height: 900), styleMask: [.borderless], backing: .buffered,
+            defer: true,
+        )
+        window.contentView = panel
+        defer { window.contentView = nil }
+        panel.layoutSubtreeIfNeeded()
+        func sliders(in view: NSView) -> [SliderRowView] {
+            view.subviews.flatMap { ($0 as? SliderRowView).map { [$0] } ?? sliders(in: $0) }
+        }
+        func trackSpan(_ row: SliderRowView) throws -> ClosedRange<CGFloat> {
+            let track = try #require(row.subviews.first { $0 is SliderTrackView })
+            let frame = track.convert(track.bounds, to: nil)
+            return frame.minX ... frame.maxX
+        }
+        let row = try #require(sliders(in: panel).first { $0.accessibilityIdentifier() == "baseLook.amount" })
+        let temperature = try #require(sliders(in: panel).first { $0.parameter == .temperature })
+        let track = try #require(row.subviews.compactMap { $0 as? SliderTrackView }.first)
+        let field = try #require(row.subviews.compactMap { $0 as? ValueFieldView }.first)
+        let label = try #require(row.subviews.first { $0.accessibilityIdentifier() == "baseLook.amount.label" })
+        let span = try trackSpan(row)
+        #expect(span.upperBound - span.lowerBound > 100, "\(span)")
+        #expect(try span == trackSpan(temperature), "its track spans Temp's")
+        #expect(track.value == 100 && field.value == 100)
+
+        let steps = model.history.count
+        track.onBegin()
+        for amount in [80.4, 60, 43] {
+            track.onChange(amount)
+        }
+        track.onEnd()
+        #expect(model.baseLook.amount == 43)
+        #expect(model.history.count == steps + 1 && model.history.last?.name.hasPrefix("Base Look Amount") == true)
+
+        let doubleClick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, clickCount: 2, pressure: 1,
+        ))
+        track.mouseDown(with: doubleClick)
+        #expect(model.baseLook.amount == 100, "a double-click on the slider returns it to 100")
+        #expect(model.history.count == steps + 2 && model.history.last?.name.hasPrefix("Base Look Amount") == true)
+        model.undo()
+        try await eventually { track.value == 43 }
+        #expect(track.value == 43 && field.value == 43, "the row follows the edit")
+        label.mouseDown(with: doubleClick)
+        #expect(model.baseLook.amount == 100, "and so does one on its label")
+    }
+
     @Test func `a recipe that sets a Base Look says so, and one that doesn't says nothing of it`() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try await openEditor()

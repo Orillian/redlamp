@@ -185,11 +185,16 @@ struct BaseLookMenu: View {
     }
 }
 
-/// The Base Look's strength, as Lightroom's profile Amount.
+/// The Base Look's strength, as Lightroom's profile Amount, drawn as `ParameterSlider` draws a
+/// parameter's row. The AppKit port draws it with a `SliderRowView` of its own (`BasicPanelView`).
 struct BaseLookAmountRow: View {
+    static let amountSpec = FieldSpec(range: BaseLookReference.amountRange)
+    static let defaultAmount: Double = 100
+    static let help = "Base Look Amount: 0 turns the look off, 200 doubles it. Double-click to reset."
+
     @Environment(EditorModel.self) private var model
-    private static let amountSpec = FieldSpec(range: BaseLookReference.amountRange)
     @Environment(\.valueColumnWidth) private var column
+    @State private var isHovering = false
 
     /// In Basic's value column, beside its slider rows.
     private var amountFieldWidth: CGFloat {
@@ -198,20 +203,22 @@ struct BaseLookAmountRow: View {
 
     var body: some View {
         let amount = model.baseLook.amount
-        HStack(spacing: 8) {
-            Text("Amount").font(Theme.labelFont).foregroundStyle(Theme.secondaryLabel)
-                .frame(width: Metrics.labelWidth, alignment: .leading)
-            Slider(
-                value: Binding(get: { amount }, set: { model.setBaseLookAmount($0) }),
-                in: BaseLookReference.amountRange,
-            ) { editing in
-                if editing {
-                    model.beginEdit()
-                } else {
-                    model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText)
-                }
-            }
-            .controlSize(.mini)
+        HStack(spacing: 6) {
+            Text("Amount")
+                .font(Theme.labelFont)
+                .foregroundStyle(isHovering ? Theme.labelHover : Theme.label)
+                .lineLimit(1)
+                .frame(width: Theme.labelWidth, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { model.setBaseLookAmount(Self.defaultAmount) }
+            SliderTrack(
+                spec: Self.amountSpec,
+                value: amount,
+                onBegin: { model.beginEdit() },
+                onChange: { model.setBaseLookAmount($0) },
+                onEnd: { model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText) },
+                onReset: { model.setBaseLookAmount(Self.defaultAmount) },
+            )
             ValueFieldControl(
                 spec: Self.amountSpec, value: amount, identifier: "baseLook.amount.value",
                 onBegin: { model.beginEdit() },
@@ -221,8 +228,9 @@ struct BaseLookAmountRow: View {
             .frame(width: amountFieldWidth, height: Metrics.rowHeight)
             .padding(.trailing, -ValueFieldView.wellPadding)
         }
-        .onTapGesture(count: 2) { model.setBaseLookAmount(100) }
-        .help("Base Look Amount: 0 turns the look off, 200 doubles it. Double-click to reset.")
+        .frame(height: Theme.rowHeight)
+        .onHover { isHovering = $0 }
+        .help(Self.help)
     }
 }
 

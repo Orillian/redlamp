@@ -21,12 +21,7 @@ import SwiftUI
         return PanelSectionView(panel: .basic, model: model, rows: [
             controls("Treatment", TreatmentPicker()),
             controls("Base Look", BaseLookMenu()),
-            HostedControl(
-                model: model,
-                BaseLookAmountRow().environment(
-                    \.valueColumnWidth, ValueFieldView.columnTextWidth(for: PanelID.basic.parameters.map(\.spec)),
-                ),
-            ),
+            baseLookAmount(model),
             HostedControl(model: model, ReproductionStatusRow(), shown: { model.baseLook.isReproduction }),
             controls("White Balance", WhiteBalanceControls()),
             slider(.temperature, enabled: whiteBalanceSupported),
@@ -56,6 +51,24 @@ import SwiftUI
             slider(.vibrance),
             slider(.saturation),
         ])
+    }
+
+    /// The Base Look's strength, drawn as the panel's slider rows are: a drag is one History step,
+    /// Base Look Amount, and a double-click returns it to 100.
+    private static func baseLookAmount(_ model: EditorModel) -> SliderRowView {
+        let end = { model.endEdit(.baseLook, "Base Look Amount", value: EditorModel.baseLookAmountText) }
+        let row = SliderRowView(
+            SliderValue(
+                label: "Amount", spec: BaseLookAmountRow.amountSpec, defaultValue: BaseLookAmountRow.defaultAmount,
+                current: { model.baseLook.amount },
+                begin: { model.beginEdit() }, change: { model.setBaseLookAmount($0) }, end: end,
+                set: { model.setBaseLookAmount($0) },
+            ),
+            identifier: "baseLook.amount",
+        )
+        row.toolTip = BaseLookAmountRow.help
+        row.setAccessibilityLabel("Base Look Amount")
+        return row
     }
 }
 

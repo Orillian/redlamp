@@ -79,6 +79,11 @@
             try app.type("60")
             try app.pressInWindow(KeyCombo(.character("\r")))
             try app.wait("the Base Look Amount to be 60") { $0.baseLook.amount == 60 }
+            // At 60 of 200 its thumb is 0.3 of the way along the track.
+            try app.click(.identifier("baseLook.amount.track"), at: CGPoint(x: 0.3, y: 0.5), count: 2)
+            try app.wait("a double-click on the thumb to return the Base Look Amount to 100") {
+                $0.baseLook.amount == 100
+            }
             try app.main { $0.setBaseLook(BuiltInBaseLook.color.reference) }
             app.covered(.feature("develop.treatment"), via: .key)
         }

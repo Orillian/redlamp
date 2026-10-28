@@ -89,7 +89,7 @@ import SwiftUI
 }
 
 struct SliderTrack: View {
-    let spec: ParameterSpec
+    let spec: any SliderSpec
     let value: Double
     var onBegin: () -> Void = {}
     var onChange: (Double) -> Void
