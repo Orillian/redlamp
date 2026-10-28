@@ -16,7 +16,8 @@ public final class ImportPreferences {
     static let destinationChosenKey = "import.destinationChosen"
     static let bookmarksKey = "import.bookmarks"
 
-    @ObservationIgnored private let defaults: UserDefaults
+    /// Where they're kept; nil for a copy that keeps nothing.
+    @ObservationIgnored private let defaults: UserDefaults?
     public private(set) var settings: ImportSettings
     /// The destination was chosen, in its panel or by an earlier version, which kept it with the
     /// settings. Until it is, the first import asks for it (ARC-17): the App Sandbox reaches only the
@@ -33,6 +34,15 @@ public final class ImportPreferences {
         hasDestination = defaults.object(forKey: Self.destinationChosenKey) as? Bool ?? (saved != nil)
         bookmarks = defaults.data(forKey: Self.bookmarksKey)
             .flatMap { try? JSONDecoder().decode(FolderBookmarks.self, from: $0) } ?? FolderBookmarks()
+    }
+
+    /// `preferences` as they are, in a copy that keeps nothing it's changed to: Copy to Folder's for photos kept in
+    /// Apple Photos dropped on a folder (LIB-63), which copies them there without changing Import's destination.
+    init(copying preferences: ImportPreferences) {
+        defaults = nil
+        settings = preferences.settings
+        hasDestination = preferences.hasDestination
+        bookmarks = preferences.bookmarks
     }
 
     /// The first import's: a folder a day in a folder a year, the camera's names. Its destination,
@@ -61,7 +71,7 @@ public final class ImportPreferences {
         guard changed != settings else { return }
         settings = changed
         if let data = try? JSONEncoder().encode(changed) {
-            defaults.set(data, forKey: Self.settingsKey)
+            defaults?.set(data, forKey: Self.settingsKey)
         }
         keepBookmarks()
     }
@@ -70,7 +80,7 @@ public final class ImportPreferences {
     func chooseDestination(_ url: URL) {
         update { $0.destination = URL(fileURLWithPath: LibraryService.path(url), isDirectory: true) }
         hasDestination = true
-        defaults.set(true, forKey: Self.destinationChosenKey)
+        defaults?.set(true, forKey: Self.destinationChosenKey)
         remember(url)
     }
 
@@ -87,7 +97,7 @@ public final class ImportPreferences {
     /// No destination chosen, as on a Mac Redlamp hasn't imported on: for the regression suite.
     func forgetDestination() {
         hasDestination = false
-        defaults.set(false, forKey: Self.destinationChosenKey)
+        defaults?.set(false, forKey: Self.destinationChosenKey)
         keepBookmarks()
     }
 
@@ -119,6 +129,6 @@ public final class ImportPreferences {
     }
 
     private func saveBookmarks() {
-        defaults.set(try? JSONEncoder().encode(bookmarks), forKey: Self.bookmarksKey)
+        defaults?.set(try? JSONEncoder().encode(bookmarks), forKey: Self.bookmarksKey)
     }
 }

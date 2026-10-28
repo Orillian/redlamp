@@ -89,6 +89,10 @@ public final class LibraryService {
     @ObservationIgnored private var writingAllXMP: Task<Void, Never>?
     /// Follows Photos' changes to the albums kept in place (`followApplePhotos`).
     @ObservationIgnored private var followingPhotos: Task<Void, Never>?
+    /// The indexer of the albums kept in place (LIB-58), over the Photos library `followApplePhotos` was given, once
+    /// the library is open: the app's one, so its passes over the index run one at a time, whether Photos changed,
+    /// albums were added or Copy to Folder's copies stand in for their photos (LIB-63).
+    @ObservationIgnored public private(set) var applePhotosIndexer: ApplePhotosIndexer?
     /// Finds where the sidecars go, then a minute on runs the index's weekly check: stopped by `close`, which the
     /// check would otherwise outlive.
     @ObservationIgnored private var checking: Task<Void, Never>?
@@ -281,6 +285,7 @@ extension LibraryService {
         opening?.cancel()
         following?.cancel()
         followingPhotos?.cancel()
+        applePhotosIndexer = nil
         writingAllXMP?.cancel()
         checking?.cancel()
         memoryPressure?.cancel()
@@ -342,6 +347,7 @@ extension LibraryService {
             guard let self, let core else { return }
             followingPhotos?.cancel()
             let indexer = ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
+            applePhotosIndexer = indexer
             followingPhotos = Task.detached(priority: .utility) {
                 await core.recovered()
                 await indexer.follow { error in

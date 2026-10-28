@@ -140,6 +140,38 @@ struct ApplePhotosKept: Sendable {
     }
 }
 
+public extension IndexQueries {
+    /// The assets of the photos `ids` names that are rows of the Apple Photos root, by local identifier, a version as
+    /// its file's: what Copy to Folder copies of them (LIB-63). Photos in folders aren't there.
+    func applePhotosAssets(ofPhotos ids: [Int64]) throws -> [Int64: String] {
+        let statement = try database.cached("""
+        SELECT a.local_id FROM photos v
+          JOIN photos p ON p.folder = v.folder AND p.name = v.name AND p.version = ''
+          JOIN photo_assets a ON a.photo = p.id WHERE v.id = ?
+        """)
+        var assets: [Int64: String] = [:]
+        for id in ids {
+            try statement.bind(id, at: 1)
+            if let local = try statement.first({ $0.string(at: 0) }) ?? nil {
+                assets[id] = local
+            }
+        }
+        return assets
+    }
+
+    /// The assets of the photos the library lists of album `id`, kept in place, by local identifier, each once in its
+    /// rows' order: an album's Copy to Folder (LIB-63). Copies standing in for theirs aren't there.
+    func applePhotosAssets(inAlbum id: String) throws -> [String] {
+        let statement = try database.cached("""
+        SELECT a.local_id FROM photo_albums al JOIN photo_assets a ON a.photo = al.photo JOIN photos p ON p.id = al.photo
+          WHERE al.album = ? AND p.state & \(PhotoRecord.State.missing.rawValue) = 0 ORDER BY p.id
+        """)
+        try statement.bind(id, at: 1)
+        var seen = Set<String>()
+        return try statement.map { $0.string(at: 0) ?? "" }.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+}
+
 extension IndexQueries {
     /// The rows of the Apple Photos root of the assets `ids` names, by their local identifiers and the rows' names:
     /// where each is and the culling it shows. Rows marked missing are left out, and so are versions, which their

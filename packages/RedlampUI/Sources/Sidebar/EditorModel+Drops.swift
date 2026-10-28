@@ -74,7 +74,8 @@ public final class LibraryMoveProgress {
 /// copied there, as Copy to Folder copies them, the pointer showing the copy badge, onto the folder they're in too; a
 /// copy's Undo moves the copies to the Trash. A drop that can't happen is refused as the drag passes over: a move
 /// onto the folder every photo is in already, a missing folder, one outside the library's folders, or of photos the
-/// library doesn't have or that are in the Trash.
+/// library doesn't have or that are in the Trash. Photos kept in Apple Photos aren't moved: dropped on a folder, they
+/// open Copy to Folder with that folder as where they go (LIB-63).
 extension EditorModel {
     /// What dropping `photos` on `folder`, a row of Folders, does, given the operations the drag offers; nil refuses
     /// it.
@@ -84,6 +85,11 @@ extension EditorModel {
         guard !isModalDialogOpen, photos.fromLibrary, !isMissing, library.service?.isReady == true,
               MoveFolderPanel.isInLibrary(folder, roots: library.roots.map(\.url))
         else { return nil }
+        if keptInApplePhotos(photos.listed?.urls ?? []), operations.contains(.copy) {
+            return PhotoDrop(operation: .copy) { [weak self] in
+                Task { await self?.dropKeptInApplePhotos(photos, onFolder: folder) }
+            }
+        }
         if !operations.contains(.move), operations.contains(.copy) {
             return PhotoDrop(operation: .copy) { [weak self] in
                 Task { await self?.drop(photos, onFolder: folder, copying: true) }
@@ -100,9 +106,14 @@ extension EditorModel {
         }
     }
 
-    /// Moves or copies the photos dropped on `folder` there, as `showingPlace` runs it.
+    /// Moves or copies the photos dropped on `folder` there, as `showingPlace` runs it; those kept in Apple Photos,
+    /// read
+    /// only once they're dropped, open Copy to Folder instead.
     func drop(_ photos: DraggedPhotos, onFolder folder: URL, copying: Bool) async {
         let urls = await photos.urls()
+        guard !keptInApplePhotos(urls) else {
+            return await dropKeptInApplePhotos(photos, onFolder: folder)
+        }
         await showingPlace(in: folder, copying: copying) { progress, done, stop in
             await self.place(urls, in: folder, copying: copying, progress: progress, done: done, stop: stop)
         }
