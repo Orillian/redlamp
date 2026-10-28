@@ -192,8 +192,11 @@
             do {
                 try wait(what, timeout: timeout) { _ in ApplePhotosWindowController.current.map(condition) ?? false }
             } catch {
-                let state = (try? inPhotosWindow { "\($0.phase): \($0.heading); \($0.problem ?? $0.statusText)" })
-                    ?? "no window"
+                let state = (try? inPhotosWindow { window in
+                    let chosen = window.chosen.sorted().joined(separator: ", ")
+                    return "\(window.phase): \(window.heading); \(window.problem ?? window.statusText); "
+                        + "albums chosen: \(chosen.isEmpty ? "none" : chosen)"
+                }) ?? "no window"
                 throw ScenarioFailure("\(error) (\(state))")
             }
         }
