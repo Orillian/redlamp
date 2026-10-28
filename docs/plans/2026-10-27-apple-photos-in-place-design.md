@@ -54,14 +54,14 @@ Counted on main at 5c67b5ae8, sources only, tests left out.
 
 ### How it's listed and indexed
 
-- **Choosing albums.** Add Albums from Apple Photos… (the Folders panel's + menu, File, the palette) shows LIB-54's album tree with counts and no destination. Photos' Library smart album may be chosen, for every photo. Smart albums list what Photos puts in them; shared albums hold reduced copies and are marked so, off by default, as in LIB-54. With limited access the one entry is Photos Chosen for Redlamp.
+- **Choosing albums.** Add Albums from Apple Photos… (the Folders panel's + menu, the Apple Photos section's +, File, the palette) is LIB-54's window renamed: its album tree with counts, and in place of To a choice of Keep in Photos, the default, with Add Albums and no Review, or Copy into a Folder, which runs the import as shipped (the owner, 28 October). Albums already kept are chosen and dimmed, In Library beside them. Photos' Library smart album may be chosen, for every photo. Smart albums list what Photos puts in them; shared albums hold reduced copies and are marked so, off by default, as in LIB-54. With limited access the one entry is Photos Chosen for Redlamp.
 - **Rows.** The Photos indexer fetches the chosen albums' assets and writes rows in batches of 1,000 through the index's writer, from PhotoKit's fields alone: kind from the resource's type, the date (Photos' own, a changed date included), location, pixel size, the favourite as a pick (decision 8), from macOS 27 rating, caption and keywords. A RAW+JPEG asset gives two rows that pair; an asset edited in Photos gives a third, `<name> (Photos edit).<ext>`, stacked over its original as LIB-54 stacks it, its original on top once it has a Redlamp edit; a burst gives its key photo and picked frames, stacked. Videos and Live Photos' videos are left out and counted on the album's row.
 - **Camera, lens and exposure** aren't among `PHAsset`'s properties; only a file (an original, or a derivative that keeps the camera's EXIF) has them. They're read when an original is first downloaded; until then those filters leave the photo out and its Metadata panel says so (decision 10).
 - **Sweeps.** A photo that leaves every chosen album leaves the library's lists, as a removed folder's photos do (LIB-10): its sidecar stays, so choosing an album that holds it brings everything back. A Redlamp collection holding it keeps its row.
 
 ### Albums, collections and folders
 
-- **A Photos album is a source, not a collection.** Its photos are whatever Photos says, kept in a `photo_albums` table by the Photos indexer, and Redlamp can't change it (DEC-106). The Apple Photos section lists the chosen albums in Photos' folder tree, each with its count, beside Folders. Dropping photos onto an album is refused with the reason.
+- **A Photos album is a source, not a collection.** Its photos are whatever Photos says, kept in a `photo_albums` table by the Photos indexer, and Redlamp can't change it (DEC-106). The Apple Photos section, after Folders and shown once an album is kept, lists the chosen albums in Photos' folder tree, each with its count; its + adds albums, and an album leaves from its row's menu, Remove from Library…, its photos' sidecars kept (the owner, 28 October). Dropping photos onto an album is refused with the reason.
 - **Redlamp's collections** hold Photos photos as they hold any photo, membership kept in the photo's sidecar.
 - **All Photographs, searches and smart collections** include Photos photos, with `source:photos` and `source:folders` to tell them apart and a Source facet (decision 5).
 
@@ -92,7 +92,7 @@ Recommended: 1 for the first release, with the layout the container would use, s
 ## File operations
 
 - **Refused, with the reason** ("This photo is in Apple Photos. Redlamp doesn't move, rename or delete photos in Photos."): Move, Rename, Rename Photos…, Move to Trash, Write .xmp and Read .xmp, Move Edits for the Photos root, Locate…, dropping onto a folder (which offers Copy to Folder instead) and dropping onto a Photos album.
-- **Adapted:** Show in Finder becomes Show in Photos, which opens Photos (opening Photos at one asset isn't documented, so unverified); Copy becomes Copy to Folder; Remove Version (LIB-48) works, being the sidecar's; Remove from Library on a Photos photo leaves it out of Redlamp's lists until its album is chosen again, nothing changed in Photos.
+- **Adapted:** Show in Finder becomes Show in Photos, which opens Photos (opening Photos at one asset isn't documented, so unverified); Copy becomes Copy to Folder; Remove Version (LIB-48) works, being the sidecar's; Remove from Library on a Photos photo leaves it out of Redlamp's lists, its sidecar kept, until Add Albums chooses an album holding it again, Photos' changes not bringing it back and nothing changed in Photos; ⌫ on it asks to Remove from Library instead of moving it to the Trash (the owner, 28 October).
 - **Library Health:** Missing lists photos deleted in Photos (below), with Remove and no Locate…; Damaged and Unreadable apply to downloaded originals that fail to decode; Duplicates, Extensions and Pairs leave Photos photos out.
 
 ## Export
