@@ -11,7 +11,7 @@ import RedlampServices
 @_spi(Harness) import RedlampUI
 import SwiftUI
 
-@main
+/// `main.swift` starts it, unless a tool that runs in the editor's place (`DebugPhotosCensus`) was asked for.
 struct RedlampApp: App {
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var model: EditorModel
