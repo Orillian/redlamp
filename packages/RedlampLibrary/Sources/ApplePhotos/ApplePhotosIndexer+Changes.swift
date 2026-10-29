@@ -40,26 +40,27 @@ public extension ApplePhotosIndexer {
 
     /// Follows Photos while Redlamp runs: `update()` at once, for what changed since the last pass, then again
     /// `settling` after each change Photos tells of, until the task is cancelled. It reads nothing while no album is
-    /// kept in place or Redlamp may not read Photos: albums kept later start it again. `failed` hears of a pass that
-    /// couldn't run; the next change tries again.
+    /// kept in place or Redlamp may not read Photos: albums kept later start it again. `passed` hears of each pass
+    /// that ran, and `failed` of one that couldn't; the next change tries again.
     func follow(
         settling: Duration = .milliseconds(250), failed: @escaping @Sendable (any Error) -> Void = { _ in },
+        passed: @escaping @Sendable (Outcome) -> Void = { _ in },
     ) async {
         guard photos.access() == .authorized, await (try? albums())?.isEmpty == false else { return }
         let notices = photos.changes()
-        await updating(failed)
+        await updating(failed, passed)
         for await _ in notices {
             try? await Task.sleep(for: settling)
             guard !Task.isCancelled else { return }
-            await updating(failed)
+            await updating(failed, passed)
         }
     }
 }
 
 extension ApplePhotosIndexer {
-    private func updating(_ failed: @Sendable (any Error) -> Void) async {
+    private func updating(_ failed: @Sendable (any Error) -> Void, _ passed: @Sendable (Outcome) -> Void) async {
         do {
-            _ = try await update()
+            try await passed(update())
         } catch {
             if !(error is CancellationError) {
                 failed(error)

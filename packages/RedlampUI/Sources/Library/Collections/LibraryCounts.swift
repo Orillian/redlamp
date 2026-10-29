@@ -2,10 +2,11 @@ import Foundation
 import RedlampLibrary
 
 /// The left panel's counts (LIB-23): each Library and Library Health entry's photos and each collection's,
-/// as their lists show them, so photos that can't be read count only where a check finds them (LIB-40); and
-/// the collection list, with the target collection. They're read off the main thread from the query engine
-/// and the index: a list per entry, the index's counts of the collections less their photos that can't be
-/// read, and a list per smart collection.
+/// as their lists show them, so photos that can't be read count only where a check finds them (LIB-40); the
+/// collection list, with the target collection; and the albums of Apple Photos kept in place, with each album's
+/// photos (LIB-62). They're read off the main thread from the query engine and the index: a list per entry, the
+/// index's counts of the collections less their photos that can't be read, a list per smart collection, and the
+/// index's counts of the albums, which hold every photo Photos puts in them, as a folder holds its files.
 struct LibraryCounts: Sendable, Equatable {
     /// Each entry with photos, by its source; an entry without any isn't offered.
     var entries: [LibrarySource: Int] = [:]
@@ -19,21 +20,30 @@ struct LibraryCounts: Sendable, Equatable {
     var previousImport: [Int64] = []
     /// Duplicate candidates no recorded hash confirms yet, which Exact Duplicates lists once they're read whole.
     var unconfirmedDuplicates = 0
+    /// The part of Photos' tree kept in place, which the Apple Photos section lists (LIB-62).
+    var applePhotos = ApplePhotosTree([])
+    /// Each album's photos kept in place, by Photos' local identifier; folders have none.
+    var applePhotosPhotos: [String: Int] = [:]
 
-    /// The photos `source` holds; nil for a set, and for an entry that isn't offered.
+    /// The photos `source` holds; nil for a set and a folder of Apple Photos, and for an entry that isn't offered.
     func count(of source: LibrarySource) -> Int? {
-        if case let .collection(path) = source {
-            return collections[path].map { $0.kind == .set ? nil : collectionPhotos[path] ?? 0 } ?? nil
+        switch source {
+        case let .collection(path):
+            collections[path].map { $0.kind == .set ? nil : collectionPhotos[path] ?? 0 } ?? nil
+        case let .applePhotos(id):
+            applePhotos[id].map { $0.kind == .folder ? nil : applePhotosPhotos[id] ?? 0 } ?? nil
+        default:
+            entries[source]
         }
-        return entries[source]
     }
 
-    /// Whether the panels' rows are the same as `other`'s: the entries offered, and the collection list's places,
-    /// kinds and target. Counts aside.
+    /// Whether the panels' rows are the same as `other`'s: the entries offered, the collection list's places,
+    /// kinds and target, and the albums of Apple Photos kept with their titles. Counts aside.
     func hasSameRows(as other: LibraryCounts) -> Bool {
         Set(entries.keys) == Set(other.entries.keys) && target == other.target
             && collections.count == other.collections.count
             && collections.allSatisfy { other.collections[$0.key]?.kind == $0.value.kind }
+            && applePhotos == other.applePhotos
     }
 
     /// The sources whose counts differ from `other`'s.
@@ -45,6 +55,10 @@ struct LibraryCounts: Sendable, Equatable {
         for path in Set(collectionPhotos.keys).union(other.collectionPhotos.keys)
             where collectionPhotos[path] != other.collectionPhotos[path] {
             changed.insert(.collection(path))
+        }
+        for album in Set(applePhotosPhotos.keys).union(other.applePhotosPhotos.keys)
+            where applePhotosPhotos[album] != other.applePhotosPhotos[album] {
+            changed.insert(.applePhotos(album))
         }
         return changed
     }
@@ -87,6 +101,9 @@ struct LibraryCounts: Sendable, Equatable {
         }
         for collection in list.collections.values where collection.kind == .smart {
             counts.collectionPhotos[collection.path] = try await engine.list(.collection(collection.path)).count
+        }
+        (counts.applePhotos, counts.applePhotosPhotos) = try await core.index.read { reader in
+            try (reader.applePhotosKeptTree(), reader.applePhotosAlbumCounts())
         }
         return counts
     }

@@ -159,6 +159,7 @@ extension LibrarySource {
         case .unreadable: "library:unreadable"
         case .keptAnyway: "library:kept-anyway"
         case let .collection(path): "collection:" + path.text
+        case let .applePhotos(id): "apple-photos:" + id
         }
     }
 }

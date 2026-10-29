@@ -1,9 +1,9 @@
 import Foundation
 import RedlampLibrary
 
-/// A source the left panel's Library and Collections sections show in the grid and the filmstrip (LIB-23):
-/// one of the Library section's entries, as Lightroom Classic's Catalog panel has them, one of Library
-/// Health's checks (LIB-40), or a place in the collection list.
+/// A source the left panel's Library, Apple Photos and Collections sections show in the grid and the filmstrip
+/// (LIB-23): one of the Library section's entries, as Lightroom Classic's Catalog panel has them, one of Library
+/// Health's checks (LIB-40), an album of Apple Photos kept in place (LIB-62), or a place in the collection list.
 public enum LibrarySource: Sendable, Hashable {
     case allPhotographs
     /// The photos of the newest import that's over (`PreviousImport`).
@@ -19,6 +19,9 @@ public enum LibrarySource: Sendable, Hashable {
     case keptAnyway
     /// A collection, a set (the photos of every collection inside it) or a smart collection.
     case collection(CollectionPath)
+    /// An album of Apple Photos kept in place, or a folder of Photos' with albums kept in it (the photos of every
+    /// album kept inside it), by Photos' local identifier (LIB-62). Its title is Photos': `LibrarySources.title(of:)`.
+    case applePhotos(String)
 
     /// The Library section's entries, in its order.
     static let library: [LibrarySource] = [.allPhotographs, .previousImport, .marked, .rejected]
@@ -32,6 +35,11 @@ public enum LibrarySource: Sendable, Hashable {
     init?(key: String) {
         if let entry = (Self.library + Self.healthChecks).first(where: { $0.key == key }) {
             self = entry
+            return
+        }
+        let albums = "apple-photos:"
+        if key.hasPrefix(albums), key.count > albums.count {
+            self = .applePhotos(String(key.dropFirst(albums.count)))
             return
         }
         let prefix = "collection:"
@@ -53,6 +61,7 @@ public enum LibrarySource: Sendable, Hashable {
         case .unreadable: "Unreadable Files"
         case .keptAnyway: "Kept Anyway"
         case let .collection(path): path.name
+        case .applePhotos: "Apple Photos"
         }
     }
 
@@ -70,6 +79,7 @@ public enum LibrarySource: Sendable, Hashable {
         case .unreadable: "eye.slash"
         case .keptAnyway: "checkmark.seal"
         case .collection: "rectangle.stack"
+        case .applePhotos: "photo.on.rectangle.angled"
         }
     }
 
@@ -90,6 +100,7 @@ public enum LibrarySource: Sendable, Hashable {
         case .unreadable: "Files whose read failed, which only their folders and Library Health show"
         case .keptAnyway: "The photos Library Health's checks found that were kept anyway"
         case let .collection(path): path.displayName
+        case .applePhotos: "Photos kept in Apple Photos, shown from Photos' own thumbnails"
         }
     }
 
@@ -116,6 +127,7 @@ public enum LibrarySource: Sendable, Hashable {
         case .unreadable: .query(.filter(LibraryQuery.Filter(.unreadable, .equal, [.bool(true)])))
         case .keptAnyway: .keptAnyway
         case let .collection(path): .collection(path)
+        case let .applePhotos(id): .applePhotos(id)
         }
     }
 }

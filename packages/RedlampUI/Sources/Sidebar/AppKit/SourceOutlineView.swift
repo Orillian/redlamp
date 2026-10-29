@@ -45,15 +45,18 @@ class SourceOutlineView: SidebarOutlineView {
     }
 
     /// `source`'s row as `sources` has it now.
-    final func row(_ source: LibrarySource, kind: CollectionKind? = nil, hasChildren: Bool = false) -> SourceRow {
+    final func row(
+        _ source: LibrarySource, kind: CollectionKind? = nil, album: ApplePhotosCollection? = nil,
+        hasChildren: Bool = false,
+    ) -> SourceRow {
         let isTarget = switch source {
         case .marked: sources.isCounted && sources.target == nil
         case let .collection(path): sources.target == path
         default: false
         }
         return SourceRow(
-            source: source, kind: kind, count: sources.count(of: source), isShown: sources.shown == source,
-            isTarget: isTarget, hasChildren: hasChildren,
+            source: source, kind: kind, album: album, count: sources.count(of: source),
+            isShown: sources.shown == source, isTarget: isTarget, hasChildren: hasChildren,
         )
     }
 
@@ -127,6 +130,39 @@ final class LibraryOutlineView: SourceOutlineView {
             nodes.append(SidebarNode(.libraryHealth, children: checks.map { SidebarNode(.source(row($0))) }))
         }
         return nodes.isEmpty ? [SidebarNode(.placeholder(LibrarySourcesText.empty))] : nodes
+    }
+}
+
+/// The Apple Photos section's list (LIB-62): the albums kept in place in Photos' folders and order, each with its
+/// photos, folders open or closed as they were left. A click shows an album's photos, or a folder's albums' photos
+/// together, in the grid; photos dragged onto an album don't go in it, Photos' albums being Photos' to change.
+final class ApplePhotosOutlineView: SourceOutlineView {
+    override init(model: EditorModel) {
+        super.init(model: model)
+        isExpanded = { [weak self] node in
+            guard let self, case let .source(row) = node.kind, case let .applePhotos(id) = row.source else {
+                return false
+            }
+            return sources.isApplePhotosFolderOpen(id)
+        }
+        expansionChanged = { [weak self] node, expanded in
+            guard let self, !isReloading, case let .source(row) = node.kind, case let .applePhotos(id) = row.source
+            else { return }
+            sources.setApplePhotosFolderOpen(id, expanded)
+        }
+    }
+
+    override func rows() -> [SidebarNode] {
+        guard model.library.service?.isReady == true, sources.isCounted else { return [] }
+        let tree = sources.applePhotos
+        func nodes(_ collections: [ApplePhotosCollection]) -> [SidebarNode] {
+            collections.map { collection in
+                let children = collection.kind == .folder ? nodes(tree.children(of: collection.id)) : []
+                let row = row(.applePhotos(collection.id), album: collection, hasChildren: !children.isEmpty)
+                return SidebarNode(.source(row), children: children)
+            }
+        }
+        return nodes(tree.collections.filter { $0.parent.map { tree[$0] == nil } ?? true })
     }
 }
 

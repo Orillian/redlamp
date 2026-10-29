@@ -298,4 +298,19 @@ public enum ApplePhotosActions {
         model.applePhotosFollower.start()
         model.library.service?.followApplePhotos(ApplePhotosSource.library)
     }
+
+    /// Show in Photos, for an album or a photo kept in place (LIB-62): it opens Photos, which PhotoKit can't ask to
+    /// show one album or one photo.
+    static func showInPhotos() {
+        openPhotos()
+    }
+
+    /// Opens Photos: the regression suite and the tests count the openings instead.
+    @_spi(Harness) public static var openPhotos: @MainActor () -> Void = {
+        guard let photos = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Photos")
+        else { return }
+        NSWorkspace.shared.openApplication(
+            at: photos, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil,
+        )
+    }
 }

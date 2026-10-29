@@ -11,6 +11,8 @@ final class SourceListSectionView: NSView, HeightProviding {
         var toggle: @MainActor (_ solo: Bool) -> Void
         /// Whether the list has nothing in it yet, when the header's + always shows.
         var isEmpty: @MainActor () -> Bool = { false }
+        /// Whether the section is in the source list at all: the Apple Photos section only once an album is kept.
+        var isPresent: @MainActor () -> Bool = { true }
     }
 
     /// A source list's group row on macOS 26, as AppKit draws it.
@@ -94,6 +96,13 @@ final class SourceListSectionView: NSView, HeightProviding {
             Tracker { [weak self] in
                 guard let self else { return }
                 header.showsAdd = actions.isEmpty()
+            },
+            Tracker { [weak self] in
+                guard let self else { return }
+                let present = actions.isPresent()
+                guard present == isHidden else { return }
+                isHidden = !present
+                invalidateColumnLayout()
             },
         ]
     }

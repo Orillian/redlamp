@@ -5,15 +5,17 @@ import RedlampDesign
 import RedlampDocument
 import RedlampLibrary
 
-/// The left panel's Library and Collections sections (LIB-23): the Library section's entries (All Photographs,
-/// Previous Import, Marked, Rejected) and Library Health's checks (LIB-40), each offered once it holds photos,
-/// with its count; the collection list, with its sets, collections and smart collections, their counts and the
-/// target collection; and which of them the grid and the filmstrip show.
+/// The left panel's Library, Apple Photos and Collections sections (LIB-23): the Library section's entries (All
+/// Photographs, Previous Import, Marked, Rejected) and Library Health's checks (LIB-40), each offered once it holds
+/// photos, with its count; the albums of Apple Photos kept in place, in Photos' folders, with their counts (LIB-62,
+/// `LibrarySources+ApplePhotos`); the collection list, with its sets, collections and smart collections, their counts
+/// and the target collection; and which of them the grid and the filmstrip show.
 ///
 /// - **Counts** are read off the main thread (`LibraryCounts`) while the panel is in the window, at most once a
 ///   second while the library changes. A list of every photo, which LibraryLive hands over whenever photos come,
 ///   go or change, says when; so does the definitions' folder, which collections made, renamed, moved and
-///   deleted rewrite. Only the rows whose counts changed are drawn again (`observeCounts`).
+///   deleted rewrite, and each pass over the albums kept in place, which may rename one in Photos' folders and
+///   change no photo. Only the rows whose counts changed are drawn again (`observeCounts`).
 /// - **A source shown** takes the open folder's place (`FolderLibrary+Collections`), its list kept current by
 ///   LibraryLive and filtered as the filter bar has it (`LibrarySourceList`), its view kept as it's left and shown
 ///   again with it; opening a folder, or Recently Trashed, ends it.
@@ -44,6 +46,8 @@ public final class LibrarySources {
     static let pairRuleKey = "library.health.pairs"
     static let expandedKey = "library.sources.expanded"
     static let collapsedSetsKey = "library.collections.collapsed"
+    static let applePhotosClosedKey = "library.applePhotos.closed"
+    static let collapsedApplePhotosKey = "library.applePhotos.collapsed"
     /// Counting at most this often while the library keeps changing.
     static let countingInterval = Duration.seconds(1)
 
@@ -58,8 +62,14 @@ public final class LibrarySources {
     public private(set) var isCounted = false
     /// The sections open, as last left.
     public private(set) var expanded: Set<Panel>
+    /// The Apple Photos section is closed, as last left; it's open until it's first closed (LIB-62).
+    public internal(set) var isApplePhotosClosed: Bool
     /// The sets closed in the collection list, by path, as last left; every other set is open.
     @ObservationIgnored private var collapsedSets: Set<String>
+    /// The folders of Apple Photos closed in their section, by Photos' local identifier, as last left.
+    @ObservationIgnored var collapsedApplePhotos: Set<String>
+    /// The passes over the albums kept in place the counts were last read after (`LibraryService.applePhotosPasses`).
+    @ObservationIgnored private var passesCounted = 0
 
     @ObservationIgnored weak var model: EditorModel?
     @ObservationIgnored private(set) var counts = LibraryCounts()
@@ -93,6 +103,7 @@ public final class LibrarySources {
         var photos: PhotoListUpdates?
         var listening: Task<Void, Never>?
         var definitions: (any DispatchSourceFileSystemObject)?
+        var passes: Tracker?
     }
 
     init(model: EditorModel) {
@@ -101,7 +112,9 @@ public final class LibrarySources {
         pairRule = defaults?.string(forKey: Self.pairRuleKey).flatMap(PairRule.init(rawValue:)) ?? .keepBoth
         expanded = defaults?.stringArray(forKey: Self.expandedKey).map { Set($0.compactMap(Panel.init(rawValue:))) }
             ?? Set(Panel.allCases)
+        isApplePhotosClosed = defaults?.bool(forKey: Self.applePhotosClosedKey) ?? false
         collapsedSets = Set(defaults?.stringArray(forKey: Self.collapsedSetsKey) ?? [])
+        collapsedApplePhotos = Set(defaults?.stringArray(forKey: Self.collapsedApplePhotosKey) ?? [])
         model.library.leavingSource = { [weak model] source in model?.rememberView(of: source) }
         closingObservation = model.library.service?.whenClosing { [weak self] in self?.libraryClosing() }
     }
@@ -162,6 +175,15 @@ public final class LibrarySources {
             }
         }
         following?.tracker = tracker
+        following?.passes = Tracker { [weak self] in
+            guard let self, let passes = model?.library.service?.applePhotosPasses, passes != passesCounted else {
+                return
+            }
+            passesCounted = passes
+            if following?.photos != nil {
+                recount()
+            }
+        }
     }
 
     /// Stops counting once every section's list has left the window. A source shown stays current.
@@ -169,6 +191,7 @@ public final class LibrarySources {
         followers = max(followers - 1, 0)
         guard followers == 0, let following else { return }
         following.tracker?.cancel()
+        following.passes?.cancel()
         pauseCounting()
         self.following = nil
         isCounted = false
@@ -358,10 +381,11 @@ public final class LibrarySources {
     public func canShow(_ source: LibrarySource) -> Bool {
         guard model?.library.service?.isReady == true else { return false }
         guard isCounted else { return true }
-        if case let .collection(path) = source {
-            return counts.collections[path] != nil
+        switch source {
+        case let .collection(path): return counts.collections[path] != nil
+        case let .applePhotos(id): return counts.applePhotos[id] != nil
+        default: return counts.entries[source] != nil
         }
-        return counts.entries[source] != nil
     }
 
     /// Shows `source` in the grid and the filmstrip in place of the open folder, Library shown once its photos are
@@ -447,7 +471,7 @@ public final class LibrarySources {
         let title = if case let .collection(path) = source {
             path.displayName
         } else {
-            source.title
+            title(of: source)
         }
         SourceSummaryPopover.show(
             title, relativeTo: view, summary: { await service.summary(of: listed) },

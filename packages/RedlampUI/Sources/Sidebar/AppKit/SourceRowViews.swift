@@ -2,23 +2,25 @@ import AppKit
 import RedlampDesign
 import RedlampLibrary
 
-/// A row of the Library or Collections section (LIB-23): a Library entry, a check of Library Health, or a
-/// place in the collection list.
+/// A row of the Library, Apple Photos or Collections section (LIB-23): a Library entry, a check of Library Health, an
+/// album or a folder of Apple Photos kept in place (LIB-62), or a place in the collection list.
 struct SourceRow: Equatable {
     let source: LibrarySource
     /// For a place in the collection list, what it is.
     var kind: CollectionKind?
-    /// Its photos; nil for a set.
+    /// For an album or a folder of Apple Photos, what Photos calls it and what it is.
+    var album: ApplePhotosCollection?
+    /// Its photos; nil for a set and a folder.
     var count: Int?
     /// It's the source shown.
     var isShown = false
     /// It's the target collection, which Add to Target Collection puts photos in.
     var isTarget = false
-    /// A set with places inside it.
+    /// A set or a folder with places inside it.
     var hasChildren = false
 
     var title: String {
-        source.title
+        album?.title ?? source.title
     }
 
     /// The row's identifier, for VoiceOver and the regression suite: `sources.marked`, `collections.Clients/Acme`.
@@ -36,6 +38,7 @@ struct SourceRow: Equatable {
         case let .health(kind): "sources.health." + kind.rawValue
         case .unreadable: "sources.unreadable"
         case .keptAnyway: "sources.kept-anyway"
+        case let .applePhotos(id): "apple-photos." + id
         }
     }
 }
@@ -52,13 +55,17 @@ struct SourceRow: Equatable {
 extension SidebarCellView {
     /// A source's icon, name and count; the target collection's name ends with +, as in Lightroom Classic.
     static func sourceDecoration(_ row: SourceRow) -> FolderDecoration {
-        let symbol = switch row.kind {
-        case .set: "square.stack.3d.up"
-        case .smart: "gearshape"
-        case .collection: "rectangle.stack"
-        case nil: row.source.symbol
+        let symbol = switch (row.kind, row.album?.kind) {
+        case (.set, _): "square.stack.3d.up"
+        case (.smart, _): "gearshape"
+        case (.collection, _): "rectangle.stack"
+        case (nil, .folder?): "folder"
+        case (nil, .album?): "photo.on.rectangle"
+        case (nil, .smartAlbum?): "gearshape"
+        case (nil, .sharedAlbum?): "person.2"
+        case (nil, nil): row.source.symbol
         }
-        var help = row.source.help
+        var help = row.album.map(applePhotosHelp) ?? row.source.help
         if row.isTarget {
             help += "\n" + LibrarySourcesText.targetHelp
         }
@@ -92,6 +99,10 @@ extension SidebarCellView {
             guard let anchor else { return }
             sources.showSummary(of: row.source, relativeTo: anchor)
         })
+        if case let .applePhotos(id) = row.source {
+            applePhotosItems(id, album: row.album, model: model).forEach(menu.addItem)
+            return menu
+        }
         if row.source == .marked || row.kind == .collection {
             let target: CollectionPath? = if case let .collection(path) = row.source {
                 path

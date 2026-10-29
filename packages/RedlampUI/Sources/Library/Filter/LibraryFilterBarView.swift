@@ -241,7 +241,7 @@ final class LibraryFilterBarView: NSView, NSTokenFieldDelegate, ThemeFollowing {
     /// "Search" and the source shown, whose photos typing narrows (DEC-67).
     private var placeholder: String {
         if let source = model.library.shownSource {
-            return "Search \(source.title)"
+            return "Search \(model.librarySources.title(of: source))"
         }
         return model.folder.map { "Search \($0.lastPathComponent)" } ?? "Search"
     }

@@ -1,5 +1,40 @@
 import AppKit
 import RedlampDesign
+import RedlampLibrary
+
+/// The Apple Photos section's albums and folders (LIB-62): what each holds, for its row's help, and its menu after
+/// Show and Show Summary….
+extension SidebarCellView {
+    static func applePhotosHelp(_ album: ApplePhotosCollection) -> String {
+        switch album.kind {
+        case .album:
+            "An album of Apple Photos kept in place: its photos stay in Photos, shown from Photos' own thumbnails, "
+                + "and Redlamp keeps its changes to them on this Mac"
+        case .smartAlbum: "A smart album of Apple Photos kept in place: its photos are those Photos puts in it"
+        case .sharedAlbum:
+            "A shared album of Apple Photos kept in place: Photos keeps its photos as reduced copies, not the originals"
+        case .folder: "A folder of Apple Photos: a click shows the photos of every album kept in it"
+        }
+    }
+
+    /// Show in Photos, Download Originals, an album's Copy to Folder… (LIB-63), and Remove from Library….
+    static func applePhotosItems(_ id: String, album: ApplePhotosCollection?, model: EditorModel) -> [NSMenuItem] {
+        let sources = model.librarySources
+        var items: [NSMenuItem] = [
+            .separator(),
+            NSMenuItem(title: "Show in Photos") { ApplePhotosActions.showInPhotos() },
+        ]
+        items.append(NSMenuItem(title: ShortcutAction.downloadOriginals.title) {
+            sources.downloadOriginals(ofApplePhotos: id)
+        })
+        if album?.kind != .folder {
+            items.append(afterMenu(ShortcutAction.copyToFolder.title) { model.copyApplePhotosAlbum(id) })
+        }
+        items.append(.separator())
+        items.append(afterMenu("Remove from Library…") { sources.removeApplePhotos(id) })
+        return items
+    }
+}
 
 /// The Library section's From Apple Photos (LIB-55): the new photos in the albums imports from Apple Photos follow,
 /// with their count and Import. A click on the row opens Import from Apple Photos….

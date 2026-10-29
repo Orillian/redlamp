@@ -105,6 +105,9 @@ extension LibrarySources {
         case let .collection(path):
             let list = try? await LibraryMetadata(index: core.index, paths: core.paths).collections.list()
             return list?.collections[path] == nil ? nil : .found
+        case let .applePhotos(id):
+            let kept = try? await core.index.read { try $0.applePhotosKeptTree() }
+            return kept?[id] == nil ? nil : .found
         case .previousImport:
             let journal = ImportJournal(paths: core.paths)
             let stamp = stamp(of: journal.folder)
@@ -153,13 +156,14 @@ final class LaunchReopening {
         }
     }
 
-    /// Whether the source's first photos show it's still there: a place in the collection list is, empty or not, and an
-    /// entry or a check is while it holds photos, as the Library panel offers them.
+    /// Whether the source's first photos show it's still there: a place in the collection list or an album of Apple
+    /// Photos kept in place is, empty or not, and an entry or a check is while it holds photos, as the Library panel
+    /// offers them.
     func keeps(_ change: LibrarySourceList.Change) -> Bool {
-        if case .collection = source {
-            return true
+        switch source {
+        case .collection, .applePhotos: true
+        default: change.total > 0
         }
-        return change.total > 0
     }
 
     func finish(reopened: Bool) {

@@ -46,11 +46,13 @@ struct SourceListTests {
         try await sandbox.counts { $0.isCounted }
         try await sandbox.eventually { model.library.roots.count == 1 }
         column.layoutSubtreeIfNeeded()
-        let sections = views(SourceListSectionView.self, in: column)
+        let applePhotos = try section("sidebar.apple-photos", in: column)
+        #expect(applePhotos.isHidden, "Apple Photos isn't in the source list while no album is kept in place")
+        let sections = views(SourceListSectionView.self, in: column).filter { !$0.isHidden }
         #expect(sections.map { $0.accessibilityIdentifier() } == [
             "sources.library", "sidebar.folders", "sources.collections",
         ])
-        let lists = views(SidebarOutlineView.self, in: column)
+        let lists = views(SidebarOutlineView.self, in: column).filter { !$0.isHiddenOrHasHiddenAncestor }
         #expect(lists.count == 3 && lists.allSatisfy { $0.style == .sourceList && $0.refusesFirstResponder })
         let frames = (sections + lists).map(\.frame)
         column.needsLayout = true

@@ -93,6 +93,10 @@ public final class LibraryService {
     /// the library is open: the app's one, so its passes over the index run one at a time, whether Photos changed,
     /// albums were added or Copy to Folder's copies stand in for their photos (LIB-63).
     @ObservationIgnored public private(set) var applePhotosIndexer: ApplePhotosIndexer?
+    /// How many passes over the albums kept in place have run since launch, for the Apple Photos section to read them
+    /// again after each (LIB-62): a pass that adds or takes out photos tells the lists itself, but one that renames an
+    /// album in Photos changes no photo.
+    public private(set) var applePhotosPasses = 0
     /// Finds where the sidecars go, then a minute on runs the index's weekly check: stopped by `close`, which the
     /// check would otherwise outlive.
     @ObservationIgnored private var checking: Task<Void, Never>?
@@ -348,13 +352,26 @@ extension LibraryService {
             followingPhotos?.cancel()
             let indexer = ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
             applePhotosIndexer = indexer
-            followingPhotos = Task.detached(priority: .utility) {
+            followingPhotos = Task.detached(priority: .utility) { [weak self] in
                 await core.recovered()
                 await indexer.follow { error in
                     Self.log.error("Photos' changes weren't followed: \(String(describing: error), privacy: .public)")
+                } passed: { _ in
+                    Task { @MainActor in self?.applePhotosPasses += 1 }
                 }
             }
         }
+    }
+
+    /// Stops keeping the albums or folders of Apple Photos `ids` names in place (LIB-62), through the app's one Photos
+    /// indexer: their photos leave the library's lists, their sidecars kept. False while the library isn't following
+    /// Photos.
+    @discardableResult
+    func stopKeepingApplePhotos(_ ids: [String]) async throws -> Bool {
+        guard let indexer = applePhotosIndexer else { return false }
+        try await indexer.stopKeeping(ids)
+        applePhotosPasses += 1
+        return true
     }
 
     /// Network volumes are polled only while the app is in the foreground.
