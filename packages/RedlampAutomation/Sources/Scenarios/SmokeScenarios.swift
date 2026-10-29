@@ -2,6 +2,7 @@
     import AppKit
     import ImageIO
     import RedlampDesign
+    import RedlampDocument
     import RedlampEngineAPI
     @_spi(Harness) import RedlampUI
 
@@ -60,11 +61,12 @@
 
         /// The photos in the run's folder, in the filmstrip's order, with every stack opened, and the stacks found
         /// later coming open, so each photo has its cell: the folder's copies of a frame and its formats make pairs
-        /// and bursts, which scenarios not about stacks don't expect.
+        /// and bursts, which scenarios not about stacks don't expect. Each file is named once, for its own row: a
+        /// version's row (LIB-48) has its file's name, which addresses the file's own.
         func photoNames() throws -> [String] {
             try main { model in
                 model.gridStacks.openAll()
-                return model.items.map(\.url.lastPathComponent)
+                return model.items.filter { $0.version == nil }.map(\.url.lastPathComponent)
             }
         }
 
@@ -79,9 +81,13 @@
             return name
         }
 
-        /// Opens `name` by clicking its filmstrip cell, and waits until it has rendered.
+        /// Opens `name` in its own edit by clicking its filmstrip cell, and waits until it has rendered: one of its
+        /// versions open (LIB-48) is another photo, with a cell of its own.
         func open(_ name: String, byKeys: Bool = false) throws {
-            if try main({ $0.selection?.lastPathComponent }) == name {
+            @MainActor func isOpen(_ model: EditorModel) -> Bool {
+                model.selection?.lastPathComponent == name && model.activeAddress?.version == nil
+            }
+            if try main(isOpen) {
                 return
             }
             if try exists(.filmstrip(name)) {
@@ -93,17 +99,18 @@
                 else {
                     throw ScenarioFailure("\(name) isn't in the filmstrip")
                 }
-                try main { $0.select(url) }
+                try main { $0.select(PhotoAddress(url: url)) }
                 covered(.feature("library.filmstrip"), via: .model)
             } else {
-                // ← and → step through the filmstrip, where an open stack's photos follow its top.
+                // ← and → step through the filmstrip, where an open stack's photos follow its top, and a file's
+                // versions its own row.
                 let (target, current) = try main { model -> (Int?, Int?) in
-                    let names = model.gridStacks.list.map { list in
-                        list.compactMap { model.library.url(ofPhoto: $0)?.lastPathComponent }
-                    } ?? model.items.map(\.url.lastPathComponent)
+                    let photos = model.gridStacks.list.map { list in
+                        list.compactMap { model.library.address(ofPhoto: $0) }
+                    } ?? model.items.map(\.address)
                     return (
-                        names.firstIndex(of: name),
-                        model.selection.flatMap { names.firstIndex(of: $0.lastPathComponent) },
+                        photos.firstIndex { $0.version == nil && $0.url.lastPathComponent == name },
+                        model.activeAddress.flatMap { photos.firstIndex(of: $0) },
                     )
                 }
                 guard let target else { throw ScenarioFailure("\(name) isn't in the filmstrip") }
@@ -113,7 +120,7 @@
                     index += index < target ? 1 : -1
                 }
             }
-            try wait("\(name) to be selected") { $0.selection?.lastPathComponent == name }
+            try wait("\(name) to be selected", until: isOpen)
             try settle()
         }
     }
