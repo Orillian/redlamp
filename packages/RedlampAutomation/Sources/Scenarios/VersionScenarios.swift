@@ -20,6 +20,14 @@
         ) { app in
             try app.openRaw(1)
             let name = try app.main { $0.selection?.lastPathComponent ?? "" }
+            // A version left behind is a photo of its own beside its file, named after it, in the folder the
+            // scenarios after this one find their photos in by name.
+            var finished = false
+            defer {
+                if !finished {
+                    putBack(app, name)
+                }
+            }
             try app.set(.exposure, 0.3)
 
             try app.press(.createVersion)
@@ -60,8 +68,33 @@
             try app.waitForNoSheet("Remove Version")
             try app.wait("the version removed") { $0.versions.isEmpty && $0.openVersion == nil }
             try app.wait("the sidecar without it", timeout: 15) { _ in !app.sidecarJSON(name).contains("\"versions\"") }
+            try app.wait("the library without its row", timeout: 30) { !hasVersionRow(name, in: $0) }
             try app.choose(.resetAll)
+            finished = true
             app.covered(.action(.createVersion), via: .key)
+        }
+
+        /// Puts the photo `name` back as the scenario's last steps leave it, for a run that failed before them: no
+        /// version in its sidecar or among the library's rows, and its own edit reset.
+        private static func putBack(_ app: RunningApp, _ name: String) {
+            app.recover()
+            try? app.open(name)
+            try? app.main { model in
+                guard model.selection?.lastPathComponent == name else { return }
+                for version in model.versions {
+                    model.removeVersion(version.id)
+                }
+                model.perform(.resetAll)
+            }
+            try? app.wait("\(name) without versions", timeout: 30) { model in
+                model.versions.isEmpty && !app.sidecarJSON(name).contains("\"versions\"")
+                    && !hasVersionRow(name, in: model)
+            }
+        }
+
+        /// Whether the library lists a version of the photo `name` as a row of its own.
+        @MainActor private static func hasVersionRow(_ name: String, in model: EditorModel) -> Bool {
+            model.items.contains { $0.version != nil && $0.name == name }
         }
 
         /// Sync Settings from the version open onto the rest of the folder, then Undo Sync.
@@ -71,6 +104,16 @@
             try app.choose(.selectAllPhotos)
             try app.wait("every photo selected") { $0.selectedPhotos.count == $0.items.count }
             try app.choose(.syncSettingsAgain)
+            // However it ends, the folder's photos get their own edits back.
+            defer {
+                try? app.wait("the sync to finish", timeout: 180) { $0.settingsSync.progress == nil }
+                try? app.main { model in
+                    if model.settingsSync.canUndo {
+                        model.perform(.undoSync)
+                    }
+                }
+                try? app.wait("its undo to finish", timeout: 180) { $0.settingsSync.progress == nil }
+            }
             try app.wait("the sync", timeout: 180) { $0.settingsSync.progress == nil && $0.settingsSync.canUndo }
             try app.expect(
                 app.sidecarJSON(other).contains("basic.contrast"), "\(other) didn't get the version's Contrast",
