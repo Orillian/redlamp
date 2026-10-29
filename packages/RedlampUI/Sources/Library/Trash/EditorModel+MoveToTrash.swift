@@ -19,6 +19,8 @@ import RedlampLibrary
 ///   left, no photo is open (`EditorModel+Files`).
 /// - **Said:** the notice over the photos says what went, as it says what Undo takes back, and the activity log
 ///   records it; an alert says why when nothing went.
+/// - **Kept in Apple Photos:** those photos don't go; an alert says why and offers Remove from Library (LIB-62,
+///   `EditorModel+KeptInPhotos`), the other photos going to the Trash.
 public extension EditorModel {
     /// Moves the photos Move to Trash takes for `photo` to the Trash: the selection when `photo` is in it or isn't
     /// given, and `photo` alone when it isn't. In Develop with a version open, that version alone, unless `photo` is
@@ -40,8 +42,13 @@ public extension EditorModel {
             } else {
                 await selectedIndexIDs()
             }
-            if let error = await trash(ids) {
+            let kept = await keptInApplePhotos(ids)
+            let others = kept.isEmpty ? ids : ids.filter { !kept.contains($0) }
+            if !others.isEmpty, let error = await trash(others) {
                 trashFailed(error)
+            }
+            if !kept.isEmpty {
+                await refuseTrash(keptInApplePhotos: kept)
             }
         }
         return true

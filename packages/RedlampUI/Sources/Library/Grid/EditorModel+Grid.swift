@@ -65,18 +65,19 @@ public extension EditorModel {
         libraryViews.setLoupeZoom(zoom)
     }
 
-    /// ⌘R: the selected photos in Finder, each file once, or `url` alone when it isn't among them. A large source's are
-    /// found by their IDs off the main thread, their rows left unread; they're shown unless another source is
-    /// meanwhile.
+    /// ⌘R: the selected photos in Finder, each file once, or `url` alone when it isn't among them; Photos opens for
+    /// those kept in Apple Photos (LIB-62), whose files are Redlamp's cache. A large source's are found by their IDs
+    /// off
+    /// the main thread, their rows left unread; they're shown unless another source is meanwhile.
     func showInFinder(_ url: URL? = nil) {
         if let url, library.photoID(of: url).map(photoSelection.contains) != true {
-            return libraryViews.revealInFinder([url])
+            return reveal([url])
         }
         let photos = selectionForAction()
         if let addresses = photos.addresses {
             let shown = SelectedPhotos.files(of: addresses)
             if !shown.isEmpty {
-                libraryViews.revealInFinder(shown)
+                reveal(shown)
             }
             return
         }
@@ -84,7 +85,19 @@ public extension EditorModel {
         Task { [weak self] in
             let shown = await photos.files()
             guard let self, library.generation == generation, !shown.isEmpty else { return }
-            libraryViews.revealInFinder(shown)
+            reveal(shown)
+        }
+    }
+
+    /// Shows `files` in Finder, opening Photos instead for those kept in Apple Photos.
+    private func reveal(_ files: [URL]) {
+        guard let originals = library.originals, files.contains(where: originals.owns) else {
+            return libraryViews.revealInFinder(files)
+        }
+        ApplePhotosActions.showInPhotos()
+        let inFolders = files.filter { !originals.owns($0) }
+        if !inFolders.isEmpty {
+            libraryViews.revealInFinder(inFolders)
         }
     }
 

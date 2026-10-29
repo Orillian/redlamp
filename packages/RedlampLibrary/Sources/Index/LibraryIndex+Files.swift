@@ -134,8 +134,9 @@ public extension LibraryIndex.Writer {
         try statement.run()
     }
 
-    /// Puts back a photo's row as it was, in `folder` and named `name`, with its keywords and its
-    /// places in the collections still there, found by path: under its own ID, unless another photo has
+    /// Puts back a photo's row as it was, in `folder` and named `name`, with its keywords, its
+    /// places in the collections still there, found by path, and what named its asset and albums kept in Apple Photos
+    /// (LIB-62): under its own ID, unless another photo has
     /// taken it since. A camera or lens the index doesn't have was another index's, which this one
     /// replaced: the photo is read again. Returns the ID it has.
     func restorePhoto(_ removed: RemovedPhoto, inFolder folder: Int64, name: String) throws -> Int64 {
@@ -184,6 +185,10 @@ public extension LibraryIndex.Writer {
             try place.bind(restored, at: 3)
             try place.bind(collection.position, at: 4)
             try place.run()
+        }
+        if var asset = removed.asset {
+            asset.photo = restored
+            try setApplePhotosRows([(asset, removed.albums ?? [])])
         }
         return restored
     }

@@ -9,6 +9,7 @@ import RedlampLibrary
 /// the
 ///   photo to a file with its content, keeping its row and everything decided about it; it offers to relink too the
 ///   other missing photos of its folder found beside the file, under their names and with their content.
+///   A photo kept in Apple Photos has no file of its own for Locate… to find (LIB-61, LIB-62): it isn't offered.
 /// - **Remove from Library** takes the photo, or the selection it's in, out of the library; nothing on disk changes.
 ///
 /// Each is one batch of the file operations' journal, checked again just before it runs, and one change in Library's
@@ -92,7 +93,7 @@ extension EditorModel {
     }
 
     var canLocateMissingPhoto: Bool {
-        canActOnMissingPhotos && !activeDeletedInPhotos
+        canActOnMissingPhotos && !(selection.map { library.originals?.owns($0) == true } ?? false)
     }
 
     var canRemoveMissingPhotos: Bool {
@@ -102,14 +103,6 @@ extension EditorModel {
     private var canActOnMissingPhotos: Bool {
         !isModalDialogOpen && showsMissingPhotos && selection != nil && library.service?.isReady == true
             && healthProposals.offer?.hasFindings == true
-    }
-
-    /// The active photo is no longer in Apple Photos (LIB-61): there's no file of its own for Locate… to find.
-    private var activeDeletedInPhotos: Bool {
-        guard let selection, case .notInPhotos = healthProposals.mark(for: selection)?.finding.reason else {
-            return false
-        }
-        return true
     }
 
     /// Relinks the missing photo `id`, shown at `shown`, where it was, to the file at `url` once Locate… finds it's the

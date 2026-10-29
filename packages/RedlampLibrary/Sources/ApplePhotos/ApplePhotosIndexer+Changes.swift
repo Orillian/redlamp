@@ -161,7 +161,8 @@ extension ApplePhotosIndexer {
     private func apply(_ touched: Set<String>, albums: [String], _ outcome: inout Outcome) async throws {
         let fetched = try await photos.assets(withIDs: Array(touched), in: albums)
         let found = Set(fetched.map(\.id))
-        let assets = Self.kept(fetched.filter { !$0.albums.isEmpty }, &outcome)
+        let removed = try await index.read { try Self.removed($0) }
+        let assets = Self.kept(fetched.filter { !$0.albums.isEmpty && !removed.contains($0.id) }, &outcome)
         let rootPath = LibraryIndexer.path(ApplePhotosPlace.root(in: paths))
         let making = !assets.isEmpty
         let known = try await index.write { writer -> (root: RootRecord, assets: [String: KnownAsset])? in

@@ -111,7 +111,7 @@ extension EditorModel {
     /// Takes `step` back, or makes it again, in the library's changes' turn.
     private func take(_ step: HealthStep, back: Bool, core: LibraryCore, health: LibraryHealth) async throws {
         switch step.kind {
-        case .batch, .remove, .relink:
+        case .batch, .remove, .relink, .removeKeptInPhotos:
             if back {
                 guard let batch = step.batch else { throw FileOperationError.nothingToUndo }
                 _ = try await core.change { () -> Result<FileOutcome, any Error> in
@@ -125,6 +125,9 @@ extension EditorModel {
                 let kind = step.kind
                 step.batch = try await core.change { () -> Result<UUID, any Error> in
                     do {
+                        if case let .removeKeptInPhotos(ids) = kind {
+                            return try await .success(core.files.run(core.files.planRemoval(ofApplePhotos: ids)).batch)
+                        }
                         return try await .success(health.run(Self.plan(again: kind, health: health)).batch)
                     } catch {
                         return .failure(error)
@@ -171,7 +174,7 @@ extension EditorModel {
             return try await health.planRemoval(photos, in: health.findings(.missing))
         case let .relink(relinks):
             return try await health.planRelink(relinks, in: health.findings(.missing))
-        case .keptAnyway, .listedAgain:
+        case .keptAnyway, .listedAgain, .removeKeptInPhotos:
             throw FileOperationError.nothingToUndo
         }
     }
@@ -251,6 +254,8 @@ final class HealthStep {
         case remove([Int64])
         /// Missing photos relinked to the files they were found as (DEC-59).
         case relink([PhotoRelink])
+        /// Photos kept in Apple Photos taken out of the library by Remove from Library (LIB-62).
+        case removeKeptInPhotos([Int64])
         /// Findings kept anyway, by what Keep Anyway added.
         case keptAnyway([KeptAnyway])
         /// What kept photos anyway, taken back by List Again.

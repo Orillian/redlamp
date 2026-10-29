@@ -37,6 +37,40 @@ public extension FileOperations {
         return FileBatch(kind: .remove, title: "Remove \(count) missing photo\(count == 1 ? "" : "s")", steps: steps)
     }
 
+    /// Remove from Library for photos kept in Apple Photos (LIB-62): the batch that takes every row of the assets of
+    /// photos `ids` out of the library, their versions with them, nothing moved and nothing changed in Photos; their
+    /// rows are kept in the journal for Undo, and their sidecars stay. No pass gives the assets rows again until Add
+    /// Albums keeps an album holding them (`ApplePhotosIndexer.removed`). Photos in folders are left out.
+    func planRemoval(ofApplePhotos ids: [Int64]) async throws -> FileBatch {
+        let assets = try await index.read { reader -> [[RemovedPhoto]] in
+            var seen = Set<String>()
+            var assets: [[RemovedPhoto]] = []
+            for id in try reader.fileRows(of: ids) {
+                guard let local = try reader.applePhotosRow(ofPhoto: id)?.local, seen.insert(local).inserted
+                else { continue }
+                try assets
+                    .append(reader.photosWithPaths(reader.applePhotosRowIDs(ofAsset: local)).flatMap { photo, folder in
+                        try ([photo] + reader.versions(folder: photo.folder, name: photo.name)).map { row in
+                            try Self.removed(row, folder: folder, reader)
+                        }
+                    })
+            }
+            return assets
+        }
+        var steps: [FileStep] = []
+        for rows in assets {
+            if let last = steps.last, last.removed.count + rows.count <= Self.removalStep {
+                steps[steps.count - 1].removed += rows
+            } else {
+                steps.append(FileStep(kind: .removeFromLibrary, removed: rows))
+            }
+        }
+        let count = assets.count
+        return FileBatch(
+            kind: .remove, title: "Remove \(count) photo\(count == 1 ? "" : "s") from the library", steps: steps,
+        )
+    }
+
     /// The batch that relinks each missing photo of `relinks` to the file it's found as (DEC-59): its row moved there,
     /// keeping its ID, everything decided about it and its collections, and read again from the file; the row the file
     /// had, indexed as a new photo meanwhile, taken out. When the file has no `.redlamp` sidecar, the one the photo
@@ -110,9 +144,11 @@ public extension FileOperations {
 
     private static func removed(_ photo: PhotoRecord, folder: String, _ reader: some IndexQueries) throws
         -> RemovedPhoto {
-        try RemovedPhoto(
+        let asset = try reader.applePhotosRow(ofPhoto: photo.id)
+        return try RemovedPhoto(
             photo: IndexedPhoto(photo), folder: folder, keywords: reader.keywords(forPhoto: photo.id),
-            collections: reader.collectionPlaces(ofPhoto: photo.id),
+            collections: reader.collectionPlaces(ofPhoto: photo.id), asset: asset,
+            albums: asset == nil ? nil : reader.applePhotosAlbums(ofPhoto: photo.id),
         )
     }
 

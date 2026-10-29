@@ -307,7 +307,8 @@ public struct FolderMove: Sendable, Hashable, Codable {
 }
 
 /// A photo's row as it was when the batch took it out of the index, to put back as it was: its
-/// keywords and collections too. For a copy, the row the copy gets.
+/// keywords and collections too, and for a row of the Apple Photos root, what names its asset and the albums kept
+/// that list it (LIB-62). For a copy, the row the copy gets.
 public struct RemovedPhoto: Sendable, Hashable, Codable {
     public var photo: IndexedPhoto
     /// Its folder's path.
@@ -316,16 +317,22 @@ public struct RemovedPhoto: Sendable, Hashable, Codable {
     public var collections: [CollectionPlace]
     /// For a copy's row, the photo it's a copy of.
     public var copyOf: Int64?
+    /// Its `photo_assets` row and its albums, by local identifier; nil for a photo in a folder, and in batches
+    /// journaled before them.
+    public var asset: ApplePhotosRow?
+    public var albums: [String]?
 
     public init(
         photo: IndexedPhoto, folder: String, keywords: [String] = [], collections: [CollectionPlace] = [],
-        copyOf: Int64? = nil,
+        copyOf: Int64? = nil, asset: ApplePhotosRow? = nil, albums: [String]? = nil,
     ) {
         self.photo = photo
         self.folder = folder
         self.keywords = keywords
         self.collections = collections
         self.copyOf = copyOf
+        self.asset = asset
+        self.albums = albums
     }
 }
 

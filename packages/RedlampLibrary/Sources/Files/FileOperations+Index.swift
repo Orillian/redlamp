@@ -23,6 +23,8 @@ struct IndexChanges: Sendable {
     /// Rows taken out with nothing moved (`removeFromLibrary`), and whether each was missing then: one that was goes
     /// only while it still is.
     var leftPhotos: [(id: Int64, missing: Bool)] = []
+    /// The assets kept in Apple Photos of the rows taken out, by row ID: no pass gives them rows again (LIB-62).
+    var leftAssets: [Int64: String] = [:]
     /// Rows put back as they were (`returnToLibrary`), unless another photo has taken a place since.
     var returnedPhotos: [RemovedPhoto] = []
     /// Missing photos found again: each one's ID, the path of the file it's found as, and that file as it was planned.
@@ -118,11 +120,17 @@ struct IndexChanges: Sendable {
             leftPhotos += step.removed.map { removed in
                 (removed.photo.id, PhotoRecord.State(rawValue: removed.photo.state).contains(.missing))
             }
+            for removed in step.removed {
+                leftAssets[removed.photo.id] = removed.asset?.local
+            }
             returnedPhotos.removeAll { ids.contains($0.photo.id) }
         case .returnToLibrary:
             let ids = Set(step.removed.map(\.photo.id))
             returnedPhotos += step.removed
             leftPhotos.removeAll { ids.contains($0.id) }
+            for id in ids {
+                leftAssets.removeValue(forKey: id)
+            }
         case .relink:
             guard let move = step.photos.first, let file = step.items.first(where: { $0.destination == nil })
             else { return }
@@ -281,9 +289,11 @@ extension FileOperations {
     private static func writeRelinks(
         _ changes: IndexChanges, writer: LibraryIndex.Writer,
     ) throws -> (restored: [Int64], stale: [Int64]) {
-        try writer.deletePhotos(changes.leftPhotos.filter { left in
+        let leaving = try changes.leftPhotos.filter { left in
             try !left.missing || writer.photo(id: left.id)?.state.contains(.missing) == true
-        }.map(\.id))
+        }.map(\.id)
+        try writer.deletePhotos(leaving)
+        try writer.noteRemovedApplePhotos(Set(leaving.compactMap { changes.leftAssets[$0] }), removed: true)
         var restored: [Int64] = []
         var stale: [Int64] = []
         func isFree(_ photo: RemovedPhoto) throws -> Int64? {
@@ -316,12 +326,17 @@ extension FileOperations {
             )
         }
         var returned = Set<String>()
+        var assets = Set<String>()
         for photo in changes.returnedPhotos where photo.photo.version == nil {
             guard try writer.photo(id: photo.photo.id) == nil, let folder = try isFree(photo) else { continue }
             try restored.append(writer.restorePhoto(photo, inFolder: folder, name: photo.photo.name))
             returned.insert(photo.folder + "/" + photo.photo.name)
+            if let local = photo.asset?.local {
+                assets.insert(local)
+            }
         }
         try restoreVersions(of: returned, from: changes.returnedPhotos)
+        try writer.noteRemovedApplePhotos(assets, removed: false)
         return (restored, stale)
     }
 }

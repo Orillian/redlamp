@@ -78,6 +78,7 @@ public final class ApplePhotosIndexer: Sendable {
     static let rowFormat = 3
     static let albumsKey = "library.applePhotos.albums"
     static let followingKey = "library.applePhotos.following"
+    static let removedKey = "library.applePhotos.removed"
 
     public let photos: any ApplePhotosLibrary
     public let index: LibraryIndex
@@ -104,7 +105,7 @@ public final class ApplePhotosIndexer: Sendable {
 
     /// Keeps the collections `ids` names in place beside those kept already, then indexes them: an album, a smart album
     /// (Photos' Library for every photo) or a shared album, whose photos are reduced copies, or a folder for the albums
-    /// in it, those added to it later included.
+    /// in it, those added to it later included. Photos Remove from Library took out that they hold come back.
     @discardableResult
     public func keep(_ ids: [String]) async throws -> Outcome {
         let tree = try await ApplePhotosTree(photos.collections())
@@ -112,12 +113,17 @@ public final class ApplePhotosIndexer: Sendable {
             guard let collection = tree[id] else { throw ApplePhotosError.notFound(id) }
             return collection
         }
+        let removed = try await index.read { try Self.removed($0) }
+        let back = try await removed.isEmpty ? [] : removed.intersection(
+            photos.listedIDs(in: tree.albums(in: ids).map(\.id)).values.joined(),
+        )
         try await index.write { writer in
             var chosen = try Self.chosen(writer)
             for collection in found where !chosen.contains(where: { $0.id == collection.id }) {
                 chosen.append(collection)
             }
             try Self.setChosen(chosen, writer)
+            try writer.noteRemovedApplePhotos(back, removed: false)
         }
         return try await index()
     }
@@ -167,6 +173,13 @@ public final class ApplePhotosIndexer: Sendable {
         )
     }
 
+    /// The assets Remove from Library took out, by local identifier (LIB-62): no pass gives them rows again, whatever
+    /// Photos changes, until Add Albums keeps an album holding them or Undo puts them back.
+    static func removed(_ reader: some IndexQueries) throws -> Set<String> {
+        guard let text = try reader.setting(removedKey) else { return [] }
+        return Set((try? JSONDecoder().decode([String].self, from: Data(text.utf8))) ?? [])
+    }
+
     static func following(_ reader: some IndexQueries) throws -> Following? {
         guard let text = try reader.setting(followingKey) else { return nil }
         return try? JSONDecoder().decode(Following.self, from: Data(text.utf8))
@@ -213,7 +226,9 @@ public final class ApplePhotosIndexer: Sendable {
         // Taken before Photos and Apple Photos.json are read, so what changes while they're read the next pass reads.
         let token = photos.changeToken()
         let written = recordWritten
-        let (chosen, before) = try await index.read { try (Self.chosen($0), Self.following($0)) }
+        let (chosen, before, removed) = try await index.read { reader in
+            try (Self.chosen(reader), Self.following(reader), Self.removed(reader))
+        }
         var assets: [ApplePhotosAsset] = []
         var albums: [String] = []
         var keptTree: [ApplePhotosCollection] = []
@@ -223,7 +238,7 @@ public final class ApplePhotosIndexer: Sendable {
             albums = tree.albums(in: chosen.map(\.id)).map(\.id)
             keptTree = tree.kept(chosen.map(\.id))
             vanished = Set(before?.albums ?? []).filter { tree[$0] == nil }
-            assets = try await Self.kept(photos.assets(in: albums), &outcome)
+            assets = try await Self.kept(photos.assets(in: albums), &outcome).filter { !removed.contains($0.id) }
         }
         let following = chosen.isEmpty
             ? nil : Following(token: token, albums: albums, format: Self.rowFormat, record: written, tree: keptTree)

@@ -23,7 +23,10 @@ enum LibraryGridMenu {
             item("Open in Develop", key: ShortcutAction.editTool.combos.first, enabled: enabled) {
                 model.openInDevelop(address)
             },
-            item(ShortcutAction.showInFinder.title, key: ShortcutAction.showInFinder.combos.first, enabled: enabled) {
+            item(
+                model.library.originals?.owns(photo) == true ? "Show in Photos" : ShortcutAction.showInFinder.title,
+                key: ShortcutAction.showInFinder.combos.first, enabled: enabled,
+            ) {
                 model.showInFinder(photo)
             },
         ], to: menu)
@@ -189,7 +192,7 @@ enum LibraryGridMenu {
                 ShortcutAction.removeMissingPhotos.title, key: nil, enabled: model.canRemoveMissingPhotos,
             ) { model.removeMissingPhotos(photo) }
             remove.setAccessibilityIdentifier("library.menu.\(ShortcutAction.removeMissingPhotos.rawValue)")
-            return items + [locate, remove]
+            return items + (model.library.originals?.owns(photo) == true ? [remove] : [locate, remove])
         }
         let check = HealthProposals.check(offer.check, pairs: model.librarySources.pairRule)
         let proposed = model.healthProposals.tally?.proposed ?? 0

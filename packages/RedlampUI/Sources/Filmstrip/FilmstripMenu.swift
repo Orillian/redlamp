@@ -6,7 +6,8 @@ import RedlampDocument
 /// Lightroom and Finder: on a selected photo, the Photo menu's copy, paste and sync items, in
 /// Library renaming and moving, and in either module Move to Trash (LIB-46), acting on the selection as they do
 /// there; on any other photo, copying from it, pasting onto it or moving it to the Trash alone, without opening it.
-/// Items that don't apply are left out. In Library, its rating, flag,
+/// In Library, a photo kept in Apple Photos has Remove from Library… in place of renaming and moving, and Move to
+/// Trash dimmed (LIB-62). Items that don't apply are left out. In Library, its rating, flag,
 /// labels and mark come first (`LibraryGridMenu.culling`), then Stacking (`LibraryGridMenu.stacking`);
 /// the grid's menu has its own. A photo in Recently Trashed has Put Back's instead (`TrashMenu`).
 @MainActor
@@ -23,6 +24,7 @@ enum FilmstripMenu {
             return trashed
         }
         let menu = NSMenu()
+        menu.autoenablesItems = false
         if culling {
             add(LibraryGridMenu.culling(for: address, model: model), to: menu)
             if model.module == .library, !model.isModalDialogOpen {
@@ -31,16 +33,19 @@ enum FilmstripMenu {
         }
         if address == model.activeAddress || model.library.photoID(of: address)
             .map(model.photoSelection.contains) == true {
+            let kept = model.canRemoveKeptInApplePhotos(photo)
             let groups: [[ShortcutAction]] = [
                 [.copySettings, .copySettingsAgain, .pasteSettings, .pastePrevious],
                 [.syncSettings, .syncSettingsAgain, .undoSync, .toggleAutoSync],
-                [.renamePhotos, .moveToFolder, .copyToFolder, .downloadOriginals, .moveToTrash],
+                kept ? [.copyToFolder, .downloadOriginals]
+                    : [.renamePhotos, .moveToFolder, .copyToFolder, .downloadOriginals, .moveToTrash],
             ]
             for group in groups {
                 let actions = group.filter { action in
                     model.canPerform(action) && (action != .toggleAutoSync || model.isMultiSelecting)
                 }
-                add(actions.map { item(for: $0, model: model) }, to: menu)
+                let keptItems = kept && group == groups.last ? keptInPhotos(photo, model: model) : []
+                add(actions.map { item(for: $0, model: model) } + keptItems, to: menu)
             }
         } else if !model.isModalDialogOpen {
             var items = [
@@ -60,7 +65,9 @@ enum FilmstripMenu {
             if model.canPerform(.undoSync) {
                 add([NSMenuItem(title: ShortcutAction.undoSync.title) { model.perform(.undoSync) }], to: menu)
             }
-            if model.canMoveToTrash {
+            if model.canRemoveKeptInApplePhotos(photo) {
+                add(keptInPhotos(photo, model: model), to: menu)
+            } else if model.canMoveToTrash {
                 add([trash(address, model: model)], to: menu)
             }
         }
@@ -76,6 +83,20 @@ enum FilmstripMenu {
             item.keyEquivalentModifierMask = modifiers
         }
         return item
+    }
+
+    /// For a photo kept in Apple Photos (LIB-62), or the selection it's in: Remove from Library…, and Move to Trash
+    /// dimmed, which doesn't take it.
+    private static func keptInPhotos(_ photo: URL, model: EditorModel) -> [NSMenuItem] {
+        let remove = NSMenuItem(title: "Remove from Library…") { model.removeKeptInApplePhotos(photo) }
+        remove.setAccessibilityIdentifier("library.menu.removeKeptInPhotos")
+        let trash = NSMenuItem(title: ShortcutAction.moveToTrash.title, action: nil, keyEquivalent: "")
+        if let (key, modifiers) = ShortcutAction.moveToTrash.combos.first?.menuKeyEquivalent {
+            trash.keyEquivalent = key
+            trash.keyEquivalentModifierMask = modifiers
+        }
+        trash.isEnabled = false
+        return [remove, trash]
     }
 
     /// Move to Trash for `photo` alone, which isn't selected: a version alone leaves its file and other versions.

@@ -40,7 +40,8 @@ public struct LibraryXMP: Sendable {
     /// takes only what changed since and doesn't take Redlamp's own `.xmp` for another app's, and brings
     /// the index's rows up to date: the organising fields and `.redlamp` dates of photos whose `.redlamp`
     /// changed, those fields its own now, and the `.xmp` date of those whose `.xmp` Redlamp wrote, so the
-    /// indexer reads neither again. Photos of roots marked removed have left the library, and are left alone. A
+    /// indexer reads neither again. Photos of roots marked removed have left the library, and are left alone, and so
+    /// are photos kept in Apple Photos, whose folders are Redlamp's cache rather than the photographer's (LIB-62). A
     /// version of a photo's edit stands for its file (LIB-48): what's merged and written is the file's own metadata,
     /// never a version's.
     public func sync(
@@ -60,8 +61,10 @@ public struct LibraryXMP: Sendable {
                     folderIDs.insert(photo.folder)
                 }
             }
+            let applePhotos = try reader.applePhotosRoot()?.id
             return try (selected, folderIDs.sorted().compactMap { id -> (path: String, rows: [PhotoRecord])? in
-                try reader.folder(id: id).map { try ($0.path, reader.photos(inFolder: id)) }
+                guard let folder = try reader.folder(id: id), folder.root != applePhotos else { return nil }
+                return try (folder.path, reader.photos(inFolder: id))
             })
         }
         let involved = folders.flatMap(\.rows).map(\.id)

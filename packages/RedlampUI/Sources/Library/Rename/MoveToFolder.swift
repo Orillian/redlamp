@@ -8,11 +8,15 @@ import RedlampLibrary
 /// is a photo of its own, numbered where its name is held. The batch's progress shows in the grid's toolbar with Stop,
 /// as a drop's does, rather than in a sheet, whose opening and closing each hold the main thread about 0.3 s. Library's
 /// Undo puts the photos back, selected as they were, or moves the copies to the Trash. Copy to Folder… with photos
-/// kept in Apple Photos selected copies those as LIB-63 does, carrying their edits (`copyApplePhotos`).
+/// kept in Apple Photos selected copies those as LIB-63 does, carrying their edits (`copyApplePhotos`); Move to
+/// Folder… with one of them selected is refused, saying why (LIB-62).
 public extension EditorModel {
     @discardableResult
     func moveToFolder() -> Bool {
-        chooseFolder(copying: false)
+        if canRenamePhotos, refuseSelectionKeptInApplePhotos(can: "moved", verb: "move") {
+            return true
+        }
+        return chooseFolder(copying: false)
     }
 
     @discardableResult

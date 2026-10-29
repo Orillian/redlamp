@@ -45,8 +45,8 @@ public enum ApplePhotosPlace {
 
 /// A row of the Apple Photos root as `photo_assets` names it: its asset, which of the asset's files it is, and what of
 /// the asset its images and fields were made from.
-public struct ApplePhotosRow: Sendable, Hashable {
-    public enum Resource: Int, Sendable, Hashable, CaseIterable {
+public struct ApplePhotosRow: Sendable, Hashable, Codable {
+    public enum Resource: Int, Sendable, Hashable, Codable, CaseIterable {
         /// The original's photo: a RAW+JPEG pair's JPEG or HEIC, a ProRAW's DNG.
         case original = 0
         /// A RAW+JPEG pair's raw.
@@ -166,9 +166,9 @@ public extension LibraryIndex.Writer {
         try statement.run()
     }
 
-    /// Takes out the photos `ids` of the Apple Photos root with what names their assets and albums, and the folders
-    /// left with no photo; returns the rows removed. Their sidecars stay, so keeping an album that holds them again
-    /// brings back everything Redlamp kept of them.
+    /// Takes out the photos `ids` of the Apple Photos root with what names their assets and albums (`removePhotos`),
+    /// and the folders left with no photo; returns the rows removed. Their sidecars stay, so keeping an album that
+    /// holds them again brings back everything Redlamp kept of them.
     func removeApplePhotos(_ ids: [Int64]) throws -> [Int64] {
         let folders = try database.cached("SELECT DISTINCT folder FROM photos WHERE id = ?")
         var emptied = Set<Int64>()
@@ -177,14 +177,6 @@ public extension LibraryIndex.Writer {
             try folders.forEachRow { emptied.insert($0.int64(at: 0)) }
         }
         let removed = try removePhotos(ids)
-        let asset = try database.cached("DELETE FROM photo_assets WHERE photo = ?")
-        let albums = try database.cached("DELETE FROM photo_albums WHERE photo = ?")
-        for id in removed {
-            for statement in [asset, albums] {
-                try statement.bind(id, at: 1)
-                try statement.run()
-            }
-        }
         let folder = try database.cached("""
         DELETE FROM folders WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM photos WHERE folder = ?1)
           AND root IN (SELECT id FROM roots WHERE kind = 1) AND parent IS NOT NULL
@@ -244,21 +236,64 @@ public extension LibraryIndex.Writer {
     }
 }
 
+extension LibraryIndex.Writer {
+    /// Notes the assets `locals` names as taken out by Remove from Library (LIB-62), or, put back, no longer
+    /// (`ApplePhotosIndexer.removed`).
+    func noteRemovedApplePhotos(_ locals: Set<String>, removed: Bool) throws {
+        guard !locals.isEmpty else { return }
+        var now = try ApplePhotosIndexer.removed(self)
+        if removed {
+            now.formUnion(locals)
+        } else {
+            now.subtract(locals)
+        }
+        try setSetting(
+            now.isEmpty ? nil : String(decoding: JSONEncoder().encode(now.sorted()), as: UTF8.self),
+            for: ApplePhotosIndexer.removedKey,
+        )
+    }
+}
+
 public extension IndexQueries {
     /// Every row of the Apple Photos root, as `photo_assets` names them.
     func applePhotosRows() throws -> [ApplePhotosRow] {
-        try database.cached("""
-        SELECT photo, local_id, cloud_id, asset_key, resource, content_version, width, height, subtypes, favorite,
-          hidden FROM photo_assets ORDER BY photo
-        """).map { row in
-            ApplePhotosRow(
-                photo: row.int64(at: 0), local: row.string(at: 1) ?? "", cloud: row.string(at: 2),
-                key: row.string(at: 3) ?? "", resource: ApplePhotosRow.Resource(rawValue: row.int(at: 4)) ?? .original,
-                contentVersion: Date(timeIntervalSince1970: row.double(at: 5)), pixelWidth: row.optionalInt(at: 6),
-                pixelHeight: row.optionalInt(at: 7), subtypes: ApplePhotosRow.subtypes(row.int(at: 8)),
-                isFavorite: row.int(at: 9) != 0, isHidden: row.int(at: 10) != 0,
-            )
-        }
+        try database.cached("SELECT \(Self.applePhotosColumns) FROM photo_assets ORDER BY photo")
+            .map(Self.applePhotosRow)
+    }
+
+    /// The row of photo `id` as `photo_assets` names it; nil for a photo in a folder.
+    func applePhotosRow(ofPhoto id: Int64) throws -> ApplePhotosRow? {
+        let statement = try database.cached("SELECT \(Self.applePhotosColumns) FROM photo_assets WHERE photo = ?")
+        try statement.bind(id, at: 1)
+        return try statement.map(Self.applePhotosRow).first
+    }
+
+    /// The albums kept in place that list photo `id`, by local identifier, in order.
+    func applePhotosAlbums(ofPhoto id: Int64) throws -> [String] {
+        let statement = try database.cached("SELECT album FROM photo_albums WHERE photo = ? ORDER BY album")
+        try statement.bind(id, at: 1)
+        return try statement.map { $0.string(at: 0) ?? "" }
+    }
+
+    /// The rows of the asset with local identifier `local`, by ID: its original's, a pair's raw and Photos' edit.
+    func applePhotosRowIDs(ofAsset local: String) throws -> [Int64] {
+        let statement = try database.cached("SELECT photo FROM photo_assets WHERE local_id = ? ORDER BY photo")
+        try statement.bind(local, at: 1)
+        return try statement.map { $0.int64(at: 0) }
+    }
+
+    private static var applePhotosColumns: String {
+        "photo, local_id, cloud_id, asset_key, resource, content_version, width, height, subtypes, favorite, hidden"
+    }
+
+    private static func applePhotosRow(_ row: SQLiteStatement) -> ApplePhotosRow {
+        ApplePhotosRow(
+            photo: row.int64(at: 0), local: row.string(at: 1) ?? "", cloud: row.string(at: 2),
+            key: row.string(at: 3) ?? "", resource: ApplePhotosRow.Resource(rawValue: row.int(at: 4)) ?? .original,
+            contentVersion: Date(timeIntervalSince1970: row.double(at: 5)), pixelWidth: row.optionalInt(at: 6),
+            pixelHeight: row.optionalInt(at: 7), subtypes: ApplePhotosRow.subtypes(row.int(at: 8)),
+            isFavorite: row.int(at: 9) != 0, isHidden: row.int(at: 10) != 0,
+        )
     }
 
     /// How many photos the library lists of each album kept in place, by Photos' local identifier, as the album's list

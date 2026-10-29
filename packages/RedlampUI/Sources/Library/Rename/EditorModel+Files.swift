@@ -22,9 +22,13 @@ import Synchronization
 ///   it back once the batch is done; Redo makes it again with a batch planned anew, and a change made since its Undo
 ///   ends that, as it ends every Redo. Steps are made one at a time, in the order they're asked for.
 public extension EditorModel {
-    /// Rename Photos…: the template sheet for the photos selected, with their raw and JPEG pairs.
+    /// Rename Photos…: the template sheet for the photos selected, with their raw and JPEG pairs; refused, saying why,
+    /// when a photo kept in Apple Photos is among them (LIB-62).
     @discardableResult
     func renamePhotos() -> Bool {
+        if canRenamePhotos, refuseSelectionKeptInApplePhotos(can: "renamed", verb: "rename") {
+            return true
+        }
         guard let sheet = renameSheet() else { return false }
         RenameSheetController.present(sheet, editor: self)
         return true
