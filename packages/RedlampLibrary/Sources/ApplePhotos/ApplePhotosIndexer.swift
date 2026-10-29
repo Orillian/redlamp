@@ -58,13 +58,15 @@ public final class ApplePhotosIndexer: Sendable {
 
     /// Where the last pass left Photos (LIB-61): its change token then, the albums the collections kept held, a
     /// folder's albums included, so the next can read only what changed and tell when they no longer resolve, and the
-    /// format its rows were written in; and when Apple Photos.json was written then, so the next reads it again only
-    /// once copies may have been made or taken back (LIB-64).
+    /// format its rows were written in; when Apple Photos.json was written then, so the next reads it again only
+    /// once copies may have been made or taken back (LIB-64); and the part of Photos' tree kept, titled as Photos had
+    /// it, which the Apple Photos section lists without asking Photos (LIB-62), nil where an earlier pass kept none.
     struct Following: Codable, Hashable {
         var token: Data?
         var albums: [String]
         var format: Int?
         var record: Date?
+        var tree: [ApplePhotosCollection]?
     }
 
     /// Assets written in one transaction.
@@ -121,12 +123,34 @@ public final class ApplePhotosIndexer: Sendable {
     }
 
     /// Stops keeping `ids` in place, then indexes what's left: the photos no other album kept holds leave the library,
-    /// their sidecars kept.
+    /// their sidecars kept. What's kept inside a folder `ids` names goes with it; a collection kept with the folder
+    /// it's
+    /// in leaves by the folder's other albums and folders being kept in the folder's place, so albums Photos adds to
+    /// the folder later aren't kept (LIB-62).
     @discardableResult
     public func stopKeeping(_ ids: [String]) async throws -> Outcome {
         let leaving = Set(ids)
+        let tree = try await ApplePhotosTree(photos.collections())
         try await index.write { writer in
-            try Self.setChosen(Self.chosen(writer).filter { !leaving.contains($0.id) }, writer)
+            var chosen = try Self.chosen(writer)
+            for id in ids {
+                let line = Array(sequence(first: id) { tree[$0]?.parent })
+                guard let at = line.dropFirst().firstIndex(where: { place in chosen.contains { $0.id == place } })
+                else { continue }
+                chosen.removeAll { $0.id == line[at] }
+                var parent = line[at]
+                for step in line[..<at].reversed() {
+                    for child in tree.children(of: parent)
+                        where child.id != step && !chosen.contains(where: { $0.id == child.id }) {
+                        chosen.append(child)
+                    }
+                    parent = step
+                }
+            }
+            chosen.removeAll { collection in
+                sequence(first: collection.id) { tree[$0]?.parent }.contains(where: leaving.contains)
+            }
+            try Self.setChosen(chosen, writer)
         }
         return try await index()
     }
@@ -192,15 +216,17 @@ public final class ApplePhotosIndexer: Sendable {
         let (chosen, before) = try await index.read { try (Self.chosen($0), Self.following($0)) }
         var assets: [ApplePhotosAsset] = []
         var albums: [String] = []
+        var keptTree: [ApplePhotosCollection] = []
         var vanished: Set<String> = []
         if !chosen.isEmpty {
             let tree = try await ApplePhotosTree(photos.collections())
             albums = tree.albums(in: chosen.map(\.id)).map(\.id)
+            keptTree = tree.kept(chosen.map(\.id))
             vanished = Set(before?.albums ?? []).filter { tree[$0] == nil }
             assets = try await Self.kept(photos.assets(in: albums), &outcome)
         }
         let following = chosen.isEmpty
-            ? nil : Following(token: token, albums: albums, format: Self.rowFormat, record: written)
+            ? nil : Following(token: token, albums: albums, format: Self.rowFormat, record: written, tree: keptTree)
         let rootPath = LibraryIndexer.path(ApplePhotosPlace.root(in: paths))
         let making = !assets.isEmpty
         let known = try await index.write { writer -> (root: RootRecord, assets: [String: KnownAsset])? in

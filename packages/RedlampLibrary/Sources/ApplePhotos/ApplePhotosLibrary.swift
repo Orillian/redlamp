@@ -403,6 +403,20 @@ public struct ApplePhotosTree: Sendable, Hashable {
         }
     }
 
+    /// The part of the tree `chosen` keeps, in the tree's order: each collection it names, everything inside a folder
+    /// it names, and the folders above them, so a list can show them in Photos' folders (LIB-62).
+    public func kept(_ chosen: some Sequence<String>) -> [ApplePhotosCollection] {
+        let chosen = Set(chosen)
+        var kept = Set<String>()
+        for collection in collections {
+            let line = sequence(first: collection.id) { byID[$0]?.parent }
+            if line.contains(where: chosen.contains) {
+                kept.formUnion(line)
+            }
+        }
+        return collections.filter { kept.contains($0.id) }
+    }
+
     /// The albums an import takes when none are chosen: every album, in folders or not; no smart album, and
     /// no shared album, whose photos are reduced copies.
     public var standardChoice: [String] {

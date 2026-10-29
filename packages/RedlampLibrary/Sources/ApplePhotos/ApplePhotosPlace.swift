@@ -261,16 +261,44 @@ public extension IndexQueries {
         }
     }
 
-    /// How many photos of the Apple Photos root each album kept in place holds, by Photos' local identifier: not those
-    /// Photos no longer has, kept as missing (LIB-61).
+    /// How many photos the library lists of each album kept in place, by Photos' local identifier, as the album's list
+    /// shows them (LIB-62): its photos, the copies standing in for theirs (LIB-64) and their versions (LIB-48), not
+    /// those kept as missing (LIB-61).
     func applePhotosAlbumCounts() throws -> [String: Int] {
         var counts: [String: Int] = [:]
         try database.cached("""
         SELECT al.album, count(*) FROM photo_albums al JOIN photos p ON p.id = al.photo
-        WHERE p.state & \(PhotoRecord.State.missing.rawValue) = 0 GROUP BY al.album
+          JOIN photos v ON v.folder = p.folder AND v.name = p.name
+        WHERE v.state & \(PhotoRecord.State.missing.rawValue) = 0 GROUP BY al.album
         """).forEachRow { row in
             counts[row.string(at: 0) ?? ""] = row.int(at: 1)
         }
         return counts
+    }
+
+    /// The part of Photos' tree kept in place, as the last pass found it (LIB-62): each collection kept, everything
+    /// inside a folder kept, and the folders above them, in Photos' order and titled as Photos had them; before a pass
+    /// has found it, the collections kept as they were chosen.
+    func applePhotosKeptTree() throws -> ApplePhotosTree {
+        try ApplePhotosTree(ApplePhotosIndexer.following(self)?.tree ?? ApplePhotosIndexer.chosen(self))
+    }
+
+    /// The photos the library has of album `id`, kept in place, or of every album kept in folder `id` (LIB-62): its
+    /// photos from Photos and the copies standing in for theirs (LIB-64), each with its versions (LIB-48), those kept
+    /// as
+    /// missing among them, as a folder's are; in the order of their IDs.
+    func applePhotosPhotoIDs(in id: String) throws -> [Int64] {
+        let tree = try applePhotosKeptTree()
+        let albums = tree[id]?.kind == .folder ? tree.albums(in: [id]).map(\.id) : [id]
+        let statement = try database.cached("""
+        SELECT v.id FROM photo_albums al JOIN photos p ON p.id = al.photo
+          JOIN photos v ON v.folder = p.folder AND v.name = p.name WHERE al.album = ?
+        """)
+        var photos = Set<Int64>()
+        for album in albums {
+            try statement.bind(album, at: 1)
+            try statement.forEachRow { photos.insert($0.int64(at: 0)) }
+        }
+        return photos.sorted()
     }
 }

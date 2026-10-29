@@ -81,6 +81,8 @@ public final class QueryEngine: Sendable {
         /// What Library Health's checks found in this store, and the photos kept anyway (LIB-40).
         var health: [HealthCheck: HealthFindings] = [:]
         var keptAnyway: [Int64]?
+        /// The photos of the albums of Apple Photos listed, by album or folder (LIB-62).
+        var applePhotos: [String: [Int64]] = [:]
         /// The photos `is:damaged` found, kept across changes to the store, each looking again at the photos it read
         /// again, until the store is loaded again (`install`).
         var damaged: DamagedPhotos?
@@ -406,6 +408,7 @@ public final class QueryEngine: Sendable {
             state.columnCounts.removeAll()
             state.health.removeAll()
             state.keptAnyway = nil
+            state.applePhotos.removeAll()
             state.damaged = nil
             state.postings.removeAll()
             state.pairs = nil
@@ -483,6 +486,7 @@ extension QueryEngine {
             state.columnCounts.removeAll()
             state.health.removeAll()
             state.keptAnyway = nil
+            state.applePhotos.removeAll()
             for kind in [PostingKind.keywords, .collections]
                 where !changed.photos.isEmpty
                 && (state.postings[kind] != nil || state.readingPostings[kind, default: 0] > 0) {
@@ -848,6 +852,20 @@ extension QueryEngine {
         state.withLock { state in
             if state.generation == generation {
                 state.keptAnyway = found
+            }
+        }
+        return found
+    }
+
+    /// The photos of album `id` of Apple Photos, or of every album kept in folder `id`, as the index has them (LIB-62).
+    func applePhotos(in id: String, generation: Int) async throws -> [Int64] {
+        if let kept = state.withLock({ $0.generation == generation ? $0.applePhotos[id] : nil }) {
+            return kept
+        }
+        let found = try await source.photoIDs(inApplePhotos: id)
+        state.withLock { state in
+            if state.generation == generation {
+                state.applePhotos[id] = found
             }
         }
         return found

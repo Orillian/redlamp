@@ -2,7 +2,7 @@ import Foundation
 import RedlampDocument
 
 /// Where a list's photos come from (LIB-10): a folder, alone or with every folder below it, a
-/// search, a collection, All Photographs or Rejected, or photos named by their IDs.
+/// search, a collection, an album of Apple Photos, All Photographs or Rejected, or photos named by their IDs.
 public enum PhotoSource: Sendable, Hashable {
     /// The photos in a folder, and with `includingSubfolders` those in every folder below it.
     case folder(URL, includingSubfolders: Bool)
@@ -22,15 +22,19 @@ public enum PhotoSource: Sendable, Hashable {
     case keptAnyway
     /// The photos of these IDs the library has: an import's (LIB-23, LIB-27), whose folders may hold others.
     case photos(Set<Int64>)
+    /// The photos of an album of Apple Photos kept in place, or of every album kept in a folder of Photos', by Photos'
+    /// local identifier (LIB-62): those Photos puts in it, a copy standing in for its photo (LIB-64), each with its
+    /// versions.
+    case applePhotos(String)
 
     /// Whether it holds photos that can't be read, which other sources leave out (LIB-40): a folder holds
-    /// every file in it, as the Finder shows them. A collection leaves them out itself, keeping those a
-    /// smart collection's query finds.
+    /// every file in it, as the Finder shows them, and an album of Apple Photos every photo Photos puts in it. A
+    /// collection leaves them out itself, keeping those a smart collection's query finds.
     var findsUnreadable: Bool {
         switch self {
         case let .query(query): query.findsUnreadable
         case let .health(check): check.findsUnreadable
-        case .keptAnyway, .collection, .folder: true
+        case .keptAnyway, .collection, .folder, .applePhotos: true
         default: false
         }
     }
@@ -80,6 +84,8 @@ extension QueryEngine {
             return try await store.rows(withIDs: keptAnyway(generation: generation))
         case let .photos(ids):
             return store.rows(withIDs: Array(ids))
+        case let .applePhotos(id):
+            return try await store.rows(withIDs: applePhotos(in: id, generation: generation))
         case let .folder(url, includingSubfolders):
             let path = LibraryIndexer.path(url)
             let below = path == "/" ? "/" : path + "/"

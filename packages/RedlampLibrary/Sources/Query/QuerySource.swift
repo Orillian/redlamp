@@ -52,6 +52,8 @@ protocol QuerySource: Sendable {
     func pairFindings(_ rule: PairRule, store: ColumnStore, pairs: inout HealthPairs) async throws -> HealthFindings
     /// The photos whose findings were kept anyway (LIB-40).
     func keptAnyway() async throws -> [Int64]
+    /// The photos of album `id` of Apple Photos kept in place, or of every album kept in folder `id` (LIB-62).
+    func photoIDs(inApplePhotos id: String) async throws -> [Int64]
     /// The soft-frame measurements of `ids`, or of every photo with one, by photo ID (LIB-42).
     func photoSharpness(of ids: [Int64]?) async throws -> [Int64: PhotoSharpness]
     /// The library's stacks, whose bursts soft frames are judged in (LIB-42).
@@ -152,6 +154,10 @@ extension QuerySource {
     }
 
     func keptAnyway() async throws -> [Int64] {
+        []
+    }
+
+    func photoIDs(inApplePhotos _: String) async throws -> [Int64] {
         []
     }
 }
@@ -583,6 +589,10 @@ struct IndexQuerySource: QuerySource {
 
     func keptAnyway() async throws -> [Int64] {
         try await HealthChecker(index: index, paths: paths).keptAnyway().map(\.photo)
+    }
+
+    func photoIDs(inApplePhotos id: String) async throws -> [Int64] {
+        try await index.read { try $0.applePhotosPhotoIDs(in: id) }
     }
 }
 

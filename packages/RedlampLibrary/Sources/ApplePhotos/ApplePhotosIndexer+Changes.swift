@@ -83,12 +83,14 @@ extension ApplePhotosIndexer {
         var outcome = Outcome()
         outcome.whole = false
         var touched = changes.inserted.union(changes.updated).union(changes.deleted)
-        if !changes.collections.isEmpty {
+        var kept = following.tree
+        if !changes.collections.isEmpty || kept == nil {
             let tree = try await ApplePhotosTree(photos.collections())
             guard Set(tree.albums(in: chosen.map(\.id)).map(\.id)) == Set(following.albums) else {
                 return try await pass()
             }
             try await retitle(chosen, in: tree)
+            kept = tree.kept(chosen.map(\.id))
             let changed = changes.collections.intersection(following.albums)
             if !changed.isEmpty {
                 try await touched.formUnion(joinedOrLeft(Array(changed)))
@@ -101,7 +103,9 @@ extension ApplePhotosIndexer {
         if !touched.isEmpty {
             try await apply(touched, albums: following.albums, &outcome)
         }
-        let next = Following(token: changes.token, albums: following.albums, format: Self.rowFormat, record: written)
+        let next = Following(
+            token: changes.token, albums: following.albums, format: Self.rowFormat, record: written, tree: kept,
+        )
         if next != following {
             try await index.write { try Self.setFollowing(next, $0) }
         }
