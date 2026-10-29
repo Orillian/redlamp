@@ -856,6 +856,31 @@
             func offset(_ start: ImagePoint, _ end: ImagePoint) -> CGVector {
                 CGVector(dx: (end.x - start.x) * photo.width, dy: -(end.y - start.y) * photo.height)
             }
+            /// Drags on the photo from `start` to `end` (clicks, where they're the same), and waits for the pick it
+            /// makes to start. One that a gesture AppKit left holding took instead, as `drawArmedGradient` meets
+            /// them, gets the release a person's next one would give, then the input goes again.
+            func input(_ what: String, from start: ImagePoint, to end: ImagePoint) throws {
+                let spots = try app.main { $0.recipe.spots }
+                func started() -> Bool {
+                    (try? app.wait("\(what) to start a pick", timeout: 3) { model in
+                        model.isPickingRegion || model.recipe.spots != spots || model.pickMessage != nil
+                    }) != nil
+                }
+                func send() throws {
+                    if start == end {
+                        try app.click(.canvas, at: onCanvas(start))
+                    } else {
+                        try app.drag(.canvas, from: onCanvas(start), by: offset(start, end), steps: 16)
+                    }
+                }
+                try send()
+                guard !started() else { return }
+                try app.releaseAgain(on: .canvas, at: onCanvas(end))
+                app.recorder.write("note", ["releaseSentAgain": what])
+                guard !started() else { return }
+                try send()
+                app.recorder.write("note", ["inputSentAgain": what])
+            }
             /// Waits for the pick under way to end with `spots` Remove spots, and says what it found otherwise.
             func picked(_ what: String, spots: Int, timeout: Double = 120) throws {
                 try app.wait(what, timeout: timeout) { model in
@@ -868,7 +893,7 @@
 
             let (corner, opposite) = (ImagePoint(x: 0.8, y: 0.78), ImagePoint(x: 0.99, y: 0.99))
             if focused {
-                try app.drag(.canvas, from: onCanvas(corner), by: offset(corner, opposite), steps: 12)
+                try input("the box around the roof", from: corner, to: opposite)
             } else {
                 try app.run("a box around the roof", timeout: 240) { model in
                     await model.pickRegion(in: ImageRect(x: corner.x, y: corner.y, width: 0.19, height: 0.21))
@@ -882,7 +907,7 @@
             try app.wait("Drag on Brush") { $0.objectSelection == .brush }
             let (left, right) = (ImagePoint(x: 0.15, y: 0.93), ImagePoint(x: 0.45, y: 0.93))
             if focused {
-                try app.drag(.canvas, from: onCanvas(left), by: offset(left, right), steps: 16)
+                try input("the stroke along the roof", from: left, to: right)
             } else {
                 try app.run("a stroke along the roof") { model in
                     await model.pickRegion(
@@ -900,14 +925,14 @@
             // A click picks the pillar, or a stone of it; a stroke up the pillar to the click adds what's left out.
             let (stone, foot) = (ImagePoint(x: 0.04, y: 0.3), ImagePoint(x: 0.04, y: 0.85))
             if focused {
-                try app.click(.canvas, at: onCanvas(stone))
+                try input("the click on the pillar", from: stone, to: stone)
             } else {
                 try app.run("a click on the pillar") { await $0.pickRegion(at: stone) }
             }
             try picked("the pillar clicked, to remove", spots: before + 3)
             let pick = try app.main { $0.selectedSpot }
             if focused {
-                try app.drag(.canvas, from: onCanvas(foot), by: offset(foot, stone), steps: 16)
+                try input("the stroke up the pillar", from: foot, to: stone)
             } else {
                 try app.run("a stroke up the pillar") { model in
                     await model.pickRegion(
