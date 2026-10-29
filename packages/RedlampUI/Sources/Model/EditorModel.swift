@@ -862,7 +862,9 @@ public final class EditorModel {
     @ObservationIgnored private var temporaryClipping = false
     @ObservationIgnored var clipboard: CopiedSettings?
     @ObservationIgnored var pendingDrawingName: String?
-    @ObservationIgnored var pendingDrawingKind: MaskKind?
+    /// The kind of shape a drag is drawing, from `beginDrawing` until `finishDrawing`. Observed: the canvas keeps the
+    /// layer the drag is on while it's set.
+    var pendingDrawingKind: MaskKind?
     @ObservationIgnored var editStart: EditRecipe?
     @ObservationIgnored var editParameter: ParameterID?
     /// How many continuous edits have begun, which numbers the one open (`openEdit`).

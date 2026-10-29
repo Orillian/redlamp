@@ -8,7 +8,6 @@ import SwiftUI
 /// dragging a mask's sliders doesn't re-render the guides.
 struct MaskOverlayView: View {
     @Environment(EditorModel.self) private var model
-    @State private var drawingKind: MaskKind?
     @State private var drawStart: ImagePoint?
 
     var body: some View {
@@ -22,7 +21,10 @@ struct MaskOverlayView: View {
                     RangeSampler(frame: frame)
                 } else if model.drawingKind == .objects {
                     ObjectPicker(frame: frame)
-                } else if model.drawingKind != nil || drawingKind != nil {
+                } else if model.drawingKind != nil || model.pendingDrawingKind != nil {
+                    // Kept by the model's state alone from the drag's first change, which disarms the tool, to its
+                    // end: SwiftUI can update the overlay with the model's change before the gesture's own state,
+                    // and drops a gesture whose view goes without ending it.
                     Color.clear
                         .contentShape(Rectangle())
                         .gesture(drawGesture(frame))
@@ -96,12 +98,11 @@ struct MaskOverlayView: View {
                 let current = frame.image(gesture.location)
                 if drawStart == nil {
                     guard let kind = model.drawingKind else { return }
-                    drawingKind = kind
                     drawStart = frame.image(gesture.startLocation)
                     model.beginDrawing(shape(kind, from: drawStart!, to: current, frame: frame))
                     return
                 }
-                guard let kind = drawingKind, let start = drawStart,
+                guard let kind = model.pendingDrawingKind, let start = drawStart,
                       let maskID = model.selectedMaskID, let componentID = model.selectedComponentID
                 else { return }
                 model.updateComponent(
@@ -113,11 +114,10 @@ struct MaskOverlayView: View {
             .onEnded { gesture in
                 defer {
                     drawStart = nil
-                    drawingKind = nil
                     model.finishDrawing()
                 }
                 // A click without a drag places a default-sized shape.
-                guard let kind = drawingKind, let start = drawStart,
+                guard let kind = model.pendingDrawingKind, let start = drawStart,
                       hypot(gesture.translation.width, gesture.translation.height) < 4,
                       let maskID = model.selectedMaskID, let componentID = model.selectedComponentID
                 else { return }
