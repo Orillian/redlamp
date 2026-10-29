@@ -53,7 +53,7 @@ fi
 
 if [[ -z "$APP_SOURCE" ]]; then
     BUILT="$(scripts/build-mac.py app 2>&1 | tee /dev/stderr)"
-    APP_SOURCE="$(sed -n 's/.*\(\/[^ ]*\/Redlamp\.app\).*/\1/p' <<<"$BUILT" | tail -1)"
+    APP_SOURCE="$(sed -n 's/^==> The app is in \(.*Redlamp\.app\)$/\1/p' <<<"$BUILT" | tail -1)"
 fi
 [[ -d "$APP_SOURCE/Contents/MacOS" ]] || { echo "no app at '$APP_SOURCE'" >&2; exit 2; }
 
