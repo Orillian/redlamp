@@ -128,7 +128,8 @@ struct ApplePhotosAccessView: View {
     }
 }
 
-/// The albums in their groups, each with its count and box, and the import's own choices below them.
+/// The albums in their groups, each with its count and box, those kept in place In Library, and the import's own
+/// choices below them while copying.
 struct ApplePhotosAlbumsView: View {
     let shown: ApplePhotosScreenBox
     let actions: ApplePhotosChoices
@@ -157,10 +158,15 @@ struct ApplePhotosAlbumsView: View {
                             HStack(spacing: 6) {
                                 ApplePhotosCheckbox(
                                     title: album.title, check: album.check, identifier: "photos.album.\(album.id)",
-                                    help: album.isFolder ? "Chooses every album in this folder" : nil,
+                                    help: album.help, isEnabled: !album.isKept,
                                 ) { actions.choose(album.id, $0) }
                                     .padding(.leading, CGFloat(album.depth) * 18)
                                 Spacer(minLength: 8)
+                                if album.isKept {
+                                    Text("In Library")
+                                        .font(Typography.caption.font)
+                                        .foregroundStyle(Theme.tertiaryLabel)
+                                }
                                 if let count = album.count {
                                     Text(ProgressText.count(count))
                                         .font(Typography.value.font)
@@ -175,18 +181,20 @@ struct ApplePhotosAlbumsView: View {
                     .font(Typography.caption.font)
                     .foregroundStyle(Theme.secondaryLabel)
                     .accessibilityIdentifier("photos.chosen")
-                ApplePhotosCheckbox(
-                    title: "Include hidden photos", check: screen.includesHidden ? .on : .off,
-                    identifier: "photos.hidden", help: "Photos’ Hidden album’s photos come too",
-                ) { actions.includeHidden($0) }
-                ApplePhotosCheckbox(
-                    title: "Follow these albums", check: screen.follows ? .on : .off, identifier: "photos.follow",
-                    help: "The Library panel’s From Apple Photos offers the new photos that arrive in them",
-                ) { actions.follow($0) }
-                Text("The Library panel offers the new photos that arrive in albums you follow.")
-                    .font(Typography.caption.font)
-                    .foregroundStyle(Theme.tertiaryLabel)
-                    .fixedSize(horizontal: false, vertical: true)
+                if screen.options {
+                    ApplePhotosCheckbox(
+                        title: "Include hidden photos", check: screen.includesHidden ? .on : .off,
+                        identifier: "photos.hidden", help: "Photos’ Hidden album’s photos come too",
+                    ) { actions.includeHidden($0) }
+                    ApplePhotosCheckbox(
+                        title: "Follow these albums", check: screen.follows ? .on : .off, identifier: "photos.follow",
+                        help: "The Library panel’s From Apple Photos offers the new photos that arrive in them",
+                    ) { actions.follow($0) }
+                    Text("The Library panel offers the new photos that arrive in albums you follow.")
+                        .font(Typography.caption.font)
+                        .foregroundStyle(Theme.tertiaryLabel)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -268,12 +276,13 @@ struct ApplePhotosResultView: View {
 
 /// A checkbox that's AppKit's, carrying an identifier, which the window's tests and the regression suite find and
 /// click through the window, as they do the bottom bar's buttons; a folder's shows a dash while some of its albums
-/// are chosen.
+/// are chosen, and an album kept in place already is dimmed.
 struct ApplePhotosCheckbox: NSViewRepresentable {
     let title: String
     let check: ApplePhotosImportModel.Check
     let identifier: String
     var help: String?
+    var isEnabled = true
     let action: @MainActor (Bool) -> Void
 
     func makeNSView(context: Context) -> NSButton {
@@ -296,6 +305,7 @@ struct ApplePhotosCheckbox: NSViewRepresentable {
         case .mixed: .mixed
         }
         button.toolTip = help
+        button.isEnabled = isEnabled
         button.setAccessibilityIdentifier(identifier)
         context.coordinator.action = action
         context.coordinator.check = check

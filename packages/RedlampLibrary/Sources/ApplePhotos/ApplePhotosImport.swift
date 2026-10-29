@@ -194,6 +194,14 @@ public final class ApplePhotosImport: Sendable {
         return followed.filter { !inPlace.contains($0.id) }
     }
 
+    /// The albums, smart and shared albums of `tree` kept in place (LIB-62), those in a folder kept included, by ID:
+    /// Add Albums from Apple Photos… shows them In Library.
+    public func keptInPlace(in tree: ApplePhotosTree) async throws -> Set<String> {
+        guard let index = library.index else { return [] }
+        let kept = try await index.read { try ApplePhotosIndexer.chosen($0) }.map(\.id)
+        return Set(tree.albums(in: kept).map(\.id))
+    }
+
     // MARK: - Importing
 
     /// Runs the import `settings` describes, from `census` when it's given (the report shown), as the type

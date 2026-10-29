@@ -41,6 +41,23 @@ import RedlampLibrary
         "\(model.phase)"
     }
 
+    /// The setup's way: `keep`, Keep in Photos, or `copy`, Copy into a Folder (LIB-62).
+    var way: String {
+        model.way.rawValue
+    }
+
+    /// Chooses the way `way` names, `keep` or `copy`, as a click on its segment does.
+    func choose(way: String) {
+        if let way = ApplePhotosImportModel.Way(rawValue: way) {
+            model.setWay(way)
+        }
+    }
+
+    /// The albums, smart and shared albums kept in place already, which Add Albums shows In Library.
+    var kept: Set<String> {
+        model.kept
+    }
+
     var access: ApplePhotosAccess {
         model.access
     }
@@ -93,14 +110,18 @@ import RedlampLibrary
         await model.destination.exampled()
     }
 
-    /// The text of the button or box carrying `identifier`, whether it's shown and enabled, and a box's state.
+    /// The text of the button, box or segmented control carrying `identifier` (a segmented control's segment chosen),
+    /// whether it's shown and enabled, and a box's state.
     func control(_ identifier: String) -> (title: String, shown: Bool, enabled: Bool, on: NSControl.StateValue)? {
-        guard let content = window?.contentView, let button = Self.view(identifier, in: content) as? NSButton else {
+        guard let content = window?.contentView, let control = Self.view(identifier, in: content) as? NSControl else {
             return nil
         }
-        return (
-            button.title, button.window != nil && !button.isHiddenOrHasHiddenAncestor, button.isEnabled, button.state,
-        )
+        let (title, on): (String, NSControl.StateValue) = switch control {
+        case let button as NSButton: (button.title, button.state)
+        case let segments as NSSegmentedControl: (segments.label(forSegment: segments.selectedSegment) ?? "", .on)
+        default: (control.stringValue, .off)
+        }
+        return (title, control.window != nil && !control.isHiddenOrHasHiddenAncestor, control.isEnabled, on)
     }
 
     private static func view(_ identifier: String, in view: NSView) -> NSView? {

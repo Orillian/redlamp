@@ -3,15 +3,17 @@ import RedlampDesign
 import RedlampLibrary
 import SwiftUI
 
-/// File › Import from Apple Photos… (LIB-54): a window of its own that asks, the first time, whether Redlamp may read
-/// Photos, then shows Photos' albums beside To (the card import's own column, `ImportDestinationViewController`), the
-/// report Review makes before anything is copied, the import's progress with Stop, and how it ended, with Show in
-/// Library and Undo Import. Its pages are drawn from the model (`ApplePhotosScreen`); their buttons stay AppKit
-/// buttons in the window's bottom bar. There's one at a time: asking again brings it forward. Closing it while it
-/// imports lets the import carry on.
+/// File › Add Albums from Apple Photos… (LIB-54, LIB-62): a window of its own that asks, the first time, whether
+/// Redlamp may read Photos, then shows Photos' albums beside the way they come in. Keep in Photos, the default, says
+/// what keeping means, and Add Albums keeps the albums chosen in place, closes the window and shows the first in the
+/// grid. Copy into a Folder shows To (the card import's own column, `ImportDestinationViewController`), the report
+/// Review makes before anything is copied, the import's progress with Stop, and how it ended, with Show in Library and
+/// Undo Import. Its pages are drawn from the model (`ApplePhotosScreen`); their buttons stay AppKit buttons in the
+/// window's bottom bar. There's one at a time: asking again brings it forward. Closing it while it imports lets the
+/// import carry on.
 @MainActor
 public final class ApplePhotosWindowController: NSWindowController, NSWindowDelegate {
-    public nonisolated static let title = "Import from Apple Photos"
+    public nonisolated static let title = "Add Albums from Apple Photos"
     /// The window open now.
     @_spi(Harness) public private(set) static var current: ApplePhotosWindowController?
     /// The window as it opens, and at its smallest: within the 700 points of height CI's screen leaves.
@@ -24,6 +26,11 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
     private let pages = NSView()
     private var pageView: NSView?
     private var setupView: NSView?
+    /// Keep in Photos and Copy into a Folder, at the top of the setup's right column, over what each way shows.
+    private let ways = NSSegmentedControl(
+        labels: ApplePhotosImportModel.Way.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil,
+    )
+    private let keepNote = ApplePhotosWindowController.makeKeepNote()
     private let status = NSTextField(wrappingLabelWithString: "")
     private var buttons: [(kind: ApplePhotosScreen.Button.Kind, button: NSButton)] = []
     /// Closed while it imported, which carries on: the window goes once it's done.
@@ -80,11 +87,10 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
         split.isVertical = true
         split.dividerStyle = .thin
         split.addArrangedSubview(albums)
-        split.addArrangedSubview(destinationView.view)
+        split.addArrangedSubview(makeWayColumn())
         split.setHoldingPriority(.defaultLow, forSubviewAt: 0)
         split.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
         albums.widthAnchor.constraint(greaterThanOrEqualToConstant: 340).isActive = true
-        destinationView.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
         setupView = split
 
         for view in [page, split] {
@@ -143,16 +149,74 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
         return content
     }
 
+    /// The setup's right column: the way, its segments as wide as each other, over the Keep in Photos note or To.
+    private func makeWayColumn() -> NSView {
+        ways.target = self
+        ways.action = #selector(wayChosen(_:))
+        ways.segmentDistribution = .fillEqually
+        ways.setAccessibilityIdentifier("photos.way")
+        let column = NSView()
+        let to = destinationView.view
+        for view in [ways, keepNote, to] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            column.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            column.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
+            ways.topAnchor.constraint(equalTo: column.topAnchor, constant: 12),
+            ways.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: 16),
+            ways.trailingAnchor.constraint(equalTo: column.trailingAnchor, constant: -16),
+            keepNote.topAnchor.constraint(equalTo: ways.bottomAnchor),
+            keepNote.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            keepNote.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            keepNote.bottomAnchor.constraint(lessThanOrEqualTo: column.bottomAnchor),
+            to.topAnchor.constraint(equalTo: ways.bottomAnchor),
+            to.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            to.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            to.bottomAnchor.constraint(equalTo: column.bottomAnchor),
+        ])
+        return column
+    }
+
+    /// What keeping the albums in Photos means, in place of To: nothing to set.
+    private static func makeKeepNote() -> NSView {
+        let nothing = NSTextField(wrappingLabelWithString: "Nothing is copied.")
+        let shown = NSTextField(wrappingLabelWithString: "The albums appear in the Apple Photos section, shown from "
+            + "Photos’ own thumbnails. An original is downloaded from iCloud only to see it at full size, edit or "
+            + "export it, and Redlamp keeps its edits on this Mac.")
+        shown.textColor = .secondaryLabelColor
+        let following = ImportDestinationViewController.note(
+            "The albums follow Photos: new photos come in, and photos deleted in Photos are listed by Library Health.",
+        )
+        let labels = [nothing, shown, following]
+        let stack = NSStackView(views: [ImportDestinationViewController.heading("Keep in Photos")] + labels)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 16, right: 16)
+        for label in labels {
+            label.preferredMaxLayoutWidth = 280
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
+        }
+        stack.setAccessibilityIdentifier("photos.keep")
+        return stack
+    }
+
     // MARK: - Showing
 
-    /// Brings the window forward, making it first for `editor` when there's none; `then` runs with it once it shows.
+    /// Brings the window forward, making it first for `editor` when there's none, with `way` chosen when it's given: a
+    /// window opened without one shows Keep in Photos, and one open already keeps its way.
     static func show(
-        editor: EditorModel, importing news: (settings: ApplePhotosImport.Settings, census: ApplePhotosCensus)? = nil,
+        editor: EditorModel, way: ApplePhotosImportModel.Way? = nil,
+        importing news: (settings: ApplePhotosImport.Settings, census: ApplePhotosCensus)? = nil,
     ) {
         if let current {
             current.closedWhileBusy = false
             if let news {
                 current.model.importNew(news.settings, census: news.census)
+            } else if let way {
+                current.model.setWay(way)
             }
             current.showWindow(nil)
             current.window?.makeKeyAndOrderFront(nil)
@@ -161,13 +225,13 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
         Task {
             let library = await ImportActions.library(of: editor)
             guard current == nil else {
-                show(editor: editor, importing: news)
+                show(editor: editor, way: way, importing: news)
                 return
             }
             let model = ApplePhotosImportModel(photos: ApplePhotosSource.library, library: library, editor: editor)
             let controller = ApplePhotosWindowController(model: model)
             current = controller
-            model.start(importing: news)
+            model.start(way: way ?? .keep, importing: news)
             controller.changed()
             controller.showWindow(nil)
             controller.window?.makeKeyAndOrderFront(nil)
@@ -200,6 +264,11 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
         let setup = screen.page == .setup
         pageView?.isHidden = setup
         setupView?.isHidden = !setup
+        if let way = screen.way {
+            ways.selectedSegment = ApplePhotosImportModel.Way.allCases.firstIndex(of: way) ?? 0
+            keepNote.isHidden = way != .keep
+            destinationView.view.isHidden = way != .copy
+        }
         status.stringValue = screen.barNote
         for (kind, button) in buttons {
             guard let wanted = screen.buttons.first(where: { $0.kind == kind }) else {
@@ -228,6 +297,12 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
         press(kind)
     }
 
+    @objc private func wayChosen(_ sender: NSSegmentedControl) {
+        let all = ApplePhotosImportModel.Way.allCases
+        guard all.indices.contains(sender.selectedSegment) else { return }
+        model.setWay(all[sender.selectedSegment])
+    }
+
     /// What the bottom bar's button `kind` does.
     func press(_ kind: ApplePhotosScreen.Button.Kind) {
         switch kind {
@@ -241,6 +316,10 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
             }
             model.review()
         case .importPhotos: model.startImport()
+        case .addAlbums:
+            if model.addAlbums() {
+                close()
+            }
         case .stop: model.stop()
         case .resume: model.resume()
         case .undo: model.undo()
@@ -275,14 +354,15 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
     }
 }
 
-/// File › Import from Apple Photos…, and the Library panel's From Apple Photos (LIB-55).
+/// File › Add Albums from Apple Photos…, and the Library panel's From Apple Photos (LIB-55).
 @MainActor
 public enum ApplePhotosActions {
-    /// Opens the window, or brings it forward; false while the library isn't open.
+    /// Opens the window, or brings it forward, with `way` chosen (`ApplePhotosWindowController.show`); false while the
+    /// library isn't open.
     @discardableResult
-    static func open(model: EditorModel) -> Bool {
+    static func open(model: EditorModel, way: ApplePhotosImportModel.Way? = nil) -> Bool {
         guard model.library.service?.isReady == true else { return false }
-        ApplePhotosWindowController.show(editor: model)
+        ApplePhotosWindowController.show(editor: model, way: way)
         return true
     }
 

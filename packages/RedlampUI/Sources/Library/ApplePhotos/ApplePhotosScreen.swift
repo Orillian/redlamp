@@ -18,7 +18,7 @@ struct ApplePhotosScreen: Equatable {
 
     struct Button: Equatable {
         enum Kind: String, CaseIterable {
-            case back, allow, openSettings, review, importPhotos, stop, resume, undo, showInLibrary, done
+            case back, allow, openSettings, review, importPhotos, addAlbums, stop, resume, undo, showInLibrary, done
         }
 
         var kind: Kind
@@ -35,6 +35,10 @@ struct ApplePhotosScreen: Equatable {
         var isFolder: Bool
         var count: Int?
         var check: ApplePhotosImportModel.Check
+        /// Kept in place already (LIB-62), its box dimmed with In Library beside it: an album, or a folder once
+        /// every album in it is.
+        var isKept = false
+        var help: String?
     }
 
     struct Group: Equatable, Identifiable {
@@ -60,12 +64,15 @@ struct ApplePhotosScreen: Equatable {
     }
 
     var page: Page
+    /// The setup's way, Keep in Photos or Copy into a Folder (LIB-62).
+    var way: ApplePhotosImportModel.Way?
     var heading = ""
     var message: [String] = []
     var groups: [Group] = []
     var chosenLine = ""
     var includesHidden = false
     var follows = true
+    /// Include hidden photos and Follow these albums, which only copying has.
     var options = true
     var sections: [Section] = []
     var stages: [ProgressStage] = []
@@ -112,8 +119,8 @@ extension ApplePhotosImportModel {
             return ApplePhotosScreen(
                 page: .access, heading: "Allow Redlamp to read Photos",
                 message: [
-                    "Redlamp copies the photos in the albums you choose into your folders, with their favourites, "
-                        + "dates and albums. It only reads your Photos library and never changes it.",
+                    "Redlamp shows the photos in the albums you choose from Photos where they are, or copies them "
+                        + "into a folder. It only reads your Photos library and never changes it.",
                     "macOS asks you once. You can change your answer in \(settings).",
                 ],
                 buttons: [.init(kind: .allow, title: "Continue", isDefault: true)],
@@ -124,7 +131,7 @@ extension ApplePhotosImportModel {
                 page: .access, heading: "Redlamp isn’t allowed to read Photos",
                 message: [
                     "Access to Photos was turned off for Redlamp, so it can’t see your albums.",
-                    "To import from Photos, turn Redlamp on in \(settings), then come back to this window.",
+                    "To add albums from Photos, turn Redlamp on in \(settings), then come back to this window.",
                 ],
                 buttons: [open],
             )
@@ -132,8 +139,8 @@ extension ApplePhotosImportModel {
             return ApplePhotosScreen(
                 page: .access, heading: "Photos is restricted on this Mac",
                 message: [
-                    "A profile or Screen Time on this Mac keeps apps from reading Photos, so Redlamp can’t import "
-                        + "from it.",
+                    "A profile or Screen Time on this Mac keeps apps from reading Photos, so Redlamp can’t add its "
+                        + "albums.",
                     "Whoever manages this Mac can allow it in \(settings).",
                 ],
                 buttons: [open],
@@ -143,8 +150,8 @@ extension ApplePhotosImportModel {
                 page: .access, heading: "Redlamp can read only some of your photos",
                 message: [
                     "Access to Photos is limited for Redlamp: it can read only the photos chosen for it, and none of "
-                        + "your albums, so there are no albums to import.",
-                    "To import albums, choose Full Access for Redlamp in \(settings), then come back to this window.",
+                        + "your albums, so there are no albums to add.",
+                    "To add albums, choose Full Access for Redlamp in \(settings), then come back to this window.",
                 ],
                 buttons: [open],
             )
@@ -159,25 +166,48 @@ extension ApplePhotosImportModel {
         let chosenLine = albums.isEmpty
             ? "No albums chosen."
             : "\(Self.count(albums.count, "album")) chosen, about \(Self.count(estimate, "photo"))."
-        return ApplePhotosScreen(
-            page: .setup, groups: groups, chosenLine: chosenLine, includesHidden: includesHidden, follows: follows,
-            buttons: [.init(kind: .review, title: "Review", isEnabled: !albums.isEmpty, isDefault: true)],
-            barNote: albums.isEmpty
-                ? "Choose the albums to import."
-                : "Review counts what comes across before anything is copied. Photos is only read.",
+        var screen = ApplePhotosScreen(
+            page: .setup, way: way, groups: groups, chosenLine: chosenLine, includesHidden: includesHidden,
+            follows: follows,
         )
+        switch way {
+        case .keep:
+            screen.options = false
+            screen.buttons = [.init(kind: .addAlbums, title: "Add Albums", isEnabled: !albums.isEmpty, isDefault: true)]
+            screen.barNote = if !albums.isEmpty {
+                "Their photos list in the Apple Photos section as they’re read. Photos is only read."
+            } else if kept.isEmpty {
+                "Choose the albums to add."
+            } else {
+                "Choose the albums to add: those In Library are kept already."
+            }
+        case .copy:
+            screen.buttons = [.init(kind: .review, title: "Review", isEnabled: !albums.isEmpty, isDefault: true)]
+            screen.barNote = albums.isEmpty
+                ? "Choose the albums to import."
+                : "Review counts what comes across before anything is copied. Photos is only read."
+        }
+        return screen
     }
 
     /// The albums in Photos' folders, then smart albums, then shared albums, each group as Photos orders it.
     private var groups: [ApplePhotosScreen.Group] {
         guard let tree else { return [] }
         func row(_ collection: ApplePhotosCollection, depth: Int) -> ApplePhotosScreen.Album {
-            let count = collection.kind == .folder
-                ? albums(in: collection.id).reduce(0) { $0 + ($1.estimatedCount ?? 0) }
-                : collection.estimatedCount
+            let isFolder = collection.kind == .folder
+            let inside = isFolder ? albums(in: collection.id) : []
+            let count = isFolder ? inside.reduce(0) { $0 + ($1.estimatedCount ?? 0) } : collection.estimatedCount
+            let isKept = isFolder
+                ? !inside.isEmpty && inside.allSatisfy { kept.contains($0.id) }
+                : kept.contains(collection.id)
+            let help: String? = switch (isKept, way) {
+            case (true, .keep): "In the library: Remove from Library… in the Apple Photos section takes it out"
+            case (true, .copy): "Kept in Photos: Copy to Folder… in the Apple Photos section copies it with its edits"
+            case (false, _): isFolder ? "Chooses every album in this folder" : nil
+            }
             return ApplePhotosScreen.Album(
-                id: collection.id, title: collection.title, depth: depth, isFolder: collection.kind == .folder,
-                count: count, check: check(of: collection.id),
+                id: collection.id, title: collection.title, depth: depth, isFolder: isFolder, count: count,
+                check: check(of: collection.id), isKept: isKept, help: help,
             )
         }
         func rows(under parent: String?, depth: Int) -> [ApplePhotosScreen.Album] {

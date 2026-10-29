@@ -562,7 +562,7 @@ class SidebarOutlineView: NSOutlineView, HeightProviding, NSOutlineViewDataSourc
         case .recentlyTrashed:
             model.showRecentlyTrashed()
         case .applePhotos:
-            ApplePhotosActions.open(model: model)
+            ApplePhotosActions.open(model: model, way: .copy)
         default:
             break
         }

@@ -24,9 +24,9 @@ let appInfoPlist: [String: Plist.Value] = [
     // Which build this is (`AppDistribution`): `developer-id` in the direct download as
     // `mise run release` builds it, `app-store` in the App Store's, empty in builds from source.
     "RedlampDistribution": "$(REDLAMP_DISTRIBUTION)",
-    // Import from Apple Photos (LIB-54) reads Photos, and only reads it (DEC-106).
+    // Add Albums from Apple Photos (LIB-54, LIB-62) reads Photos, and only reads it (DEC-106).
     "NSPhotoLibraryUsageDescription":
-        "Redlamp copies the photos in the albums you choose into your folders. It never changes your Photos library.",
+        "Redlamp shows or copies the photos in the albums you choose. It never changes your Photos library.",
     // Sidecars are packages (edit.json plus mask bitmaps), shown as one file.
     "UTExportedTypeDeclarations": [
         [

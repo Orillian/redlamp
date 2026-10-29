@@ -5,8 +5,10 @@ import RedlampLibrary
 import Testing
 @_spi(Harness) @testable import RedlampUI
 
-/// File › Import from Apple Photos… (LIB-54) on a simulated Photos library: access asked for once and explained when
-/// there's none, the albums chosen with their folders, the report, the import and Undo Import.
+/// File › Add Albums from Apple Photos… (LIB-54, LIB-62) on a simulated Photos library: access asked for once and
+/// explained when there's none; Keep in Photos as it opens, the albums kept already chosen and dimmed, and Add Albums
+/// keeping the albums chosen in place; Copy into a Folder's albums chosen with their folders, the report, the import
+/// and Undo Import.
 @MainActor
 @Suite(.serialized)
 struct ApplePhotosWindowTests {
@@ -85,6 +87,29 @@ struct ApplePhotosWindowTests {
         button.performClick(nil)
     }
 
+    /// Chooses `way`'s segment at the top of the setup's right column, as a click on it does.
+    private func choose(_ way: ApplePhotosImportModel.Way, in window: ApplePhotosWindowController) throws {
+        let content = try #require(window.window?.contentView)
+        let ways = try #require(Self.view("photos.way", in: content) as? NSSegmentedControl)
+        #expect(!ways.isHiddenOrHasHiddenAncestor && ways.isEnabled, "photos.way shown and enabled")
+        ways.selectedSegment = try #require(ApplePhotosImportModel.Way.allCases.firstIndex(of: way))
+        ways.sendAction(ways.action, to: ways.target)
+        content.layoutSubtreeIfNeeded()
+    }
+
+    /// Whether the view carrying `identifier` is shown, laid out afresh; nil when there's none.
+    private static func isShown(_ identifier: String, in window: ApplePhotosWindowController) -> Bool? {
+        window.window?.contentView?.layoutSubtreeIfNeeded()
+        return window.window?.contentView.flatMap { view(identifier, in: $0) }.map { !$0.isHiddenOrHasHiddenAncestor }
+    }
+
+    private static func view(_ identifier: String, in view: NSView) -> NSView? {
+        if view.accessibilityIdentifier() == identifier {
+            return view
+        }
+        return view.subviews.lazy.compactMap { Self.view(identifier, in: $0) }.first
+    }
+
     static func button(_ identifier: String, in view: NSView) -> NSButton? {
         if let button = view as? NSButton, button.accessibilityIdentifier() == identifier {
             return button
@@ -149,9 +174,10 @@ struct ApplePhotosWindowTests {
         let window = try await Self.window(SimulatedPhotosLibrary(manifest: Self.manifest(in: sandbox)), model: model)
         defer { window.close() }
         try await sandbox.eventually { window.phase == "choosing" }
+        try choose(.copy, in: window)
         try await sandbox.eventually {
             window.window?.contentView?.layoutSubtreeIfNeeded()
-            return window.control("photos.album.shared-family") != nil
+            return window.control("photos.album.shared-family") != nil && window.control("photos.hidden") != nil
         }
         #expect(window.chosen == ["album-selects", "album-lisbon", "album-porto"], "every album, none smart or shared")
         let screen = window.model.screen
@@ -182,7 +208,7 @@ struct ApplePhotosWindowTests {
         await window.exampled()
         #expect(window.example == "Selects/IMG_0001.HEIC", "\(window.example ?? "none")")
         #expect(window.control("import.eject-after") == nil, "no Card section")
-        #expect(ShortcutAction.importFromApplePhotos.title == "Import from Apple Photos…")
+        #expect(ShortcutAction.importFromApplePhotos.title == "Add Albums from Apple Photos…")
         #expect(ShortcutAction.importFromApplePhotos.category == .file)
     }
 
@@ -196,6 +222,7 @@ struct ApplePhotosWindowTests {
         let window = try await Self.window(SimulatedPhotosLibrary(manifest: Self.manifest(in: sandbox)), model: model)
         defer { window.close() }
         try await sandbox.eventually { window.phase == "choosing" }
+        try choose(.copy, in: window)
         window.prepare(destination: destination, folders: "{album}", names: "{name}")
         try click("photos.review", in: window)
         try await sandbox.eventually { window.phase == "reviewing" }
@@ -249,6 +276,125 @@ struct ApplePhotosWindowTests {
         let frame = try #require(window.window?.frame)
         #expect(frame.height <= 700 && frame.width >= 720 && frame.height >= 480)
         #expect(window.window?.minSize == NSSize(width: 720, height: 480))
-        #expect(window.window?.title == "Import from Apple Photos")
+        #expect(window.window?.title == "Add Albums from Apple Photos")
+    }
+
+    /// The window over `photos`, the library following it through its one Photos indexer as the app does, with `ids`
+    /// kept in place first.
+    private static func keeping(
+        _ ids: [String], _ photos: SimulatedPhotosLibrary, in sandbox: SourcesSandbox, model: EditorModel,
+    ) async throws -> (ApplePhotosWindowController, ApplePhotosIndexer) {
+        let service = try #require(sandbox.service)
+        service.followApplePhotos(photos)
+        try await sandbox.eventually { service.applePhotosIndexer != nil }
+        if !ids.isEmpty {
+            #expect(try await service.keepApplePhotos(ids))
+        }
+        let window = await Self.window(photos, model: model)
+        try await sandbox.eventually { window.phase == "choosing" }
+        try await sandbox.eventually {
+            window.window?.contentView?.layoutSubtreeIfNeeded()
+            return window.control("photos.album.album-lisbon") != nil
+        }
+        return try (window, #require(service.applePhotosIndexer))
+    }
+
+    @Test func `Keep in Photos opens with the albums kept already chosen and dimmed, and each way keeps its own albums`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let model = try await sandbox.open()
+        let photos = try SimulatedPhotosLibrary(manifest: Self.manifest(in: sandbox))
+        let (window, _) = try await Self.keeping(["album-lisbon"], photos, in: sandbox, model: model)
+        defer { window.close() }
+
+        #expect(window.way == "keep" && window.control("photos.way")?.title == "Keep in Photos")
+        #expect(window.kept == ["album-lisbon"] && window.chosen == ["album-lisbon"])
+        let lisbon = try #require(window.model.screen.groups[0].albums.first { $0.id == "album-lisbon" })
+        #expect(lisbon.isKept && lisbon.check == .on && lisbon.help?.hasPrefix("In the library") == true)
+        #expect(window.control("photos.album.album-lisbon").map { $0.on == .on && !$0.enabled } == true, "dimmed")
+        #expect(window.control("photos.album.folder-trips").map { $0.on == .mixed && $0.enabled } == true)
+        #expect(window.control("photos.hidden") == nil && window.control("photos.follow") == nil, "only for copying")
+        #expect(Self.isShown("photos.keep", in: window) == true && Self
+            .isShown("import.destination", in: window) == false)
+        #expect(window.control("photos.addAlbums").map { $0.title == "Add Albums" && $0.shown && !$0.enabled } == true)
+        #expect(window.control("photos.review")?.shown == false)
+        #expect(window.statusText == "Choose the albums to add: those In Library are kept already.")
+
+        try click("photos.album.album-porto", in: window)
+        #expect(window.chosen == ["album-lisbon", "album-porto"] && window.control("photos.album.folder-trips")?
+            .on == .on)
+        #expect(window.control("photos.addAlbums")?.enabled == true)
+        #expect(window.model.screen.chosenLine == "1 album chosen, about 1 photo.", "the albums kept already left out")
+        try click("photos.album.folder-trips", in: window)
+        #expect(window.chosen == ["album-lisbon"], "a folder's box lets go of its albums but those kept")
+        try click("photos.album.folder-trips", in: window)
+        #expect(window.chosen == ["album-lisbon", "album-porto"])
+
+        try choose(.copy, in: window)
+        try await sandbox.eventually {
+            window.window?.contentView?.layoutSubtreeIfNeeded()
+            return window.control("photos.hidden") != nil
+        }
+        #expect(window.way == "copy" && window.chosen == ["album-selects", "album-porto"], "every album but those kept")
+        #expect(window.control("photos.album.album-lisbon").map { $0.on == .off && !$0.enabled } == true)
+        #expect(window.control("photos.album.folder-trips")?.on == .on, "its albums not kept are all chosen")
+        #expect(window.control("photos.follow")?.shown == true && window.control("photos.review")?.shown == true)
+        #expect(window.control("photos.addAlbums")?.shown == false)
+        #expect(Self.isShown("photos.keep", in: window) == false && Self
+            .isShown("import.destination", in: window) == true)
+        try click("photos.album.album-selects", in: window)
+        #expect(window.chosen == ["album-porto"])
+        try choose(.keep, in: window)
+        #expect(window.chosen == ["album-lisbon", "album-porto"], "each way keeps the albums chosen in it")
+    }
+
+    @Test func `Add Albums keeps a new album, or a folder whose albums are all chosen, and shows the first album added`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let model = try await sandbox.open()
+        let photos = try SimulatedPhotosLibrary(manifest: Self.manifest(in: sandbox))
+        let (first, indexer) = try await Self.keeping([], photos, in: sandbox, model: model)
+        defer { first.close() }
+        #expect(first.kept.isEmpty && first.chosen.isEmpty && first.statusText == "Choose the albums to add.")
+
+        try click("photos.album.album-porto", in: first)
+        #expect(first.model.keeping == ["album-porto"], "an album of a folder not all chosen is kept on its own")
+        try click("photos.addAlbums", in: first)
+        #expect(first.window?.isVisible == false, "the window closes")
+        #expect(model.librarySources.shown == .applePhotos("album-porto"), "the grid shows the album added")
+        try await sandbox.eventually { !model.librarySources.isListing && model.items.count == 1 }
+        #expect(try await indexer.albums().map(\.id) == ["album-porto"])
+        try await sandbox.counts { $0.count(of: .applePhotos("album-porto")) == 1 }
+
+        // Photos' changes are followed from then on, though nothing was kept as the library began following them.
+        photos.insert(ApplePhotosAsset(
+            id: "asset-porto", created: Date(timeIntervalSince1970: 1_790_000_000), albums: ["album-porto"],
+            resources: [ApplePhotosResource(kind: .photo, type: "public.jpeg", originalFilename: "IMG_0050.JPG")],
+        ))
+        try await sandbox.counts { $0.count(of: .applePhotos("album-porto")) == 2 }
+        try await sandbox.eventually { model.items.count == 2 }
+
+        let second = await Self.window(photos, model: model)
+        defer { second.close() }
+        try await sandbox.eventually { second.phase == "choosing" }
+        #expect(second.kept == ["album-porto"] && second.chosen == ["album-porto"])
+        try click("photos.album.album-lisbon", in: second)
+        try click("photos.album.smart-favourites", in: second)
+        #expect(
+            second.model.keeping == ["folder-trips", "smart-favourites"],
+            "a folder whose albums are all chosen is kept whole, so the albums Photos adds to it are kept too",
+        )
+        try click("photos.addAlbums", in: second)
+        #expect(model.librarySources.shown == .applePhotos("album-lisbon"), "the first album added, in Photos' order")
+        try await SourcesSandbox.eventually {
+            try await indexer.albums().map(\.id) == ["album-porto", "folder-trips", "smart-favourites"]
+        }
+        try await sandbox
+            .counts { $0.applePhotos["folder-trips"] != nil && $0.count(of: .applePhotos("album-lisbon")) == 1 }
+        try await sandbox.eventually { !model.librarySources.isListing && model.items.count == 1 }
     }
 }

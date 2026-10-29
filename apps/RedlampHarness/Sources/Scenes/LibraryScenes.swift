@@ -34,14 +34,14 @@ extension HarnessScene {
             id: "library-apple-photos",
             title: "Apple Photos",
             symbol: "photo.on.rectangle.angled",
-            synopsis: "Import from Apple Photos on a simulated Photos library, in each state from asking for access on",
+            synopsis: "Add Albums from Apple Photos on a simulated library, in each state from asking for access on",
             section: .library,
         ) {
             LibraryScene(
                 surfaces: [.applePhotos],
                 states: [
-                    .notAsked, .denied, .restricted, .limited, .opened, .reviewed, .importing, .imported, .undone,
-                    .minimum,
+                    .notAsked, .denied, .restricted, .limited, .opened, .copying, .reviewed, .importing, .imported,
+                    .undone, .minimum,
                 ],
             )
         }
@@ -66,7 +66,7 @@ extension HarnessScene {
 /// What a surface shows when it opens.
 enum LibrarySurfaceState: String, CaseIterable, Identifiable {
     case opened, noCatalog = "no-catalog", finished, interrupted, imported, undone, minimum
-    case notAsked = "not-asked", denied, restricted, limited, reviewed, importing
+    case notAsked = "not-asked", denied, restricted, limited, copying, reviewed, importing
 
     var id: String {
         rawValue
@@ -85,6 +85,7 @@ enum LibrarySurfaceState: String, CaseIterable, Identifiable {
         case .denied: "Denied"
         case .restricted: "Restricted"
         case .limited: "Limited"
+        case .copying: "Copy into a Folder"
         case .reviewed: "Review"
         case .importing: "Importing"
         }
@@ -144,7 +145,7 @@ final class LibrarySceneState {
             return
         }
         status = "\(surface.title): \(state.title)"
-        if surface == .applePhotos, [.reviewed, .importing, .imported, .undone].contains(state) {
+        if surface == .applePhotos, [.copying, .reviewed, .importing, .imported, .undone].contains(state) {
             await photos(state)
             return
         }
@@ -170,13 +171,13 @@ final class LibrarySceneState {
                 guard let window else { continue }
                 window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true)
             }
-        case .opened, .noCatalog, .notAsked, .denied, .restricted, .limited, .reviewed, .importing:
+        case .opened, .noCatalog, .notAsked, .denied, .restricted, .limited, .copying, .reviewed, .importing:
             break
         }
     }
 
-    /// The Apple Photos window taken to `state`: Review, an import's progress as it downloads from iCloud, the import
-    /// done, or taken back.
+    /// The Apple Photos window taken to `state`: Copy into a Folder chosen, Review, an import's progress as it
+    /// downloads from iCloud, the import done, or taken back.
     private func photos(_ state: LibrarySurfaceState) async {
         func reach(_ phase: String) async -> ApplePhotosWindowController? {
             for _ in 0 ..< 600 where ApplePhotosWindowController.current?.phase != phase {
@@ -191,6 +192,8 @@ final class LibrarySceneState {
             ))
             return
         }
+        window.choose(way: "copy")
+        guard state != .copying else { return }
         window.press(named: "review")
         guard await reach("reviewing") != nil, state != .reviewed else { return }
         window.press(named: "importPhotos")

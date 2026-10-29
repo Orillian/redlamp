@@ -2,14 +2,29 @@ import AppKit
 import RedlampLibrary
 import Synchronization
 
-/// What File › Import from Apple Photos… does (LIB-54): whether Redlamp may read Photos, asked the first time; its
-/// albums, chosen with their folders, smart and shared albums apart; To as the card import keeps it (`destination`,
-/// its saved `ImportSettings`); the census of what the albums chosen would bring, before anything is copied; then the
-/// import (`ApplePhotosImport`), its stages with Stop, and how it ended, with Show in Library and Undo Import. It
-/// also runs the Library panel's From Apple Photos, the new photos in the albums followed (LIB-55). Photos is only
-/// ever read (DEC-106).
+/// What File › Add Albums from Apple Photos… does (LIB-54, LIB-62): whether Redlamp may read Photos, asked the first
+/// time; its albums, chosen with their folders, smart and shared albums apart, those kept in place already In
+/// Library; then one of two ways. Keep in Photos, the default, keeps the albums chosen in place (DEC-107), their
+/// photos listed from Photos as they're read. Copy into a Folder is the import as 0.3.4 ships it: To as the card
+/// import keeps it (`destination`, its saved `ImportSettings`); the census of what the albums chosen would bring,
+/// before anything is copied; then the import (`ApplePhotosImport`), its stages with Stop, and how it ended, with Show
+/// in Library and Undo Import. It also runs the Library panel's From Apple Photos, the new photos in the albums
+/// followed (LIB-55). Photos is only ever read (DEC-106).
 @MainActor
 final class ApplePhotosImportModel {
+    /// How the albums chosen come into the library (LIB-62): kept in Photos, their photos shown from Photos where they
+    /// are, or copied into a folder.
+    enum Way: String, CaseIterable, Sendable {
+        case keep, copy
+
+        var title: String {
+            switch self {
+            case .keep: "Keep in Photos"
+            case .copy: "Copy into a Folder"
+            }
+        }
+    }
+
     enum Phase: Equatable {
         /// Reading whether Redlamp may read Photos, or asking.
         case checking
@@ -40,8 +55,16 @@ final class ApplePhotosImportModel {
     private(set) var phase = Phase.checking
     private(set) var access = ApplePhotosAccess.notDetermined
     private(set) var tree: ApplePhotosTree?
-    /// The albums, smart and shared albums chosen, by ID: never a folder, whose box checks its albums.
-    private(set) var chosen: Set<String> = []
+    /// Keep in Photos each time the window opens; Copy into a Folder when the Library panel's From Apple Photos opens
+    /// it to import.
+    private(set) var way = Way.keep
+    /// The albums, smart and shared albums kept in place already, those in a folder kept included, by ID: In Library
+    /// in both ways, chosen in Keep in Photos, and never chosen in Copy into a Folder, whose import would make copies
+    /// without their Redlamp edits stand in for them (LIB-64); the Apple Photos section's Copy to Folder… copies them
+    /// with their edits (LIB-63).
+    private(set) var kept: Set<String> = []
+    /// Each way's albums, smart and shared albums chosen, by ID: never a folder, whose box checks its albums.
+    private var choices: [Way: Set<String>] = [:]
     private(set) var includesHidden = false
     private(set) var follows = true
     private(set) var census: ApplePhotosCensus?
@@ -72,9 +95,13 @@ final class ApplePhotosImportModel {
         destination.exampleStandIn = { [weak self] in self?.examplePhoto() }
     }
 
-    /// Reads whether Redlamp may read Photos and, when it may, Photos' albums; and the newest import, for Undo. With
-    /// `news`, the Library panel's From Apple Photos (LIB-55), it imports them at once, the albums read once it's done.
-    func start(importing news: (settings: ApplePhotosImport.Settings, census: ApplePhotosCensus)? = nil) {
+    /// Reads whether Redlamp may read Photos and, when it may, Photos' albums, to add them the way `way` says; and the
+    /// newest import, for Undo. With `news`, the Library panel's From Apple Photos (LIB-55), it imports them at once,
+    /// the albums read once it's done.
+    func start(
+        way: Way = .keep, importing news: (settings: ApplePhotosImport.Settings, census: ApplePhotosCensus)? = nil,
+    ) {
+        self.way = way
         destination.loadCompletions()
         Task { await readLastImport() }
         if let news {
@@ -148,14 +175,15 @@ final class ApplePhotosImportModel {
         phase = .loading
         problem = nil
         changed()
-        let photos = photos
+        let (photos, importer) = (photos, importer)
         work = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<
-                [ApplePhotosCollection],
+                (ApplePhotosTree, kept: Set<String>),
                 any Error,
             > in
                 do {
-                    return try await .success(photos.collections())
+                    let tree = try await ApplePhotosTree(photos.collections())
+                    return try await .success((tree, importer.keptInPlace(in: tree)))
                 } catch {
                     return .failure(error)
                 }
@@ -164,16 +192,19 @@ final class ApplePhotosImportModel {
         }
     }
 
-    private func loaded(_ result: Result<[ApplePhotosCollection], any Error>) {
+    private func loaded(_ result: Result<(ApplePhotosTree, kept: Set<String>), any Error>) {
         guard phase == .loading else { return }
         switch result {
-        case let .success(collections):
-            let tree = ApplePhotosTree(collections)
-            let before = self.tree == nil ? nil : chosen
+        case let .success((tree, kept)):
+            let reloading = self.tree != nil
             self.tree = tree
-            let present = Set(tree.collections.filter { $0.kind != .folder }.map(\.id))
+            self.kept = kept
+            let present = Set(tree.collections.filter { $0.kind != .folder }.map(\.id)).subtracting(kept)
             let last = lastImport.map { Set($0.albums.map(\.id)).intersection(present) }
-            chosen = before?.intersection(present) ?? last.flatMap { $0.isEmpty ? nil : $0 } ?? Set(tree.standardChoice)
+            choices[.copy] = reloading
+                ? chosen(for: .copy).intersection(present)
+                : last.flatMap { $0.isEmpty ? nil : $0 } ?? Set(tree.standardChoice).subtracting(kept)
+            choices[.keep] = (reloading ? chosen(for: .keep).intersection(present) : []).union(kept)
             phase = .choosing
         case let .failure(error):
             if case let ApplePhotosError.noAccess(access) = error {
@@ -188,6 +219,24 @@ final class ApplePhotosImportModel {
         changed()
     }
 
+    /// The albums, smart and shared albums chosen in the way shown, by ID; Keep in Photos' hold those kept already.
+    var chosen: Set<String> {
+        chosen(for: way)
+    }
+
+    private func chosen(for way: Way) -> Set<String> {
+        choices[way] ?? []
+    }
+
+    /// Keep in Photos or Copy into a Folder, each with the albums chosen in it: until the albums are counted or
+    /// imported.
+    func setWay(_ way: Way) {
+        guard [.checking, .access, .loading, .choosing].contains(phase), way != self.way else { return }
+        self.way = way
+        destination.updateExample()
+        changed()
+    }
+
     /// The albums a folder's box checks: those in it, at any depth, shared albums apart.
     func albums(in folder: String) -> [ApplePhotosCollection] {
         tree?.albums(in: [folder]).filter { $0.kind != .sharedAlbum } ?? []
@@ -196,19 +245,19 @@ final class ApplePhotosImportModel {
     func check(of id: String) -> Check {
         guard let collection = tree?[id] else { return .off }
         guard collection.kind == .folder else { return chosen.contains(id) ? .on : .off }
-        let inside = albums(in: id).map(\.id)
+        let inside = albums(in: id).map(\.id).filter { way == .keep || !kept.contains($0) }
         let on = inside.count { chosen.contains($0) }
         return on == 0 ? .off : on == inside.count ? .on : .mixed
     }
 
-    /// An album's box, or a folder's, which checks every album in it.
+    /// An album's box, or a folder's, which checks every album in it; those kept in place already stay as they are.
     func choose(_ id: String, _ on: Bool) {
         guard phase == .choosing, let collection = tree?[id] else { return }
-        let ids = collection.kind == .folder ? albums(in: id).map(\.id) : [id]
+        let ids = (collection.kind == .folder ? albums(in: id).map(\.id) : [id]).filter { !kept.contains($0) }
         if on {
-            chosen.formUnion(ids)
+            choices[way, default: []].formUnion(ids)
         } else {
-            chosen.subtract(ids)
+            choices[way, default: []].subtract(ids)
         }
         destination.updateExample()
         changed()
@@ -226,9 +275,9 @@ final class ApplePhotosImportModel {
         changed()
     }
 
-    /// The chosen albums in the tree's order.
+    /// The albums chosen in the way shown, in the tree's order, those kept in place already left out.
     var chosenAlbums: [ApplePhotosCollection] {
-        tree?.collections.filter { $0.kind != .folder && chosen.contains($0.id) } ?? []
+        tree?.collections.filter { $0.kind != .folder && chosen.contains($0.id) && !kept.contains($0.id) } ?? []
     }
 
     /// What Review counts and Import runs: the albums chosen, To as it's set.
@@ -239,11 +288,66 @@ final class ApplePhotosImportModel {
         )
     }
 
+    // MARK: - Keeping in place
+
+    /// What Add Albums keeps (LIB-62), in the tree's order: a folder whose albums are all chosen, some of them not kept
+    /// yet, as a folder, so the albums Photos adds to it later are kept too; and each other album chosen that isn't
+    /// kept yet on its own.
+    var keeping: [String] {
+        guard way == .keep, let tree else { return [] }
+        let chosen = chosen
+        var ids: [String] = []
+        func visit(_ parent: String?) {
+            for collection in tree.children(of: parent) {
+                if collection.kind == .folder {
+                    let inside = albums(in: collection.id).map(\.id)
+                    if !inside.isEmpty, inside.allSatisfy(chosen.contains), !inside.allSatisfy(kept.contains) {
+                        ids.append(collection.id)
+                    } else {
+                        visit(collection.id)
+                    }
+                } else if chosen.contains(collection.id), !kept.contains(collection.id) {
+                    ids.append(collection.id)
+                }
+            }
+        }
+        visit(nil)
+        return ids
+    }
+
+    /// Add Albums: what `keeping` names kept in place through the library's one Photos indexer, which lists their
+    /// photos as it reads them, and the first album added shown in the grid meanwhile; Photos' changes to them are
+    /// followed from then on, and the Library panel's From Apple Photos no longer counts them (LIB-64). False, with the
+    /// reason, while the library can't keep albums.
+    func addAlbums() -> Bool {
+        let ids = keeping
+        guard phase == .choosing, !ids.isEmpty, let first = chosenAlbums.first, let editor else { return false }
+        guard let service = editor.library.service, service.applePhotosIndexer != nil else {
+            problem = "Albums can be added once the library has opened."
+            changed()
+            return false
+        }
+        let titles = chosenAlbums.map { "“\($0.title)”" }.joined(separator: ", ")
+        editor.activity.record(.action, "Add Albums from Apple Photos: \(titles), kept in Photos")
+        Task {
+            do {
+                try await service.keepApplePhotos(ids)
+                editor.applePhotosFollower.recount()
+            } catch {
+                editor.activity.record(
+                    .error, "\(titles) weren't added from Apple Photos: \(LibraryService.describe(error))",
+                )
+            }
+        }
+        editor.librarySources.show(.applePhotos(first.id))
+        return true
+    }
+
     // MARK: - Review
 
     /// Review: the census of the albums chosen, nothing copied.
     func review() {
-        guard phase == .choosing, !chosen.isEmpty else { return }
+        guard phase == .choosing, way == .copy, !chosen.isEmpty else { return }
         phase = .counting
         problem = nil
         changed()
@@ -303,6 +407,7 @@ final class ApplePhotosImportModel {
     func importNew(_ settings: ApplePhotosImport.Settings, census: ApplePhotosCensus) {
         guard !isRunning, census.report.photos > 0 else { return }
         work?.cancel()
+        way = .copy
         isFollowUp = true
         counted = settings
         self.census = census

@@ -4,17 +4,17 @@
     @_spi(Harness) import RedlampLibrary
     @_spi(Harness) import RedlampUI
 
-    /// Import from Apple Photos (LIB-54), on a simulated Photos library the run makes of copies of its raws: nothing a
-    /// run does can be given access to Photos, and Photos is never read.
+    /// Add Albums from Apple Photos' Copy into a Folder (LIB-54), on a simulated Photos library the run makes of copies
+    /// of its raws: nothing a run does can be given access to Photos, and Photos is never read.
     enum ApplePhotosScenarios {
         static let all: [Scenario] = [importAlbums]
 
         static let importAlbums = Scenario(
             "library.apple-photos",
-            "File › Import from Apple Photos… asks for access with Continue, chooses albums with their boxes, Review "
-                + "reports what comes across and what stays in Photos, Import copies the photos named by their "
-                + "albums with the favourite as a pick and the albums as collections in their sidecars, and Undo "
-                + "Import takes the copies back",
+            "File › Add Albums from Apple Photos… asks for access with Continue and opens on Keep in Photos; Copy "
+                + "into a Folder chooses albums with their boxes, Review reports what comes across and what stays in "
+                + "Photos, Import copies the photos named by their albums with the favourite as a pick and the albums "
+                + "as collections in their sidecars, and Undo Import takes the copies back",
             claims: [.action(.importFromApplePhotos)],
         ) { app in
             try app.openWorking()
@@ -39,6 +39,13 @@
             try app.expect(heading == "Allow Redlamp to read Photos", "the first page: \(heading)")
             try app.clickInPhotosWindow("photos.allow")
             try app.waitInPhotosWindow("the albums") { $0.phase == "choosing" }
+            let keeping = try app.inPhotosWindow { ($0.way, $0.chosen, $0.control("photos.addAlbums")?.shown) }
+            try app.expect(
+                keeping.0 == "keep" && keeping.1.isEmpty && keeping.2 == true,
+                "Keep in Photos as the window opens, nothing kept yet: \(keeping)",
+            )
+            try app.clickInPhotosWindow("photos.way", segment: 1)
+            try app.waitInPhotosWindow("Copy into a Folder") { $0.way == "copy" }
             let chosen = try app.inPhotosWindow { $0.chosen }
             try app.expect(chosen == ["album-trip", "album-selects"], "the albums chosen to begin with: \(chosen)")
             try app.clickInPhotosWindow("photos.album.album-selects")
@@ -148,11 +155,14 @@
             try app.main { model in model.simulateApplePhotos(library) }
         }
 
-        /// An import of the albums `albums` names through the Apple Photos window, which is closed after it.
+        /// An import of the albums `albums` names through the Apple Photos window's Copy into a Folder, the window
+        /// closed after it.
         func importThroughWindow(_ app: RunningApp, _ albums: [Int: [String]]) throws {
             try simulate(app, albums)
             try app.choose(.importFromApplePhotos)
             try app.waitInPhotosWindow("the albums", timeout: 30) { $0.phase == "choosing" }
+            try app.clickInPhotosWindow("photos.way", segment: 1)
+            try app.waitInPhotosWindow("Copy into a Folder") { $0.way == "copy" }
             try app.inPhotosWindow { $0.prepare(destination: destination, folders: "{album}", names: "{name}") }
             try app.clickInPhotosWindow("photos.review")
             try app.waitInPhotosWindow("the report", timeout: 60) { $0.phase == "reviewing" }
@@ -203,9 +213,10 @@
 
         /// Clicks the button or box carrying `identifier` in the Apple Photos window open now, as the mouse does: a box
         /// on its box, since a box takes a press only there and on its title, and SwiftUI stretches an album's box
-        /// across its row. While the app isn't active or the window isn't key, a press goes nowhere, so there the
-        /// control is clicked as the keyboard clicks it, as `click(_:inWindowTitled:)` does.
-        func clickInPhotosWindow(_ identifier: String) throws {
+        /// across its row; a segmented control on its `segment`, its segments as wide as each other. While the app
+        /// isn't active or the window isn't key, a press goes nowhere, so there the control is clicked as the keyboard
+        /// clicks it, as `click(_:inWindowTitled:)` does.
+        func clickInPhotosWindow(_ identifier: String, segment: Int? = nil) throws {
             try waitInPhotosWindow("\(identifier) shown and enabled") { window in
                 window.control(identifier).map { $0.shown && $0.enabled } ?? false
             }
@@ -213,12 +224,25 @@
                 guard let window = controller.window, let content = window.contentView,
                       let control = Views.shown(identifier, in: window) as? NSControl
                 else { throw ScenarioFailure("\(identifier) isn't in the Apple Photos window") }
+                let segments = control as? NSSegmentedControl
+                if let segments, !(0 ..< segments.segmentCount).contains(segment ?? -1) {
+                    throw ScenarioFailure("\(identifier) has no segment \(segment.map(String.init) ?? "chosen")")
+                }
                 guard NSApp.isActive, window.isKeyWindow else {
-                    control.performClick(nil)
+                    if let segments, let segment {
+                        segments.selectedSegment = segment
+                        segments.sendAction(segments.action, to: segments.target)
+                    } else {
+                        control.performClick(nil)
+                    }
                     return nil
                 }
                 content.layoutSubtreeIfNeeded()
-                let box = control.cell?.imageRect(forBounds: control.bounds) ?? .zero
+                var box = control.cell?.imageRect(forBounds: control.bounds) ?? .zero
+                if let segments, let segment {
+                    let width = segments.bounds.width / CGFloat(segments.segmentCount)
+                    box = CGRect(x: width * CGFloat(segment), y: 0, width: width, height: segments.bounds.height)
+                }
                 let frame = control.convert(box.isEmpty ? control.bounds : box, to: nil)
                 return NSPoint(x: frame.midX, y: frame.midY)
             }

@@ -349,18 +349,38 @@ extension LibraryService {
         followingPhotos?.cancel()
         whenOpened { [weak self] in
             guard let self, let core else { return }
-            followingPhotos?.cancel()
             let indexer = ApplePhotosIndexer(photos: photos, index: core.index, paths: core.paths, live: core.live)
             applePhotosIndexer = indexer
-            followingPhotos = Task.detached(priority: .utility) { [weak self] in
-                await core.recovered()
-                await indexer.follow { error in
-                    Self.log.error("Photos' changes weren't followed: \(String(describing: error), privacy: .public)")
-                } passed: { _ in
-                    Task { @MainActor in self?.applePhotosPasses += 1 }
-                }
+            follow(indexer, core: core)
+        }
+    }
+
+    /// Follows Photos' changes through `indexer` in place of what followed them before: its loop reads nothing while no
+    /// album is kept in place, so keeping one starts it again.
+    private func follow(_ indexer: ApplePhotosIndexer, core: LibraryCore) {
+        followingPhotos?.cancel()
+        followingPhotos = Task.detached(priority: .utility) { [weak self] in
+            await core.recovered()
+            await indexer.follow { error in
+                Self.log.error("Photos' changes weren't followed: \(String(describing: error), privacy: .public)")
+            } passed: { _ in
+                Task { @MainActor in self?.applePhotosPasses += 1 }
             }
         }
+    }
+
+    /// Keeps the albums or folders of Apple Photos `ids` names in place beside those kept already (LIB-62), through
+    /// the app's one Photos indexer, which indexes them, their photos listing as each batch is written; Photos' changes
+    /// to them are followed from then on. False while the library isn't following Photos.
+    @discardableResult
+    func keepApplePhotos(_ ids: [String]) async throws -> Bool {
+        guard let indexer = applePhotosIndexer, let core else { return false }
+        try await indexer.keep(ids)
+        applePhotosPasses += 1
+        if applePhotosIndexer === indexer {
+            follow(indexer, core: core)
+        }
+        return true
     }
 
     /// Stops keeping the albums or folders of Apple Photos `ids` names in place (LIB-62), through the app's one Photos

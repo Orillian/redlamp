@@ -100,7 +100,7 @@ enum SourcePanels {
         return menu
     }
 
-    static let addAlbumsTitle = "Add Albums from Apple Photos…"
+    static let addAlbumsTitle = ShortcutAction.importFromApplePhotos.title
 
     /// The Apple Photos section (LIB-62), once an album is kept in place: the albums in Photos' folders, with a + in
     /// its header that adds albums.

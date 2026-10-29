@@ -429,7 +429,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Identifiable {
         case .openFolder: "Open Folder…"
         case .importPhotos: "Import Photos…"
         case .importFromLightroom: "Import from Lightroom Classic…"
-        case .importFromApplePhotos: "Import from Apple Photos…"
+        case .importFromApplePhotos: "Add Albums from Apple Photos…"
         case .convertLightroomEdits: "Convert Lightroom Edits…"
         case .export: "Export…"
         case .exportWithPrevious: "Export with Previous"
