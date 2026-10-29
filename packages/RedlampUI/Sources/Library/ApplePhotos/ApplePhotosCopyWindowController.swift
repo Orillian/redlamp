@@ -306,6 +306,16 @@ public final class ApplePhotosCopyWindowController: NSWindowController, NSWindow
         model.outcome
     }
 
+    /// Where Undo Copy moved the copies in the Trash.
+    var trashed: [String] {
+        model.undone?.rollbacks.flatMap(\.trashed).map(\.to) ?? []
+    }
+
+    /// What went wrong last, in words.
+    var problem: String? {
+        model.problem
+    }
+
     /// The folder Copy copies to.
     var destination: URL {
         model.destination.settings.destination
@@ -319,5 +329,14 @@ public final class ApplePhotosCopyWindowController: NSWindowController, NSWindow
     var heading: String {
         let screen = model.screen
         return screen.page.page == .setup ? screen.chosen.heading : screen.page.heading
+    }
+
+    /// The title of the bottom bar's button carrying `identifier` (`copy.copy`, `copy.undo`…), and whether it's shown
+    /// and enabled.
+    func control(_ identifier: String) -> (title: String, shown: Bool, enabled: Bool)? {
+        guard let button = buttons.first(where: { $0.button.accessibilityIdentifier() == identifier })?.button else {
+            return nil
+        }
+        return (button.title, button.window != nil && !button.isHiddenOrHasHiddenAncestor, button.isEnabled)
     }
 }

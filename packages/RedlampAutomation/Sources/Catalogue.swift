@@ -28,6 +28,7 @@
             + ApplePhotosScenarios.all
             + ApplePhotosFollowScenarios.all
             + ApplePhotosInPlaceScenarios.all
+            + ApplePhotosCopyScenarios.all
             + LibraryPanelScenarios.all
             + HealthScenarios.all
             + MissingPhotosScenarios.all
