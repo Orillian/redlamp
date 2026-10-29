@@ -2,6 +2,7 @@
     import AppKit
     import RedlampEngineAPI
     @_spi(Harness) import RedlampUI
+    import Synchronization
 
     enum MaskingScenarios {
         static let all: [Scenario] = [
@@ -714,7 +715,7 @@
     }
 
     enum HealingScenarios {
-        static let all: [Scenario] = [spots, dustAndFind, generative]
+        static let all: [Scenario] = [spots, dustAndFind, generative, objectPicks]
 
         static let spots = Scenario(
             "healing.spots", "Heal, Clone and Remove spots, their settings, a brushed stroke, and Red Eye's phase",
@@ -813,6 +814,133 @@
                 model.activeTool = .edit
             }
             app.covered([.feature("healing.remove"), .feature("healing.generative")], via: .model)
+        }
+
+        /// Picking what to remove by a box and by a stroke (RM-19, #365), with Click picks on Object and Drag
+        /// chosen in the panel's menus: on the working photo, a box dragged around the metal roof at the bottom
+        /// right, a stroke along the flat roof at the bottom left, and a click on the stone pillar at the left
+        /// followed by a stroke up the pillar to it, which adds to that pick what it left out. Each is a Remove
+        /// spot shaped by what Segment Anything 2.1 finds.
+        static let objectPicks = Scenario(
+            "healing.object-picks",
+            "Object picks by a box and by a stroke, and a stroke adding to a pick what it left out",
+            claims: [.feature("healing.picks")],
+            needsFocus: true,
+        ) { app in
+            try app.openWorking()
+            try app.click(.tool(.heal))
+            try app.wait("the healing tool") { $0.activeTool == .heal }
+            let needed = Mutex<Bool>(true)
+            try app.run("whether Segment Anything is here") { model in
+                await model.refreshAvailableMasks()
+                let download = await model.engine.modelNeeded(for: .objects)
+                needed.withLock { $0 = download != nil }
+            }
+            guard try app.main({ $0.availableAIMaskKinds.contains(.objects) }), !needed.withLock({ $0 }) else {
+                try app.main { $0.activeTool = .edit }
+                throw ScenarioSkip("Object picks need Segment Anything 2.1, which isn't downloaded")
+            }
+            try app.choose("Object", inMenuOf: .identifier("heal.clickPicks"))
+            try app.wait("Click picks on Object") { $0.spotPick == .object }
+            try app.choose("Rectangle", inMenuOf: .identifier("heal.objectDrag"))
+            try app.wait("Drag on Rectangle") { $0.objectSelection == .rectangle }
+            let focused = try app.focus()
+            // Where a point of the photo is on the canvas, as a fraction of it, and how far apart two are, in points.
+            let (photo, canvas) = try app.main { ($0.canvas.imageRect(in: $0.canvas.viewSize), $0.canvas.viewSize) }
+            func onCanvas(_ point: ImagePoint) -> CGPoint {
+                CGPoint(
+                    x: (photo.minX + point.x * photo.width) / canvas.width,
+                    y: (photo.minY + point.y * photo.height) / canvas.height,
+                )
+            }
+            func offset(_ start: ImagePoint, _ end: ImagePoint) -> CGVector {
+                CGVector(dx: (end.x - start.x) * photo.width, dy: -(end.y - start.y) * photo.height)
+            }
+            /// Waits for the pick under way to end with `spots` Remove spots, and says what it found otherwise.
+            func picked(_ what: String, spots: Int, timeout: Double = 120) throws {
+                try app.wait(what, timeout: timeout) { model in
+                    !model.isPickingRegion && (model.recipe.spots.count == spots || model.pickMessage != nil)
+                }
+                let (count, message) = try app.main { ($0.recipe.spots.count, $0.pickMessage) }
+                try app.expect(count == spots, "\(what): \(count) spots, \(message ?? "no message")")
+            }
+            let before = try app.main { $0.recipe.spots.count }
+
+            let (corner, opposite) = (ImagePoint(x: 0.8, y: 0.78), ImagePoint(x: 0.99, y: 0.99))
+            if focused {
+                try app.drag(.canvas, from: onCanvas(corner), by: offset(corner, opposite), steps: 12)
+            } else {
+                try app.run("a box around the roof", timeout: 240) { model in
+                    await model.pickRegion(in: ImageRect(x: corner.x, y: corner.y, width: 0.19, height: 0.21))
+                }
+            }
+            try picked("the metal roof boxed, to remove", spots: before + 1, timeout: 240)
+            let boxed = try app.main { $0.selectedSpot?.region?.box != nil && $0.history.last?.name == "Remove Object" }
+            try app.expect(boxed, "The box didn't make a Remove Object step asked with its box")
+
+            try app.choose("Brush", inMenuOf: .identifier("heal.objectDrag"))
+            try app.wait("Drag on Brush") { $0.objectSelection == .brush }
+            let (left, right) = (ImagePoint(x: 0.15, y: 0.93), ImagePoint(x: 0.45, y: 0.93))
+            if focused {
+                try app.drag(.canvas, from: onCanvas(left), by: offset(left, right), steps: 16)
+            } else {
+                try app.run("a stroke along the roof") { model in
+                    await model.pickRegion(
+                        along: (0 ... 10).map { ImagePoint(x: 0.15 + 0.03 * Double($0), y: 0.93) },
+                        reach: 0.02,
+                    )
+                }
+            }
+            try picked("the flat roof brushed over, to remove", spots: before + 2)
+            let brushed = try app.main { model in
+                (model.selectedSpot?.region?.prompts.count ?? 0) > 1 && model.selectedSpot?.region?.box == nil
+            }
+            try app.expect(brushed, "The stroke didn't pick the roof by points along it")
+
+            // A click picks the pillar, or a stone of it; a stroke up the pillar to the click adds what's left out.
+            let (stone, foot) = (ImagePoint(x: 0.04, y: 0.3), ImagePoint(x: 0.04, y: 0.85))
+            if focused {
+                try app.click(.canvas, at: onCanvas(stone))
+            } else {
+                try app.run("a click on the pillar") { await $0.pickRegion(at: stone) }
+            }
+            try picked("the pillar clicked, to remove", spots: before + 3)
+            let pick = try app.main { $0.selectedSpot }
+            if focused {
+                try app.drag(.canvas, from: onCanvas(foot), by: offset(foot, stone), steps: 16)
+            } else {
+                try app.run("a stroke up the pillar") { model in
+                    await model.pickRegion(
+                        along: (0 ... 10).map { ImagePoint(x: 0.04, y: 0.85 - 0.055 * Double($0)) },
+                        reach: 0.02,
+                    )
+                }
+            }
+            try app.wait("the stroke added to the pillar's pick") { model in
+                !model.isPickingRegion && (model.history.last?.name == "Add to Object" || model.pickMessage != nil
+                    || model.recipe.spots.count != before + 3)
+            }
+            let (spots, step, same, prompts, message) = try app.main { model in
+                (
+                    model.recipe.spots.count, model.history.last?.name, model.selectedSpot?.id == pick?.id,
+                    model.selectedSpot?.region?.prompts.count ?? 0, model.pickMessage,
+                )
+            }
+            try app.expect(
+                spots == before + 3 && step == "Add to Object" && same && prompts > 1,
+                "The stroke up the pillar didn't add to its pick: \(spots) spots, the last step \(step ?? "none"), "
+                    + (message ?? "no message"),
+            )
+            let removed = try app
+                .main { $0.recipe.spots.suffix(3).allSatisfy { $0.mode == .remove && $0.region != nil } }
+            try app.expect(removed, "Not every pick is a Remove spot shaped by its mask")
+            app.covered(.feature("healing.picks"), via: focused ? .mouse : .model)
+            try app.main { model in
+                model.deleteAllSpots()
+                model.spotPick = .spot
+                model.objectSelection = .rectangle
+                model.activeTool = .edit
+            }
         }
 
         static let dustAndFind = Scenario(
