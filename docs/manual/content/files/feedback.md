@@ -70,7 +70,7 @@ About what I was doing just now
 : Turns the three below it on or off together.
 
 The photo, its edit and its history
-: The open photo's format, camera, lens, exposure, size, as-shot white balance and the kind of disk it's on; its edit, with the settings you've changed, each mask and how it was made, the recipe, the crop and the healing spots; and its steps in History. `diagnostics.json` adds the edit as Redlamp's sidecar holds it, so it can be tried on another photo. Dimmed when no photo is open.
+: The open photo's format, camera, lens, exposure, size, as-shot white balance and the kind of disk it's on; its edit, with the settings you've changed, each mask and how it was made, the recipe, the crop and the healing spots; and its steps in History. `diagnostics.json` adds the edit as Redlamp's sidecar holds it, so it can be tried on another photo. For a photo kept in Apple Photos, its disk is Apple Photos, with where its original is: on this Mac, in iCloud only, waiting to download, or downloading; while Develop waits for its original, the photo is included with its file name, format and size. Dimmed when no photo is open.
 
 What I did in the last 15 minutes, and the editor's state
 : The photos you opened, the tools, panels and commands you used, your edits and masks, the messages you saw, exports, model downloads and slow renders, each with how long before the report it happened; then the tool, the open panels, the zoom, the selected mask and the messages on screen. `diagnostics.json` holds the whole session's activity, up to its last 500 events.
@@ -90,7 +90,9 @@ Paths, folder names, location and serial numbers are never included, as the note
 
 - Your home folder becomes ~.
 - The open folder, and the folders you've added to Redlamp, become a folder.
+- The identifiers Apple Photos gives the photo are taken out.
 - Any other path is cut to its last part.
+- The names of the albums you've added from Apple Photos become an album, and those of Photos' folders holding them a folder, where a name is three characters or more.
 - Unless File names is on, each photo's file name, with or without its extension, becomes its letter.
 
 This covers your own words too, the title included.

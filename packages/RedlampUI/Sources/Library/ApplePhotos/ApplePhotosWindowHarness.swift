@@ -53,6 +53,13 @@ import RedlampLibrary
         }
     }
 
+    /// Chooses the albums or folders `ids` names, as clicks on their boxes do.
+    func choose(albums ids: [String]) {
+        for id in ids {
+            model.choose(id, true)
+        }
+    }
+
     /// The albums, smart and shared albums kept in place already, which Add Albums shows In Library.
     var kept: Set<String> {
         model.kept

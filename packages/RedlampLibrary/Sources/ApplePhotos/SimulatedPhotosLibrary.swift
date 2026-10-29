@@ -16,8 +16,9 @@ import Synchronization
 /// `{"id", "cloud", "created", "location": {"latitude", "longitude"}, "favorite", "hidden", "mediaType",
 /// "subtypes", "burst": {"id", "key", "userPick"}, "source", "edited", "adjusted", "modified", "rating", "caption",
 /// "keywords", "albums": [collection IDs], "imagesInCloud", "resources": [{"kind", "type", "name", "file",
-/// "inCloud", "failAfter"}]}`, every key but `id` optional. A resource's `file` is a path from the manifest's folder;
-/// `inCloud` makes writing it report a download. An asset without `created` was taken when its first original file
+/// "inCloud", "failAfter", "width", "height"}]}`, every key but `id` optional. A resource's `file` is a path from the
+/// manifest's folder; `inCloud` makes writing it report a download; `width` and `height` are its pixel size, as Photos
+/// gives it. An asset without `created` was taken when its first original file
 /// records, in the zone it records or this Mac's: a date unchanged in Photos. Its images (`ApplePhotosImages`, LIB-59)
 /// are made from its files, but for one `imagesInCloud`, whose Photos keeps none on this Mac.
 ///
@@ -53,6 +54,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             var file: String?
             var inCloud: Bool?
             var failAfter: Int64?
+            var width: Int?
+            var height: Int?
         }
 
         struct Burst: Decodable {
@@ -241,7 +244,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
                 let size = url.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.map(Int64.init)
                 resources.append(ApplePhotosResource(
                     kind: resource.kind, type: resource.type ?? Self.type(of: resource.name),
-                    originalFilename: resource.name, size: size,
+                    originalFilename: resource.name, size: size, pixelWidth: resource.width,
+                    pixelHeight: resource.height,
                 ))
                 if let url {
                     files[entry.id, default: [:]][resource.name] = File(

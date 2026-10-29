@@ -182,7 +182,10 @@ public struct FeedbackReport: Codable, Sendable, Hashable {
     /// names them by their aliases.
     func redactor(_ context: FeedbackContext) -> FeedbackRedactor {
         guard let incident else { return context.redactor(keepingFileNames: details.fileNames) }
-        return FeedbackRedactor(folders: incident.folders + context.folders, photos: incident.photos)
+        return FeedbackRedactor(
+            folders: incident.folders + context.folders, photos: incident.photos, albums: context.albums,
+            albumFolders: context.albumFolders,
+        )
     }
 
     // MARK: - The issue

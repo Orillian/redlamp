@@ -10,4 +10,10 @@ import RedlampDesign
             views: [SourcePanels.library(model: model), SourcePanels.collections(model: model)],
         )
     }
+
+    /// The Library module's whole left column, for the harness's Apple Photos scene, where the Apple Photos section
+    /// shows once an album is kept (LIB-62).
+    @MainActor public static func column(model: EditorModel) -> NSView {
+        LibraryFoldersColumn(model: model)
+    }
 }

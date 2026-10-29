@@ -341,6 +341,23 @@ struct FeedbackRedactorTests {
         #expect(keeping.redact("IMG_0042.CR3") == "IMG_0042.CR3")
     }
 
+    @Test func `Photos' identifiers go, and albums and Photos' folders kept become an album and a folder`() {
+        let local = "9F983DBA-EC35-42B8-8773-B597CF782EDD/L0/001"
+        let key = "5d41402abc4b2a76b9719d911017c592"
+        let photos = FeedbackRedactor(
+            home: "/Users/someone",
+            folders: ["/Users/someone/Library/Caches/Redlamp/Apple Photos/System/\(key)"],
+            photos: [PhotoName(alias: "Photo A", fileName: "IMG_4312.HEIC")],
+            albums: ["Lisbon", "Me"], albumFolders: ["Trips"], identifiers: [key, local],
+        )
+        #expect(photos.redact("Photos no longer has \(local)") == "Photos no longer has …")
+        #expect(photos.redact("in /Users/someone/Library/Caches/Redlamp/Apple Photos/System/\(key)/IMG_4312.HEIC")
+            == "in …/Photo A")
+        #expect(photos.redact("Removed “Lisbon” from the library, and “Trips”")
+            == "Removed “an album” from the library, and “a folder”")
+        #expect(photos.redact("Lisbonne, Lisbon2 and Me") == "Lisbonne, Lisbon2 and Me", "a word's part, two letters")
+    }
+
     @Test func `addresses, fractions and words with slashes stay`() {
         for text in [
             "https://github.com/pdcgomes/redlamp/issues/164",

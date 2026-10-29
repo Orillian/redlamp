@@ -194,6 +194,16 @@ import RedlampLibrary
         }
     }
 
+    /// Takes the albums of Apple Photos kept in place out of the library (LIB-62), as their Remove from Library does,
+    /// so a state starts with none kept; returns once the Apple Photos section has gone.
+    func stopKeepingHarnessApplePhotos() async {
+        let kept = librarySources.applePhotos.collections.map(\.id)
+        guard !kept.isEmpty, await (try? library.service?.stopKeepingApplePhotos(kept)) == true else { return }
+        for _ in 0 ..< 100 where librarySources.keepsApplePhotos {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     /// Closes the sheet over `window` with its Cancel button, and the import, Lightroom Classic and Apple Photos
     /// windows.
     func closeHarnessSurface(over window: NSWindow?) {

@@ -40,9 +40,10 @@ extension HarnessScene {
             LibraryScene(
                 surfaces: [.applePhotos],
                 states: [
-                    .notAsked, .denied, .restricted, .limited, .opened, .copying, .reviewed, .importing, .imported,
-                    .undone, .minimum,
+                    .notAsked, .denied, .restricted, .limited, .opened, .kept, .limitedKept, .copying, .reviewed,
+                    .importing, .imported, .undone, .minimum,
                 ],
+                showsSidebar: true,
             )
         }
     }
@@ -67,6 +68,7 @@ extension HarnessScene {
 enum LibrarySurfaceState: String, CaseIterable, Identifiable {
     case opened, noCatalog = "no-catalog", finished, interrupted, imported, undone, minimum
     case notAsked = "not-asked", denied, restricted, limited, copying, reviewed, importing
+    case kept, limitedKept = "limited-kept"
 
     var id: String {
         rawValue
@@ -88,6 +90,8 @@ enum LibrarySurfaceState: String, CaseIterable, Identifiable {
         case .copying: "Copy into a Folder"
         case .reviewed: "Review"
         case .importing: "Importing"
+        case .kept: "Albums kept"
+        case .limitedKept: "Limited, kept"
         }
     }
 }
@@ -137,14 +141,21 @@ final class LibrarySceneState {
         case .notAsked: .notDetermined
         case .denied: .denied
         case .restricted: .restricted
-        case .limited: .limited
+        case .limited, .limitedKept: .limited
         default: .authorized
+        }
+        if surface == .applePhotos {
+            await model.stopKeepingHarnessApplePhotos()
         }
         guard await model.openHarnessSurface(surface, fixture: fixture) else {
             status = "\(surface.title) didn't open: it needs a selection, a collection or a keyword the library lacks"
             return
         }
         status = "\(surface.title): \(state.title)"
+        if surface == .applePhotos, [.kept, .limitedKept].contains(state) {
+            await keep(state, fixture: fixture)
+            return
+        }
         if surface == .applePhotos, [.copying, .reviewed, .importing, .imported, .undone].contains(state) {
             await photos(state)
             return
@@ -171,20 +182,30 @@ final class LibrarySceneState {
                 guard let window else { continue }
                 window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: true)
             }
-        case .opened, .noCatalog, .notAsked, .denied, .restricted, .limited, .copying, .reviewed, .importing:
+        case .opened, .noCatalog, .notAsked, .denied, .restricted, .limited, .copying, .reviewed, .importing, .kept,
+             .limitedKept:
             break
         }
+    }
+
+    /// Add Albums from the window as it opens (LIB-62): Selects and the folder Trips kept in place, or with limited
+    /// access Photos Chosen for Redlamp; then the window again, over the albums kept, chosen and dimmed In Library.
+    private func keep(_ state: LibrarySurfaceState, fixture: LibraryHarnessFixture) async {
+        guard let window = await reach("choosing") else { return }
+        window.choose(albums: state == .kept
+            ? ["album-selects", "folder-trips"] : [ApplePhotosCollection.chosenForRedlamp.id])
+        window.press(named: "addAlbums")
+        let sources = model.librarySources
+        for _ in 0 ..< 600 where !sources.keepsApplePhotos || sources.isListing {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        guard await model.openHarnessSurface(.applePhotos, fixture: fixture) else { return }
+        _ = await reach("choosing")
     }
 
     /// The Apple Photos window taken to `state`: Copy into a Folder chosen, Review, an import's progress as it
     /// downloads from iCloud, the import done, or taken back.
     private func photos(_ state: LibrarySurfaceState) async {
-        func reach(_ phase: String) async -> ApplePhotosWindowController? {
-            for _ in 0 ..< 600 where ApplePhotosWindowController.current?.phase != phase {
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            return ApplePhotosWindowController.current?.phase == phase ? ApplePhotosWindowController.current : nil
-        }
         guard let window = await reach("choosing") else { return }
         if state == .importing {
             window.show(ApplePhotosImport.Progress(
@@ -199,6 +220,13 @@ final class LibrarySceneState {
         window.press(named: "importPhotos")
         guard await reach("imported") != nil, state == .undone else { return }
         window.press(named: "undo")
+    }
+
+    private func reach(_ phase: String) async -> ApplePhotosWindowController? {
+        for _ in 0 ..< 600 where ApplePhotosWindowController.current?.phase != phase {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return ApplePhotosWindowController.current?.phase == phase ? ApplePhotosWindowController.current : nil
     }
 
     private func until(_ condition: () -> Bool) async -> LightroomWindowController? {
@@ -221,6 +249,8 @@ final class LibrarySceneState {
 private struct LibraryScene: View {
     let surfaces: [LibrarySurface]
     let states: [LibrarySurfaceState]
+    /// The library's left column beside the states, for the Apple Photos section.
+    var showsSidebar = false
     @State private var state = LibrarySceneState.shared
 
     var body: some View {
@@ -241,6 +271,13 @@ private struct LibraryScene: View {
                 }
             }
             .disabled(!state.isReady)
+            if showsSidebar, state.isReady {
+                Specimen(caption: "The left column at 250 pt: Apple Photos shows once an album is kept") {
+                    AppKitSpecimen(width: 250) {
+                        FixedHeightView(LibrarySourcesViews.column(model: HarnessLibrary.model), height: 520)
+                    }
+                }
+            }
             SpecimenGroup(title: "Look for", note: """
             Labels and fields lined up in their columns, nothing clipped or truncated that has room, the Mac's \
             margins (20 points) and spacing, a heading on every sheet, and the same in light and dark (the theme \
