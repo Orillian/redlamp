@@ -248,6 +248,7 @@ final class SmartCollectionSheet: NSObject, NSTextFieldDelegate {
         case .filter(.aperture): "1.4..2.8"
         case .filter(.keyword), .filter(.collection): "Places/Portugal"
         case .filter(.trait): "low-light"
+        case .filter(.source): "photos"
         default: ""
         }
     }

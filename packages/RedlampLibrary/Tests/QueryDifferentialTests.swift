@@ -60,6 +60,7 @@ struct QueryDifferentialTests {
             case .sublocation, .city, .state, .country, .countryCode:
                 .text(part(of: random.pick(Self.places.flatMap(\.self).filter { !$0.isEmpty } + ["Nowhere"])))
             case .orientation: .orientation(random.pick([nil] + PhotoOrientation.allCases))
+            case .source: .source(random.pick(LibraryQuery.Source.allCases))
             case .trait: .trait(random.pick(LibraryQuery.Trait.allCases.filter { $0.query != nil || $0 == .wideOpen }))
             }
         }

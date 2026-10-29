@@ -242,6 +242,7 @@ text     := word | quoted                                  -- matches name, fold
 | `date` (`taken`) | `2024`, `2024-06`, `2024-06-01`, a time of day to the hour, minute or second (`2024-06-01T14`, `…T14:03`, `…T14:03:12`), ranges of any of them, `today`, `last:30d` | `date:2024-06..2024-08` |
 | `orientation` | `landscape`, `portrait`, `square`, `none`: from the photo's upright size, so a rotated raw is portrait (LIB-41) | `orientation:portrait` |
 | `folder` (`in`) | a path or part of one | `in:"Trips/2024"` |
+| `source` | `folders`, `photos`: kept in the library's folders, or in an album of Apple Photos kept in place (LIB-62); a copy standing in for a photo of Photos is in a folder (LIB-64). The filter bar's Source column counts each | `source:photos` |
 | `name`, `ext` (`type`) | substring, extension or `raw`, `jpeg`, `heic`, `tiff`, `png` | `type:raw`, `name:DSC_12` |
 | `collection` | a collection's name or path, as `kw:` matches keywords; a set matches the collections in it; smart collections aren't matched | `collection:"Portfolio"` |
 | `has` | `gps`, `keywords`, `caption`, `title`, `xmp`, `creator`, `copyright`, `location` | `has:gps` |

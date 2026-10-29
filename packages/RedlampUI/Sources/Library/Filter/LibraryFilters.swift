@@ -705,6 +705,7 @@ public struct FilterCompletion: Sendable, Hashable {
         case .label: ColorLabel(rawValue: completion.value) == nil ? completion.value : completion.value.capitalized
         case .trait: LibraryQuery.Trait(rawValue: completion.value)?.title ?? completion.value
         case .orientation: PhotoOrientation(rawValue: completion.value)?.title ?? completion.value
+        case .source: LibraryQuery.Source(rawValue: completion.value)?.title ?? completion.value
         default: completion.value
         }
         let kind = switch completion.field {
@@ -716,6 +717,7 @@ public struct FilterCompletion: Sendable, Hashable {
         case .collection: "Collection"
         case .trait: "Trait"
         case .orientation: "Orientation"
+        case .source: "Source"
         case .sublocation: "Sublocation"
         case .city: "City"
         case .state: "State or Province"

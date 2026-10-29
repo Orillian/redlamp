@@ -110,6 +110,8 @@ public indirect enum LibraryQuery: Sendable, Hashable {
         /// `landscape`, `portrait`, `square` or `none`: which way the photo is turned once its EXIF
         /// orientation is applied, none when the index doesn't have its size (LIB-41).
         case orientation
+        /// `folders` or `photos`: where the photo is kept (`Source`, LIB-62).
+        case source
         /// A trait (`Trait`), such as `is:long-exposure`: a name for a query over the other fields.
         case trait = "is"
 
@@ -171,6 +173,23 @@ public indirect enum LibraryQuery: Sendable, Hashable {
         case trait(Trait)
         /// `none` is nil.
         case orientation(PhotoOrientation?)
+        case source(Source)
+    }
+
+    /// Where a photo is kept (LIB-62), which `source` tells apart in All Photographs, searches and smart collections.
+    public enum Source: String, Sendable, Hashable, CaseIterable {
+        /// In the library's folders, a copy standing in for a photo of Apple Photos among them (LIB-64).
+        case folders
+        /// In an album of Apple Photos kept in place, its original in Photos.
+        case photos
+
+        /// Its name as the filter bar shows it.
+        public var title: String {
+            switch self {
+            case .folders: "Folders"
+            case .photos: "Apple Photos"
+            }
+        }
     }
 
     /// A trait (LIB-06): a name for a query over the index's fields (for `wide-open`, a comparison of

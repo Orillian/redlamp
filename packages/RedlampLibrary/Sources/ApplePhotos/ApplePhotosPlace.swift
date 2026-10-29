@@ -285,8 +285,7 @@ public extension IndexQueries {
 
     /// The photos the library has of album `id`, kept in place, or of every album kept in folder `id` (LIB-62): its
     /// photos from Photos and the copies standing in for theirs (LIB-64), each with its versions (LIB-48), those kept
-    /// as
-    /// missing among them, as a folder's are; in the order of their IDs.
+    /// as missing among them, as a folder's are; in the order of their IDs.
     func applePhotosPhotoIDs(in id: String) throws -> [Int64] {
         let tree = try applePhotosKeptTree()
         let albums = tree[id]?.kind == .folder ? tree.albums(in: [id]).map(\.id) : [id]
@@ -300,5 +299,17 @@ public extension IndexQueries {
             try statement.forEachRow { photos.insert($0.int64(at: 0)) }
         }
         return photos.sorted()
+    }
+
+    /// Every photo the library keeps in Apple Photos (LIB-62): those under its root, each with its versions and those
+    /// kept as missing among them, but not the copies standing in for theirs, which are in folders (LIB-64); in the
+    /// order of their IDs.
+    func applePhotosPhotoIDs() throws -> [Int64] {
+        var photos: [Int64] = []
+        try database.cached("""
+        SELECT id FROM photos WHERE folder IN (SELECT id FROM folders
+          WHERE root IN (SELECT id FROM roots WHERE kind = \(RootRecord.Kind.applePhotos.rawValue))) ORDER BY id
+        """).forEachRow { photos.append($0.int64(at: 0)) }
+        return photos
     }
 }

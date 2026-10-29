@@ -119,6 +119,10 @@ struct QuerySQL: Sendable, Hashable {
                 return "(\(ColumnEncoding.kindSQL) = \(kind.rawValue))"
             case let (.orientation, .orientation(orientation)):
                 return "(\(ColumnEncoding.orientationSQL) = \(orientation?.code ?? 0))"
+            case let (.source, .source(source)):
+                let kind: RootRecord.Kind = source == .photos ? .applePhotos : .folder
+                return "p.folder IN (SELECT id FROM folders WHERE root IN (SELECT id FROM roots WHERE kind = "
+                    + "\(kind.rawValue)))"
             case (.trait, .trait(.wideOpen)):
                 return ColumnEncoding.wideOpenSQL
             case let (.trait, .trait(trait)):

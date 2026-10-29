@@ -67,6 +67,7 @@ final class FilterColumnRow: NSObject {
         case .rating: Int(name).map { $0 == 0 ? "Unrated" : String(repeating: "★", count: $0) } ?? name
         case .kind: ["raw": "Raw", "jpeg": "JPEG", "heic": "HEIC", "tiff": "TIFF", "png": "PNG"][name] ?? name
         case .orientation: PhotoOrientation(rawValue: name)?.title ?? name
+        case .source: LibraryQuery.Source(rawValue: name)?.title ?? name
         default: name
         }
     }
@@ -262,6 +263,7 @@ public extension FacetColumn {
         case .country: "Country"
         case .collection: "Collection"
         case .customLabel: "Custom Label"
+        case .source: "Source"
         }
     }
 }

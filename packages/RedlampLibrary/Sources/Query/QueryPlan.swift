@@ -64,6 +64,9 @@ indirect enum QueryPlan: Sendable, Hashable {
         /// The photos the soft-frame check gives `verdict`, among those of `moments`' source, in the engine's mode
         /// (LIB-42).
         case softFrames(MomentScope, SoftFrames.Verdict)
+        /// The photos kept in Apple Photos (LIB-62), those under its root, whose folders are one per asset and so
+        /// aren't among the small tables' (LIB-58).
+        case applePhotos
     }
 
     /// `query` against `store`: nil is every photo. `moments` are the photos `is:unpicked-moment`
@@ -185,6 +188,9 @@ indirect enum QueryPlan: Sendable, Hashable {
             return .leaf(.kinds(1 << UInt64(kind.rawValue)))
         case let (.orientation, .orientation(orientation)):
             return .leaf(.orientations(1 << (orientation?.code ?? 0)))
+        case let (.source, .source(source)):
+            let photos = QueryPlan.leaf(.rows(.applePhotos))
+            return source == .photos ? photos : .not(photos)
         case let (.has, .detail(detail)):
             return compile(detail: detail)
         case let (_, .text(text)):

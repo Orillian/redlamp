@@ -312,7 +312,7 @@ enum LibraryQueryValues {
             try dates(text)
         case .trait, .flag, .label, .marked, .edited, .version, .missing, .offline, .unreadable:
             try word(text, for: field)
-        case .has, .orientation, .ext:
+        case .has, .orientation, .ext, .source:
             try attribute(text, for: field)
         case .keyword, .camera, .lens, .folder, .name, .collection, .title, .caption, .creator, .copyright,
              .sublocation, .city, .state, .country, .countryCode:
@@ -415,6 +415,11 @@ enum LibraryQueryValues {
                 throw Invalid(message: "orientation is landscape, portrait, square or none")
             }
             return .orientation(orientation)
+        case .source:
+            guard let source = LibraryQuery.Source(rawValue: lowered) else {
+                throw Invalid(message: "source is folders or photos")
+            }
+            return .source(source)
         case .ext:
             if let kind = kinds[lowered] {
                 return .kind(kind)

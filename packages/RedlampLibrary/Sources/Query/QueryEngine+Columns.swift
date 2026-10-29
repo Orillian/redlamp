@@ -1,15 +1,17 @@
 import Foundation
 import RedlampDocument
 
-/// What a metadata column of the filter bar counts its photos by (LIB-18): a facet, keywords or
-/// collections.
+/// What a metadata column of the filter bar counts its photos by (LIB-18): a facet, keywords,
+/// collections or where the photos are kept.
 public enum FacetColumn: String, Sendable, Hashable, CaseIterable, Codable {
-    /// `focal35` is the focal length in 35 mm terms, `widestAperture` the lens's widest aperture.
-    case date, camera, lens, iso, focal, focal35, aperture, widestAperture, keyword, label, folder, kind, orientation
-    case flag, rating, creator, city, country, collection, customLabel
+    /// `focal35` is the focal length in 35 mm terms, `widestAperture` the lens's widest aperture, and `source` whether
+    /// the photos are kept in folders or in Apple Photos (LIB-62).
+    case date, camera, lens, iso, focal, focal35, aperture, widestAperture, keyword, label, folder, source, kind
+    case orientation, flag, rating, creator, city, country, collection, customLabel
 
     /// The facet it counts by: days for dates; nil for keywords and collections, which count a photo
-    /// under each of its keywords or collections and those above them.
+    /// under each of its keywords or collections and those above them, and for the source, which
+    /// counts the photos kept in Apple Photos as the index has them.
     public var facet: Facet? {
         switch self {
         case .date: .day
@@ -20,7 +22,7 @@ public enum FacetColumn: String, Sendable, Hashable, CaseIterable, Codable {
         case .aperture: .aperture
         case .focal35: .focal35
         case .widestAperture: .widestAperture
-        case .keyword, .collection: nil
+        case .keyword, .collection, .source: nil
         case .label: .label
         case .folder: .folder
         case .kind: .kind
@@ -56,6 +58,7 @@ public enum FacetColumn: String, Sendable, Hashable, CaseIterable, Codable {
         case .city: .city
         case .country: .country
         case .collection: .collection
+        case .source: .source
         }
     }
 }
@@ -169,7 +172,9 @@ public extension QueryEngine {
                         rows.formIntersection(found)
                     }
                     let values: [FacetValue]
-                    if let facet = request.column.facet {
+                    if request.column == .source {
+                        values = try await sources(of: rows, in: store, vocabulary: vocabulary, generation: generation)
+                    } else if let facet = request.column.facet {
                         values = try store.counts(by: facet, of: rows, names: vocabulary.names).values
                     } else {
                         let kind = request.column == .collection ? PostingKind.collections : .keywords
@@ -192,6 +197,25 @@ public extension QueryEngine {
         continuation.onTermination = { _ in task.cancel() }
         startFacets(task)
         return stream
+    }
+
+    /// How `rows` count by where they're kept, in folders, then in Apple Photos (LIB-62), each with its `source` term:
+    /// the Source column's values, leaving out a source none of them is in.
+    private func sources(
+        of rows: RowBits, in store: ColumnStore, vocabulary: QueryVocabulary, generation: Int,
+    ) async throws -> [FacetValue] {
+        var inPhotos = try await self.rows(
+            for: .leaf(.rows(.applePhotos)), in: store, vocabulary: vocabulary, generation: generation,
+        )
+        inPhotos.formIntersection(rows)
+        let counts: [LibraryQuery.Source: Int] = [.folders: rows.count - inPhotos.count, .photos: inPhotos.count]
+        return LibraryQuery.Source.allCases.compactMap { source in
+            guard let count = counts[source], count > 0 else { return nil }
+            return FacetValue(
+                name: source.rawValue, count: count,
+                filter: .filter(LibraryQuery.Filter(.source, .equal, [.source(source)])),
+            )
+        }
     }
 
     /// The photos whose missing, offline or settling state the index has changed since the store
@@ -377,13 +401,19 @@ public struct QueryCompletion: Sendable, Hashable {
         if field == .orientation, let orientation = PhotoOrientation(rawValue: value) {
             return .orientation(orientation)
         }
+        if field == .source, let source = LibraryQuery.Source(rawValue: value) {
+            return .source(source)
+        }
         return .text(value)
     }
 
-    /// The query the term for a trait or an orientation stands for; nil for another field's.
+    /// The query the term for a trait, an orientation or a source stands for; nil for another field's.
     var counted: LibraryQuery? {
         if field == .trait, let trait = LibraryQuery.Trait(rawValue: value) {
             return .filter(LibraryQuery.Filter(.trait, .equal, [.trait(trait)]))
+        }
+        if field == .source, let source = LibraryQuery.Source(rawValue: value) {
+            return .filter(LibraryQuery.Filter(.source, .equal, [.source(source)]))
         }
         guard field == .orientation, let orientation = PhotoOrientation(rawValue: value) else { return nil }
         return .filter(LibraryQuery.Filter(.orientation, .equal, [.orientation(orientation)]))
@@ -391,8 +421,8 @@ public struct QueryCompletion: Sendable, Hashable {
 
     /// The fields completion has values for, in the order it offers them.
     public static let fields: [LibraryQuery.Field] = [
-        .keyword, .camera, .lens, .folder, .label, .collection, .trait, .orientation, .city, .country, .state,
-        .sublocation,
+        .keyword, .camera, .lens, .folder, .label, .collection, .trait, .orientation, .source, .city, .country,
+        .state, .sublocation,
     ]
 }
 
@@ -429,8 +459,8 @@ public extension QueryEngine {
         )
     }
 
-    /// Every value of `field` completion offers without its text: the traits, the orientations or the colour
-    /// labels, in that order, each trait and orientation with the photos of `source` it finds, as `completions`
+    /// Every value of `field` completion offers without its text: the traits, the orientations, the sources or the
+    /// colour labels, each trait, orientation and source with the photos of `source` it finds, as `completions`
     /// counts them; none for another field, whose values are the library's names (LIB-19).
     func values(
         of field: LibraryQuery.Field, in source: PhotoSource = .allPhotographs,
@@ -439,6 +469,7 @@ public extension QueryEngine {
         let values: [QueryCompletion] = switch field {
         case .trait: LibraryQuery.Trait.allCases.map { QueryCompletion(field: .trait, value: $0.rawValue) }
         case .orientation: PhotoOrientation.allCases.map { QueryCompletion(field: .orientation, value: $0.rawValue) }
+        case .source: LibraryQuery.Source.allCases.map { QueryCompletion(field: .source, value: $0.rawValue) }
         case .label: ColorLabel.allCases.map { QueryCompletion(field: .label, value: $0.rawValue) }
         default: []
         }
@@ -448,7 +479,7 @@ public extension QueryEngine {
         )
     }
 
-    /// `completions` with each trait's and orientation's count of the photos of `source` it finds.
+    /// `completions` with each trait's, orientation's and source's count of the photos of `source` it finds.
     private func counted(
         _ completions: [QueryCompletion], in source: PhotoSource, moments: MomentSetting, store: ColumnStore,
         vocabulary: QueryVocabulary, generation: Int,
@@ -473,7 +504,7 @@ public extension QueryEngine {
 
 extension QueryVocabulary {
     /// The names of `fields` ranked for `typed` (`NameRanking`): the small tables', the colour
-    /// labels, traits and orientations, and `storeNames`, the names the store's columns hold.
+    /// labels, traits, orientations and sources, and `storeNames`, the names the store's columns hold.
     func completions(
         _ typed: String, fields: [LibraryQuery.Field], limit: Int, storeNames: NameTable? = nil,
     ) -> [QueryCompletion] {
@@ -515,11 +546,14 @@ extension QueryVocabulary {
 }
 
 extension NameTable {
-    /// The colour labels, the traits by title, by word and by their synonyms, and the orientations.
+    /// The colour labels, the traits by title, by word and by their synonyms, the orientations, and the sources by
+    /// title and by word.
     static let fixed = NameTable(
         ColorLabel.allCases.map { RankedName(.label, $0.rawValue) }
             + LibraryQuery.Trait.allCases.map(traitName)
-            + PhotoOrientation.allCases.map { RankedName(.orientation, $0.rawValue) },
+            + PhotoOrientation.allCases.map { RankedName(.orientation, $0.rawValue) }
+            + LibraryQuery.Source.allCases
+            .map { RankedName(.source, $0.rawValue, name: $0.title, others: [$0.rawValue]) },
     )
 
     /// A trait's name: its title, and its word and synonyms beside it.

@@ -349,10 +349,10 @@ enum PaletteCatalog {
     // MARK: - The library
 
     /// The fields whose values the palette lists as terms of the query language rather than as names (LIB-19).
-    static let termFields: [LibraryQuery.Field] = [.label, .trait, .orientation]
+    static let termFields: [LibraryQuery.Field] = [.label, .trait, .orientation, .source]
 
-    /// The rows for the library's names, and the terms for colour and custom labels, traits and orientations, then
-    /// its photos found by name, and when more photos have the name than are listed, one filtering by it (LIB-19).
+    /// The rows for the library's names, and the terms for colour and custom labels, traits, orientations and sources,
+    /// then its photos found by name, and when more photos have the name than are listed, one filtering by it (LIB-19).
     static func libraryItems(names: [QueryCompletion], photos: PhotosNamed?) -> [PaletteItem] {
         var items = names.map { name in
             termFields.contains(name.field) ? termItem(name, negated: false) : libraryItem(name)

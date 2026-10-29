@@ -286,6 +286,7 @@ public extension SmartRules {
         case .megapixels: "Megapixels"
         case .aspect: "Aspect Ratio"
         case .orientation: "Orientation"
+        case .source: "Source"
         case .trait: "Trait"
         }
     }

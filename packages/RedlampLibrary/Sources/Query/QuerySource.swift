@@ -54,6 +54,8 @@ protocol QuerySource: Sendable {
     func keptAnyway() async throws -> [Int64]
     /// The photos of album `id` of Apple Photos kept in place, or of every album kept in folder `id` (LIB-62).
     func photoIDs(inApplePhotos id: String) async throws -> [Int64]
+    /// Every photo kept in Apple Photos (LIB-62): those under its root, which `source:photos` finds.
+    func photoIDsInApplePhotos() async throws -> [Int64]
     /// The soft-frame measurements of `ids`, or of every photo with one, by photo ID (LIB-42).
     func photoSharpness(of ids: [Int64]?) async throws -> [Int64: PhotoSharpness]
     /// The library's stacks, whose bursts soft frames are judged in (LIB-42).
@@ -158,6 +160,10 @@ extension QuerySource {
     }
 
     func photoIDs(inApplePhotos _: String) async throws -> [Int64] {
+        []
+    }
+
+    func photoIDsInApplePhotos() async throws -> [Int64] {
         []
     }
 }
@@ -593,6 +599,10 @@ struct IndexQuerySource: QuerySource {
 
     func photoIDs(inApplePhotos id: String) async throws -> [Int64] {
         try await index.read { try $0.applePhotosPhotoIDs(in: id) }
+    }
+
+    func photoIDsInApplePhotos() async throws -> [Int64] {
+        try await index.read { try $0.applePhotosPhotoIDs() }
     }
 }
 

@@ -103,6 +103,7 @@ struct QueryParserTests {
                 Self.filter(.orientation, .equal, .orientation(.portrait), .orientation(.square)),
             ),
             ("orientation!=none", Self.filter(.orientation, .notEqual, .orientation(nil))),
+            ("source:Photos,folders", Self.filter(.source, .equal, .source(.photos), .source(.folders))),
             ("date:2024-06-01T14:30", Self.filter(.date, .equal, .date(.time(2024, 6, 1, .minute(14, 30))))),
         ]
         for (text, expected) in cases {
@@ -170,6 +171,7 @@ struct QueryParserTests {
             ),
             ("aspect:3:0", 7 ..< 10, "aspect is the long side over the short"),
             ("orientation:sideways", 12 ..< 20, "orientation is landscape, portrait, square or none"),
+            ("source:albums", 7 ..< 13, "source is folders or photos"),
             ("orientation>portrait", 11 ..< 12, "orientation can't be compared with >"),
             ("is>panorama", 2 ..< 3, "is can't be compared with >"),
             ("camera>3", 6 ..< 7, "camera can't be compared with >"),

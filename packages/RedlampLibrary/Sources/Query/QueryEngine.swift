@@ -745,6 +745,8 @@ extension QueryEngine {
         case let .softFrames(scope, verdict):
             let found = try await softFrames(scope, in: store, vocabulary: vocabulary, generation: generation)
             return store.rows(withIDs: found.photos(verdict))
+        case .applePhotos:
+            return try await store.rows(withIDs: source.photoIDsInApplePhotos())
         }
     }
 
