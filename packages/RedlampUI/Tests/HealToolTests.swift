@@ -134,6 +134,134 @@ struct HealToolTests {
         #expect(model.recipe.spots.count == 2 && model.recipe.spots.last?.region?.center == ImagePoint(x: 0.25, y: 0.5))
     }
 
+    @Test func `a box dragged around an object, or a stroke over one, picks it to remove`() async throws {
+        let engine = StubEngine()
+        engine.computed = try [ring(at: ImagePoint(x: 0.3, y: 0.5), outer: 0.1)]
+        let (model, cleanup) = try await openEditor(engine)
+        defer { cleanup() }
+        model.activeTool = .heal
+        model.spotPick = .object
+        let box = ImageRect(x: 0.2, y: 0.35, width: 0.2, height: 0.3)
+        await model.pickRegion(in: box)
+        #expect(engine.lastRequest?.kind == .objects && engine.lastRequest?.box == box)
+        #expect(engine.lastRequest?.prompts.isEmpty == true, "the box alone, as an Objects mask's Rectangle asks")
+        let boxed = try #require(model.selectedSpot)
+        #expect(boxed.mode == .remove && boxed.region?.box == box && model.history.last?.name == "Remove Object")
+
+        // Far from the pick selected, a stroke picks a thing of its own.
+        engine.computed = try [ring(at: ImagePoint(x: 0.75, y: 0.5), outer: 0.1)]
+        let stroke = (0 ... 20).map { ImagePoint(x: 0.7 + 0.005 * Double($0), y: 0.5) }
+        await model.pickRegion(along: stroke, reach: 0.02)
+        #expect(engine.lastRequest?.prompts == EditorModel.prompts(along: stroke) && engine.lastRequest?.box == nil)
+        let brushed = try #require(model.selectedSpot)
+        #expect(model.recipe.spots.count == 2 && brushed.id != boxed.id && brushed.region?.box == nil)
+        #expect(model.history.last?.name == "Remove Object")
+        #expect(model.recipe.spots.first == boxed, "the pick before as it was")
+
+        // With Click picks on Person, neither picks anything.
+        model.spotPick = .person
+        await model.pickRegion(in: box)
+        await model.pickRegion(along: stroke, reach: 0.02)
+        #expect(model.recipe.spots.count == 2)
+    }
+
+    @Test func `a stroke over a part a pick left out adds it to that pick, as one step`() async throws {
+        let engine = StubEngine()
+        let body = ImagePoint(x: 0.5, y: 0.5)
+        engine.computed = try [ring(at: body, outer: 0.15)]
+        let (model, cleanup) = try await openEditor(engine)
+        defer { cleanup() }
+        model.activeTool = .heal
+        model.spotPick = .object
+        await model.pickRegion(at: body)
+        let picked = try #require(model.selectedSpot)
+        let steps = model.history.count
+
+        // The handle: from just past the pick's edge, 0.1 across from its middle, outwards.
+        let whole = ImagePoint(x: 0.55, y: 0.5)
+        engine.computed = try [ring(at: whole, outer: 0.22)]
+        let handle = (0 ... 10).map { ImagePoint(x: 0.61 + 0.005 * Double($0), y: 0.5) }
+        await model.pickRegion(along: handle, reach: 0.02)
+        #expect(engine.lastRequest?.prompts == [body] + EditorModel.prompts(along: handle))
+        let added = try #require(model.selectedSpot)
+        #expect(model.recipe.spots.count == 1 && added.id == picked.id && added.mode == .remove)
+        #expect(added.region?.center == whole && added.center == whole && added.region != picked.region)
+        #expect(model.history.count == steps + 1 && model.history.last?.name == "Add to Object")
+        model.undo()
+        #expect(model.recipe.spots == [picked], "one step, which Undo takes back")
+    }
+
+    @Test func `a stroke past a pick's box adds to it, the box grown to take the stroke in`() async throws {
+        let engine = StubEngine()
+        engine.computed = try [ring(at: ImagePoint(x: 0.4, y: 0.5), outer: 0.1)]
+        let (model, cleanup) = try await openEditor(engine)
+        defer { cleanup() }
+        model.activeTool = .heal
+        model.spotPick = .object
+        await model.pickRegion(in: ImageRect(x: 0.3, y: 0.4, width: 0.2, height: 0.2))
+        await model.pickRegion(along: [ImagePoint(x: 0.45, y: 0.5), ImagePoint(x: 0.6, y: 0.65)], reach: 0.02)
+        let grown = try #require(engine.lastRequest?.box)
+        #expect(abs(grown.x - 0.3) < 1e-9 && abs(grown.y - 0.4) < 1e-9)
+        #expect(abs(grown.x + grown.width - 0.6) < 1e-9 && abs(grown.y + grown.height - 0.65) < 1e-9)
+        #expect(model.recipe.spots.count == 1 && model.history.last?.name == "Add to Object")
+    }
+
+    @Test func `a stroke over a picked person picks an object of its own`() async throws {
+        let engine = StubEngine()
+        engine.computed = try [half(true)]
+        let (model, cleanup) = try await openEditor(engine)
+        defer { cleanup() }
+        model.activeTool = .heal
+        model.spotPick = .person
+        await model.pickRegion(at: ImagePoint(x: 0.3, y: 0.5))
+        model.spotPick = .object
+        await model.pickRegion(along: [ImagePoint(x: 0.3, y: 0.5), ImagePoint(x: 0.35, y: 0.5)], reach: 0.02)
+        #expect(model.recipe.spots.count == 2 && model.history.last?.name == "Remove Object")
+        #expect(engine.lastRequest?.kind == .objects && engine.lastRequest?.prompts.count == 2)
+    }
+
+    @Test func `a pick added to loses its generated fill, and is filled again`() async throws {
+        let centre = ImagePoint(x: 0.5, y: 0.5)
+        let engine = StubEngine()
+        engine.computed = try [ring(at: centre, outer: 0.2)]
+        engine.generativeAvailability = .ready
+        let (model, cleanup) = try await openEditor(engine)
+        let generative = model.fillsGeneratively
+        defer {
+            model.fillsGeneratively = generative
+            cleanup()
+        }
+        model.activeTool = .heal
+        await model.loadGenerativeFill()
+        model.fillsGeneratively = true
+        model.spotPick = .object
+        await model.pickRegion(at: centre)
+        for _ in 0 ..< 400 where model.generating != nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let picked = try #require(model.selectedSpot)
+        let fill = try #require(picked.fill)
+
+        engine.computed = try [ring(at: centre, outer: 0.25)]
+        await model.pickRegion(along: [centre, ImagePoint(x: 0.75, y: 0.5)], reach: 0.02)
+        #expect(model.selectedSpot?.region != picked.region)
+        for _ in 0 ..< 400 where model.generating != nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let refilled = try #require(model.selectedSpot?.fill)
+        #expect(refilled != fill && engine.generatedFor.last == picked.id)
+    }
+
+    @Test func `a stroke touches a pick where it covers, or within reach of it`() throws {
+        let png = try #require(try ring(at: ImagePoint(x: 0.5, y: 0.25), outer: 0.1).bitmap.png)
+        #expect(EditorModel.touches([ImagePoint(x: 0.5, y: 0.25)], mask: png, within: 0))
+        #expect(!EditorModel.touches([ImagePoint(x: 0.5, y: 0.75)], mask: png, within: 0.02), "below it, not above")
+        #expect(!EditorModel.touches([ImagePoint(x: 0.5, y: 0.38)], mask: png, within: 0.02))
+        #expect(EditorModel.touches([ImagePoint(x: 0.5, y: 0.38)], mask: png, within: 0.04))
+        #expect(EditorModel.touches([ImagePoint(x: 0.9, y: 0.9), ImagePoint(x: 0.5, y: 0.3)], mask: png, within: 0))
+        #expect(!EditorModel.touches([ImagePoint(x: 1.5, y: -1)], mask: png, within: 0.5), "off the photo")
+    }
+
     /// An Objects mask of 300 × 200 pixels, as for the stub's 600 × 400 photo, covering what lies
     /// between `inner` and `outer` image heights from `centre`.
     private func ring(at centre: ImagePoint, outer: Double, inner: Double = 0) throws -> AIMask {

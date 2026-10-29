@@ -80,18 +80,65 @@ public extension EditorModel {
 
     /// Removes the person or object under `point` (`spotPick`), its own mask grown a little.
     func pickRegion(at point: ImagePoint) async {
-        guard let visit = currentVisit, spotPick != .spot, !isPickingRegion else { return }
-        let pick = spotPick
-        let kind: MaskKind = pick == .person ? .people : .objects
+        switch spotPick {
+        case .spot: return
+        case .person: await pickRegion(MaskRequest(kind: .people)) { Self.mask(at: point, in: $0) }
+        case .object: await pickRegion(MaskRequest(kind: .objects, prompts: [point]))
+        }
+    }
+
+    /// Removes the object a box is dragged around with Click picks on Object: Segment Anything's
+    /// box prompt, as an Objects mask's Rectangle selects it.
+    func pickRegion(in box: ImageRect) async {
+        guard spotPick == .object else { return }
+        await pickRegion(MaskRequest(kind: .objects, box: box))
+    }
+
+    /// Removes the object brushed over with Click picks on Object, from points spread along the
+    /// stroke, as an Objects mask's Brush selects it. A stroke that passes over the selected object
+    /// pick, or comes within `reach` of it (a fraction of the image height), adds what it brushes to
+    /// that pick instead, such as a handle the pick left out.
+    func pickRegion(along stroke: [ImagePoint], reach: Double) async {
+        guard spotPick == .object, !stroke.isEmpty, !isPickingRegion else { return }
+        let points = Self.prompts(along: stroke)
+        if let spot = selectedSpot, let region = spot.region, region.kind == .objects, let png = region.bitmap.png {
+            let within = reach + spot.radius
+            let touches = await Task.detached(priority: .userInitiated) {
+                Self.touches(stroke, mask: png, within: within)
+            }.value
+            if touches {
+                // The box a pick was asked with bounds what's found, so it grows to take the stroke in.
+                await pickRegion(
+                    MaskRequest(
+                        kind: .objects, prompts: region.prompts + points, excluded: region.excludedPrompts ?? [],
+                        box: region.box.map { Self.box($0, around: stroke) },
+                    ),
+                    adding: (spot.id, region),
+                )
+                return
+            }
+        }
+        await pickRegion(MaskRequest(kind: .objects, prompts: points))
+    }
+
+    /// Removes what `request` finds (the mask `choose` takes of those found) as a new Remove spot,
+    /// its mask grown a little; or, `adding` to an object pick that still has `region`, reshapes
+    /// that pick to it.
+    private func pickRegion(
+        _ request: MaskRequest, adding target: (id: UUID, region: AIMask)? = nil,
+        choose: ([AIMask]) -> AIMask? = { $0.first },
+    ) async {
+        guard let visit = currentVisit, !isPickingRegion else { return }
+        let pick: SpotPick = request.kind == .people ? .person : .object
         pickMessage = nil
         if availableAIMaskKinds.isEmpty {
             await refreshAvailableMasks()
         }
-        guard availableAIMaskKinds.contains(kind) else {
+        guard availableAIMaskKinds.contains(request.kind) else {
             pickMessage = "Picking \(pick.name.lowercased())s isn't available for this photo."
             return
         }
-        if let model = await engine.modelNeeded(for: kind) {
+        if let model = await engine.modelNeeded(for: request.kind) {
             pickMessage = "Picking objects needs \(model.name), from Settings › Models."
             return
         }
@@ -99,17 +146,28 @@ public extension EditorModel {
         isPickingRegion = true
         defer { isPickingRegion = false }
         do {
-            let found = try await engine.computeMasks(
-                pick == .person ? MaskRequest(kind: .people) : MaskRequest(kind: .objects, prompts: [point]),
-            )
+            let found = try await engine.computeMasks(request)
             guard currentVisit == visit else { return }
-            let chosen = pick == .person ? Self.mask(at: point, in: found) : found.first
-            guard let picked = chosen else {
+            guard let picked = choose(found) else {
                 pickMessage = pick == .person ? "No one is there." : "Nothing was found there."
                 return
             }
             let mask = removesShadows ? await engine.withShadowAndReflection(picked) : picked
             guard currentVisit == visit else { return }
+            if let target {
+                guard let spot = recipe.spots.first(where: { $0.id == target.id }), spot.region == target.region
+                else { return }
+                let refills = spot.fill != nil || generating?.spot == spot.id
+                updateSpot(spot.id, name: "Add to Object") { spot in
+                    spot.region = mask
+                    spot.center = mask.center
+                    spot.source = mask.center
+                }
+                if refills {
+                    refillGeneratively(spot.id)
+                }
+                return
+            }
             let spot = RetouchSpot(
                 mode: .remove, center: mask.center, source: mask.center, region: mask, radius: Self.regionGrowth,
                 feather: spotSettings.feather, opacity: spotSettings.opacity,
@@ -123,6 +181,49 @@ public extension EditorModel {
             guard currentVisit == visit else { return }
             pickMessage = "\(error)"
         }
+    }
+
+    /// Whether `stroke` touches the mask in `png`: passes over it, or comes within `reach` (a
+    /// fraction of the image height) of where it covers.
+    nonisolated static func touches(_ stroke: [ImagePoint], mask png: Data, within reach: Double) -> Bool {
+        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil), image.width > 0, image.height > 0,
+              let context = CGContext(
+                  data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width,
+                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue,
+              )
+        else { return false }
+        let (width, height) = (image.width, image.height)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = context.data else { return false }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height)
+        // The mask has the photo's shape, so its pixels are as wide as they are high; the pixel a
+        // point is in has its centre within 0.71 of it.
+        let radius = max(reach * Double(height), 0.75)
+        let span = Int(radius.rounded(.up))
+        for point in stroke {
+            let (x, y) = (point.x * Double(width), point.y * Double(height))
+            let (column, row) = (Int(x.rounded(.down)), Int(y.rounded(.down)))
+            let (left, right) = (max(column - span, 0), min(column + span, width - 1))
+            let (top, bottom) = (max(row - span, 0), min(row + span, height - 1))
+            guard left <= right, top <= bottom else { continue }
+            for j in top ... bottom {
+                for i in left ... right
+                    where pixels[j * width + i] >= 128 && hypot(Double(i) + 0.5 - x, Double(j) + 0.5 - y) <= radius {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// `box` grown to take in `points`, within the photo.
+    private static func box(_ box: ImageRect, around points: [ImagePoint]) -> ImageRect {
+        let xs = points.map(\.x) + [box.x, box.x + box.width]
+        let ys = points.map(\.y) + [box.y, box.y + box.height]
+        let (left, right) = (max(xs.min() ?? 0, 0), min(xs.max() ?? 1, 1))
+        let (top, bottom) = (max(ys.min() ?? 0, 0), min(ys.max() ?? 1, 1))
+        return ImageRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 
     /// The mask covering `point`, or else the one whose middle is nearest.
