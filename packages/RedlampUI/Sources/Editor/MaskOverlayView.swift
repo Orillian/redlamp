@@ -334,25 +334,7 @@ private struct ObjectPicker: View {
                     .position(x: frame.rect.midX, y: frame.rect.midY)
                     .allowsHitTesting(false)
             }
-            if let start = drag.first, let end = drag.last, drag.count > 1 {
-                switch model.objectSelection {
-                case .rectangle:
-                    Path(CGRect(
-                        x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x),
-                        height: abs(end.y - start.y),
-                    ))
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                    .shadow(color: .black.opacity(0.6), radius: 1)
-                    .allowsHitTesting(false)
-                case .brush:
-                    Path { $0.addLines(drag) }
-                        .stroke(
-                            Color.accentColor.opacity(0.5),
-                            style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round),
-                        )
-                        .allowsHitTesting(false)
-                }
-            }
+            ObjectDragPath(points: drag, selection: model.objectSelection)
             Color.clear
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
@@ -382,11 +364,8 @@ private struct ObjectPicker: View {
                             drag = []
                             switch model.objectSelection {
                             case .rectangle:
-                                let (a, b) = (frame.image(gesture.startLocation), frame.image(gesture.location))
-                                let (left, right) = (min(max(min(a.x, b.x), 0), 1), min(max(max(a.x, b.x), 0), 1))
-                                let (top, bottom) = (min(max(min(a.y, b.y), 0), 1), min(max(max(a.y, b.y), 0), 1))
-                                guard right > left, bottom > top else { return }
-                                let box = ImageRect(x: left, y: top, width: right - left, height: bottom - top)
+                                guard let box = frame.box(from: gesture.startLocation, to: gesture.location)
+                                else { return }
                                 Task { await model.selectObject(in: box) }
                             case .brush:
                                 let excluding = NSEvent.modifierFlags.contains(.option)
@@ -418,6 +397,39 @@ private struct ObjectPicker: View {
     }
 }
 
+/// A drag selecting an object as it goes, in an Objects mask or the Healing tool's object picks:
+/// the dashed box from where it started to where it is, or the stroke it has brushed.
+struct ObjectDragPath: View {
+    /// Where the drag has been on the canvas, from where it started.
+    let points: [CGPoint]
+    let selection: ObjectSelection
+
+    /// How wide a brushed stroke is drawn, in points.
+    static let brushWidth: CGFloat = 16
+
+    var body: some View {
+        if let start = points.first, let end = points.last, points.count > 1 {
+            switch selection {
+            case .rectangle:
+                Path(CGRect(
+                    x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x),
+                    height: abs(end.y - start.y),
+                ))
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .shadow(color: .black.opacity(0.6), radius: 1)
+                .allowsHitTesting(false)
+            case .brush:
+                Path { $0.addLines(points) }
+                    .stroke(
+                        Color.accentColor.opacity(0.5),
+                        style: StrokeStyle(lineWidth: Self.brushWidth, lineCap: .round, lineJoin: .round),
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
 /// Converts between normalised image coordinates and view points.
 struct ImageFrame {
     let rect: CGRect
@@ -435,6 +447,16 @@ struct ImageFrame {
         let shown = SIMD2((point.x - rect.minX) / max(rect.width, 1), (point.y - rect.minY) / max(rect.height, 1))
         let image = geometry?.isIdentity == false ? geometry?.imagePoint(shown) ?? shown : shown
         return ImagePoint(x: image.x, y: image.y)
+    }
+
+    /// The box a drag from `start` to `end` draws on the photo, kept within it; nil when it holds
+    /// none of the photo.
+    func box(from start: CGPoint, to end: CGPoint) -> ImageRect? {
+        let (a, b) = (image(start), image(end))
+        let (left, right) = (min(max(min(a.x, b.x), 0), 1), min(max(max(a.x, b.x), 0), 1))
+        let (top, bottom) = (min(max(min(a.y, b.y), 0), 1), min(max(max(a.y, b.y), 0), 1))
+        guard right > left, bottom > top else { return nil }
+        return ImageRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 
     /// How the photo's axes appear on screen at the frame's centre: the angle of its x axis
