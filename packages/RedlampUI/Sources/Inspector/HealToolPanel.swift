@@ -47,9 +47,22 @@ struct HealToolPanel: View {
             ControlRow(label: "Click picks") {
                 ChoiceMenu("Click picks", selection: $model.spotPick)
                     .controlSize(.small)
-                    .help("Spot adds a spot where you click; Person and Object remove the person or object you click")
+                    .automationIdentifier("heal.clickPicks")
+                    .help(
+                        "Spot adds a spot where you click; Person and Object remove the person or object you click, and Object what you drag a box around or brush over",
+                    )
                 if model.isPickingRegion {
                     ProgressView().controlSize(.small)
+                }
+            }
+            if model.spotPick == .object {
+                ControlRow(label: "Drag") {
+                    ChoiceMenu("Drag", selection: $model.objectSelection)
+                        .controlSize(.small)
+                        .automationIdentifier("heal.objectDrag")
+                        .help(
+                            "What a drag on the photo picks with: a box around the object, or a stroke over it, as in an Objects mask",
+                        )
                 }
             }
             Toggle("Shadows and reflections", isOn: $model.removesShadows)
@@ -66,9 +79,7 @@ struct HealToolPanel: View {
 
             findRow
 
-            Text(selected == nil
-                ? "Click the photo to add a spot, or drag to brush one. Its source is found nearby."
-                : "Drag the spot or its source to move it, or its handle to resize it.")
+            Text(hint(selected))
                 .font(Theme.labelFont)
                 .foregroundStyle(Theme.label)
                 .fixedSize(horizontal: false, vertical: true)
@@ -135,6 +146,22 @@ struct HealToolPanel: View {
 
     /// Where a row's controls start, past its label: for what sits under them without a label.
     private static let controlInset = Theme.labelWidth + Metrics.rowSpacing
+
+    /// What a click and a drag on the photo do, with `selected` the selected spot.
+    private func hint(_ selected: RetouchSpot?) -> String {
+        switch model.spotPick {
+        case .object where model.objectSelection == .rectangle:
+            "Click an object, or drag a box around it, to remove it."
+        case .object where selected?.region?.kind == .objects:
+            "Click an object, or brush over it, to remove it. Brush over a part the selected one left out to add it."
+        case .object:
+            "Click an object, or brush over it, to remove it."
+        default:
+            selected == nil
+                ? "Click the photo to add a spot, or drag to brush one. Its source is found nearby."
+                : "Drag the spot or its source to move it, or its handle to resize it."
+        }
+    }
 
     /// Generative Remove (RM-10): Fill, the model's download, the fill being made, and the selected
     /// spot's fills to choose from, labelled as generated.

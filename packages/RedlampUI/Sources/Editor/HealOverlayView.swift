@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Heal and Clone spots over the canvas while the Healing tool is active. A click adds a circle
 /// the size the tool's ring shows, and a drag paints a brushed spot; each spot is drawn with its
-/// source (dashed) and a line between them, and dragging either moves it.
+/// source (dashed) and a line between them, and dragging either moves it. With Click picks on
+/// Object, a drag picks what it draws a box around or brushes over, as an Objects mask selects.
 struct HealOverlayView: View {
     @Environment(EditorModel.self) private var model
     @State private var hover: CGPoint?
@@ -23,10 +24,15 @@ struct HealOverlayView: View {
                         }
                     }
 
-                if painting.count > 1 {
+                switch model.spotPick {
+                case .spot where painting.count > 1:
                     let outline = SpotShape.outline(painting, width: brushDiameter(frame))
                     outline.fill(Color.white.opacity(0.15)).allowsHitTesting(false)
                     outline.stroke(Color.white.opacity(0.8), lineWidth: 1).allowsHitTesting(false)
+                case .object:
+                    ObjectDragPath(points: painting, selection: model.objectSelection)
+                default:
+                    EmptyView()
                 }
 
                 let diameter = brushDiameter(frame)
@@ -60,14 +66,15 @@ struct HealOverlayView: View {
         RetouchSpot.radius(size: model.spotSettings.size) * frame.heightScale * 2
     }
 
-    /// A click adds a circle (or, off the photo, deselects); a drag paints a stroke.
+    /// A click adds a circle or picks what's under it (or, off the photo, deselects); a drag paints
+    /// a stroke, or with Click picks on Object, picks by a box or a stroke.
     private func paint(_ frame: ImageFrame) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { gesture in
                 if painting.isEmpty {
                     painting = [gesture.startLocation]
                 }
-                if frame.rect.contains(gesture.location) {
+                if model.spotPick == .object || frame.rect.contains(gesture.location) {
                     painting.append(gesture.location)
                 }
             }
@@ -87,10 +94,32 @@ struct HealOverlayView: View {
                     }
                     return
                 }
-                guard model.spotPick == .spot else { return }
-                let stroke = points.filter(frame.rect.contains).map(frame.image)
-                Task { await model.addStroke(stroke) }
+                switch model.spotPick {
+                case .spot:
+                    let stroke = points.filter(frame.rect.contains).map(frame.image)
+                    Task { await model.addStroke(stroke) }
+                case .object:
+                    pickObject(points + [gesture.location], frame)
+                case .person:
+                    break
+                }
             }
+    }
+
+    /// Picks the object a drag through `points` drew a box around or brushed over, as the Drag
+    /// menu says; a stroke within the brush's width of the selected pick adds to it.
+    private func pickObject(_ points: [CGPoint], _ frame: ImageFrame) {
+        guard let start = points.first, let end = points.last else { return }
+        switch model.objectSelection {
+        case .rectangle:
+            guard let box = frame.box(from: start, to: end) else { return }
+            Task { await model.pickRegion(in: box) }
+        case .brush:
+            let stroke = points.filter(frame.rect.contains).map(frame.image)
+            guard !stroke.isEmpty else { return }
+            let reach = Double(ObjectDragPath.brushWidth / max(frame.heightScale, 1))
+            Task { await model.pickRegion(along: stroke, reach: reach) }
+        }
     }
 }
 
