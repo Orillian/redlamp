@@ -29,11 +29,20 @@ public struct LibrarySidecars: Sendable {
     // MARK: - Placements
 
     /// The locator the library's sidecars are written and read through: every root that keeps them
-    /// on this Mac, and every other root that has some there.
+    /// on this Mac, and every other root that has some there. The Apple Photos root's are on this Mac
+    /// before the first album kept in place makes it (LIB-58), so the editor, which reads its locator
+    /// as the library opens, never writes one beside an original in Redlamp's cache.
     public func locator() async throws -> SidecarLocator {
         let folder = paths.sidecars
-        let roots = try await index.read { reader in try Self.locatorRoots(reader) }
-        return try await LibraryIndex.offCaller {
+        var roots = try await index.read { reader in try Self.locatorRoots(reader) }
+        let applePhotos = LibraryIndexer.path(ApplePhotosPlace.root(in: paths))
+        if !roots.contains(where: { $0.path == applePhotos }) {
+            roots.append(SidecarLocator.Root(
+                path: applePhotos, volume: ApplePhotosPlace.volume, pathInVolume: ApplePhotosPlace.library,
+                onThisMac: true,
+            ))
+        }
+        return try await LibraryIndex.offCaller { [roots] in
             SidecarLocator(folder: folder, roots: roots.filter { root in
                 root.onThisMac || FileManager.default.fileExists(atPath: Self.folder(of: root, in: folder).path)
             })

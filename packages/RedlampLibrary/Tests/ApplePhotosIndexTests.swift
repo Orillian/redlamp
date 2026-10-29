@@ -76,6 +76,20 @@ struct ApplePhotosIndexTests {
         #expect(rows.first { $0.photo == tram.record.id }?.cloud == "cloud-0001")
     }
 
+    @Test func `a photo kept in Photos has its sidecar on this Mac from before the first album kept makes the root`(
+    ) async throws {
+        let sandbox = try await IndexSandbox.make()
+        defer { sandbox.remove() }
+        let before = try await LibrarySidecars(index: sandbox.index).locator()
+        try await ApplePhotosIndexer(photos: SamplePhotos.library(), index: sandbox.index).keep(["album-selects"])
+        let after = try await LibrarySidecars(index: sandbox.index).locator()
+        let found = try await Self.found(sandbox)
+        let kept = try #require(found.first)
+        let photo = URL(fileURLWithPath: kept.value.folder + "/" + kept.key, isDirectory: false)
+        #expect(after.url(for: photo) != SidecarLocator.besidePhoto(photo), "on this Mac once the root is made")
+        #expect(before.url(for: photo) == after.url(for: photo), "and before, where an editor opened then writes it")
+    }
+
     @Test func `the Apple Photos root is in no folder list, folder search or Folders' counts, its photos in every list`(
     ) async throws {
         let sandbox = try await IndexSandbox.make()
