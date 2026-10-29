@@ -71,7 +71,7 @@ public final class ApplePhotosFollower {
         watching?.cancel()
         guard let importer else { return }
         let photos = importer.photos
-        guard photos.access() == .authorized else {
+        guard photos.access().canRead else {
             news = nil
             newPhotos = 0
             return

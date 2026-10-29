@@ -150,7 +150,7 @@ extension ApplePhotosImportModel {
                 page: .access, heading: "Redlamp can read only some of your photos",
                 message: [
                     "Access to Photos is limited for Redlamp: it can read only the photos chosen for it, and none of "
-                        + "your albums, so there are no albums to add.",
+                        + "your albums.",
                     "To add albums, choose Full Access for Redlamp in \(settings), then come back to this window.",
                 ],
                 buttons: [open],
@@ -223,7 +223,14 @@ extension ApplePhotosImportModel {
         }
         let smart = tree.collections.filter { $0.kind == .smartAlbum }.map { row($0, depth: 0) }
         let shared = tree.collections.filter { $0.kind == .sharedAlbum }.map { row($0, depth: 0) }
-        var groups = [ApplePhotosScreen.Group(id: "albums", title: "Albums", albums: rows(under: nil, depth: 0))]
+        var groups = [ApplePhotosScreen.Group(
+            id: "albums", title: "Albums",
+            note: access == .limited
+                ? "Access to Photos is limited: Redlamp can read only the photos chosen for it, as one album. Full "
+                + "Access for Redlamp in System Settings › Privacy & Security › Photos shows your albums."
+                : nil,
+            albums: rows(under: nil, depth: 0),
+        )]
         if !smart.isEmpty {
             groups.append(.init(
                 id: "smart", title: "Smart Albums",

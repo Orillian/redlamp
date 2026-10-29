@@ -49,6 +49,11 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
 
     public func collections() async throws -> [ApplePhotosCollection] {
         try requireAccess()
+        if access() == .limited {
+            var chosen = ApplePhotosCollection.chosenForRedlamp
+            chosen.estimatedCount = PHAsset.fetchAssets(with: nil).count
+            return [chosen]
+        }
         var found: [ApplePhotosCollection] = []
         func walk(_ result: PHFetchResult<PHCollection>, parent: String?) {
             result.enumerateObjects { collection, _, _ in
@@ -100,19 +105,17 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
 
     public func assets(in ids: [String]) async throws -> [ApplePhotosAsset] {
         try requireAccess()
-        let albums = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: ids, options: nil)
         var found: [String: PHAsset] = [:]
         var order: [String] = []
         var albumsOf: [String: [String]] = [:]
-        albums.enumerateObjects { album, _, _ in
-            PHAsset.fetchAssets(in: album, options: Self.fetchOptions(allBursts: false))
-                .enumerateObjects { asset, _, _ in
-                    let id = asset.localIdentifier
-                    if found.updateValue(asset, forKey: id) == nil {
-                        order.append(id)
-                    }
-                    albumsOf[id, default: []].append(album.localIdentifier)
+        for (album, assets) in fetches(ids, Self.fetchOptions(allBursts: false)) {
+            assets.enumerateObjects { asset, _, _ in
+                let id = asset.localIdentifier
+                if found.updateValue(asset, forKey: id) == nil {
+                    order.append(id)
                 }
+                albumsOf[id, default: []].append(album)
+            }
         }
         for id in order {
             guard let key = found[id], key.representsBurst, let burst = key.burstIdentifier else { continue }
@@ -129,6 +132,21 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         return order.compactMap { id in
             found[id].map { Self.asset($0, cloud: clouds[id], albums: albumsOf[id] ?? []) }
         }
+    }
+
+    /// The assets of each collection `ids` names, as `options` fetches them, by the collection's ID: with limited
+    /// access, the stand-in's are every asset Photos lets Redlamp read, to which limited access restricts a fetch.
+    private func fetches(_ ids: [String], _ options: PHFetchOptions) -> [(String, PHFetchResult<PHAsset>)] {
+        let chosen = ApplePhotosCollection.chosenForRedlamp.id
+        var fetches: [(String, PHFetchResult<PHAsset>)] = []
+        PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: ids.filter { $0 != chosen }, options: nil)
+            .enumerateObjects { album, _, _ in
+                fetches.append((album.localIdentifier, PHAsset.fetchAssets(in: album, options: options)))
+            }
+        if ids.contains(chosen), access() == .limited {
+            fetches.append((chosen, PHAsset.fetchAssets(with: options)))
+        }
+        return fetches
     }
 
     private static func fetchOptions(allBursts: Bool) -> PHFetchOptions {
@@ -369,12 +387,11 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
             options.includeHiddenAssets = true
             options.includeAllBurstAssets = true
             options.predicate = NSPredicate(format: "localIdentifier IN %@", found.map(\.localIdentifier))
-            PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: albums, options: nil)
-                .enumerateObjects { album, _, _ in
-                    PHAsset.fetchAssets(in: album, options: options).enumerateObjects { asset, _, _ in
-                        holding[asset.localIdentifier, default: []].append(album.localIdentifier)
-                    }
+            for (album, assets) in fetches(albums, options) {
+                assets.enumerateObjects { asset, _, _ in
+                    holding[asset.localIdentifier, default: []].append(album)
                 }
+            }
         }
         let clouds = cloudIdentifiers(found.map(\.localIdentifier))
         return found.map {
@@ -426,20 +443,19 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         let frames = PHFetchOptions()
         frames.includeAllBurstAssets = true
         var listed: [String: Set<String>] = [:]
-        PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: ids, options: nil)
-            .enumerateObjects { album, _, _ in
-                var held = Set<String>()
-                PHAsset.fetchAssets(in: album, options: photos).enumerateObjects { asset, _, _ in
-                    held.insert(asset.localIdentifier)
-                    guard asset.representsBurst, let burst = asset.burstIdentifier else { return }
-                    PHAsset.fetchAssets(withBurstIdentifier: burst, options: frames).enumerateObjects { frame, _, _ in
-                        if frame.burstSelectionTypes.contains(.userPick), !frame.isHidden {
-                            held.insert(frame.localIdentifier)
-                        }
+        for (album, assets) in fetches(ids, photos) {
+            var held = Set<String>()
+            assets.enumerateObjects { asset, _, _ in
+                held.insert(asset.localIdentifier)
+                guard asset.representsBurst, let burst = asset.burstIdentifier else { return }
+                PHAsset.fetchAssets(withBurstIdentifier: burst, options: frames).enumerateObjects { frame, _, _ in
+                    if frame.burstSelectionTypes.contains(.userPick), !frame.isHidden {
+                        held.insert(frame.localIdentifier)
                     }
                 }
-                listed[album.localIdentifier] = held
             }
+            listed[album] = held
+        }
         return listed
     }
 
@@ -484,6 +500,11 @@ public final class PhotoKitLibrary: ApplePhotosLibrary {
         }
         changes.inserted.subtract(changes.deleted)
         changes.updated.subtract(changes.deleted.union(changes.inserted))
+        if access() == .limited {
+            // How Photos tells of other photos being chosen for Redlamp isn't documented (unverified until the
+            // census), so the stand-in's photos are compared after every change.
+            changes.collections.insert(ApplePhotosCollection.chosenForRedlamp.id)
+        }
         if let last, let archived = try? NSKeyedArchiver.archivedData(
             withRootObject: last,
             requiringSecureCoding: true,

@@ -5,8 +5,9 @@ import Testing
 
 /// Albums of Apple Photos kept in place as the library lists them (LIB-62), on the simulated library: the part of
 /// Photos' tree kept, which each pass records for the Apple Photos section; an album's photos as a source, with their
-/// versions and without those Photos no longer has, counted as they're listed; and albums leaving the library, a folder
-/// kept giving way to what else it holds when one of its albums leaves.
+/// versions and without those Photos no longer has, counted as they're listed; albums leaving the library, a folder
+/// kept giving way to what else it holds when one of its albums leaves; and with limited access, the photos chosen for
+/// Redlamp as one album.
 struct ApplePhotosAlbumsTests {
     /// The IDs of the collections the index has as kept, in Photos' order.
     private static func kept(_ sandbox: IndexSandbox) async throws -> [String] {
@@ -117,5 +118,58 @@ struct ApplePhotosAlbumsTests {
         try await indexer.stopKeeping(["folder-trips"])
         #expect(try await indexer.albums().map(\.id) == ["album-selects"])
         #expect(try await Self.kept(sandbox) == ["album-selects"])
+    }
+
+    @Test func `with limited access the photos chosen for Redlamp are one album, kept and followed as an album is`(
+    ) async throws {
+        let sandbox = try await IndexSandbox.make()
+        defer { sandbox.remove() }
+        let photos = try SamplePhotos.library()
+        photos.limit(to: [SamplePhotos.tram, SamplePhotos.pair, SamplePhotos.video])
+        let chosen = ApplePhotosCollection.chosenForRedlamp
+        let listed = try await photos.collections()
+        #expect(listed.map(\.id) == [chosen.id] && listed.first?.title == "Photos Chosen for Redlamp")
+        #expect(listed.first?.estimatedCount == 3)
+        let indexer = ApplePhotosIndexer(photos: photos, index: sandbox.index)
+        try await indexer.keep([chosen.id])
+        #expect(try await Self.kept(sandbox) == [chosen.id])
+        #expect(try await Self.names(.applePhotos(chosen.id), sandbox) == [
+            "IMG_0001.HEIC", "IMG_0004.JPG", "IMG_0004.NEF",
+        ])
+
+        let (passes, passed) = AsyncStream.makeStream(of: ApplePhotosIndexer.Outcome.self)
+        let following = Task { await indexer.follow(settling: .zero, passed: { passed.yield($0) }) }
+        defer { following.cancel() }
+        var heard = passes.makeAsyncIterator()
+        _ = await heard.next()
+        photos.limit(to: [SamplePhotos.tram, SamplePhotos.dng])
+        let changed = try #require(await heard.next())
+        #expect(!changed.whole && changed.missing.isEmpty, "other photos chosen, though Photos' history tells nothing")
+        #expect(try await Self.names(.applePhotos(chosen.id), sandbox) == ["IMG_0001.HEIC", "IMG_0005.DNG"])
+    }
+
+    @Test func `once access is limited, photos of the albums kept before leave the lists, none kept as missing`(
+    ) async throws {
+        let sandbox = try await IndexSandbox.make()
+        defer { sandbox.remove() }
+        let photos = try SamplePhotos.library()
+        let indexer = ApplePhotosIndexer(photos: photos, index: sandbox.index)
+        let chosen = ApplePhotosCollection.chosenForRedlamp.id
+        let porto = ["IMG_0001.HEIC", "IMG_0004.JPG", "IMG_0004.NEF", "IMG_0005.DNG"]
+        try await indexer.keep(["album-porto"])
+        #expect(try await Self.names(.applePhotos("album-porto"), sandbox) == porto)
+
+        photos.limit(to: [SamplePhotos.tram])
+        let limited = try await indexer.update()
+        #expect(limited.whole && limited.missing.isEmpty && limited.removed.count == 4)
+        #expect(try await Self.names(.allPhotographs, sandbox).isEmpty)
+        try await indexer.keep([chosen])
+        #expect(try await Self.kept(sandbox) == [chosen])
+        #expect(try await Self.names(.applePhotos(chosen), sandbox) == ["IMG_0001.HEIC"])
+
+        photos.limit(to: nil)
+        try await indexer.index()
+        #expect(try await Self.names(.applePhotos("album-porto"), sandbox) == porto, "back with full access")
+        #expect(try await Self.names(.applePhotos(chosen), sandbox).isEmpty)
     }
 }

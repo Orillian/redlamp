@@ -9,7 +9,9 @@ import Synchronization
 /// The manifest is JSON: `{"format": "app.redlamp.simulated-photos", "version": 1, "macOS": 27, "access":
 /// "authorized", "grants": "authorized", "collections": […], "assets": […]}`. `macOS` says which fields its
 /// PhotoKit gives (26 by default: ratings, captions and keywords come from 27); `access` is where access
-/// stands, and `grants` what asking gives while it's `notDetermined`, both `authorized` by default. A collection is
+/// stands, and `grants` what asking gives while it's `notDetermined`, both `authorized` by default. With limited
+/// access, `"limitedTo"` names the assets Redlamp may read, listed as one album of their own
+/// (`ApplePhotosCollection.chosenForRedlamp`), and `limit(to:)` changes them. A collection is
 /// `{"id", "title", "kind": "album" | "smartAlbum" | "sharedAlbum" | "folder", "parent"}`. An asset is
 /// `{"id", "cloud", "created", "location": {"latitude", "longitude"}, "favorite", "hidden", "mediaType",
 /// "subtypes", "burst": {"id", "key", "userPick"}, "source", "edited", "adjusted", "modified", "rating", "caption",
@@ -87,6 +89,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         var macOS: Int?
         var access: ApplePhotosAccess?
         var grants: ApplePhotosAccess?
+        var limitedTo: [String]?
         var latency: Int?
         var rate: Int?
         var offline: Bool?
@@ -137,6 +140,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     private struct State {
         var access: ApplePhotosAccess
         var granted: ApplePhotosAccess
+        /// The assets limited access gives, by ID.
+        var limitedTo: Set<String> = []
         var network = Network()
         var tree: [ApplePhotosCollection]
         var assets: [ApplePhotosAsset]
@@ -162,6 +167,22 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
                 places = Dictionary(assets.enumerated().map { ($1.id, $0) }) { first, _ in first }
             }
             return places?[id].map { assets[$0] }
+        }
+
+        /// Whether Redlamp may read asset `id`: any with full access, those chosen for it with limited access.
+        func canRead(_ id: String) -> Bool {
+            access == .authorized || access == .limited && limitedTo.contains(id)
+        }
+
+        /// The assets Redlamp may read, as PhotoKit gives them: with limited access those chosen for it, each in
+        /// the stand-in collection alone.
+        var readable: [ApplePhotosAsset] {
+            guard access == .limited else { return assets }
+            return assets.filter { limitedTo.contains($0.id) }.map { asset in
+                var chosen = asset
+                chosen.albums = [ApplePhotosCollection.chosenForRedlamp.id]
+                return chosen
+            }
         }
     }
 
@@ -251,6 +272,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         }
         state = Mutex(State(
             access: read.access ?? .authorized, granted: read.grants ?? .authorized,
+            limitedTo: Set(read.limitedTo ?? []),
             network: Network(
                 offline: read.offline ?? false, latency: .milliseconds(read.latency ?? 0), rate: read.rate,
             ),
@@ -283,9 +305,25 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         }
     }
 
+    /// Limits Redlamp to the assets `ids` names, as choosing Limited Access for it in System Settings › Privacy &
+    /// Security › Photos does, or choosing other photos for it; nil gives it full access. Recorded as a change Photos
+    /// tells of with nothing in its details, since what Photos records for it isn't documented.
+    public func limit(to ids: [String]?) {
+        state.withLock { state in
+            state.access = ids == nil ? .authorized : .limited
+            state.limitedTo = Set(ids ?? [])
+        }
+        recordChange()
+    }
+
     public func collections() async throws -> [ApplePhotosCollection] {
-        try requireAlbums()
-        let (tree, assets) = state.withLock { ($0.tree, $0.assets) }
+        try requireAccess()
+        let (access, tree, assets) = state.withLock { ($0.access, $0.tree, $0.readable) }
+        if access == .limited {
+            var chosen = ApplePhotosCollection.chosenForRedlamp
+            chosen.estimatedCount = assets.count
+            return [chosen]
+        }
         var counts: [String: Int] = [:]
         for asset in assets {
             for album in asset.albums {
@@ -300,8 +338,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     }
 
     public func assets(in ids: [String]) async throws -> [ApplePhotosAsset] {
-        try requireAlbums()
-        let assets = state.withLock(\.assets)
+        try requireAccess()
+        let assets = state.withLock(\.readable)
         let chosen = Set(ids)
         var found: [ApplePhotosAsset] = []
         var bursts = Set<String>()
@@ -329,7 +367,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         _ resource: ApplePhotosResource, of asset: String, to url: URL,
         progress: @escaping @Sendable (Double) -> Void,
     ) async throws {
-        try requireAlbums()
+        try requireAccess()
+        guard state.withLock({ $0.canRead(asset) }) else { throw ApplePhotosError.notFound(asset) }
         let name = resource.originalFilename
         guard let (file, network) = state.withLock({ state in state.files[asset]?[name].map { ($0, state.network) } })
         else {
@@ -424,8 +463,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
 
     /// A burst's frames are in the albums its key photo is in, as `assets(in:)` gives them.
     public func assets(withIDs ids: [String], in albums: [String]) async throws -> [ApplePhotosAsset] {
-        try requireAlbums()
-        let assets = state.withLock(\.assets)
+        try requireAccess()
+        let assets = state.withLock(\.readable)
         let (wanted, kept) = (Set(ids), Set(albums))
         let keys = Dictionary(assets.compactMap { asset in
             asset.burst.flatMap { $0.isKey ? ($0.id, asset.albums) : nil }
@@ -441,10 +480,10 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     /// A recorded cloud identifier names the asset whose `cloud` or `stringValue` text it is, as PhotoKit reads both
     /// back.
     public func localIDs(ofCopies copies: [String: String]) async throws -> [String: String] {
-        try requireAlbums()
+        try requireAccess()
         return state.withLock { state in
             var clouds: [String: String] = [:]
-            for asset in state.assets {
+            for asset in state.readable {
                 if let cloud = asset.cloud {
                     clouds[cloud] = asset.id
                 }
@@ -454,7 +493,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             }
             var found: [String: String] = [:]
             for (local, cloud) in copies {
-                found[local] = state.asset(local) != nil ? local : clouds[cloud]
+                found[local] = state.canRead(local) && state.asset(local) != nil ? local : clouds[cloud]
             }
             return found
         }
@@ -470,6 +509,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         Data("\(identity) \(count)".utf8)
     }
 
+    /// With limited access the stand-in collection is among those changed every time, as `PhotoKitLibrary` gives it.
     public func changes(since token: Data) async throws -> ApplePhotosChanges {
         let (history, count) = try history(since: token)
         var changes = ApplePhotosChanges(token: self.token(count))
@@ -478,6 +518,9 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
             changes.updated.formUnion(change.updated)
             changes.deleted.formUnion(change.deleted)
             changes.collections.formUnion(change.collections)
+        }
+        if access() == .limited {
+            changes.collections.insert(ApplePhotosCollection.chosenForRedlamp.id)
         }
         return changes
     }
@@ -580,10 +623,9 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         recordChange(expiring: true)
     }
 
-    /// Reading albums needs full access: PhotoKit gives a limited app none.
-    private func requireAlbums() throws {
+    private func requireAccess() throws {
         let access = access()
-        guard access == .authorized else { throw ApplePhotosError.noAccess(access) }
+        guard access.canRead else { throw ApplePhotosError.noAccess(access) }
     }
 
     /// The instant a file records it was taken, in the zone it records or this Mac's.
@@ -614,9 +656,12 @@ extension SimulatedPhotosLibrary: ApplePhotosImages {
     public func image(of asset: String, version: ApplePhotosImageVersion, size: Int) -> ApplePhotosImage {
         let (found, files, inCloud) = state.withLock { state in
             state.asked[ApplePhotosPicture(asset: asset, version: version), default: 0] += 1
-            return (state.asset(asset), state.files[asset], state.imagesInCloud.contains(asset))
+            return (
+                state.canRead(asset) ? state.asset(asset) : nil, state.files[asset],
+                state.imagesInCloud.contains(asset),
+            )
         }
-        guard access() == .authorized, let found else { return .unavailable }
+        guard let found else { return .unavailable }
         if let given {
             return given(found, version, size)
         }
@@ -654,7 +699,7 @@ extension SimulatedPhotosLibrary: ApplePhotosProbe {
 
     /// A file the manifest names is on this Mac unless it's `inCloud`; Photos can't say of one it names no file for.
     public func locality(of resource: ApplePhotosResource, of asset: String) async -> ApplePhotosLocality {
-        guard access() == .authorized else { return .unknown("noAccess") }
+        guard state.withLock({ $0.canRead(asset) }) else { return .unknown("noAccess") }
         guard let file = state.withLock({ $0.files[asset]?[resource.originalFilename] }) else {
             return .unknown("unavailable")
         }
@@ -683,7 +728,7 @@ extension SimulatedPhotosLibrary: ApplePhotosProbe {
 
     /// The changes recorded since `token`, and how many there are in all.
     private func history(since token: Data) throws -> (ArraySlice<ApplePhotosChanges>, Int) {
-        try requireAlbums()
+        try requireAccess()
         let parts = String(decoding: token, as: UTF8.self).split(separator: " ")
         return try state.withLock { state in
             guard parts.count == 2, parts[0] == identity, let since = Int(parts[1]), since >= state.kept,
@@ -697,9 +742,9 @@ extension SimulatedPhotosLibrary: ApplePhotosProbe {
     /// it; nil for an asset `imagesInCloud`, and with `local`, for a file only in iCloud.
     private func pictureFile(of asset: String, version: ApplePhotosImageVersion, local: Bool = false) -> URL? {
         let (found, files, inCloud) = state.withLock { state in
-            (state.asset(asset), state.files[asset], state.imagesInCloud.contains(asset))
+            (state.canRead(asset) ? state.asset(asset) : nil, state.files[asset], state.imagesInCloud.contains(asset))
         }
-        guard access() == .authorized, let found, !inCloud else { return nil }
+        guard let found, !inCloud else { return nil }
         let resource = version == .current ? found.edit ?? found.resource(.photo) : found.resource(.photo)
         guard let resource, let file = files?[resource.originalFilename], !(local && file.inCloud) else { return nil }
         return file.url

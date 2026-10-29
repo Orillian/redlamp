@@ -137,6 +137,7 @@ enum HarnessLibrary {
         for access in ["authorized", "notDetermined", "denied", "restricted", "limited"] {
             let manifest: [String: Any] = [
                 "format": SimulatedPhotosLibrary.format, "version": 1, "access": access, "grants": "authorized",
+                "limitedTo": ["harness-1", "harness-3", "harness-5"],
                 "collections": [
                     ["id": "album-selects", "title": "Selects", "kind": "album"],
                     ["id": "folder-trips", "title": "Trips", "kind": "folder"],

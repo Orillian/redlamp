@@ -515,6 +515,12 @@ public final class ApplePhotosIndexer: Sendable {
     /// sidecars kept (LIB-58), but those of assets Photos no longer has while an album that held them is still kept
     /// (one of `asking`), which are kept as missing (DEC-59), listed only by Library Health's Missing. Photos is asked
     /// only about those: a photo of an album no longer kept leaves with it, as do the missing ones.
+    /// Whether a photo Photos doesn't give is kept as missing (DEC-59). Not with limited access, which gives only the
+    /// photos chosen for Redlamp: one Photos doesn't give may be there still, so it leaves the lists, its sidecar kept.
+    var keepsMissing: Bool {
+        photos.access() != .limited
+    }
+
     func leave(_ leaving: [String: KnownAsset], asking albums: Set<String>, _ outcome: inout Outcome) async throws {
         guard !leaving.isEmpty else { return }
         let rows = leaving.values.flatMap(\.rows.values)
@@ -524,10 +530,11 @@ public final class ApplePhotosIndexer: Sendable {
         }
         let asked = asking.filter { !$0.value.isMissing }.keys
         let present = asked.isEmpty ? [] : try await Set(photos.assets(withIDs: Array(asked)).map(\.id))
+        let keepsMissing = keepsMissing
         var swept: [Int64] = []
         var gone: [KnownAsset] = []
         for (local, asset) in leaving {
-            if asking[local] == nil || present.contains(local) {
+            if asking[local] == nil || present.contains(local) || !keepsMissing {
                 swept += asset.rows.values
             } else if !asset.isMissing {
                 gone.append(asset)

@@ -4,7 +4,8 @@ import Foundation
 /// reading needs).
 public enum ApplePhotosAccess: String, Sendable, Hashable, Codable {
     case notDetermined, denied, restricted
-    /// Only the photos the person chose: on the Mac, no albums.
+    /// Only the photos the person chose, and none of their albums: listed as one album of their own
+    /// (`ApplePhotosCollection.chosenForRedlamp`).
     case limited
     case authorized
 
@@ -35,6 +36,13 @@ public struct ApplePhotosCollection: Sendable, Hashable, Codable, Identifiable {
         self.parent = parent
         self.estimatedCount = estimatedCount
     }
+
+    /// Limited access's one entry (LIB-62): the photos Photos lets Redlamp read, as an album, since PhotoKit gives an
+    /// app with limited access none of the person's albums. Listed only with limited access, under an ID no collection
+    /// of Photos' has.
+    public static let chosenForRedlamp = ApplePhotosCollection(
+        id: "app.redlamp.chosen-for-redlamp", title: "Photos Chosen for Redlamp", kind: .album,
+    )
 }
 
 /// What PhotoKit can tell of an asset, beyond its files: macOS 26 gives the first five, macOS 27 the rest.
@@ -297,7 +305,8 @@ public protocol ApplePhotosLibrary: Sendable {
     func requestAccess() async -> ApplePhotosAccess
     /// The fields of assets this Mac's PhotoKit gives.
     var fields: Set<ApplePhotosField> { get }
-    /// Every album, smart album, shared album and folder, each folder before what's in it.
+    /// Every album, smart album, shared album and folder, each folder before what's in it; with limited access,
+    /// `ApplePhotosCollection.chosenForRedlamp` alone, holding every asset Redlamp may read.
     func collections() async throws -> [ApplePhotosCollection]
     /// The assets of the collections `ids` names (albums, smart albums and shared albums), each once with the
     /// chosen collections it's in: hidden ones included, and every frame of a burst.

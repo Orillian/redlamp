@@ -110,7 +110,7 @@ struct ApplePhotosCensusTests {
         #expect(try JSONDecoder().decode(ApplePhotosReport.self, from: json) == census.report)
     }
 
-    @Test func `the census asks for nothing while access isn't given, and a limited library lists no albums`(
+    @Test func `the census asks for nothing while access isn't given, and a limited library lists the photos chosen as one album`(
     ) async throws {
         let folder = try TemporaryFolder()
         for (access, grants) in [("notDetermined", "denied"), ("limited", "limited")] {
@@ -119,8 +119,13 @@ struct ApplePhotosCensusTests {
                 extra: ["access": access, "grants": grants],
             )
             let library = try SimulatedPhotosLibrary(manifest: url)
-            await #expect(throws: ApplePhotosError.self) {
-                try await ApplePhotosCensus.make(library)
+            if access == "limited" {
+                let census = try await ApplePhotosCensus.make(library)
+                #expect(census.tree.collections.map(\.id) == [ApplePhotosCollection.chosenForRedlamp.id])
+            } else {
+                await #expect(throws: ApplePhotosError.self) {
+                    try await ApplePhotosCensus.make(library)
+                }
             }
             #expect(await library.requestAccess() == ApplePhotosAccess(rawValue: grants))
         }

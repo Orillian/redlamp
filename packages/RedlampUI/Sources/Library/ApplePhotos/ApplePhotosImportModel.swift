@@ -28,7 +28,7 @@ final class ApplePhotosImportModel {
     enum Phase: Equatable {
         /// Reading whether Redlamp may read Photos, or asking.
         case checking
-        /// Redlamp hasn't asked yet, or may not read Photos' albums: `access` says which.
+        /// Redlamp hasn't asked yet, or may not read Photos: `access` says which.
         case access
         /// Reading Photos' albums.
         case loading
@@ -137,7 +137,7 @@ final class ApplePhotosImportModel {
     func checkAccess() {
         guard phase == .checking || phase == .access else { return }
         access = photos.access()
-        if access == .authorized {
+        if access.canRead {
             loadAlbums()
         } else {
             phase = .access

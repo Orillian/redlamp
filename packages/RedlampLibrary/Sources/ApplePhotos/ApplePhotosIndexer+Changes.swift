@@ -46,7 +46,7 @@ public extension ApplePhotosIndexer {
         settling: Duration = .milliseconds(250), failed: @escaping @Sendable (any Error) -> Void = { _ in },
         passed: @escaping @Sendable (Outcome) -> Void = { _ in },
     ) async {
-        guard photos.access() == .authorized, await (try? albums())?.isEmpty == false else { return }
+        guard photos.access().canRead, await (try? albums())?.isEmpty == false else { return }
         let notices = photos.changes()
         await updating(failed, passed)
         for await _ in notices {
@@ -194,10 +194,11 @@ extension ApplePhotosIndexer {
         outcome.assets = assets.count
         let kept = Set(assets.map(\.id))
         try await standIn([:], albums: [:], evaluated: copies.linked.subtracting(kept), known: [:], &outcome)
+        let keepsMissing = keepsMissing
         var swept: [Int64] = []
         var gone: [KnownAsset] = []
         for (local, asset) in Self.left(known.assets.filter { !kept.contains($0.key) }, outcome) {
-            if found.contains(local) {
+            if found.contains(local) || !keepsMissing {
                 swept += asset.rows.values
             } else if !asset.isMissing {
                 gone.append(asset)

@@ -6,7 +6,8 @@ import Testing
 @_spi(Harness) @testable import RedlampUI
 
 /// File › Add Albums from Apple Photos… (LIB-54, LIB-62) on a simulated Photos library: access asked for once and
-/// explained when there's none; Keep in Photos as it opens, the albums kept already chosen and dimmed, and Add Albums
+/// explained when there's none, and limited access's one entry kept; Keep in Photos as it opens, the albums kept
+/// already chosen and dimmed, and Add Albums
 /// keeping the albums chosen in place; Copy into a Folder's albums chosen with their folders, the report, the import
 /// and Undo Import.
 @MainActor
@@ -14,10 +15,11 @@ import Testing
 struct ApplePhotosWindowTests {
     /// A Photos library of small JPEGs: Selects, the folder Trips with Lisbon and Porto, a smart album and a shared
     /// one, over a favourite in Selects and Lisbon, a photo in Porto, a video in Lisbon and a shared album's copy;
-    /// `extra` more photos in `album`, those `dropping` names gone; and access as `access` says.
+    /// `extra` more photos in `album`, those `dropping` names gone; and access as `access` says, limited to the photos
+    /// `limitedTo` names.
     static func manifest(
         in sandbox: SourcesSandbox, access: String = "authorized", extra: Int = 0, into album: String = "album-lisbon",
-        dropping: Set<String> = [],
+        dropping: Set<String> = [], limitedTo: [String] = [],
     ) throws -> URL {
         let folder = sandbox.base.appending(path: "Photos Library", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -45,6 +47,7 @@ struct ApplePhotosWindowTests {
         assets.removeAll { dropping.contains($0["id"] as? String ?? "") }
         let object: [String: Any] = [
             "format": SimulatedPhotosLibrary.format, "version": 1, "access": access, "grants": "authorized",
+            "limitedTo": limitedTo,
             "collections": [
                 ["id": "album-selects", "title": "Selects", "kind": "album"],
                 ["id": "folder-trips", "title": "Trips", "kind": "folder"],
@@ -148,7 +151,6 @@ struct ApplePhotosWindowTests {
         let headings: [(String, String)] = [
             ("denied", "Redlamp isn’t allowed to read Photos"),
             ("restricted", "Photos is restricted on this Mac"),
-            ("limited", "Redlamp can read only some of your photos"),
         ]
         for (access, heading) in headings {
             let window = try await Self.window(SimulatedPhotosLibrary(manifest: Self.manifest(
@@ -161,8 +163,41 @@ struct ApplePhotosWindowTests {
             #expect(window.control("photos.openSettings")?.title == "Open System Settings")
             try click("photos.openSettings", in: window)
         }
-        #expect(opened == 3)
+        #expect(opened == 2)
         #expect(ApplePhotosImportModel.words(for: .limited) == "limited to some photos")
+    }
+
+    @Test func `with limited access the one entry is Photos Chosen for Redlamp, which Add Albums keeps as an album`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let model = try await sandbox.open()
+        let photos = try SimulatedPhotosLibrary(manifest: Self.manifest(
+            in: sandbox, access: "limited", limitedTo: ["asset-1", "asset-2", "asset-video"],
+        ))
+        let service = try #require(sandbox.service)
+        service.followApplePhotos(photos)
+        try await sandbox.eventually { service.applePhotosIndexer != nil }
+        let window = await Self.window(photos, model: model)
+        defer { window.close() }
+        try await sandbox.eventually { window.phase == "choosing" }
+        let chosen = ApplePhotosCollection.chosenForRedlamp.id
+        let groups = window.model.screen.groups
+        #expect(groups.map(\.title) == ["Albums"])
+        #expect(groups.first?.albums.map(\.title) == ["Photos Chosen for Redlamp"])
+        #expect(groups.first?.albums.first?.count == 3)
+        #expect(groups.first?.note?.hasSuffix("Photos shows your albums.") == true)
+
+        try await sandbox.eventually {
+            window.window?.contentView?.layoutSubtreeIfNeeded()
+            return window.control("photos.album.\(chosen)") != nil
+        }
+        try click("photos.album.\(chosen)", in: window)
+        try click("photos.addAlbums", in: window)
+        #expect(model.librarySources.shown == .applePhotos(chosen), "the grid shows the photos chosen for Redlamp")
+        try await sandbox.eventually { !model.librarySources.isListing && model.items.count == 2 }
+        #expect(try await service.applePhotosIndexer?.albums().map(\.id) == [chosen])
     }
 
     @Test func `albums are chosen with their folders, smart and shared albums apart, and To's example follows them`(
