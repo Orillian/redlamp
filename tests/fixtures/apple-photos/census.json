@@ -1,0 +1,113 @@
+{
+  "format": "app.redlamp.simulated-photos",
+  "version": 1,
+  "macOS": 27,
+  "access": "authorized",
+  "latency": 50,
+  "rate": 4000,
+  "library": "smart-census-library",
+  "collections": [
+    { "id": "smart-census-library", "title": "Library", "kind": "smartAlbum" },
+    { "id": "album-census-walks", "title": "Census Walks", "kind": "album" },
+    { "id": "folder-census-trips", "title": "Census Trips", "kind": "folder" },
+    { "id": "album-census-coast", "title": "Census Coast", "kind": "album", "parent": "folder-census-trips" }
+  ],
+  "assets": [
+    {
+      "id": "CE000001-0000-4000-8000-000000000001/L0/001",
+      "cloud": "census-cloud-0001",
+      "favorite": true,
+      "caption": "Census caption by the river.",
+      "keywords": ["CensusKeyword"],
+      "location": { "latitude": 38.7139, "longitude": -9.1334 },
+      "albums": ["smart-census-library", "album-census-walks"],
+      "resources": [{ "kind": "photo", "name": "IMG_0001.HEIC", "file": "files/IMG_0001.HEIC" }]
+    },
+    {
+      "id": "CE000002-0000-4000-8000-000000000002/L0/001",
+      "cloud": "census-cloud-0002",
+      "edited": true,
+      "adjusted": "2026-10-06T09:00:00Z",
+      "albums": ["smart-census-library", "album-census-walks"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0002.JPG", "file": "files/IMG_0002.JPG" },
+        { "kind": "fullSizePhoto", "name": "FullSizeRender.jpeg", "file": "files/FullSizeRender.jpeg" }
+      ]
+    },
+    {
+      "id": "CE000003-0000-4000-8000-000000000003/L0/001",
+      "cloud": "census-cloud-0003",
+      "subtypes": ["live"],
+      "albums": ["smart-census-library", "album-census-coast"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0003.HEIC", "file": "files/IMG_0003.HEIC", "inCloud": true },
+        { "kind": "pairedVideo", "name": "IMG_0003.MOV" }
+      ]
+    },
+    {
+      "id": "CE000004-0000-4000-8000-000000000004/L0/001",
+      "cloud": "census-cloud-0004",
+      "albums": ["smart-census-library", "album-census-coast"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0004.JPG", "file": "files/IMG_0004.JPG", "inCloud": true },
+        { "kind": "alternatePhoto", "name": "IMG_0004.NEF", "file": "files/IMG_0004.JPG", "inCloud": true }
+      ]
+    },
+    {
+      "id": "CE000005-0000-4000-8000-000000000005/L0/001",
+      "cloud": "census-cloud-0005",
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "photo", "name": "IMG_0010.JPG", "file": "files/IMG_0010.JPG", "inCloud": true }]
+    },
+    {
+      "id": "CE000006-0000-4000-8000-000000000006/L0/001",
+      "cloud": "census-cloud-0006",
+      "edited": true,
+      "adjusted": "2026-10-07T09:00:00Z",
+      "albums": ["smart-census-library"],
+      "resources": [
+        { "kind": "photo", "name": "IMG_0011.JPG", "file": "files/IMG_0011.JPG", "inCloud": true },
+        { "kind": "fullSizePhoto", "name": "FullSizeRender.jpeg", "file": "files/FullSizeRender.jpeg", "inCloud": true }
+      ]
+    },
+    {
+      "id": "CE000007-0000-4000-8000-000000000007/L0/001",
+      "cloud": "census-cloud-0007",
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "photo", "name": "IMG_0012.JPG", "file": "files/IMG_0012.JPG", "inCloud": true }]
+    },
+    {
+      "id": "CE000008-0000-4000-8000-000000000008/L0/001",
+      "cloud": "census-cloud-0008",
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "photo", "name": "IMG_0030.JPG", "file": "files/IMG_0030.JPG", "inCloud": true }]
+    },
+    {
+      "id": "CE000009-0000-4000-8000-000000000009/L0/001",
+      "cloud": "census-cloud-0009",
+      "imagesInCloud": true,
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "photo", "name": "IMG_0040.JPG", "file": "files/IMG_0040.JPG", "inCloud": true }]
+    },
+    {
+      "id": "CE000010-0000-4000-8000-000000000010/L0/001",
+      "mediaType": "video",
+      "created": "2026-10-05T11:00:00Z",
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "other", "name": "IMG_0020.MOV" }]
+    },
+    {
+      "id": "CE000011-0000-4000-8000-000000000011/L0/001",
+      "hidden": true,
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "photo", "name": "IMG_0031.JPG", "file": "files/IMG_0030.JPG" }]
+    },
+    {
+      "id": "CE000012-0000-4000-8000-000000000012/L0/001",
+      "cloud": "census-cloud-0012",
+      "subtypes": ["screenshot"],
+      "albums": ["smart-census-library"],
+      "resources": [{ "kind": "photo", "name": "IMG_0041.JPG", "file": "files/IMG_0040.JPG" }]
+    }
+  ]
+}

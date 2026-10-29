@@ -27,6 +27,9 @@ import Synchronization
 /// Changes made in Photos are scripted (LIB-61): `insert`, `update`, `setAlbums`, `delete`, `add`, `removeCollection`,
 /// each kept in a history of changes whose tokens `expireHistory` makes expire, and told to those listening.
 ///
+/// For the census of a library (LIB-57, `ApplePhotosProbe`), the manifest's `"library"` names the collection that holds
+/// every photo, as Photos' Library smart album does.
+///
 /// An asset's `cloud` is its cloud identifier's archival text, as Redlamp records it from 0.3.5; its
 /// `"cloudStringValue"`,
 /// the text `stringValue` gave, as 0.3.4 recorded it, where the two differ. Either reads back to the asset (LIB-64).
@@ -87,6 +90,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         var latency: Int?
         var rate: Int?
         var offline: Bool?
+        var library: String?
         var collections: [Collection]
         var assets: [Asset]
     }
@@ -115,6 +119,8 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     /// Where the manifest is, its files' paths from its folder; nil for a library made in memory.
     public let manifest: URL?
     public let fields: Set<ApplePhotosField>
+    /// The collection holding every photo, as Photos' Library smart album does: the manifest's `"library"`.
+    let everything: String?
     private let state: Mutex<State>
     /// Names the library in its change tokens.
     private let identity = UUID().uuidString
@@ -167,6 +173,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     ) {
         manifest = nil
         given = images
+        everything = nil
         fields = Set(ApplePhotosField.everywhere + (macOS >= 27 ? ApplePhotosField.fromMacOS27 : []))
         state = Mutex(State(
             access: .authorized, granted: .authorized, tree: collections, assets: assets, files: [:],
@@ -196,6 +203,7 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
         }
         self.manifest = manifest
         given = nil
+        everything = read.library
         let version = macOS ?? read.macOS ?? 26
         fields = Set(ApplePhotosField.everywhere + (version >= 27 ? ApplePhotosField.fromMacOS27 : []))
         let folder = manifest.deletingLastPathComponent()
@@ -463,21 +471,15 @@ public final class SimulatedPhotosLibrary: ApplePhotosLibrary {
     }
 
     public func changes(since token: Data) async throws -> ApplePhotosChanges {
-        try requireAlbums()
-        let parts = String(decoding: token, as: UTF8.self).split(separator: " ")
-        return try state.withLock { state in
-            guard parts.count == 2, parts[0] == identity, let since = Int(parts[1]), since >= state.kept,
-                  since <= state.history.count
-            else { throw ApplePhotosError.expiredToken }
-            var changes = ApplePhotosChanges(token: self.token(state.history.count))
-            for change in state.history[since...] {
-                changes.inserted.formUnion(change.inserted)
-                changes.updated.formUnion(change.updated)
-                changes.deleted.formUnion(change.deleted)
-                changes.collections.formUnion(change.collections)
-            }
-            return changes
+        let (history, count) = try history(since: token)
+        var changes = ApplePhotosChanges(token: self.token(count))
+        for change in history {
+            changes.inserted.formUnion(change.inserted)
+            changes.updated.formUnion(change.updated)
+            changes.deleted.formUnion(change.deleted)
+            changes.collections.formUnion(change.collections)
         }
+        return changes
     }
 
     /// Records a change in Photos' history, by local identifier, and tells those listening; `expiring` forgets the
@@ -642,5 +644,64 @@ extension SimulatedPhotosLibrary: ApplePhotosImages {
     /// What each caching window holds, for the tests.
     public var cachedImages: [String: Set<ApplePhotosPicture>] {
         state.withLock(\.cached)
+    }
+}
+
+extension SimulatedPhotosLibrary: ApplePhotosProbe {
+    public func libraryCollection() async throws -> String? {
+        everything
+    }
+
+    /// A file the manifest names is on this Mac unless it's `inCloud`; Photos can't say of one it names no file for.
+    public func locality(of resource: ApplePhotosResource, of asset: String) async -> ApplePhotosLocality {
+        guard access() == .authorized else { return .unknown("noAccess") }
+        guard let file = state.withLock({ $0.files[asset]?[resource.originalFilename] }) else {
+            return .unknown("unavailable")
+        }
+        return file.inCloud ? .inCloud : .local
+    }
+
+    /// The picture's file at its own size, as its images are made from it; none for an asset `imagesInCloud`.
+    public func largestImage(of asset: String, version: ApplePhotosImageVersion) -> Int? {
+        guard let url = pictureFile(of: asset, version: version),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return max(width, height)
+    }
+
+    /// The picture's file, metadata and all, where it's on this Mac; none for one only in iCloud.
+    public func imageData(of asset: String, version: ApplePhotosImageVersion) -> Data? {
+        pictureFile(of: asset, version: version, local: true).flatMap { try? Data(contentsOf: $0) }
+    }
+
+    public func changeSets(since token: Data) async throws -> [ApplePhotosChanges] {
+        try Array(history(since: token).0)
+    }
+
+    /// The changes recorded since `token`, and how many there are in all.
+    private func history(since token: Data) throws -> (ArraySlice<ApplePhotosChanges>, Int) {
+        try requireAlbums()
+        let parts = String(decoding: token, as: UTF8.self).split(separator: " ")
+        return try state.withLock { state in
+            guard parts.count == 2, parts[0] == identity, let since = Int(parts[1]), since >= state.kept,
+                  since <= state.history.count
+            else { throw ApplePhotosError.expiredToken }
+            return (state.history[since...], state.history.count)
+        }
+    }
+
+    /// The file of the picture `version` is, Photos' edit's for the current one, as `image(of:version:size:)` reads
+    /// it; nil for an asset `imagesInCloud`, and with `local`, for a file only in iCloud.
+    private func pictureFile(of asset: String, version: ApplePhotosImageVersion, local: Bool = false) -> URL? {
+        let (found, files, inCloud) = state.withLock { state in
+            (state.asset(asset), state.files[asset], state.imagesInCloud.contains(asset))
+        }
+        guard access() == .authorized, let found, !inCloud else { return nil }
+        let resource = version == .current ? found.edit ?? found.resource(.photo) : found.resource(.photo)
+        guard let resource, let file = files?[resource.originalFilename], !(local && file.inCloud) else { return nil }
+        return file.url
     }
 }
