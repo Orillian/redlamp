@@ -61,7 +61,7 @@ In Library
 : An album you've kept already is dimmed, with In Library beside it. In Keep in Photos it stays ticked; in Copy into a Folder it can't be ticked, and Copy to Folder… in the Apple Photos section copies it with its edits instead. A folder is In Library once all its albums are.
 
 Smart Albums
-: Kept in Photos, a smart album holds whatever Photos puts in it as its rules change. Copied, each becomes a collection of the photos it holds then.
+: Kept in Photos, a smart album holds the photos its rules find in Photos, now and later. Copied, each becomes a collection of the photos it holds then.
 
 Shared Albums
 : Photos keeps shared albums' photos smaller, so these are reduced copies, not the originals.
