@@ -171,8 +171,8 @@
             case .downloadOriginals:
                 ActionCheck(
                     action: action,
-                    unavailable: "needs photos kept in Apple Photos, which the app lists from LIB-62: checked on the "
-                        + "simulated library by ApplePhotosDownloadTests",
+                    unavailable: "needs photos kept in Apple Photos only in iCloud: checked on the simulated library "
+                        + "by library.apple-photos-download",
                 )
             case .keywordPainter:
                 ActionCheck(

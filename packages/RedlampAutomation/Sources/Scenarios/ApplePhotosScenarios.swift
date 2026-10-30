@@ -126,14 +126,18 @@
         }
 
         /// Reads Photos as a library of the photos `albums` names, by number, each in the albums given, the first a
-        /// favourite and the third only in iCloud, with a video in E2E Trip; Redlamp's access as `access` says.
-        func simulate(_ app: RunningApp, _ albums: [Int: [String]], access: String = "authorized") throws {
+        /// favourite and those `inCloud` names only in iCloud, with a video in E2E Trip; Redlamp's access as `access`
+        /// says. Returns the library, whose changes and iCloud the scenario can script.
+        @discardableResult
+        func simulate(
+            _ app: RunningApp, _ albums: [Int: [String]], access: String = "authorized", inCloud: Set<Int> = [2],
+        ) throws -> SimulatedPhotosLibrary {
             var assets: [[String: Any]] = albums.keys.sorted().map { number in
                 [
                     "id": asset(number), "favorite": number == 0, "albums": albums[number] ?? [],
                     "resources": [[
                         "kind": "photo", "name": scratch.names[number], "file": "Card/" + scratch.names[number],
-                        "inCloud": number == 2,
+                        "inCloud": inCloud.contains(number),
                     ]],
                 ]
             }
@@ -153,6 +157,7 @@
             try JSONSerialization.data(withJSONObject: manifest).write(to: url)
             let library = try SimulatedPhotosLibrary(manifest: url)
             try app.main { model in model.simulateApplePhotos(library) }
+            return library
         }
 
         /// An import of the albums `albums` names through the Apple Photos window's Copy into a Folder, the window
