@@ -81,4 +81,4 @@ Adobe's use of the presets, and RAWmakase's match with Camera Raw on two a7CR bo
 
 1. The owner's grey card raws, kept outside the repository unless they're his to publish under CC0, with the bodies called A and B here and their serials left in the files.
 2. Their measurement: the bodies' rendered difference at one Temperature and Tint against their presets', and with the calibration applied.
-3. If they confirm it, a design behind process 20, with its cost, for the owner to approve: the preset read in the decode, each model's reference, the calibration in `CameraColorModel` from that process, and what Auto, the eyedropper and As Shot's numbers do for edits made before it.
+3. If they confirm it, the design behind process 20, with its cost, for the owner to approve: [2026-10-30-sony-wb-by-body-design.md](../../plans/2026-10-30-sony-wb-by-body-design.md), with the preset read in the decode, each model's reference, the calibration in `CameraColorModel` from that process, and what Auto, the eyedropper and As Shot's numbers do for edits made before it.
