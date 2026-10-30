@@ -43,8 +43,9 @@ extension SidebarCellView {
         let photos = ProgressText.count(count, "new photo")
         return FolderDecoration(
             name: "From Apple Photos", nameTone: .primary,
-            help: "\(photos) in the Apple Photos albums Redlamp follows. Import brings them with the last import’s "
-                + "settings; a click on the row opens Add Albums from Apple Photos with Copy into a Folder chosen.",
+            help: "\(photos) in the Apple Photos albums your imports follow, not those kept in Photos. Import brings "
+                + "them with the last import’s settings; a click on the row opens Add Albums from Apple Photos with "
+                + "Copy into a Folder chosen.",
             accessibilityLabel: "From Apple Photos, \(photos)", symbol: "photo.on.rectangle.angled", iconTone: .primary,
         )
     }

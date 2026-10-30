@@ -234,7 +234,10 @@ extension ApplePhotosImportModel {
         if !smart.isEmpty {
             groups.append(.init(
                 id: "smart", title: "Smart Albums",
-                note: "Each becomes a collection of the photos it holds now.", albums: smart,
+                note: way == .keep
+                    ? "Each holds the photos its rules find in Photos, now and later."
+                    : "Each becomes a collection of the photos it holds now.",
+                albums: smart,
             ))
         }
         if !shared.isEmpty {

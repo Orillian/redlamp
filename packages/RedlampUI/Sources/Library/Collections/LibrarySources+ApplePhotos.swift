@@ -107,22 +107,32 @@ public enum ApplePhotosRemoval {
         guard let window = EditorWindowController.frontWindow, window.attachedSheet == nil else { return false }
         let alert = NSAlert()
         alert.messageText = "Remove “\(album.title)” from the library?"
-        let again = "until Add Albums from Apple Photos… chooses"
-        let leaving = switch (album.kind, photos) {
-        case (.folder, _):
-            "The albums kept in it leave Redlamp's lists, with their photos' edits kept on this Mac, \(again) them again."
-        case (_, 1?):
-            "Its photo leaves Redlamp's lists, with its edits kept on this Mac, \(again) the album again."
-        case let (_, count?) where count > 1:
-            "Its \(count.formatted()) photos leave Redlamp's lists, with their edits kept on this Mac, \(again) it again."
-        default:
-            "Its photos leave Redlamp's lists, with their edits kept on this Mac, \(again) it again."
-        }
-        alert.informativeText = leaving + " Apple Photos isn't changed."
+        alert.informativeText = message(album, photos: photos)
         alert.addButton(withTitle: "Remove from Library").setAccessibilityIdentifier("apple-photos.remove")
         alert.addButton(withTitle: "Cancel")
         model.isModalDialogOpen = true
         defer { model.isModalDialogOpen = false }
         return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
+    }
+
+    /// What the question says becomes of `album` and its `photos` photos: they leave the lists, but for those another
+    /// album kept holds (`ApplePhotosIndexer.stopKeeping(_:)`).
+    static func message(_ album: ApplePhotosCollection, photos: Int?) -> String {
+        let again = "until Add Albums from Apple Photos… chooses"
+        let held = "but for those another album you've kept holds"
+        let leaving = switch (album.kind, photos) {
+        case (.folder, _):
+            "The albums kept in it leave Redlamp's lists \(again) them again, and their photos with them, \(held). "
+                + "Their edits stay on this Mac."
+        case (_, 1?):
+            "Its photo leaves Redlamp's lists \(again) the album again, unless another album you've kept holds it. Its "
+                + "edits stay on this Mac."
+        case let (_, count?) where count > 1:
+            "Its \(count.formatted()) photos leave Redlamp's lists \(again) it again, \(held). Their edits stay on "
+                + "this Mac."
+        default:
+            "Its photos leave Redlamp's lists \(again) it again, \(held). Their edits stay on this Mac."
+        }
+        return leaving + " Apple Photos isn't changed."
     }
 }

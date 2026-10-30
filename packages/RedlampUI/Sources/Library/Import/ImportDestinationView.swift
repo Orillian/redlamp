@@ -16,6 +16,8 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
     private let showsCard: Bool
     /// What the example says while there's no photo to name.
     private let noExample: String
+    /// What the destination says while none is chosen, naming the button that asks for one.
+    private let noDestination: String
 
     private let destination = NSTextField(labelWithString: "")
     private let folders = NamingTemplateField(
@@ -48,10 +50,12 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
 
     init(
         model: ImportWindowModel, showsCard: Bool = true, noExample: String = "Choose a photo to see where it goes.",
+        noDestination: String = "Not chosen yet: Import asks for it",
     ) {
         self.model = model
         self.showsCard = showsCard
         self.noExample = noExample
+        self.noDestination = noDestination
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -201,7 +205,7 @@ final class ImportDestinationViewController: NSViewController, NSTextFieldDelega
     private func update() {
         shownPhase = model.phase
         let settings = model.settings
-        destination.stringValue = model.hasDestination ? settings.destination.path : "Not chosen yet: Import asks for it"
+        destination.stringValue = model.hasDestination ? settings.destination.path : noDestination
         folders.text = model.folderText
         names.text = model.namesText
         folders.show(error: model.folderError)

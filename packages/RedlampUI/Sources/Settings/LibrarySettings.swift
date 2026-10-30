@@ -83,15 +83,8 @@ struct LibrarySettings: View {
             } header: {
                 Text("Apple Photos")
             } footer: {
-                Text(
-                    "Each import from Apple Photos follows the albums it chose, and the Library panel’s From Apple "
-                        + "Photos offers the new photos in them. Turned on, they’re imported with the last import’s "
-                        + "settings a minute after Photos last changes, while Redlamp runs. Nothing is removed from "
-                        + "Redlamp when a photo leaves Photos or an album. Photos kept in Apple Photos download their "
-                        + "originals from iCloud to be edited, seen at full size or exported; Redlamp keeps them on "
-                        + "this Mac up to the size chosen, the least recently opened removed first.",
-                )
-                .formFooter()
+                Text(LibrarySettingsModel.applePhotosFooter)
+                    .formFooter()
             }
             if let failure = model.failure {
                 Section {
@@ -183,6 +176,17 @@ final class LibrarySettingsModel {
     func countPhotos() async {
         photos = await library.photoCount()
     }
+
+    /// Under Apple Photos: the albums imports follow (LIB-55), which leave out those kept in Photos (LIB-64), and the
+    /// originals downloaded from iCloud (LIB-60).
+    static let applePhotosFooter =
+        "Copy into a Folder follows the albums it imports when Follow these albums is on, and the Library panel’s "
+            + "From Apple Photos offers the new photos in them. Turned on, they’re imported with the last import’s "
+            + "settings a minute after Photos last changes, while Redlamp runs. The copies stay when their photos "
+            + "leave Photos or an album. Albums kept in Photos aren’t offered or imported this way: they follow "
+            + "Photos by themselves, new photos coming in and photos deleted in Photos listed by Library Health. "
+            + "Photos kept in Apple Photos download their originals from iCloud to be edited, seen at full size or "
+            + "exported; Redlamp keeps them on this Mac up to the size chosen, the least recently opened removed first."
 
     // MARK: - Originals from Apple Photos (LIB-60)
 

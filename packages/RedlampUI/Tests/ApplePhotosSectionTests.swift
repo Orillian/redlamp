@@ -233,6 +233,18 @@ struct ApplePhotosSectionTests {
         try await sandbox.eventually { Self.labels(list) == ["Trips", "Lisbon, 2 photos", "Porto, 2 photos"] }
     }
 
+    @Test func `Remove from Library's question says the photos another album kept holds stay`() {
+        let album = ApplePhotosCollection(id: "album-selects", title: "Selects", kind: .album)
+        let folder = ApplePhotosCollection(id: "folder-trips", title: "Trips", kind: .folder)
+        let held = "but for those another album you've kept holds."
+        #expect(ApplePhotosRemoval.message(album, photos: 3).hasPrefix("Its 3 photos leave Redlamp's lists until "))
+        #expect(ApplePhotosRemoval.message(album, photos: 3).contains(held))
+        #expect(ApplePhotosRemoval.message(album, photos: nil).contains(held))
+        #expect(ApplePhotosRemoval.message(album, photos: 1).contains("unless another album you've kept holds it."))
+        #expect(ApplePhotosRemoval.message(folder, photos: 4).contains(held))
+        #expect(ApplePhotosRemoval.message(folder, photos: 4).hasSuffix("on this Mac. Apple Photos isn't changed."))
+    }
+
     @Test func `an album renamed in Photos is renamed in the section, though no photo changed`() async throws {
         let sandbox = SourcesSandbox()
         defer { sandbox.remove() }

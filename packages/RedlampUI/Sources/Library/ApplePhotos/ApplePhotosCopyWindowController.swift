@@ -33,6 +33,7 @@ public final class ApplePhotosCopyWindowController: NSWindowController, NSWindow
         self.model = model
         destinationView = ImportDestinationViewController(
             model: model.destination, showsCard: false, noExample: "Counting what’s chosen…",
+            noDestination: "Not chosen yet: Copy asks for it",
         )
         let screen = model.screen
         shown = ApplePhotosScreenBox(screen: screen.page)

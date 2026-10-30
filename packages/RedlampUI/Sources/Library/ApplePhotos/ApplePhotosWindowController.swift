@@ -40,6 +40,7 @@ public final class ApplePhotosWindowController: NSWindowController, NSWindowDele
         self.model = model
         destinationView = ImportDestinationViewController(
             model: model.destination, showsCard: false, noExample: "Choose an album to see where its photos go.",
+            noDestination: "Not chosen yet: Review asks for it",
         )
         shown = ApplePhotosScreenBox(screen: model.screen)
         let window = NSWindow(

@@ -94,8 +94,8 @@ public enum LibrarySource: Sendable, Hashable {
         case .health(.pairs): "The halves of raw and JPEG pairs the rule chosen for pairs would drop"
         case .health(.damaged): "Files that can't be read, are empty or end early"
         case .health(.missing):
-            "Photos whose files went from their folders outside Redlamp, which no other list shows: Locate… finds one "
-                + "again, and Remove from Library takes it out"
+            "Photos whose files went from their folders outside Redlamp, or that are no longer in Apple Photos, which "
+                + "no other list shows: Locate… finds a file again, and Remove from Library takes a photo out"
         case .health(.extensions): "Files whose extension names another format than the one they hold"
         case .unreadable: "Files whose read failed, which only their folders and Library Health show"
         case .keptAnyway: "The photos Library Health's checks found that were kept anyway"

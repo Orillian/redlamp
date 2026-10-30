@@ -106,7 +106,7 @@ struct ApplePhotosWindowTests {
         return window.window?.contentView.flatMap { view(identifier, in: $0) }.map { !$0.isHiddenOrHasHiddenAncestor }
     }
 
-    private static func view(_ identifier: String, in view: NSView) -> NSView? {
+    static func view(_ identifier: String, in view: NSView) -> NSView? {
         if view.accessibilityIdentifier() == identifier {
             return view
         }
@@ -245,6 +245,26 @@ struct ApplePhotosWindowTests {
         #expect(window.control("import.eject-after") == nil, "no Card section")
         #expect(ShortcutAction.importFromApplePhotos.title == "Add Albums from Apple Photos…")
         #expect(ShortcutAction.importFromApplePhotos.category == .file)
+    }
+
+    @Test func `each way says what it makes of a smart album, and Copy into a Folder's To that Review asks for one`(
+    ) async throws {
+        let sandbox = SourcesSandbox()
+        defer { sandbox.remove() }
+        try sandbox.photos(["A.jpg"])
+        let model = try await sandbox.open()
+        let window = try await Self.window(SimulatedPhotosLibrary(manifest: Self.manifest(in: sandbox)), model: model)
+        defer { window.close() }
+        try await sandbox.eventually { window.phase == "choosing" }
+        func smart() -> String? {
+            window.model.screen.groups.first { $0.id == "smart" }?.note
+        }
+        #expect(window.way == "keep")
+        #expect(smart() == "Each holds the photos its rules find in Photos, now and later.")
+
+        try choose(.copy, in: window)
+        #expect(smart() == "Each becomes a collection of the photos it holds now.")
+        #expect(window.control("import.destination")?.title == "Not chosen yet: Review asks for it")
     }
 
     @Test func `Review reports what comes across and stays, Import copies the photos, and Undo Import takes them back`(

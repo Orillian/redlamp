@@ -179,6 +179,10 @@ struct MissingPhotosTests {
         let mark = try #require(model.healthProposals.mark(for: shown))
         #expect(mark.word == "Missing" && mark.sentence.hasPrefix("no longer in Apple Photos since "))
         #expect(mark.sentence.hasSuffix(": Remove from Library takes it out, and Photos isn't changed"))
+        #expect(
+            LibrarySource.health(.missing).help.contains("or that are no longer in Apple Photos"),
+            "the list's help",
+        )
         model.select(shown)
         #expect(!model.canPerform(.locateMissingPhoto) && model.canPerform(.removeMissingPhotos))
         #expect(model.perform(.removeMissingPhotos))

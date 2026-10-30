@@ -86,6 +86,16 @@ struct ApplePhotosFollowedAlbumsTests {
         #expect(FileManager.default.fileExists(atPath: destination.appending(path: "Lisbon/IMG_0001.JPG").path))
     }
 
+    @Test func `From Apple Photos and Settings say albums kept in Photos aren't offered, and the copies stay`() {
+        let help = SidebarCellView.applePhotosDecoration(2).help
+        #expect(help
+            .hasPrefix("2 new photos in the Apple Photos albums your imports follow, not those kept in Photos."))
+        let footer = LibrarySettingsModel.applePhotosFooter
+        #expect(footer.contains("Albums kept in Photos aren’t offered or imported this way: they follow Photos"))
+        #expect(footer.contains("The copies stay when their photos leave Photos or an album."))
+        #expect(!footer.contains("Nothing is removed"))
+    }
+
     @Test func `with Import new photos automatically on, they're imported without asking once Photos settles`(
     ) async throws {
         let sandbox = SourcesSandbox()

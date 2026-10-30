@@ -109,6 +109,21 @@ struct ApplePhotosCopyWindowTests {
         )
     }
 
+    @Test func `To says Copy asks for a folder while none is chosen`() async throws {
+        let sandbox = SourcesSandbox()
+        defer {
+            Self.close()
+            sandbox.remove()
+        }
+        let (model, urls) = try await Self.open(sandbox)
+        model.select(urls[0])
+        #expect(model.copyToFolder())
+        let window = try await Self.window(sandbox)
+        let content = try #require(window.window?.contentView)
+        let destination = ApplePhotosWindowTests.view("import.destination", in: content) as? NSTextField
+        #expect(destination?.stringValue == "Not chosen yet: Copy asks for it")
+    }
+
     @Test func `an album's Copy to Folder copies its photos not copied already into a folder of its title`(
     ) async throws {
         let sandbox = SourcesSandbox()
