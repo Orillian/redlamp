@@ -1,6 +1,6 @@
 # Sony white balance by body: design (CAM-34)
 
-**Status:** proposed on 30 October 2026, for the owner's approval before anything is built. It follows the study, [CAM-34-sony-wb-by-body.md](../research/notes/CAM-34-sony-wb-by-body.md), whose numbers it relies on, and waits on the owner's grey card raws, which check that the presets' differences are the bodies' own.
+**Status:** not built. Proposed on 30 October 2026, after the study, [CAM-34-sony-wb-by-body.md](../research/notes/CAM-34-sony-wb-by-body.md), whose numbers it relies on; on 31 October the owner chose not to build it and closed CAM-34 with the study. Should it be built later, his choices stand: Adobe's references, from RAWmakase's table (the first option of decision 2), and a DNG's own CameraCalibration with it (the first of decision 3), with the owner's grey card raws as the check before it lands.
 
 ## Goal
 

@@ -171,6 +171,7 @@ Panasonic's and OM System's tags hold the polynomial the camera corrected its ow
 | Monochrome raws are refused | CAM-20 |
 | Fujifilm SuperCCD files crash the decode service | CAM-22 |
 | Non-DNG raws have one matrix; Temperature and Tint use one matrix for DNGs too | CAM-04 |
+| Temperature and Tint come from the model's matrix, not each body's own calibration, which Camera Raw makes from a preset the body stores in its raw (a Sony body's daylight preset): two bodies of one Sony model render one custom white balance a median 1.9 ΔE2000 apart, and each a median 2.7 from Lightroom's rendering of it; a DNG's CameraCalibration is applied to its colour but not to its Temperature and Tint ([study](research/notes/CAM-34-sony-wb-by-body.md)) | CAM-34, not built |
 | Per-camera measured white levels | CAM-02 |
 | Linear DNGs have no highlight headroom and no values below black (clamped at normalisation) | — |
 | Noise reduction's inverse transform reads a strongly denoised noisy shadow's mean low: with Luminance at 60 at 1:1, 2.5 to 5% at shadows of 0.05 to 0.1 and ISO 12800 to 51200-like noise, and up to a quarter in the darkest tones at ISO 51200 | DN-16 |
